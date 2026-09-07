@@ -1,0 +1,12 @@
+{
+  "company_id": "one-brain",
+  "current_po_seat_id": null,
+  "display_name": "Dabbler Web",
+  "note": "Registration is not activity. A null current_po_seat_id means no PO seat serves this Project; it does not mean the Project is unregistered or that one should be created.",
+  "product_id": "dabbler",
+  "project_id": "web",
+  "record_type": "project",
+  "registered": true,
+  "repository": "Dabbler/dabbler-web",
+  "schema_version": 1
+}

@@ -1,0 +1,9 @@
+{
+  "company_id": "one-brain",
+  "display_name": "Dabbler",
+  "jira_project_key": "KAN",
+  "note": "One Product. Dependencies may cross its Projects and may never leave it.",
+  "product_id": "dabbler",
+  "record_type": "product",
+  "schema_version": 1
+}

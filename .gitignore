@@ -1,0 +1,38 @@
+/*
+!/.claude/
+!/agent/
+
+# Dabbler/dabbler-docs is deliberately NOT tracked here (CEO ruling 2026-09-05,
+# commit b6c3747). It is NOT unversioned: it is an independent Git repository,
+# canonical remote dabblersport/dabbler-docs, branch master. Its history up to
+# 67cf424 also remains in this repo's past commits, at the old dabbler-docs/ path.
+# The exact governance commit this Thebes architecture was verified against is
+# pinned in CLAUDE.md under "Governance Repository". Do not re-track it here —
+# a second copy of CONTRACT.md is a second authority.
+!/CLAUDE.md
+!/.gitignore
+!/*.md
+
+# Re-exclusion: !/.claude/ above re-includes the whole directory, which would
+# otherwise pull in machine-local settings. Last matching rule wins.
+/.claude/settings.local.json
+
+# Auto-written session state, not knowledge. Contains live test credentials.
+# Same category as .claude-flow/, which /* already excludes.
+/.claude/agent-memory/
+
+# macOS finder droppings at any depth (the /* rule only shields the root copy).
+.DS_Store
+
+# Flow event log — written by agent/scripts/flow-hook.sh on every tool call.
+# Local telemetry, not knowledge: it holds commands and file paths from every
+# session and would grow without bound in git.
+/agent/.flow/
+
+# Wave 4 Persistent State — runtime records. Mutable orchestration state written
+# during execution: tasks, routing requests, exceptions, dependency edges, locks.
+# Durable on disk and across sessions, deliberately outside source history —
+# tracking them would keep the working tree dirty during normal Product execution
+# and make Git responsible for a live orchestration database. The state doctrine,
+# tooling and Company/Product/Project registry above it ARE tracked.
+/agent/state/runtime/

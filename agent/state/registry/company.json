@@ -1,0 +1,9 @@
+{
+  "company_id": "one-brain",
+  "display_name": "One Brain",
+  "note": "One Brain is the company (AGENTS.md §1). Thebes is the operating system and workspace, not the company.",
+  "record_type": "company",
+  "schema_version": 2,
+  "timezone": "Asia/Dubai",
+  "timezone_note": "IANA id, never a fixed offset. The Sprint window (Monday 00:00 to Friday 19:00) is defined in this zone. Confirmed by the CEO 2026-09-07 and corroborated by Jira: atlassianUserInfo.zoneinfo and every changelog author object report Asia/Dubai."
+}

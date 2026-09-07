@@ -1,0 +1,85 @@
+{
+  "enabledPlugins": {
+    "everything-claude-code@everything-claude-code": true,
+    "dart-flutter@dart-flutter": true,
+    "incoming-request-advisor@pm-skills": true,
+    "autonomous-investigation@pm-skills": true,
+    "product-strategy-session@pm-skills": true,
+    "problem-framing-canvas@pm-skills": true,
+    "positioning-statement@pm-skills": true,
+    "recommendation-canvas@pm-skills": true,
+    "prioritization-advisor@pm-skills": true,
+    "feature-investment-advisor@pm-skills": true,
+    "derisk-measurement-advisor@pm-skills": true,
+    "opportunity-solution-tree@pm-skills": true,
+    "business-health-diagnostic@pm-skills": true,
+    "saas-revenue-growth-metrics@pm-skills": true,
+    "saas-economics-efficiency-metrics@pm-skills": true,
+    "tam-sam-som-calculator@pm-skills": true,
+    "competitive-analysis-process@pm-skills": true,
+    "jobs-to-be-done@pm-skills": true,
+    "swot-analysis@pm-skills": true,
+    "ansoff-matrix@pm-skills": true,
+    "prd-development@pm-skills": true,
+    "vp-cpo-readiness-advisor@pm-skills": true,
+    "product-strategy@wondelai-skills": true,
+    "product-innovation@wondelai-skills": true,
+    "strategy-growth@wondelai-skills": true,
+    "marketing-cro@wondelai-skills": true,
+    "sales-influence@wondelai-skills": true,
+    "systems-architecture@wondelai-skills": true,
+    "code-craftsmanship@wondelai-skills": true
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "agent/scripts/flow-hook.sh PreToolUse",
+            "async": true,
+            "timeout": 5
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "agent/scripts/flow-hook.sh PostToolUse",
+            "async": true,
+            "timeout": 5
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "agent/scripts/flow-hook.sh SubagentStart",
+            "async": true,
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "agent/scripts/flow-hook.sh SubagentStop",
+            "async": true,
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

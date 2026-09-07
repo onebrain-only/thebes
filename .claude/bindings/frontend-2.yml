@@ -1,0 +1,8 @@
+name: "frontend-2"
+description: "**Sekhmet.** Frontend Developer on Team 2, paired with Nekhbet. Writes the Flutter/Dart half of whatever Team 2 is assigned. Not owned by a team lead — leads own features and stacks, not developers. MUST BE USED when Team 2 is given a ticket needing frontend work."
+model: opus
+effort: low
+color: purple
+memory: project
+role: frontend
+seat_context: agent/seats/frontend-2.md
