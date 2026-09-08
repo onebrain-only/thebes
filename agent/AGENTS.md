@@ -449,6 +449,20 @@ owner: zero entries means no evidenced executor, one unique seat is usable MODEL
 **two or more is conflicting evidence that routing must refuse** rather than break by picking one.
 Wave 6 introduces a real claim structure.
 
+### Agent View observes; it never controls
+
+**Added Wave 7, 2026-09-09.** `agent/scripts/flow.py` and its derivation seam
+`agent/state/view.py` are **observability**. They read Persistent State, bindings, Roles,
+topology, derived queues, capacity, historical status and session telemetry, and they **mutate
+none of them**. Agent View is not a state machine, not a Jira cache, not a source of ownership,
+routing, availability, reviewer selection or capacity decisions, and it exposes no control that
+changes orchestration state — the server answers `GET` and nothing else.
+
+Two distinctions it exists to keep visible, because collapsing either one is what made the
+previous view untrue: **a seat that owns nothing is UNOWNED, never "available"** — dispatchability
+is not observable and renders `UNKNOWN`; and **historical evidence is not current execution** —
+`executor_evidence` and `agent/status/` describe what happened, never what is happening.
+
 ---
 
 ## 4. THE REGISTRY-SCOPING TRAP

@@ -92,6 +92,11 @@ work before its claim has succeeded.
 for ordinary work. Where evidence conflicts — two or more evidenced seats — the item **blocks
 and requires reconciliation**; it does not fall back to anyone choosing.
 
+**Watching this happen is not doing it.** Agent View (`agent/scripts/flow.py`) renders queues,
+claimability reasons, ownership and interventions read-only. It never claims, wakes, releases,
+transitions, assigns a reviewer or clears an intervention — every one of those runs through the
+canonical path above. A queue shown there is a report, not a control.
+
 ### A COLUMN IS NOT A STATUS
 
 **This is the single most important thing to understand about the current board.** Two columns
