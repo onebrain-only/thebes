@@ -679,3 +679,35 @@ repo is a single shared tree, verified across all five.
 
 **Stood down.** AC 3 satisfied for P1/P2/P4/P5 at `T-058` Decision 3's strength. `T-049` Invariant 4
 open. `KAN-146` is the follow-up. KAN-128 sits in In Review for `po`'s gate.
+
+## 2026-09-08 — KAN-128 surface assessment recorded (Preflight, not execution)
+
+**Did.** Read `agent/state/store.py:546` (`set_surfaces`), `queue.py:118/:145`, `policy.py`, the
+KAN-128 runtime record and my own entry at `:15`. Read the record's `revision` immediately before
+writing: **2**. Wrote two paths, `author=worker:backend-1`, `basis_ref` naming `:21-24` and
+`:583-584`. Record now at **revision 3**.
+
+**Surfaces declared** (post-`normalise_path`):
+`supabase/migrations/20260909090000_kan128_ledger_unique_keys_and_on_conflict.sql`,
+`supabase/tests/kan128/`.
+
+`shared_or_contended_surface` recomputed **false** by the system — neither path is a
+`CONTENDED_FILES` entry nor under `lib/core/`/`lib/data/`. I did not set it.
+
+**Not claiming.** No ownership taken, no transition, no Jira contact (no Atlassian tool exists in
+this session). `work_effort` 2, `validation_route` peer, `money_path`/`schema_change` untouched.
+
+**Excluded, deliberately.** `agent/status/backend-1.md` — the status file is this seat's own log,
+not a work surface, and declaring it would manufacture contention with every future KAN-* item this
+seat touches. **`dabbler-code` is not checked out in this workspace**, so both declared paths rest on
+my authoring record, not on `ls`. The record names them explicitly with a commit hash; I did not
+guess or widen either.
+
+**Contention.** `trgfn_payment_to_ledger` is a database object, not a repo path. KAN-131 has **no
+runtime record** — it does not exist under `agent/state/runtime/tasks/`, so no path-level collision
+can be computed against it. The overlap is real at the SQL-object level and `surfaces_collide` cannot
+see it. Flagged, not resolved.
+
+`python3 agent/state/validate.py --check` → `ok      persistent state valid`.
+
+**Blocked.** Nothing.

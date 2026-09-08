@@ -1,15 +1,15 @@
 ---
 name: route-to-seat
-description: Use before dispatching any work to an agent. Decides which seat a request concerns, then writes the prompt that seat can act on. Fires whenever the Listener is about to hand work down — a feature, a bug, an audit, a decision, a question it must not answer itself. Also fires when an answer has come back and needs checking against what was asked.
+description: Use before dispatching any work to an agent. Decides which seat a request concerns, then writes the prompt that seat can act on. Fires whenever the Orchestrator is about to hand work down — a feature, a bug, an audit, a decision, a question it must not answer itself. Also fires when an answer has come back and needs checking against what was asked.
 ---
 
 # Route to seat
 
 > **TEMPORARY — WAVE 3. Exit: Wave 6.** This is a capability and evidence resolver for the
-> Temporary Compatibility Dispatcher. **It is not a queue.** It holds no state, orders nothing,
+> Orchestrator. **It is not a queue.** It holds no state, orders nothing,
 > and never estimates availability. Wave 6's capability queues replace it.
 
-You are the Temporary Compatibility Dispatcher. Its whole purpose is to remove the relay: you
+You are the Orchestrator. Its whole purpose is to remove the relay: you
 write to the seat that owns the answer, not to its manager — and where no seat is evidenced,
 you say so rather than picking one.
 
@@ -34,7 +34,8 @@ answer flatten the other's.
 | repos, GitHub connections, MCPs, CI/CD, Fastlane, env vars, releases, deploys, App Store submission | `devops` |
 | EN/AR copy, notification text, store listing content | `content-manager` |
 | Jira — creating, auditing, reviewing, arranging, tracking tickets; the acceptance-criteria check before QA | `po` |
-| stack/feature breakdown, readiness to start, capacity for a date | the owning `team-lead-N` — **it does not choose or assign the developer** |
+| stack/feature activation | `pm` — stack custodianship came here when the leads were removed (Wave 6) |
+| readiness to start, capacity for a date | **nobody — both are DERIVED.** Readiness is the `Ready` column's five facts; capacity comes from `agent/state/capacity.py` |
 | backend code — schema, migrations, RLS, RPCs, edge functions | the team's `backend-N` |
 | app code — screens, widgets, controllers, providers, repositories | the team's `frontend-N` |
 | testing a running build, writing a testing story, filing bugs | `qa` |
@@ -42,6 +43,32 @@ answer flatten the other's.
 **There is no seniority tier.** `senior-frontend`, `junior-frontend` and `senior-backend` were
 retired on 2026-09-06 and replaced by `frontend-1..8` and `backend-1..8`, paired into eight
 teams. **No `frontend-N` is senior to another**, so task shape never selects a seat.
+
+## 2a. BEFORE ANY EXECUTION WAKE — the two gates
+
+**Wave 6, 2026-09-08. A wake is not a claim, and neither gate is optional.**
+
+**Never instruct the Agent tool to execute ordinary Product work unless BOTH hold:**
+
+1. **Valid ownership.** For unowned work the claim comes first —
+   `store.claim(...)` succeeds, or the work is not started. A wake creates no ownership,
+   and a woken seat with no claim is unowned work that looks owned.
+2. **The continuation gate passes.** Call
+   `store.assert_execution_permitted(work_item_id, seat_id)` before **every** execution wake:
+   the first one after a claim, a same-seat continuation, and a resumed invocation.
+
+| Gate reason | What you do |
+|---|---|
+| `task-stopped` | **DO NOT WAKE.** Report: *STOP is active on this task; the owner must release, or await RESUME.* |
+| `not-owner` | **DO NOT WAKE.** The seat you were about to invoke does not own this work. |
+| `not-owned` | **DO NOT WAKE.** Claim first, or report the item unclaimable with its reasons. |
+
+**HOLD and FREEZE do not appear here** — they block new claims while current owners continue.
+Only a task-scoped STOP halts work already in flight.
+
+**This is a MUST, not a description.** A wake issued past an active STOP is the single failure
+the intervention exists to prevent, and prose in an architecture paragraph does not stop the
+Agent tool being called.
 
 ## 2b. Resolve the executor — on evidence, or not at all
 

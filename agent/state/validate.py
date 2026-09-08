@@ -26,7 +26,7 @@ STATE = os.path.join(ROOT, "agent", "state")
 RUNTIME = os.path.join(STATE, "runtime")
 REGISTRY = os.path.join(STATE, "registry")
 BINDINGS = os.path.join(ROOT, ".claude", "bindings")
-SCHEMA_VERSIONS = {1, 2}
+SCHEMA_VERSIONS = {1, 2, 3}
 
 sys.path.insert(0, STATE)
 import policy                                          # noqa: E402
@@ -54,6 +54,18 @@ JIRA_KEY = re.compile(r"^[A-Z][A-Z0-9]+-\d+$")
 # status id and canonical separately: none of the three derives the other two.
 
 CANONICAL_STATES = set(board.CANONICAL_STATES)
+
+# ---- Wave 6 orchestration ---------------------------------------------------
+#
+# Interventions are INDEPENDENT records, not a field on a task. A task-level object
+# could not represent a capability-scoped HOLD or a system-scoped FREEZE at all —
+# there is no single task to hang them on. Claimability queries the records.
+
+INTERVENTION_KINDS = {"stop", "hold", "freeze"}
+INTERVENTION_SCOPES = {"task", "capability", "system"}
+# kind determines scope exactly. A stop is always a task, a freeze is always system.
+KIND_SCOPE = {"stop": "task", "hold": "capability", "freeze": "system"}
+INTERVENTION_AUTHORITIES = {"ceo", "orchestrator"}
 
 REVIEW_TYPES = {"self", "peer", "qa"}
 REVIEW_RESULTS = {"pending", "pass", "fail"}
@@ -191,6 +203,81 @@ def validate_lifecycle(lc, errs, where):
     return lc.get("canonical")
 
 
+# ---------------------------------------------------------------- ownership
+
+def validate_ownership(own, errs, where, seatset):
+    """Current ownership, or null. There is no third state.
+
+    `released_at` is REJECTED inside the object. An ownership record that exists but
+    says it is already released is ambiguous — two readers would disagree about
+    whether the slot is free. Release sets ownership to null; the history of who
+    executed what lives in executor_evidence and provenance, which already carry it.
+    """
+    if own is None:
+        return
+    if not isinstance(own, dict):
+        errs.append("%s: ownership must be an object or null" % where); return
+    if "released_at" in own:
+        errs.append("%s: ownership must not carry 'released_at' — release sets "
+                    "ownership to null. An object that exists but is already released "
+                    "is ambiguous about whether the slot is free" % where)
+    _req(own, ["seat_id", "claimed_at", "claim_ref"], errs, where)
+    seat = own.get("seat_id")
+    if seat and seat not in seatset:
+        errs.append("%s: ownership.seat_id %r is not a declared seat" % (where, seat))
+    _reflen(own, ["claim_ref"], errs, where)
+
+
+# ---------------------------------------------------------------- surfaces
+
+def validate_surfaces(surfaces, errs, where):
+    """Declared repository-relative paths the work touches. Returns (assessed, paths).
+
+    These exist because a boolean cannot detect a collision: two items can both be
+    `shared_or_contended_surface: true` and touch entirely different files. The path
+    set is what makes contention decidable, and it is what replaced the Team Lead.
+
+    NULL AND EMPTY-LIST ARE DIFFERENT STATES, and conflating them was a real defect:
+
+        surfaces = null       -> SURFACE ASSESSMENT HAS NOT OCCURRED
+        surfaces = []         -> assessed, and it touches no declared path
+        surfaces = ["..."]    -> assessed, these paths
+
+    `null` must NEVER be read as false, "no collision", "not shared" or
+    "assessed-empty". Until Wave 6 closure both meanings shared `[]`, so an item whose
+    scope nobody had looked at was treated as colliding with nothing — contention
+    protection was silently inert for every unassessed item.
+    """
+    if surfaces is None:
+        return False, []
+    if not isinstance(surfaces, list):
+        errs.append("%s: surfaces must be null (unassessed) or a list of "
+                    "repository-relative paths" % where)
+        return False, []
+    seen, clean = set(), []
+    for raw in surfaces:
+        if not isinstance(raw, str) or not raw.strip():
+            errs.append("%s: surface entries must be non-empty strings" % where); continue
+        p = raw.strip()
+        if len(p) > MAX_REF_LEN:
+            errs.append("%s: surface %r is too long" % (where, p[:40])); continue
+        if p.startswith("/") or (len(p) > 1 and p[1] == ":"):
+            errs.append("%s: surface %r is absolute — paths are repository-relative"
+                        % (where, p)); continue
+        if "\\" in p:
+            errs.append("%s: surface %r uses backslashes — use '/'" % (where, p)); continue
+        if ".." in p.split("/"):
+            errs.append("%s: surface %r escapes the repository with '..'" % (where, p))
+            continue
+        if p != policy.normalise_path(p):
+            errs.append("%s: surface %r is not normalised (expected %r)"
+                        % (where, p, policy.normalise_path(p))); continue
+        if p in seen:
+            errs.append("%s: duplicate surface %r" % (where, p)); continue
+        seen.add(p); clean.append(p)
+    return True, clean
+
+
 # ---------------------------------------------------------------- review
 
 def validate_review_context(rc, canonical, profile, errs, where):
@@ -252,13 +339,13 @@ def validate_characteristics(ch, errs, where):
 
 
 def validate_profile_v2(prof, errs, where, topology=None, rec=None):
-    # project_id is an operational Wave 5 profile FACT but it lives on the record,
-    # not inside the profile — one Project per work item, so duplicating it into the
-    # profile would create a second copy to drift. effective_fields may still name it,
-    # so resolve it from the record when checking the list is truthful.
     def _effective_value(f):
-        if f == "project_id":
-            return (rec or {}).get("project_id")
+        # project_id and surfaces are operational FACTS that live on the record, not
+        # inside the profile — one Project and one path set per work item, so a copy in
+        # the profile would be a second value to drift. Provenance for them is still
+        # recorded on the profile's per-field mechanism, so resolve them from the record.
+        if f in ("project_id", "surfaces"):
+            return (rec or {}).get(f)
         return prof.get(f)
 
     if prof is None:
@@ -486,7 +573,12 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
     if jid and (pid, jid) not in projs:
         errs.append("%s: project_id %r is not a registered Project of %r" % (where, jid, pid))
 
-    for f in ("raised_by", "return_to", "selected_seat", "created_by"):
+    # Interventions are authored by an AUTHORITY (ceo / orchestrator), not only by a
+    # seat, so their created_by/cleared_by are checked in the intervention branch.
+    generic_seat_fields = ("raised_by", "return_to", "selected_seat")
+    if kind != "intervention":
+        generic_seat_fields += ("created_by",)
+    for f in generic_seat_fields:
         v = rec.get(f)
         if v and v not in seatset:
             errs.append("%s: %s %r is not a declared seat in .claude/bindings/" % (where, f, v))
@@ -532,14 +624,40 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
         canonical = validate_lifecycle(rec.get("lifecycle"), errs, where)
         prof = rec.get("execution_profile")
 
+        if ver >= 3:
+            validate_ownership(rec.get("ownership"), errs, where, seatset)
+            assessed, surfaces = validate_surfaces(rec.get("surfaces"), errs, where)
+            # shared_or_contended_surface stays SYSTEM-DERIVED, and it is derived from
+            # something checkable: the declared paths. An actor cannot assert it, and it
+            # cannot be silently wrong.
+            #
+            # UNKNOWN STAYS UNKNOWN. When surfaces is null nothing has been assessed, so
+            # the boolean must not be derived at all — deriving `false` from an absence
+            # is exactly how unassessed work would look safe.
+            prof0 = rec.get("execution_profile") or {}
+            ch0 = prof0.get("characteristics")
+            if isinstance(ch0, dict) and "shared_or_contended_surface" in ch0:
+                if not assessed:
+                    errs.append("%s: shared_or_contended_surface is present while surfaces "
+                                "is null — the boolean is derived from the declared paths, "
+                                "and unassessed scope has no derivable answer" % where)
+                else:
+                    want = policy.derive_contended(surfaces)
+                    if bool(ch0["shared_or_contended_surface"]) != want:
+                        errs.append("%s: shared_or_contended_surface is %r but the declared "
+                                    "surfaces derive %r — the boolean is system-derived "
+                                    "from the paths, never asserted beside them"
+                                    % (where, ch0["shared_or_contended_surface"], want))
+
         if rt == "container":
             # ONE EXECUTABLE WORK ITEM = ONE required_capability. A container spans
             # capabilities by design, so the executable invariants must not be
             # applied to it — and it must not carry the fields that imply execution.
-            for f in ("execution_profile", "review_context"):
+            for f in ("execution_profile", "review_context", "ownership"):
                 if rec.get(f) is not None:
                     errs.append("%s: container records carry no %s — no capability, no "
-                                "Work Effort, no validation route, no review" % (where, f))
+                                "Work Effort, no validation route, no review, no owner"
+                                % (where, f))
             if ev:
                 errs.append("%s: container records carry no executor_evidence" % where)
             return errs
@@ -605,6 +723,48 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
         if auth and auth not in seatset:
             errs.append("%s: decision_authority %r is not a declared seat" % (where, auth))
         _reflen(rec, ["question", "resolution_ref"], errs, where)
+
+    elif kind == "intervention":
+        _req(rec, ["intervention_id", "kind", "scope", "created_by", "reason_ref"],
+             errs, where)
+        k, sc = rec.get("kind"), rec.get("scope")
+        if k not in INTERVENTION_KINDS:
+            errs.append("%s: unknown intervention kind %r — the set is fixed at "
+                        "stop/hold/freeze; these are safety primitives, not a growing "
+                        "vocabulary" % (where, k))
+        if sc not in INTERVENTION_SCOPES:
+            errs.append("%s: unknown scope %r" % (where, sc))
+        if k in KIND_SCOPE and sc != KIND_SCOPE[k]:
+            errs.append("%s: kind %r is always scope %r, got %r — a STOP is a task, a "
+                        "HOLD is a capability, a FREEZE is the system"
+                        % (where, k, KIND_SCOPE[k], sc))
+        tgt = rec.get("target")
+        if sc == "task":
+            if not tgt or not JIRA_KEY.match(str(tgt)):
+                errs.append("%s: a task-scoped intervention needs a Jira key target" % where)
+        elif sc == "capability":
+            if tgt not in CAPABILITIES:
+                errs.append("%s: a capability-scoped intervention needs a known "
+                            "capability target, got %r" % (where, tgt))
+        elif sc == "system":
+            if tgt is not None:
+                errs.append("%s: a system-scoped intervention takes no target, got %r"
+                            % (where, tgt))
+        for f in ("created_by", "cleared_by"):
+            v = rec.get(f)
+            if v and v not in INTERVENTION_AUTHORITIES and v not in seatset:
+                errs.append("%s: %s %r is not an intervention authority (%s) or a "
+                            "declared seat" % (where, f, v,
+                                               "/".join(sorted(INTERVENTION_AUTHORITIES))))
+        if rec.get("cleared_at") and not rec.get("cleared_by"):
+            errs.append("%s: a cleared intervention records who cleared it" % where)
+        if rec.get("cleared_by") and not rec.get("cleared_at"):
+            errs.append("%s: cleared_by set without cleared_at" % where)
+        # RESUME is the clearing OPERATION, never a fourth stored kind.
+        if k == "resume" or rec.get("kind") == "resume":
+            errs.append("%s: 'resume' is not a stored intervention — it is the operation "
+                        "that clears one" % where)
+        _reflen(rec, ["reason_ref"], errs, where)
 
     elif kind == "dependency":
         _req(rec, ["dependency_id", "product_id", "source_work_item", "target_work_item",
@@ -696,10 +856,11 @@ def check(runtime=None):
         if po and po not in seatset:
             errs.append("registry: project %s/%s binds PO seat %r which is not declared"
                         % (pid, jid, po))
-    kinds = {"task": "tasks", "routing": "routing",
-             "exception": "exceptions", "dependency": "dependencies"}
+    kinds = {"task": "tasks", "routing": "routing", "exception": "exceptions",
+             "dependency": "dependencies", "intervention": "interventions"}
     seen_ids = {}
     edges = []
+    active_iv = []
     for kind, sub in kinds.items():
         d = os.path.join(runtime, sub)
         if not os.path.isdir(d):
@@ -716,7 +877,8 @@ def check(runtime=None):
                 errs.append("%s: a record file holds ONE record, never an array — "
                             "a single aggregate file would serialise every write" % p); continue
             idf = {"task": "work_item_id", "routing": "request_id",
-                   "exception": "exception_id", "dependency": "dependency_id"}[kind]
+                   "exception": "exception_id", "dependency": "dependency_id",
+                   "intervention": "intervention_id"}[kind]
             rid = rec.get(idf)
             if rid != fn[:-5]:
                 errs.append("%s: filename does not match %s %r" % (p, idf, rid))
@@ -726,6 +888,19 @@ def check(runtime=None):
             errs += validate_record(kind, rec, prods, projs, seatset, topology)
             if kind == "dependency" and not rec.get("retired_at"):
                 edges.append(rec)
+            if kind == "intervention" and not rec.get("cleared_at"):
+                active_iv.append(rec)
+    # At most one ACTIVE intervention per (kind, scope, target): a second would make
+    # clearing ambiguous — which one did RESUME clear?
+    seen_iv = {}
+    for iv in active_iv:
+        key = (iv.get("kind"), iv.get("scope"), iv.get("target"))
+        if key in seen_iv:
+            errs.append("intervention %s: duplicate ACTIVE %s/%s on target %r (already "
+                        "%s) — clear the first before creating another"
+                        % (iv.get("intervention_id"), key[0], key[1], key[2], seen_iv[key]))
+        seen_iv[key] = iv.get("intervention_id")
+
     built = []
     for e in edges:
         problem = check_graph_addition(built, e)

@@ -29,13 +29,14 @@ STATE = os.path.join(ROOT, "agent", "state")
 RUNTIME = os.path.join(STATE, "runtime")
 REGISTRY = os.path.join(STATE, "registry")
 LOCKS = os.path.join(RUNTIME, ".locks")
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 KINDS = {
     "task":       ("tasks",        None),
     "routing":    ("routing",      "rr"),
     "exception":  ("exceptions",   "exc"),
     "dependency": ("dependencies", "dep"),
+    "intervention": ("interventions", "int"),
 }
 
 
@@ -461,9 +462,259 @@ def peer_fail_transfer(work_item_id, expected_revision, reviewer, evidence_ref):
         return merged
 
 
+# ---------------------------------------------------------------- interventions
+#
+# Independent records, not a field on a task. A task-level object cannot represent a
+# capability-scoped HOLD or a system-scoped FREEZE — there is no single task to hang
+# them on. Claimability queries these records instead.
+
+def create_intervention(kind, target, created_by, reason_ref):
+    """STOP / HOLD / FREEZE. Refuses a duplicate ACTIVE one.
+
+    A second active intervention with the same (kind, scope, target) would make
+    clearing ambiguous — RESUME would not know which one it cleared.
+    """
+    import validate                                     # noqa: E402
+    scope = validate.KIND_SCOPE.get(kind)
+    if scope is None:
+        raise StateError("unknown intervention kind %r — stop/hold/freeze only" % kind)
+    if kind == "freeze":
+        target = None
+    with _Lock("interventions"):
+        for iv in read_all("intervention"):
+            if (not iv.get("cleared_at") and iv.get("kind") == kind
+                    and iv.get("target") == target):
+                raise StateError("an active %s already exists on target %r (%s)"
+                                 % (kind, target, iv["intervention_id"]))
+        rid = new_id("intervention")
+        rec = {"intervention_id": rid, "kind": kind, "scope": scope, "target": target,
+               "created_by": created_by, "reason_ref": reason_ref,
+               "cleared_by": None, "cleared_at": None,
+               "schema_version": SCHEMA_VERSION, "revision": 1,
+               "created_at": now(), "updated_at": now()}
+        _validate_one("intervention", rec)
+        _atomic_write(path_for("intervention", rid), rec)
+        return rec
+
+
+def clear_intervention(intervention_id, expected_revision, cleared_by):
+    """RESUME. The clearing OPERATION — never a fourth stored kind, and never a
+    delete: the record stays as evidence that the condition existed."""
+    with record_lock("intervention", intervention_id):
+        cur = read("intervention", intervention_id)
+        if cur is None:
+            raise StateError("intervention %s does not exist" % intervention_id)
+        if cur["revision"] != expected_revision:
+            raise StateError("stale write refused: intervention %s is at revision %d, "
+                             "caller expected %d"
+                             % (intervention_id, cur["revision"], expected_revision))
+        if cur.get("cleared_at"):
+            raise StateError("intervention %s is already cleared" % intervention_id)
+        merged = dict(cur)
+        merged["cleared_by"] = cleared_by
+        merged["cleared_at"] = now()
+        merged["revision"] = cur["revision"] + 1
+        merged["updated_at"] = now()
+        _validate_one("intervention", merged)
+        _atomic_write(path_for("intervention", intervention_id), merged)
+        return merged
+
+
+def active_interventions():
+    return [i for i in read_all("intervention") if not i.get("cleared_at")]
+
+
+def intervention_blocks_claim(work_item_id, capability, interventions=None):
+    """Which active intervention, if any, forbids a NEW claim. Returns a reason code.
+
+    HOLD deliberately does not stop a current owner: it stops new claims on that
+    capability. FREEZE is the same rule system-wide. Neither reassigns ownership.
+    """
+    for iv in (active_interventions() if interventions is None else interventions):
+        k = iv.get("kind")
+        if k == "freeze":
+            return "system-frozen"
+        if k == "hold" and iv.get("target") == capability:
+            return "capability-held"
+        if k == "stop" and iv.get("target") == work_item_id:
+            return "task-stopped"
+    return None
+
+
+# ---------------------------------------------------------------- ownership
+
+def set_surfaces(work_item_id, expected_revision, surfaces, author, basis_ref=None):
+    """Record a SURFACE ASSESSMENT: the paths this work touches, possibly none.
+
+    This is an assessment ACT, so `None` is refused. `null` is reserved for the
+    unassessed state — new work, a migrated record, or an explicitly authorised system
+    repair — and letting an ordinary actor write it back would re-open exactly the
+    hole this closed: work that looks assessed-empty because nobody looked.
+
+    Passing `[]` is a real answer and is accepted: assessed, nothing to declare.
+
+    Assessment is a pre-execution factual act, like Work Effort sizing. **Assessing is
+    not claiming**, and the assessing seat does not thereby become the executor.
+    """
+    import policy                                       # noqa: E402
+    if surfaces is None:
+        raise StateError(
+            "set_surfaces records an assessment and cannot write null. Pass [] for "
+            "'assessed, nothing declared'; null is the unassessed state and is only "
+            "set by migration or an authorised system repair.")
+    with record_lock("task", work_item_id):
+        cur = read("task", work_item_id)
+        if cur is None:
+            raise StateError("task %s does not exist" % work_item_id)
+        if cur["revision"] != expected_revision:
+            raise StateError("stale write refused: task %s is at revision %d, caller "
+                             "expected %d" % (work_item_id, cur["revision"],
+                                              expected_revision))
+        clean = sorted({policy.normalise_path(p) for p in surfaces})
+        merged = dict(cur)
+        merged["surfaces"] = clean
+        prof = dict(merged.get("execution_profile") or {})
+        if prof:
+            ch = dict(prof.get("characteristics") or {})
+            ch["shared_or_contended_surface"] = policy.derive_contended(clean)
+            prof["characteristics"] = ch
+            prov = dict(prof.get("provenance") or {})
+            chprov = dict((prov.get("characteristics") or {}).get("fields") or {})
+            chprov["shared_or_contended_surface"] = {"by": "system-derived", "at": now()}
+            prov["characteristics"] = {"by": "system-derived", "at": now(),
+                                       "fields": chprov}
+            # Who assessed the paths, when, and against what — recorded on the existing
+            # per-field provenance mechanism rather than in a second source of truth.
+            prov["surfaces"] = {"by": author, "at": now(), "basis_ref": basis_ref}
+            prof["provenance"] = prov
+            merged["execution_profile"] = prof
+        merged["revision"] = cur["revision"] + 1
+        merged["updated_at"] = now()
+        _validate_one("task", merged)
+        _atomic_write(path_for("task", work_item_id), merged)
+        return merged
+
+
+def assert_execution_permitted(work_item_id, seat_id):
+    """THE CONTINUATION GATE. Raises unless this seat may be woken to continue now.
+
+    The Orchestrator must call this before every ordinary execution wake, every
+    same-seat continuation and every resumed invocation. It is separate from
+    claimability on purpose: claimability governs acquiring an owner, this governs
+    whether an owner may keep going.
+
+    An active STOP on the task denies it. HOLD and FREEZE do not — they block new
+    claims while current owners continue, and conflating them with STOP would turn a
+    capability-wide pause into a system-wide halt.
+
+    RELEASE IS NOT BLOCKED BY THIS GATE. A STOP must not trap ownership: the owner
+    stays able to release, which is how a stopped task gets out of its owner's hands
+    without anyone silently reassigning it.
+    """
+    import queue as q                                   # noqa: E402
+    cur = read("task", work_item_id)
+    if cur is None:
+        raise StateError("task %s does not exist" % work_item_id)
+    reasons = q.execution_reasons(cur, seat_id)
+    if reasons:
+        raise StateError("execution refused: " + ", ".join(reasons))
+    return cur
+
+
+def claim(work_item_id, seat_id, claim_ref, expected_revision, capability_of_seat=None,
+          jira_status_id=None):
+    """Atomically take execution ownership. CAS'd inside the record lock.
+
+    Everything claimability asserts is re-checked HERE, inside the lock, immediately
+    before the write. Checking outside and writing after is the read-modify-write
+    race Wave 4 was built to refuse: two sessions could both see 'claimable' and both
+    write. The lock plus the revision check is what makes exactly one succeed.
+
+    A claim is NOT a wake. Nothing here invokes a seat; a seat is woken only after a
+    claim has succeeded, and a wake never creates ownership.
+    """
+    import queue as q                                   # noqa: E402
+    with record_lock("task", work_item_id):
+        cur = read("task", work_item_id)
+        if cur is None:
+            raise StateError("task %s does not exist" % work_item_id)
+        if cur["revision"] != expected_revision:
+            raise StateError("stale write refused: task %s is at revision %d, caller "
+                             "expected %d" % (work_item_id, cur["revision"],
+                                              expected_revision))
+        if cur.get("ownership") is not None:
+            raise StateError("already-owned: %s is owned by %s"
+                             % (work_item_id, cur["ownership"].get("seat_id")))
+        cap = (cur.get("execution_profile") or {}).get("required_capability")
+        if capability_of_seat is not None and capability_of_seat != cap:
+            raise StateError("wrong-capability: seat %s is %r, task requires %r"
+                             % (seat_id, capability_of_seat, cap))
+        held = [t for t in read_all("task")
+                if (t.get("ownership") or {}).get("seat_id") == seat_id]
+        if held:
+            raise StateError("seat-already-owns: %s already owns %s"
+                             % (seat_id, held[0]["work_item_id"]))
+        reasons = q.unclaimable_reasons(cur, jira_status_id=jira_status_id)
+        if reasons:
+            raise StateError("not-claimable: " + ", ".join(reasons))
+        merged = dict(cur)
+        merged["ownership"] = {"seat_id": seat_id, "claimed_at": now(),
+                               "claim_ref": claim_ref}
+        merged["revision"] = cur["revision"] + 1
+        merged["updated_at"] = now()
+        _validate_one("task", merged)
+        _atomic_write(path_for("task", work_item_id), merged)
+        return merged
+
+
+def release(work_item_id, seat_id, expected_revision, release_ref, authority=None):
+    """Give up ownership. ownership -> null, never reassigned in the same act.
+
+    Only the current owner releases, unless an explicit CEO/system safety authority
+    is named. Release never hands the slot to someone else: a reassignment that
+    happens inside a release is a silent steal, and the next claim should have to win
+    the lock like everyone else.
+
+    **Release is deliberately NOT gated by an active STOP.** A STOP that blocked
+    release would trap ownership permanently, and the defined way out of a stopped
+    task is for its owner to release it.
+    """
+    with record_lock("task", work_item_id):
+        cur = read("task", work_item_id)
+        if cur is None:
+            raise StateError("task %s does not exist" % work_item_id)
+        if cur["revision"] != expected_revision:
+            raise StateError("stale write refused: task %s is at revision %d, caller "
+                             "expected %d" % (work_item_id, cur["revision"],
+                                              expected_revision))
+        own = cur.get("ownership")
+        if own is None:
+            raise StateError("not-owned: %s has no current owner" % work_item_id)
+        if own.get("seat_id") != seat_id and authority not in ("ceo", "orchestrator"):
+            raise StateError("not-owner: %s is owned by %s, not %s"
+                             % (work_item_id, own.get("seat_id"), seat_id))
+        ev = list(cur.get("executor_evidence") or [])
+        ev.append({"seat_id": own.get("seat_id"), "evidence_ref": release_ref,
+                   "evidenced_at": now()})
+        seen, uniq = set(), []
+        for e in ev:
+            k = (e.get("seat_id"), e.get("evidence_ref"), e.get("evidenced_at"))
+            if k not in seen:
+                seen.add(k); uniq.append(e)
+        merged = dict(cur)
+        merged["ownership"] = None
+        merged["executor_evidence"] = uniq
+        merged["revision"] = cur["revision"] + 1
+        merged["updated_at"] = now()
+        _validate_one("task", merged)
+        _atomic_write(path_for("task", work_item_id), merged)
+        return merged
+
+
 def _id_field(kind):
     return {"task": "work_item_id", "routing": "request_id",
-            "exception": "exception_id", "dependency": "dependency_id"}[kind]
+            "exception": "exception_id", "dependency": "dependency_id",
+            "intervention": "intervention_id"}[kind]
 
 
 def _validate_one(kind, record):

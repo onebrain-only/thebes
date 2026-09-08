@@ -56,6 +56,42 @@ capability-relevant criteria for each.
 they carry **no** capability, Work Effort, validation route or review context. **A parent is
 not executable merely because its children are.**
 
+### How work reaches a seat — capability queues and claim
+
+**Wave 6, 2026-09-08.** Ready work is discoverable through a **capability queue**, and the queue
+key is the item's `required_capability`. Not the hierarchy, not a lead, not the frontend/backend
+pair, not a manager's routing.
+
+```
+PO selects into Ready
+   → capability queue      → eligibility → claimability → ATOMIC CLAIM → ownership → WAKE
+```
+
+**READY IS NOT CLAIMABLE.** Ready means selected and prepared — the five facts below.
+**Claimable** means every execution prerequisite holds *right now*:
+
+| Claimability requires | Reason code when it fails |
+|---|---|
+| queue-eligible (the five Ready facts) | `not-ready` · `missing-project` · `missing-capability` · `missing-work-effort` · `missing-due-date` · `missing-acceptance-criteria` |
+| nobody owns it | `already-owned` |
+| no incoming `BLOCKS` edge whose source is short of `DONE` | `dependency-blocked` |
+| no active STOP on it, HOLD on its capability, or FREEZE | `task-stopped` · `capability-held` · `system-frozen` |
+| no declared-surface collision with work already owned | `surface-contention` |
+| exactly one evidenced executor, or none | `conflicting-evidence` |
+| a fresh Jira read backs the commit | `stale-jira` |
+
+**An item can sit in Ready for days and never be claimable, and that is a correct state.**
+Report the reasons; do not route around them.
+
+**CLAIM and WAKE are different acts, in that order.** A claim is a Persistent State operation
+that durably establishes ownership — compare-and-swap inside a file lock, exactly one winner. A
+wake is a harness invocation. **A wake creates no ownership**, and no seat is woken for ordinary
+work before its claim has succeeded.
+
+**Nothing is assigned.** There is no lead to assign it, and the CEO does not name an executor
+for ordinary work. Where evidence conflicts — two or more evidenced seats — the item **blocks
+and requires reconciliation**; it does not fall back to anyone choosing.
+
 ### A COLUMN IS NOT A STATUS
 
 **This is the single most important thing to understand about the current board.** Two columns
@@ -134,10 +170,12 @@ A transition made by the wrong seat is a process failure, not a shortcut.
 | back to its **same** execution status (review FAIL) | **the review owner** |
 | `Done` | **the review owner** — SELF: the worker · PEER: the reviewer · QA: `qa` |
 
-**`team-lead-N` transitions nothing.** Changed 2026-09-08: a lead no longer moves any issue,
-confirms readiness, stocks `Ready`, splits work, or chooses or assigns a developer. **Three
-duties remain and they are why the seats remain:** reporting the sitting count `po` turns into
-a `due_date`, holding its stack, and sequencing work on a contended or shared surface (§7).
+**THERE ARE NO TEAM LEADS.** The five `team-lead-N` seats were **removed in Wave 6,
+2026-09-08**. Nothing replaced them as a seat, and nothing should: their three remaining duties
+became derivations. Capacity comes from ownership, queue depth, Work Effort and defined seats
+(`agent/state/capacity.py`); stack custodianship went to `pm`; contended-surface sequencing
+became a claimability predicate over declared file surfaces (§7). Their status files stay in
+`agent/status/` as durable historical evidence — the seats are gone, the record is not.
 
 **`po` is no longer a gate in the path.** The universal review gate is retired. `po` writes
 acceptance criteria, selects into `Ready`, decides scope, and answers a scope or acceptance
@@ -163,11 +201,11 @@ same-capability seat may revise the number at its own Preflight.
 **Three standing rules on every ticket:**
 
 - **No ticket without a `due_date`.** A ticket with no date is not scheduled, it is a wish.
-- **The date comes from capacity, not estimation.** Capacity is reported by the owning
-  `team-lead-N` — **retained deliberately**, and the reason those seats survive this wave.
-  The `po` may not estimate it and may not ask a developer directly. See
-  `agent/skills/capacity-to-date/SKILL.md` for how a lead's capacity number becomes a
-  `due_date` without either side estimating.
+- **The date comes from capacity, not estimation.** Capacity is **derived** —
+  `agent/state/capacity.py`, from current ownership, queue depth, Work Effort and defined seats.
+  The `po` may not estimate it and may not ask a developer directly; it reads the derived
+  figure. See `agent/skills/capacity-to-date/SKILL.md` for the sitting unit and the
+  ceiling-versus-earliest discipline, both unchanged — **only the source of the number moved.**
 - **A slot frees on acceptance, not delivery.** A developer who has handed work to review is
   still holding that slot until the route owner passes it. This is what stops the board
   filling with work that is "done" and not accepted.
@@ -430,7 +468,7 @@ is not rerouted.
 ## 4. THE HANDOFF RULE
 
 **Agents do not brief each other, and no agent hands execution to another.** Briefs come from
-the Temporary Compatibility Dispatcher. A worker needing a scope or acceptance decision asks
+the Orchestrator. A worker needing a scope or acceptance decision asks
 **`po`** directly; a general domain decision goes up as an exception request for one redirect.
 
 **The no-delegation rule is contractual, not enforced by the harness.** No binding restricts
@@ -440,9 +478,9 @@ spawning — `fork` and unnamed subagent creation are available. **You may not c
 seat.** Nothing will stop you; the rule is the constraint.
 
 **Amended 2026-09-06 by the CEO (`G-024`).** Until today every question and every finished
-report came back to the Listener, and that was never written anywhere — no role file
-mentions the Listener at all. It happened because the Listener dispatches, so agents reply
-to their caller. The cost is measurable: every report enters the Listener's context and is
+report came back to the Orchestrator, and that was never written anywhere — no role file
+mentions the Orchestrator at all. It happened because the Orchestrator dispatches, so agents reply
+to their caller. The cost is measurable: every report enters the Orchestrator's context and is
 re-sent on every request after it. **The hierarchy exists; use it.**
 
 **Corrected 2026-09-05.** This section used to read *"Everything routes through the master…
@@ -454,7 +492,7 @@ exists.**
 **The Listener is the distribution layer**, and it is a behaviour in the main session's
 thinking rather than a seat in the tree. It writes **directly** to whichever seat owns the
 question — a senior developer included — and never down a chain of managers. An agent
-finishing a step reports to the Listener, which decides what happens next. Agent A does not
+finishing a step reports to the Orchestrator, which decides what happens next. Agent A does not
 hand work straight to Agent B.
 
 Use the **`route-to-seat`** skill to decide who is concerned and to write the prompt.
@@ -479,7 +517,7 @@ Use the **`route-to-seat`** skill to decide who is concerned and to write the pr
 
 | Direction | Goes to | Example |
 |---|---|---|
-| **Down — a brief** | the **Temporary Compatibility Dispatcher** (the Main Session), and only it | dispatching work from the CEO's word |
+| **Down — a brief** | the **Orchestrator** (the Main Session), and only it | dispatching work from the CEO's word |
 | **Up — scope, acceptance, work definition, criteria** | **`po`**, directly. `po` answers directly | "this acceptance criterion cannot be met" · "this needs a second sitting" |
 | **Up — a general domain decision outside your authority** | a **structured exception request** to the Dispatcher, which redirects **once** | "this needs an architecture call nobody has made" |
 | **Standing authorised direct routes** | the named authority, directly | `backend-N` → `cto` for `G-028` confirmation |
@@ -563,9 +601,10 @@ prompt context until Wave 4 gives them durable state.
    seat of that capability has sized it — moves it to **Ready**. Work needing two capabilities
    is **split into two executable children** first (§1).
 2. **The executing worker** pulls it from `Ready` and transitions it into **its own capability's
-   execution status** — `YOU PULL, YOU DO NOT WAIT`. **No lead is in this loop any more:**
-   since 2026-09-08 a `team-lead-N` makes no transition and confirms no readiness. Readiness is
-   a property of the `Ready` column's five required facts, and `po` owns selection.
+   execution status** — `YOU PULL, YOU DO NOT WAIT`. **Since Wave 6 the pull is a real
+   mechanism, not an instruction:** the item is claimed atomically from its capability queue
+   before the seat is woken, and there is no lead in the loop because the seats no longer exist.
+   Readiness is the `Ready` column's five required facts, and `po` owns selection.
 
    *(Corrected twice. This step originally had the lead hand-assign each subtask by task shape;
    a 2026-09-07 correction removed the assignment but left the lead making the transition. Wave
@@ -680,7 +719,8 @@ procedure, guardrails and per-rejection output format.
    drafts the Resolution Centre reply. **It never claims a fix it cannot evidence.**
 3. If the fix is **outside that scope**, `devops` writes a report naming the slice and the
    change needed, and **stops.** It does not reach into code it does not own.
-4. **`po`** turns that report into a ticket; the owning `team-lead-N` assigns it.
+4. **`po`** turns that report into a ticket. Nobody assigns it — it enters its capability
+   queue and is claimed.
 5. A rejection needing a **product** change goes to `cpo`; one needing an **architecture**
    change goes to `cto`. Fix the submission; escalate the direction.
 6. **`devops`** bumps the version — **a rejected marketing version must be bumped, not just
@@ -766,6 +806,20 @@ invisible.
 
 ## 7. THE CONTENTION PROTOCOL
 
+> **WAVE 6, 2026-09-08 — CONTENTION IS DECIDED BY CLAIMABILITY, NOT BY A COORDINATOR.**
+> A work item declares the repository-relative paths it touches (`surfaces`). A claim is
+> refused when those paths **actually collide** with the surfaces of work already owned — an
+> exact match, a directory containment, or two paths under the same governed shared prefix.
+> **Not "both booleans are true":** two items can each touch a shared surface and never meet,
+> and collapsing that into one flag is what forced a human to sequence by hand.
+>
+> **Ownership itself holds the execution slot** — there is no separate contention lock, and the
+> collision clears by derivation when the owner releases. If surfaces change *after* a claim and
+> create a collision, the Orchestrator may STOP the unsafe item with a `reason_ref`; it never
+> silently steals from either owner. The four contended files and the shared prefixes below are
+> unchanged and remain authoritative.
+
+
 Four files are touched by nearly every feature change, and they are the practical limit on
 how many agents can run at once:
 
@@ -774,7 +828,7 @@ how many agents can run at once:
 
 **The procedure:**
 
-1. **Before dispatching parallel agents, the Listener checks which of the four each task
+1. **Before dispatching parallel agents, the Orchestrator checks which of the four each task
    needs.** Tasks needing the same file are **sequenced, not parallelised**. This check
    happens at dispatch, not after a conflict.
 2. **An agent in one of these files appends only.** Add your import, route, export, or

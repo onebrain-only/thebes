@@ -1783,3 +1783,113 @@ hypothetical failure mode that didn't match the actual ticket text.
 - Replaced KAN-130's AC3 with a pointer to KAN-159 (Done) — load-bearing reasoning (owner_type NOT NULL requires both fields) preserved, now living on KAN-159 only.
 - Corrected Executor section: SQL half = backend-4 (Min), not retired senior-backend; Dart half = split to KAN-159, already shipped/closed.
 - Sizing (2 sittings/ceiling 3), SQL scope, status (Ready), and the Relates link all left untouched. Comment id 10745 documents the diff.
+
+## 2026-09-08 — Board reconcile STOPPED at precondition — JIRA UNREACHABLE
+
+**Agent:** `po`
+**Task:** `team-lead` asked for a live-Jira reconcile of seven open work items (KAN-136, KAN-138,
+KAN-155, KAN-141, KAN-128, KAN-145, KAN-150) against the local runtime mirror, with an explicit
+hard precondition: verify Jira reachability first and STOP if it is not reachable, rather than
+substituting the runtime mirror for a live read.
+
+**Outcome: STOPPED at the precondition.** No Jira tool is attached to this session.
+`ToolSearch("select:mcp__atlassian__createJiraIssue,mcp__atlassian__editJiraIssue,mcp__atlassian__searchJiraIssuesUsingJql,mcp__atlassian__getJiraIssue,mcp__atlassian__addCommentToJiraIssue,mcp__atlassian__getTransitionsForJiraIssue,mcp__atlassian__transitionJiraIssue")`
+returned "No matching deferred tools found." A follow-up keyword search
+`ToolSearch("jira atlassian")` returned only `WebFetch` and a Slack tool — no Jira-shaped tool
+of any name. A second direct-select probe
+`ToolSearch("select:getJiraIssue,searchJiraIssuesUsingJql")` also returned "No matching deferred
+tools found." No `mcp__atlassian__*` tool exists in this session's tool namespace to call, loaded
+or deferred.
+
+**No board work performed.** Did not read `agent/state/runtime/tasks/*.json` as a substitute for
+a live read, did not infer status from the mirror, made no Jira comment, transition, or edit, and
+posted no recommendation resting on mirror data — per the brief's explicit instruction that a
+reconciliation built on the stale mirror is worse than no reconciliation.
+
+**Reported to `team-lead` via SendMessage:** `JIRA UNREACHABLE`, the two exact tool/probe names
+and their "No matching deferred tools found" results, and that this seat's own prior status
+entries using `getJiraIssue`/JQL (2026-09-05 through 2026-09-07, this file) were written in a
+session that did have Jira tooling attached — this session does not, confirming the brief's
+suspicion that the two contexts differ.
+
+**Next:** whoever controls this session's MCP/tool configuration needs to attach a Jira-capable
+server before any of the seven tickets can be reconciled against live status. Until then the
+seven-item table, drift list, and recommended arrangement the brief asked for cannot be produced
+without violating the "never substitute the mirror" instruction.
+
+---
+
+**Agent:** `po`
+**Task:** `team-lead` asked for the acceptance-criteria review gate on KAN-147 and KAN-153, both
+in Self-review (10044), executed via the Wave 6 ordinary path (KAN-147 owned by `frontend-5`,
+KAN-153 by `frontend-1`). Both routes derive `self` per `agent/state/policy.py`.
+
+**Outcome: BOTH PASS, both gates independently re-verified, neither transitioned by po.**
+
+**KAN-147** — all 6 ACs verified against `dcc6dc9` directly (not taken from the executor's
+report): 11 classes public across 6 files via `grep`; `git diff dc63d69 dcc6dc9` on the three
+call-site files returns empty; `git show --name-only --pretty=format: dcc6dc9` confirms
+`lib/app/routes/notification_routes.dart` is not among the 7 changed files; `flutter test
+test/features/notifications` → 21 passed; my own `flutter analyze --no-pub --no-fatal-infos` →
+0 errors, 0 warnings, 55 issues; my own `flutter test` → 106 passed. Verdict posted as Jira
+comment 10757.
+
+**KAN-153** — all 4 ACs verified against `e36548d`: diff matches exactly (6 insertions, 3
+deletions, both hunks comment-only); my own gate runs match the ticket's claimed numbers.
+Ruled on the AC1/AC2 tension `frontend-1` flagged: not a contradiction — AC2's own "comment-only
+fix" clause distinguishes executable logic (byte-identical, verified line-by-line against the
+`dc63d69` pre-image) from the `:22` comment AC1 requires changed. Verdict posted as Jira comment
+10758.
+
+**Transition declined, by design, not omission.** Wave 5 narrowed `task-review` and the `po`
+role: on a SELF route, `Done` is moved by the review owner — the worker itself — not by `po`.
+Sent both PASS verdicts to `exec-kan147` and `exec-kan153` via SendMessage with the ruling and
+instruction to transition Self-review (10044) -> Done (10007) on their own authority. Did not
+call `transitionJiraIssue` on either ticket.
+
+**Did not touch:** KAN-151, KAN-152 (dependency-blocked on KAN-147, owned by nobody — untouched
+per instruction), `main`, the two unpushed Canary commits, `agent/state/runtime/`.
+
+---
+
+**Agent:** `po`
+**Task:** `team-lead` authorized ticket work to resolve the `KAN-147` name-collision finding
+(`Chip` vs `flutter/material.dart`'s `Chip`; `SectionHeader` vs `lib/widgets/app_card.dart`'s
+`SectionHeader`) before `KAN-151`/`KAN-152` start. Deferred earlier this session pending
+authorization; authorized this turn with the shape decision left to `po`.
+
+**Verified before writing anything:** read the full contents of `notif_chips.dart` and
+`notif_section_header.dart`, and swept `lib/` + `test/` for every bare `Chip(`/`SectionHeader(`
+reference. Found: both collisions are latent, not live — no file today imports both sides of
+either colliding pair while referencing the bare name; zero test files reference either class
+by name; the two `SectionHeader(` call sites in `notifications_screen_v2.dart` (`:338`, `:406`)
+are in the screen's own list-building code, not inside any of the 10 classes `KAN-151`/`KAN-152`
+extract, so neither ticket's *original* scope would have triggered the collision on its own.
+
+**Decision: folded the rename into `KAN-151`** (first in the `KAN-151`→`KAN-152` serial chain
+on the shared host file) rather than a standalone prerequisite ticket, because a standalone
+ticket would touch the same host file and add a third sitting to the chain for no benefit.
+Amended `KAN-151`'s Jira description: added an "Added scope" section, AC8 (the rename + a
+`grep` check that no bare-name reference survives), and a Capacity note. Applied
+`capacity-to-date`'s sitting test explicitly (does the rest of the ticket wait on a judgement
+this produces? — no) rather than asserting a number: sitting count and ceiling stay 1/1,
+`due_date` stays 2026-09-10 unchanged. Posted explanatory comments on both `KAN-151` (10760)
+and `KAN-152` (10761, no-change confirmation). Flagged to `frontend-5`/`team-lead` that
+`KAN-151`'s Preflight surface assessment (in progress) needs to cover the two additional files
+if it already ran against the pre-amendment scope.
+
+**Did not:** claim, execute, or transition either ticket. Did not touch `agent/state/runtime/`
+— surface declaration is the executing seat's Preflight act, not `po`'s.
+
+## 2026-09-08 — KAN-151 acceptance gate (Self-review)
+- **Result:** PASS, all 8 ACs. Commit `931d4c8`. Comment 10763 posted; verdict includes an author's-note that AC8's literal grep command was mis-scoped by me — substance verified independently regardless.
+- **Verified independently (not taken on trust):** flutter analyze 0 errors/0 warnings/55 issues; flutter test 106 passed; flutter test test/features/notifications 21 passed; git show --name-only 931d4c8 (7 files, no notification_routes.dart); NotifChip/NotifSectionHeader declarations and absence of bare old names in lib/features/notifications/; NotifVisual import (not duplicated) in notif_row.dart; diff-hunk scope check confirming KAN-152's six classes untouched (context-only in hunk boundaries).
+- **Handback:** transition to Done belongs to `frontend-5` (route: self). I did not transition.
+- **KAN-152:** confirmed still correctly held by surface-contention; its acceptance criteria remain accurate post-KAN-151 landing (no stale line-number references). Not touched.
+
+## 2026-09-08 — KAN-152 acceptance gate (Self-review) — final gate of the KAN-147/151/152 chain
+- **Result:** PASS, all 8 ACs. Commit `b60e7cf`. Comment 10766 posted.
+- **Verified independently (not taken on trust):** flutter analyze 0 errors/0 warnings/55 issues; flutter test 106 passed; flutter test test/features/notifications 21 passed; git show --name-only b60e7cf (7 files, no notification_routes.dart); all 6 classes public/one-file-each via grep; ActivityRow imports NotifVisual from notif_visual.dart rather than duplicating it (single declaration site confirmed); the 4 removed imports (app_theme, design_tokens, notif_pill, notif_visual) each had their only remaining consumer among the moved classes, confirmed via diff hunk; wc -l on the screen → 537 (matches frontend-5's report exactly).
+- **Accepted:** the moved private helper `_activityVisual` (file-private in activity_row.dart, single call site) — same shape as KAN-151's precedent.
+- **Handback:** transition to Done belongs to `frontend-5` (route: self). Messaged exec-kan152 to do it. I did not transition.
+- **Ruling — AC8's 37-line overage, no fourth ticket:** CONVENTIONS.md §8 explicitly instructs not to undertake splitting the whole file once legitimately in it past the bounded scope; DECISIONS.md 013 and T-010 confirm the 500-line figure is a non-blocking budget, not a launch gate, not retrofitted. The three-ticket chain took the file from 2,018 to 537 lines (73% reduction) across bounded, legitimate passes; the remainder is the screen's own state/handlers (`_handleNotificationTap` and its route-resolution helpers), correctly deferred by team-lead-5 as carrying real design judgement rather than being a mechanical extraction. Recorded as a deliberate decision on the ticket, not an open loose end.

@@ -254,3 +254,40 @@ three was caught by a peer reading the primary document, never by the seat itsel
 than editing a generated definition on an agent's say-so — correct, and I did not touch it.
 
 **Nothing owed by me on KAN-138 until the `KAN-128` apply lands.**
+
+---
+
+## 2026-09-08 — KAN-138 surface assessment recorded: `[]` (Preflight, not execution)
+
+**Task.** Assess and record the repository paths KAN-138 touches. Assessment only —
+**no claim taken, no ownership gained** (`store.set_surfaces` docstring: "Assessing is not
+claiming"). KAN-138's underlying work was not started, resumed or continued.
+
+**Answer: `[]` — assessed, nothing to declare.** Not `null`, and not a guess.
+
+**Basis, from my own sizing entry at `agent/status/backend-5.md:57-72`:** KAN-138 is one
+`CREATE OR REPLACE FUNCTION public.settle_game` authored from `pg_get_functiondef` and applied
+to the live Supabase project, plus a fixture/probe demonstrating AC 2. **Signature unchanged**,
+so no `DROP`, so no grant/`proacl` work; no new or renamed RPC, so **no
+`lib/core/config/supabase_config.dart` entry**; and the entry records "no migration authored,
+no SQL authored, no writes to the live project". Neither sitting authors a repository file.
+`policy.normalise_path` confirms surfaces are repo-relative paths (`dabbler-code/`,
+`webapp/` prefixes stripped) — a live-catalogue function is not one, and this checkout has no
+`supabase/` tree at all. **I did not invent a `supabase/migrations/…` path to make the item
+claimable.**
+
+**Call and result.**
+`store.set_surfaces("KAN-138", 2, [], "worker:backend-5", basis_ref="agent/status/backend-5.md:57-72 …")`
+→ **revision 2 → 3**, `surfaces: []`, and `shared_or_contended_surface` recomputed
+**`false`** by `system-derived` (not asserted by me). `python3 agent/state/validate.py --check`
+→ `ok persistent state valid`.
+
+**Untouched, as instructed:** `work_effort` (2), `validation_route` (still unset),
+`ownership` (`null`), `characteristics` beyond the system-derived recompute. No hand-edit under
+`agent/state/runtime/`. No other ticket read or written.
+
+**Contention observed: none.** An empty set collides with nothing under
+`queue.surfaces_collide`.
+
+**Still open, unchanged by this act:** the `cto` AC-2 question routed on 2026-09-06 (trigger
+enabled or disabled for the demonstration) is untouched and is not a blocker on assessment.

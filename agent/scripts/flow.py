@@ -107,7 +107,7 @@ def level_of(n):
         return "company"
     if n in ("pm", "devops", "content-manager"):
         return "product"
-    if n == "po" or n == "qa" or n.startswith("team-lead"):
+    if n == "po" or n == "qa":
         return "project"
     return "developer"
 
@@ -697,7 +697,6 @@ const TIER_LABEL = [
 ];
 function hueFor(slug) {
   if (HUE[slug] != null) return HUE[slug];
-  if (slug.indexOf("team-lead") === 0) return 285;
   if (slug.indexOf("backend") === 0) return 160;
   return 210;
 }
@@ -708,7 +707,6 @@ function ident(h, a) { return "oklch(0.78 0.085 " + h + (a == null ? "" : " / " 
    inside this page is what let it drift a whole restructure behind. */
 function shortName(slug) {
   return slug
-    .replace(/^team-lead-/, "tl-")
     .replace(/^frontend-/, "fe-")
     .replace(/^backend-/, "be-")
     .replace(/^content-manager$/, "content");

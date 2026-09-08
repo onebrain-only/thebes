@@ -724,3 +724,78 @@ subtleties recorded there too.
 
 **Queue:** `KAN-138` on `cto`'s confirmation. Then `KAN-130`+`131` — `team-lead-4` transitions
 them **when I say I am starting**, so I tell it rather than find the column in the wrong state.
+
+## 2026-09-08 — Work Effort recorded for KAN-141 (2) and KAN-145 (1) — Preflight only
+
+Sizing is a pre-execution factual act. **No claim taken on either item, no ownership, and
+neither ticket's underlying work resumed.** Both were `work_effort: null` at `revision: 2`;
+verified by reading rather than assuming, and both wrote cleanly under CAS to `revision: 3`.
+`python3 agent/state/validate.py --check` → `ok  persistent state valid`.
+
+`store.py` has **no dedicated `work_effort` setter** — `set_characteristics` writes
+characteristics and recomputes the route, which is not this field. Used the generic CAS
+`store.update("task", wid, cur["revision"], {"execution_profile": prof})`, authored
+`provenance.work_effort = {"by": "worker:backend-4"}`, matching all five already-sized records
+(`KAN-128` `worker:backend-1`, `KAN-136` `worker:backend-3`, `KAN-138` `worker:backend-5`,
+`KAN-150`/`KAN-155` `worker:backend-4`). `characteristics`, `validation_route` and `surfaces`
+untouched — KAN-145 still `peer`, still `money_path`+`schema_change`, still `surfaces: null`.
+
+**KAN-141 = 2.** The boundary is real and passes the "cannot start until" test rather than a
+proxy. Sitting 1 (2026-09-06, line 15) is the measurement of three zero-policy definer views —
+its own deliverable, ending at a genuine checkpoint: the ticket was **left in To Do**, the
+empty-table result routed to `po` as a stop-and-ask, and nothing was written. Sitting 2
+(lines 41–106) is the migration and its apply. The migration could not be authored until the
+measurement said *which* of the three views was the defect and which two were incidental —
+that is a dependency boundary, not risk and not volume. The 7-minute hold at `cto`'s `G-028`
+gate (09:22 → 09:29) is a **gate, not a sitting**, and is not counted.
+
+**KAN-145 = 1.** One pass, line 118: authored, applied, verified, posted. The index check and
+the fail-first probe happened *inside* the authoring pass — no prior investigation whose output
+the authoring consumed, so no boundary. `cto`'s confirmation (`10705`) is a hand-off/gate on
+another seat's clock. Cross-checks against the convention already on the board: `KAN-150` is
+sized **1** and is the same shape by my own hand — author + demonstrate + apply in a later pass
+— so an apply leg is not being counted as a second sitting here; `KAN-138` and `KAN-128` are
+**2** and both carry a real second deliverable (probe pack / reachable-caller construction).
+
+**One correction found while reading, not mine to fix:** `agent/status/backend-4.md` line 1
+still reads `# agent/status/junior-frontend-3b.md` and line 3 names `junior-frontend-3b` as
+owner. The whole log below it is `backend-4`'s. A stale header on the file that IS the executor
+evidence for both of these records. Flagged, not edited — I did not want a header rewrite
+landing in the same breath as a Preflight write.
+
+## 2026-09-08 — Surface assessment recorded for KAN-141/145/150/155 — Preflight only
+
+Assessment is a pre-execution factual act. **No claim, no ownership, no underlying work resumed
+on any of the four.** All four were `surfaces: null` (verified by reading, not assumed); all four
+wrote cleanly under CAS via `store.set_surfaces(..., author="worker:backend-4", basis_ref=...)`.
+`python3 agent/state/validate.py --check` → `ok  persistent state valid`.
+
+| Item | rev | Declared surfaces |
+|---|---|---|
+| KAN-141 | 3→4 | migration `20260906210000_kan141_drop_list_active_usernames_and_public_view.sql`, `docs/SCHEMA.md`, `scripts/ci/check_anon_allowlist_test.sh` |
+| KAN-145 | 3→4 | migration `20260907100000_kan145_payment_intents_booking_fk.sql` |
+| KAN-150 | 2→3 | migration `20260907120000_kan150_drop_dead_prime_branches.sql` |
+| KAN-155 | 2→3 | migration `20260907110000_kan155_plan_key_migration.sql` |
+
+All under `supabase/migrations/` except the two KAN-141 companions. `shared_or_contended_surface`
+recomputed **false** on all four (system-derived) — nothing under `lib/core/**`, `lib/data/**` or
+`policy.CONTENDED_FILES`. `characteristics`, `validation_route`, `work_effort` and `ownership`
+untouched: KAN-145 still `peer`/`money_path`+`schema_change`, KAN-150 still `peer`/`schema_change`.
+
+**KAN-141 is three paths, not one, and finding that needed another seat's log.** My own entry
+(line 441) records "each of my seven commits contains exactly one file". That is true of *my*
+commits — `be442ac` is **`devops`'s** (`devops.md:883`), and it carries `docs/SCHEMA.md` and
+`scripts/ci/check_anon_allowlist_test.sh` alongside the migration, because `cto` ruled the
+allowlist fixture and the SQL must land as one unit. **A work item's surface is not the same as
+the surface of the commits I personally authored** — declaring only my migration would have hidden
+the allowlist fixture from contention detection entirely.
+
+**One inference declared as an inference.** KAN-150's *directory* is not stated anywhere; only the
+bare filename is (line 226). I took `supabase/migrations/` from the three confirmed siblings in
+this same set (`cto.md:1228`, `cto.md:1309`, `cto.md:2240`) and said so **in the `basis_ref`
+itself**, rather than letting a well-founded guess read as a measurement. If `dabbler-code` is ever
+in-workspace, this is the one path worth re-reading — it is absent from this checkout, so no `ls`
+could settle it here.
+
+**No contention among the four**, and none against anything else assessed: the path sets are
+pairwise disjoint, no ancestor containment, no shared governed prefix.

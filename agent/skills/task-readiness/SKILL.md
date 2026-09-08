@@ -48,7 +48,7 @@ For a decision, bug, or backlog item that might become a ticket:
 
 4. **Write down what you don't know — the red card — instead of guessing at it.** A question
    captured is a known unknown; a question silently resolved by assumption is an unknown
-   unknown wearing a checkmark. A question that only the `pm` or a `team-lead` can answer
+   unknown wearing a checkmark. A question that only the `pm` can answer
    goes to them (`WORKFLOWS.md` §4) — it does not get filled in with a plausible-sounding
    number.
 
@@ -57,7 +57,8 @@ For a decision, bug, or backlog item that might become a ticket:
    - **Negotiable** — is it a fixed contract when it should leave room for the developer's
      judgment, or vice versa?
    - **Valuable** — does passing it actually prove something a stakeholder cares about?
-   - **Estimable** — can the owning `team-lead` size it well enough to give a `due_date`?
+   - **Estimable** — does a seat of the required capability have a Work Effort for it, so a
+     `due_date` follows from derived capacity? (Wave 6: no lead supplies this.)
    - **Small** — is it a few days of work, not a program?
    - **Testable** — literally: could you write the command or the diff review that checks it?
 

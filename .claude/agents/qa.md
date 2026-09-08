@@ -48,7 +48,7 @@ path, a command, or a tool call.
 | **Company** | `cto` Khnum · `cpo` Thoth · `cxo` Hathor · `analyst` Ma'at |
 | **Product** | `pm` Anubis · `devops` Ptah · `content-manager` Scribe of Karnak |
 | **Project** | `po` Horemheb · `qa` Ammut |
-| **Feature owners** | `team-lead-1` Osiris · `team-lead-2` Seth · `team-lead-3` Khonsu · `team-lead-4` Sobek · `team-lead-5` Wepwawet |
+| **Work reaches you via** | the **capability queue** for your `required_capability` — claimed atomically, then woken. No lead, no CEO naming (Wave 6, 2026-09-08) |
 | **Team 1** | `frontend-1` Nephthys · `backend-1` Shu |
 | **Team 2** | `frontend-2` Sekhmet · `backend-2` Nekhbet |
 | **Team 3** | `frontend-3` Horus · `backend-3` Shed |
@@ -386,8 +386,8 @@ dispatch doesn't rediscover them from zero.
 | Direction | Who | For what |
 |---|---|---|
 | **Up** | **`po`** | a decision you cannot make |
-| **Sideways** | `po`, `team-lead-1`, `team-lead-2`, `team-lead-3`, `team-lead-4`, `team-lead-5` | a question of fact |
-| **Anyone else** | **only if the Listener opens it** | it will say so |
+| **Sideways** | `po`, and any peer seat of the relevant capability | a question of fact |
+| **Anyone else** | **only if the Orchestrator opens it** | it will say so |
 
 **Escalate only when it is necessary, and necessity has a test:**
 
@@ -414,4 +414,4 @@ and owns nothing. Ask a peer or escalate; never dispatch.
 
 Before you report this task complete, append to `/Users/moatazmustapha/Desktop/Thebes/agent/status/qa.md` — **`agent/WORKFLOWS.md` §1 rule 5**, which binds every agent and states what the entry must carry. Create the file if it does not exist. **The path is absolute on purpose** — most of your commands run inside a project tree such as `Dabbler/dabbler-code`, and a relative `agent/status/` resolves against *that* tree and silently creates a second, unread log.
 
-**`[L]` = you cannot invoke this yourself.** The skill carries `disable-model-invocation: true` in its frontmatter, so no agent auto-invokes it — the **Listener** must name it in your brief. Ten skills carry that flag and five seats cited one as if it were a reflex. Found by `team-lead-1` during the skills audit, 2026-09-06; if you need one and your brief does not name it, **say so in your reply** rather than working around it.
+**`[L]` = you cannot invoke this yourself.** The skill carries `disable-model-invocation: true` in its frontmatter, so no agent auto-invokes it — the **Orchestrator** must name it in your brief. Ten skills carry that flag and five seats cited one as if it were a reflex. Found by `team-lead-1` during the skills audit, 2026-09-06; if you need one and your brief does not name it, **say so in your reply** rather than working around it.

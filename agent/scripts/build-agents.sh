@@ -3,20 +3,24 @@
 #
 #   .claude/bindings/<seat>.yml      YAML frontmatter body        — the SEAT
 #   agent/roles/<role>.md            neutral markdown, no frontmatter — the ROLE
-#   agent/seats/<seat>.md            optional temporary seat context
 #   .claude/agents/<seat>.md         generated: fence + binding + fence + banner
-#                                    + role + seat context
+#                                    + role
+#
+# ROLE + BINDING IS SUFFICIENT. Wave 6 retired agent/seats/*.md: the Role defines
+# capability and authority, the binding defines seat identity, and nothing else is
+# needed to generate a seat. `seat_context:` is no longer read — a binding that
+# still declares one is an ERROR rather than a silent no-op, because a seat
+# carrying private product knowledge is the thing Role ≠ Seat exists to prevent.
 #
 # ROLE ≠ SEAT. A binding names the Role it instantiates, so many seats may share
 # one Role contract — frontend-1..8 all resolve to agent/roles/frontend.md. The
 # mapping is explicit, never inferred from the seat's filename.
 #
 #   role: <role-id>            REQUIRED. Resolves agent/roles/<role-id>.md
-#   seat_context: <path>       OPTIONAL. Appended after the Role contract
 #
-# Both are generator metadata and are stripped before the frontmatter is
-# emitted: the generated file is what Claude Code parses, and implementation-only
-# keys do not belong in it. Every other binding key passes through untouched.
+# It is generator metadata and is stripped before the frontmatter is emitted: the
+# generated file is what Claude Code parses, and implementation-only keys do not
+# belong in it. Every other binding key passes through untouched.
 #
 # Only seats that have a binding are generated; every other file in
 # .claude/agents/ is left untouched.
@@ -64,33 +68,24 @@ for binding in "$BINDINGS"/*.yml; do
     continue
   fi
 
-  ctx_rel=$(field "$binding" seat_context)
-  ctx=""
-  if [ -n "$ctx_rel" ]; then
-    ctx="$ROOT/$ctx_rel"
-    if [ ! -f "$ctx" ]; then
-      echo "ERROR: binding $seat declares seat_context '$ctx_rel' which does not exist"
-      status=1
-      continue
-    fi
+  # Wave 6: seat context is retired. A binding still declaring it is a defect.
+  if grep -q '^seat_context:' "$binding"; then
+    echo "ERROR: binding $seat declares seat_context, retired in Wave 6 — Role + Binding is sufficient"
+    status=1
+    continue
   fi
 
   tmp=$(mktemp)
   printf -- '---\n' > "$tmp"
   # generator metadata is consumed here, never emitted
-  grep -v '^role:' "$binding" | grep -v '^seat_context:' >> "$tmp"
+  grep -v '^role:' "$binding" >> "$tmp"
   printf -- '---\n' >> "$tmp"
   printf -- '<!-- GENERATED FILE — do not edit. -->\n'                                 >> "$tmp"
   printf -- '<!-- Seat:    .claude/bindings/%s.yml -->\n' "$seat"                      >> "$tmp"
   printf -- '<!-- Role:    agent/roles/%s.md -->\n' "$role_id"                         >> "$tmp"
-  [ -n "$ctx_rel" ] && printf -- '<!-- Context: %s -->\n' "$ctx_rel"                   >> "$tmp"
   printf -- '<!-- Rebuild: agent/scripts/build-agents.sh -->\n'                        >> "$tmp"
   printf -- '\n'                                                                       >> "$tmp"
   cat "$role" >> "$tmp"
-  if [ -n "$ctx" ]; then
-    printf -- '\n' >> "$tmp"
-    cat "$ctx" >> "$tmp"
-  fi
 
   if [ "$CHECK" -eq 1 ]; then
     if [ -f "$out" ] && cmp -s "$tmp" "$out"; then

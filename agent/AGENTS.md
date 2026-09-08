@@ -38,8 +38,8 @@ edit a file, read `CONTRACT.md`.
                              (Dabbler)
       cto    — technology    pm      — the      po         — the board,
       cpo    — product         business           tickets, acceptance
-      cxo    — experience      across all       team-lead-1..5 — stacks
-      analyst— what is true    projects         qa         — the running app
+      cxo    — experience      across all       qa         — the running app
+      analyst— what is true    projects         ux-engineer-1 — fidelity
                              devops  — repos,
       FOUR PEERS               CI/CD, stores          │
       no hierarchy           content-manager          │  own features
@@ -74,15 +74,15 @@ explains why the shape was chosen, not because the shape still stands.
 
 The Listener writes **directly** to whichever seat owns the question. It does not brief the
 `cpo` so the `cpo` can brief the `pm` so the `pm` can brief the `po`. If a senior developer
-owns the answer, the Listener writes to the senior developer.
+owns the answer, the Orchestrator writes to the senior developer.
 
-This is the whole purpose of the distribution layer, and it is **a behaviour in the Listener's
+This is the whole purpose of the distribution layer, and it is **a behaviour in the Orchestrator's
 thinking, not a seat in the tree.** The `orchestrator` agent that used to sit here was deleted
 on 2026-09-05: a seat whose only job is routing is a relay, and a relay is the cost this
 design exists to remove.
 
 **Agents still do not brief each other.** That rule (`WORKFLOWS.md` §4) is unchanged and is
-not a routing claim — briefs come from the Listener or from the deciding seat, never from a
+not a routing claim — briefs come from the Orchestrator or from the deciding seat, never from a
 worker deciding who goes next.
 
 
@@ -141,18 +141,15 @@ their own domains and escalate to the CEO, not to each other.
 
 ### Stacks, and who holds them
 
-Work breaks down **stack → feature**. The product's 650 features cluster into 11 stacks; a
-`team-lead-N` holds several and **works one at a time**. The rest are inactive: still owned,
-still answered for, but drawing no capacity.
+Work breaks down **stack → feature**. The product's 650 features cluster into 11 stacks.
 
-| Lead | Stacks — *what to work on* | Active | Slices it **writes** — *the boundary* |
-|---|---|---|---|
-| `team-lead-1` | D1 Identity · D5 Social · D11 Platform | — | `profile`, `social`, `home`, `news`, `moderation` |
-| `team-lead-2` | D2 Games · D8 Moderation | **queued (Phase 0)** | `games`, `venues`, `explore`, `location`, `venue_submissions`, `activities` |
-| `team-lead-3` | D3 Venues · D10 Sports reference | — | `auth_onboarding`, `username_engine`, `app_boot` |
-| `team-lead-4` | D4 Money · D7 Rewards | — | `rewards`, `admin` (+ Commerce on activation) |
-| `team-lead-5` | D6 Notifications · D9 Discovery | **queued (Phase 0)** | `notifications` + `lib/services/notifications/**` |
-| — | — | — | `core`, `error` **UNOWNED** (platform residue) · `misc` **UNOWNED**, dissolved by Phase 0 |
+> **WAVE 6, 2026-09-08 — STACKS NO LONGER HAVE SEAT CUSTODIANS.** The five `team-lead-N` seats
+> that held them were removed. **Stack activation is `pm`'s**, which it already owned; what went
+> away is the per-stack seat, not the stack. **Work no longer reaches a seat through a stack** —
+> it reaches a seat through its capability queue, and the slice boundaries below survive only as
+> the shared/contended surface definitions that claimability now evaluates (`CONTRACT.md` §4).
+> The historical stack→lead assignment is in `agent/status/team-lead-*.md`.
+
 
 **No stack is active while the Phase 0 exclusive grant (`CONTRACT.md` §4.1) is live. D2 and D6
 resume on the grant's own expiry test, quoted there — not on a new decision.** Both are *queued*,
@@ -203,9 +200,9 @@ its **binding** plus its **generated definition**; the binding names the Role it
 
 | Layer | Path | What it is |
 |---|---|---|
-| **Seat** | `.claude/bindings/<seat>.yml` | Declares the seat and the Role it instantiates: `role: <role-id>`, optionally `seat_context: <path>` |
+| **Seat** | `.claude/bindings/<seat>.yml` | Declares the seat and the Role it instantiates: `role: <role-id>`. **Since Wave 6 that is the only generator key** — Role + Binding is sufficient |
 | **Role contract** | `agent/roles/<role-id>.md` | Durable behaviour, authority and execution contract. **Shared by every seat of that Role** |
-| **Seat context** | `agent/seats/<seat>.md` | *Temporary, generator-only.* Current per-seat runtime context — identity, team, pair. **Exit: Wave 6.** *(Corrected 2026-09-07: this said Wave 4 would absorb it. Wave 4 took only the PO's Project binding; the generator concatenates markdown, and team/pair are compatibility rather than target state.)* |
+| ~~**Seat context**~~ | ~~`agent/seats/<seat>.md`~~ | **RETIRED WAVE 6.** Role + Binding is sufficient; the generator now *errors* on a binding that still declares `seat_context:`. Per-seat product knowledge in a seat file is exactly what Role ≠ Seat exists to prevent — old value: identity, team, pair. **Exit: Wave 6.** *(Corrected 2026-09-07: this said Wave 4 would absorb it. Wave 4 took only the PO's Project binding; the generator concatenates markdown, and team/pair are compatibility rather than target state.)* |
 | **Runtime definition** | `.claude/agents/<seat>.md` | Generated. Never hand-edited |
 
 **`frontend-1..8` are eight seats instantiating one Role, `frontend`.** `backend-1..8`
@@ -213,9 +210,8 @@ instantiate `backend`. `content-manager` is the seat; `content` is the Role. Eve
 currently maps one-to-one to a Role of the same name.
 
 **A seat missing its binding or its generated definition is not a seat** — and that is what to
-check before dispatching, not whether a Role file of its own name exists. `role:` and
-`seat_context:` are generator metadata and are stripped before the runtime frontmatter is
-emitted.
+check before dispatching, not whether a Role file of its own name exists. `role:` is generator
+metadata and is stripped before the runtime frontmatter is emitted.
 
 ### Company level — One Brain
 
@@ -243,36 +239,22 @@ seat another's question is the most common routing error there is.
 | Seat | Charter | Owns | Never |
 |---|---|---|---|
 | `po` | **The sole author of acceptance criteria**, and the seat that analyses and writes the task. Creates, audits, arranges, tracks, and selects into `Ready` | The board · acceptance criteria · scope · Sprint composition | Writes code. Reviews work it executed. **Stands in every ticket's path — the universal review gate was retired 2026-09-08** |
-| `team-lead-1..5` | **Three duties only, since 2026-09-08:** report the capacity number, hold a stack, sequence contended/shared-surface work | The capacity number `po` turns into a `due_date` · its stack · contention sequencing | **Writes any code, SQL or copy. Transitions any Jira issue. Confirms readiness. Stocks `Ready`. Splits work. Chooses or assigns a developer** |
 
-> **`team-lead-1..5` — FINAL TARGET STATUS: REMOVED. CURRENT MIGRATION STATUS: TEMPORARY
-> COMPATIBILITY SEATS.**
+> **`team-lead-1..5` — REMOVED, WAVE 6, 2026-09-08.**
 >
-> **Team Leads do not exist in the target architecture.** They survive only because current
-> mechanisms still name them and have no replacement yet. Their behaviour is unchanged, their
-> bindings and generated definitions are active, and they must be dispatched normally until
-> they are deleted.
+> The five seats are gone: no Role, no binding, no generated definition, no routing, no capacity
+> authority. **They were never part of the target architecture**; they survived four waves only
+> because mechanisms still named them and nothing had replaced what they did.
 >
-> **Named final deletion wave: WAVE 6**, atomically with the last dependency:
+> Their last three duties became derivations rather than another seat: **capacity** from
+> ownership, queue depth, Work Effort and defined seats (`agent/state/capacity.py`); **stack
+> custodianship** to `pm`; **contended-surface sequencing** into a claimability predicate over
+> declared file surfaces. **No replacement coordinator role was created, deliberately** — the
+> point was to remove the coordination bottleneck, not rename it.
 >
-> - **Wave 3** removes the routing, escalation and developer-contact dependency — `route-to-seat`'s
->   assignment row and stack table, and "the lead who owns the feature" in every developer contract.
-> - **Wave 5 (done 2026-09-08)** removed the Jira transition, readiness, `Ready`-stocking,
->   splitting and assignment duties — `WORKFLOWS.md` §1's transition table and W1.
->   **CORRECTION: this line previously predicted Wave 5 would also remove the planning and
->   capacity duties. It does not, and the prediction was wrong.** `WORKFLOWS.md` §1's standing
->   rule — no ticket without a `due_date`, and the date comes from capacity rather than
->   estimation — has **no other source**. Removing the capacity duty in Wave 5 would have left
->   every new ticket undatable.
-> - **Wave 6** moves shared-file and contention coordination into queue-claim rules and supplies
->   a system capacity source — the last three things a lead still does that nothing else can —
->   **and deletes the five seats in that same change.**
->
-> Deleting them earlier would leave `CONTRACT.md`'s permission matrix and `WORKFLOWS.md`
-> pointing at seats that do not resolve, and an unrecognised `subagent_type` **falls back to a
-> generic agent with no error raised** (§4). **Do not read their survival as a reversal of the
-> target.**
-| `qa` | Drives the **running** app and tests whether it works. Files bugs | Testing stories · bug reports | **Fixes anything** |
+> **`agent/status/team-lead-1..5.md` are KEPT.** They are durable historical evidence of work
+> that really happened, and deleting them would erase the executor evidence the routing model
+> rests on.
 
 ### Developers — eight paired teams
 
@@ -326,7 +308,7 @@ rewritten** — rewriting a log to match a later reorganisation falsifies it.
 | `task-auditor` | **merged into `po`** | Its two gates and the `task-review` skill are now PO duties |
 | `notifications-specialist` | **split across the two seniors** | Memory divided by evidence: schema/RLS/triggers/edge-functions to `senior-backend`, client wiring and FCM to `senior-frontend`, both under `notifications-inherited/` |
 | `app-store-submission-fixer` | **merged into `devops`** | §9b of this file proposed exactly this merge on 2026-08-28 and deferred it for evidence. The evidence arrived. Its knowledge is at `agent/roles/references/app-store-review.md` |
-| `orchestrator` | **deleted** | Routing is the Listener's own behaviour now — see §1 |
+| `orchestrator` | **deleted** | Routing is the Orchestrator's own behaviour now — see §1 |
 | — | `cxo`, `pm`, `content-manager`, `po`, `team-lead-1..5`, `junior-frontend` | **New seats** |
 
 **Nothing was deleted without its knowledge being placed somewhere a live seat reads.** Three
@@ -390,7 +372,7 @@ a seat, not a Role, not Orchestrator memory, not Main Session memory.** Full doc
 | **Role contract** | behaviour, authority, execution contract | `agent/roles/<role>.md` |
 | **Seat instance** | which seat exists, which Role it instantiates | `.claude/bindings/<seat>.yml` |
 | **Seat identity** | deity, glyph, lore | `agent/NAMING.csv` |
-| **Seat team/pair** | temporary compatibility context | `agent/seats/<seat>.md` — **exit Wave 6** |
+| ~~Seat team/pair~~ | ~~temporary compatibility context~~ | **RETIRED Wave 6** — `agent/seats/` deleted |
 | **Project registry** | which Projects exist, and each one's current PO seat | **`agent/state/registry/`** |
 | **Runtime state** | tasks, routing requests, exceptions, dependency edges | `agent/state/runtime/` |
 | **Role learning** | execution optimisation | Wave 8 — does not exist yet |
@@ -407,12 +389,32 @@ exist. v1 and v2 records both validate. What v2 adds:
 | task `characteristics` | the five facts the validation policy consumes |
 | `validation_route` | **derived by `agent/state/policy.py`, never authored by a seat** — the validator recomputes it and rejects a stored route weaker than the computed one |
 | `profile_status: partial` + `effective_fields` | says truthfully which fields are operational while five stay deferred. **`effective` remains forbidden until Wave 6** |
+| `agent/state/queue.py` | **capability queues, eligibility, claimability, contention** — all DERIVED, nothing stored |
+| `agent/state/capacity.py` | the five capacity questions, derived from ownership and queue depth. **Replaced the Team Lead** |
+| `agent/state/registry/topology.json` | seat-capacity **ceilings — a safety bound, not a forecast** |
 | `agent/state/board.py` | **the live KAN board model** — eleven live statuses in seven columns, three legacy statuses kept for history, capability→execution-status and route→review-status. One file, one source |
 | `agent/state/sprint.py` | the derived calendar Sprint and Jira-changelog reconstruction |
 | `timezone` in the Company registry | `Asia/Dubai`, an IANA id — the Friday cutoff is undefined without it |
 
-**Still absent, deliberately: CLAIM.** No field, no lock, no moment. `executor_evidence` remains
-evidence — zero entries means none, two or more means **conflicting** and routing must refuse.
+**Wave 6 added ownership, surfaces and interventions — schema v3.**
+
+| Added | Why |
+|---|---|
+| `ownership` on a task | **Exactly one current owner or null.** Taken under `flock` with a revision CAS. No force claim, no silent reassignment, no `released_at` — release sets it to null, because an object that exists but says it is already released is ambiguous about whether the slot is free |
+| `surfaces` on a task | Declared repository-relative paths. **A boolean cannot detect a collision** — two items can both be "contended" and never meet. The path set is what made contention decidable and what let the Team Lead go |
+| **intervention records** | STOP / HOLD / FREEZE as *independent* records, not a task field — a task-level object cannot represent a capability-scoped HOLD or a system-scoped FREEZE at all. RESUME is the clearing operation, never a fourth stored kind |
+
+**Still derived, never stored:** queue membership, eligibility, claimability, blocked-ness,
+dependency satisfaction. A stored flag is true only for the instant it was computed.
+
+**CLAIM now exists — and it is not WAKE.** A claim is a Persistent State operation that
+durably establishes ownership; a wake is a harness invocation. **A wake creates no ownership**,
+and no seat is woken for ordinary work before its claim has succeeded.
+
+**`executor_evidence` remains EVIDENCE, not ownership.** Zero entries means none; two or more
+means **conflicting**, which blocks and requires reconciliation — it does not fall back to
+anyone choosing. Wave 5 evidence says a seat *did* work; it never means a seat currently *owns*
+the slot, and the v3 migration deliberately did not promote one into the other.
 
 **There is no Seat Registry in Persistent State.** A global roster copy would duplicate three
 canonical sources at once. Runtime records reference a seat by **slug**, and the validator checks
@@ -489,7 +491,7 @@ breaks the first time someone tests it. What the runtime actually shows:
 by contract.** No seat may call `Agent` or `fork` to create an executor, or use `SendMessage`
 to hand its work to another seat. Nothing will stop it; that is exactly why it is written here.
 
-**Parallelism comes from the Temporary Compatibility Dispatcher**, never from a worker
+**Parallelism comes from the Orchestrator**, never from a worker
 recruiting. Do not write a prompt that asks an agent to delegate.
 
 ### How a seat is woken — and what `YOU PULL` actually means
@@ -539,8 +541,9 @@ a surface to own.
 `CONTRACT.md` has no scope, and an agent with no scope writes wherever it likes.
 
 **Superseded 2026-09-05.** Slices are no longer owned one-agent-each. Work is grouped into
-**11 stacks** held by five `team-lead-N` seats, and code is written by three developers
-assigned per task. The old gap read:
+**11 stacks**, and code is written by seats that claim it from a capability queue. (That
+sentence named five `team-lead-N` seats until Wave 6 removed them, and "assigned per task"
+until Wave 6 replaced assignment with claim.) The old gap read:
 
 > **The current gap, stated plainly:** 23 of 25 slices are UNOWNED, and so is the platform
 > tier. That is the single largest constraint on doing parallel work here — `WORKFLOWS.md` W1
@@ -586,7 +589,7 @@ is a resolution ambiguity waiting to bite.
 ### 7.4 To build ourselves — nothing on the market encodes our conventions
 
 > **`route-to-seat` was built 2026-09-05** and lives at `agent/skills/route-to-seat/`. It is
-> the Listener's routing skill and it carries the prompt contract and verification rules
+> the Orchestrator's routing skill and it carries the prompt contract and verification rules
 > inherited from the deleted `orchestrator` seat. It is not on the list below; it is done.
 
 Built with `skill-builder`. **Status: proposed, none built.**
@@ -627,19 +630,17 @@ is a much smaller job than it was at v0.1.
 ## 9. PER-AGENT DETAIL FILES
 
 `agent/roles/<role-id>.md` — the long-form contract each agent is dispatched with. **Thirteen
-Role contracts serve thirty seats**: `frontend` (8 seats), `backend` (8), and one each for
-`cto`, `cpo`, `cxo`, `analyst`, `pm`, `devops`, `content`, `po`, `qa`, plus the five
-`team-lead-N` compatibility seats. Two further contracts exist with **no seat** —
-`ux-engineer` (defined, not yet instantiated; activates Wave 6) and `product-designer`
-(defined, inactive: the CEO is the design source). §2 above is the roster view: charter, ownership and escalation, in the third person.
+Role contracts serve twenty-six seats** (Wave 6, 2026-09-08): `frontend` (8 seats), `backend`
+(8), and one each for `cto`, `cpo`, `cxo`, `analyst`, `pm`, `devops`, `content`, `po`, `qa`,
+`ux-engineer`. The five `team-lead-N` compatibility seats were removed. One contract still has
+**no seat** — `product-designer` (defined, inactive: the CEO is the design source). §2 above is the roster view: charter, ownership and escalation, in the third person.
 `agent/roles/` is the instruction the agent itself reads, in the second person. The two are
 complementary, not duplicates — §2 says what a seat *is*, the role file says how it *works*.
 
 `agent/roles/` is tool-neutral. `.claude/agents/<seat>.md` is generated from the Role the
-binding names, plus `.claude/bindings/<seat>.yml`, plus that seat's context block where one is
-declared, by `agent/scripts/build-agents.sh`. **The generator errors rather than guessing** if a
-binding declares no `role:`, names a Role that does not exist, or points at a `seat_context:`
-that is missing. **Never hand-edit
+binding names, plus `.claude/bindings/<seat>.yml`, by `agent/scripts/build-agents.sh`. **The
+generator errors rather than guessing** if a binding declares no `role:`, names a Role that does
+not exist, or still declares a retired `seat_context:`. **Never hand-edit
 `.claude/agents/`** — it is regenerated, and `build-agents.sh --check` fails if it has drifted.
 
 ---
@@ -668,7 +669,7 @@ noted below.
 | `analyst` | Opus | **medium** | Reconciles every other seat's numbers. Being wrong here propagates downstream |
 | `pm` | Sonnet | medium | Backlog ordering against a measured state — structured, not open-ended |
 | `po` | Sonnet | medium | Two-gate review plus board work. Checklist-shaped, but it has to notice a criterion that cannot be tested |
-| `team-lead-1..5` | **Opus** | medium | Routing a task to the right seniority is the decision that wastes the most money when wrong |
+| `ux-engineer-1` | Sonnet | medium | Fidelity against a design system is comparison work — structured, and bounded by what the design already says |
 | `qa` | Sonnet | medium | Driving a live app and judging whether behaviour matches intent is more open-ended than a checklist |
 | `devops` | Sonnet | low | Commits, deploys, submissions — procedural |
 | `content-manager` | Sonnet | low | Copy against an established voice |
@@ -710,7 +711,7 @@ as an instruction, so a stale line here gets executed.*
 | When | What was wrong | Fix |
 |---|---|---|
 | 2026-08-26 → 2026-09-05 | **This file described a roster as though it were the company.** Every seat was shaped around one Flutter app; there was no product level, no project dimension, and no seat that knew Dabbler had four projects. The CEO's structure had a Listener, a product layer and stacks — **none of which existed here**, so nothing in the system could act on them | Rewritten to four levels and 17 seats (v0.7). The lesson is the same one below: this file is an instruction, so a shape it does not describe is a shape the system does not have |
-| 2026-08-29 → 2026-09-05 | §1 drew the `orchestrator` nowhere, while `CLAUDE.md` told every session to dispatch to it and `WORKFLOWS.md` §4 said everything routed through `master-analyst`. **Three documents, three different routing rules**, all live at once | The `orchestrator` seat is deleted and routing is the Listener's own behaviour. `CLAUDE.md` and `WORKFLOWS.md` §4 rewritten to match |
+| 2026-08-29 → 2026-09-05 | §1 drew the `orchestrator` nowhere, while `CLAUDE.md` told every session to dispatch to it and `WORKFLOWS.md` §4 said everything routed through `master-analyst`. **Three documents, three different routing rules**, all live at once | The `orchestrator` seat is deleted and routing is the Orchestrator's own behaviour. `CLAUDE.md` and `WORKFLOWS.md` §4 rewritten to match |
 | 2026-08-29, same day | The corrected diagram labelled the `cto`/`cpo` → executive edge **"briefs · direction"**, which reads as *route through a manager*. `G-008` rules the opposite: **requests go to the owning specialist; no seat is a mandatory hop.** My own G-005 fix reintroduced a milder version of the error it was fixing | Edge relabelled *"decides shape / scope — NOT a relay (G-008)"* |
 | 2026-08-29 → corrected same day | This file said **`task-auditor` was PAUSED until 2026-08-31 with `qa-tester` covering its two review gates** — in the version line, the diagram, the roster paragraph and a banner on the seat itself. **It was never paused.** The framing came from a first draft of the hire that the PO then narrowed | All five places corrected. **Four of them would each have been read as authoritative on its own** — which is the cost of restating one fact in five spots instead of stating it once and linking |
 | 2026-08-28 → corrected 2026-08-29 | "Nine agents exist" | **Ten.** `qa-tester` hired under `G-010` |
@@ -737,7 +738,7 @@ to this one for the shape.
 | Date | Change |
 |---|---|
 | 2026-09-05 | **v0.8 — the developer expansion, CEO-directed.** Roster 17 → **30**. Each team leader gets three developers: `senior-frontend-N` plus `junior-frontend-Na`/`-Nb`, so 5 seniors and 10 juniors. **Each project gets one backend developer** — the app is the only staffed project, so `senior-backend` stays a single seat shared by all five leads. Renamed `senior-frontend`→`senior-frontend-1` and `junior-frontend`→`junior-frontend-1a`; the notification client memory moved to `senior-frontend-5`, whose lead owns D6. **Each senior is scoped to its lead's slices** so the five have disjoint file sets — the only thing that makes five parallel teams real rather than nominal (§5). `lib/core/**`, `lib/data/**` and the four contended files stay shared and serialised. **This puts `G-012`'s Phase 0 router split on the critical path**: at sixteen developers, `app_router.dart` is the schedule |
-| 2026-09-05 | **v0.7 — the company restructure, CEO-directed.** One Brain is the company; Dabbler is a product; the app is one of four projects. Four levels replace two. Roster 11 → **17**. Added `cxo`, `pm`, `content-manager`, `po`, `team-lead-1..5`, `junior-frontend`. Renamed `master-analyst`→`analyst`, `version-control`→`devops` (promoted to product level), `qa-tester`→`qa`, `backend-owner`→`senior-backend`, `flutter-feature-agent`→`senior-frontend`. Merged `task-auditor`→`po` and `app-store-submission-fixer`→`devops` (**the merge §9b proposed on 2026-08-28 and deferred for evidence**). Split `notifications-specialist` across the two seniors by evidence. **Deleted `orchestrator`** — routing is now the Listener's own behaviour, via the new `route-to-seat` skill. Work groups into **11 stacks** across five leads, two active. Model/effort tiers reset by the CEO in §9b. **Append-only history was not rewritten** — see the rename map in §2 |
+| 2026-09-05 | **v0.7 — the company restructure, CEO-directed.** One Brain is the company; Dabbler is a product; the app is one of four projects. Four levels replace two. Roster 11 → **17**. Added `cxo`, `pm`, `content-manager`, `po`, `team-lead-1..5`, `junior-frontend`. Renamed `master-analyst`→`analyst`, `version-control`→`devops` (promoted to product level), `qa-tester`→`qa`, `backend-owner`→`senior-backend`, `flutter-feature-agent`→`senior-frontend`. Merged `task-auditor`→`po` and `app-store-submission-fixer`→`devops` (**the merge §9b proposed on 2026-08-28 and deferred for evidence**). Split `notifications-specialist` across the two seniors by evidence. **Deleted `orchestrator`** — routing is now the Orchestrator's own behaviour, via the new `route-to-seat` skill. Work groups into **11 stacks** across five leads, two active. Model/effort tiers reset by the CEO in §9b. **Append-only history was not rewritten** — see the rename map in §2 |
 | 2026-08-29 | **v0.6 — the `task-auditor` pause is superseded; it was never paused.** The PO narrowed `qa-tester` after the seat was first written: it does **not** absorb `task-auditor`'s review gates, the two run side by side from the start, and its scope is **per-ticket functional testing via a testing story** written at dispatch and executed on completion — not app-wide audits. Added: **computer-use** access for the rare non-Chrome case, and the **SPA-fallback-200 trap** (`cto`'s finding — any unmatched path on `*.dabbler.pro` returns an identical 200, so a 200 is not evidence a file exists). |
 | 2026-08-29 | **v0.5 — `G-010`: `qa-tester` hired.** Roster 9 → 10. First seat that drives the running app (Chrome, web build) rather than reading the diff — closes the gap `T-026` named. **`task-auditor` PAUSED, not removed**, until Sprint 1 (2026-08-31); `qa-tester` covers its two gates until then and holds its Jira write authority (`CONTRACT.md` §3, `W*`). `ux-auditor` spec'd but explicitly **not hired** |
 | 2026-08-29 | v0.3 — **`G-005`: diagram and text corrected from apex to peer.** This file's hierarchy claim was the source of the routing drift the PO stopped. Also `G-003`: `backend-owner` and `flutter-feature-agent` documented, count 7 → 9; `task-review` removed from `master-analyst`'s skills |

@@ -92,3 +92,27 @@ the original count, carried unchanged. Two seats, the same cached-roster error, 
 Recorded in agent memory so the next dispatch from this seat does not re-argue it.
 
 **Net: the count was never disturbed.** 1 sitting, ceiling 2; `KAN-136` dated 2026-09-08.
+
+## 2026-09-08 — KAN-136 surface assessment (Preflight, not execution)
+
+Asked to record the repository paths KAN-136 touches. **Assessed: `[]`** — assessed, nothing
+to declare. Not a guess and not the unassessed state.
+
+**Basis, from this file.** Line 31 titles the entry "(no migration authored)"; line 35 records
+"no writes to the live project, no SQL authored"; lines 39–41 give the single sitting's
+checkpoint as "design written, nothing in the function touched"; lines 69–71 record `po`
+splitting the ticket so KAN-136 is pt.1 only — the design/enumeration pass — with all authoring
+moved to `KAN-140`. Together those are a positive finding that this item produces a written
+design and changes no repository file, not merely a sizing act with paths left unestablished.
+
+**Call.** `store.set_surfaces("KAN-136", 2, [], "worker:backend-3",
+basis_ref="agent/status/backend-3.md:31,35,39-41,69-71")` → revision 2 → **3**.
+`shared_or_contended_surface` recomputed **false**, `by: system-derived` — not set by me.
+`python3 agent/state/validate.py --check` → `ok  persistent state valid`.
+
+**Not touched:** `work_effort` (1), `validation_route`, `ownership` (still null), other
+characteristics, any other ticket. No claim made, nothing transitioned, no Product code written.
+Jira was not contacted — no Atlassian tool exists in this session.
+
+**Carried forward:** KAN-140 holds the authoring work and *will* have real surfaces; it was not
+in scope here and remains unassessed as far as I know.

@@ -1,6 +1,6 @@
 ---
 name: capacity-to-date
-description: How a team lead converts capacity into a due_date without estimating, and the sitting unit that makes it arithmetic. Use whenever a date is asked for, challenged, or compressed — "when can this land", "can we finish by Friday", a re-date after a ticket runs early or late; whenever work is sized against any shared single-writer seat whose queue you do not own; whenever an exclusive grant collapses a chain onto one seat; and whenever a task cannot be sized and the honest output is a named blocker instead of a number.
+description: How capacity becomes a due_date without estimating, and the sitting unit that makes it arithmetic. The number is now DERIVED from current ownership, queue depth, Work Effort and defined seats (agent/state/capacity.py) — team leads were removed in Wave 6 and no seat reports it by hand. Use whenever a date is asked for, challenged, or compressed — "when can this land", "can we finish by Friday", a re-date after a ticket runs early or late; whenever work is sized against any shared single-writer seat whose queue you do not own; whenever an exclusive grant collapses a chain onto one seat; and whenever a task cannot be sized and the honest output is a named blocker instead of a number.
 ---
 
 # Capacity to date
@@ -8,7 +8,10 @@ description: How a team lead converts capacity into a due_date without estimatin
 `agent/WORKFLOWS.md:58` states the rule the whole company's scheduling runs on:
 
 > **The date comes from capacity, not estimation.** Capacity is reported by the owning
-> `team-lead-N`. The `po` may not estimate it and may not ask a developer directly.
+> **DERIVED capacity** (`agent/state/capacity.py`), not a number a seat reports. **Wave 6
+> removed the five `team-lead-N` seats**, and supplying the sitting count was the last thing
+> they did that nothing else could — which is exactly why they survived Wave 5 and go now. The
+> `po` may not estimate it and may not ask a developer directly; it reads the derived figure.
 
 That is a prohibition with no method behind it. A lead reading it learns what it must not do
 and nothing about what to do instead. **This skill is the method.** It is written from the
@@ -19,6 +22,14 @@ process.
 guess about the future wearing a number. Capacity answers *how many units does this task
 consume, and how many can this seat absorb* — a count. The difference is that capacity is
 **countable before the work starts** and an estimate is not. Everything below is counting.
+
+
+> **WAVE 6, 2026-09-08 — WHO SUPPLIES THE NUMBER CHANGED; THE ARITHMETIC DID NOT.**
+> Every worked example below that cites a `team-lead-N` is **historical evidence of how the
+> sitting unit behaves**, and is kept for that reason. The unit, the ceiling-vs-earliest
+> discipline and the refusal to estimate are unchanged. What changed is the source: ownership,
+> queue depth, Work Effort and defined seats, read from state rather than reported by a seat.
+> **Work Effort is still not reasoning effort.**
 
 ## 1. The sitting — the unit
 
@@ -658,7 +669,8 @@ no longer separated.
 **Still owed, and not written by this skill** — a `po` edit routed the usual way:
 
 1. **The shared-seat resolution in §3 currently lives only in this file.** `:58` says capacity
-   is reported by the owning `team-lead-N` and says nothing about a seat no lead owns — the
+   was reported by the owning `team-lead-N` (a seat removed in Wave 6) and said nothing about
+   a seat no lead owned — the
    silence that stalled `KAN-128` through four correct refusals. The governing document should
    carry *the lead asks the owning seat for its own count and carries it unchanged*; a company
    rule that exists only in a skill is one seat's note, and the next seat to hit this will read

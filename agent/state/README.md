@@ -245,6 +245,47 @@ describe the *edge* being cancelled, not the prerequisite completing.
 when there is genuine task-level state to hold — executor evidence or an execution profile.
 **No stubs, no backfill.**
 
+## Wave 6 — ownership, surfaces, interventions, queues
+
+**Schema v3.** Two task fields and one new record kind.
+
+**`ownership`** — `{seat_id, claimed_at, claim_ref}` or `null`, and there is no third state.
+Taken by `store.claim()` under `record_lock` with a revision CAS: **exactly one claimant wins**,
+the rest are refused. No force claim, no last-write-wins, no silent reassignment.
+**`released_at` is rejected inside the object** — release sets ownership to `null`, because an
+object that exists but says it is already released is ambiguous about whether the slot is free.
+`store.release()` never reassigns; the next claim wins the lock like everyone else.
+
+**`surfaces`** — declared repository-relative paths. They exist because **a boolean cannot
+detect a collision**: two items can both be `shared_or_contended_surface: true` and touch
+entirely different files. The validator rejects absolute paths, `..` traversal, backslashes,
+duplicates and unnormalised entries, and `shared_or_contended_surface` is now derived *from*
+these paths — a stored boolean that contradicts them is an error.
+
+**Interventions** — `runtime/interventions/`, **independent records, not a task field.** A
+task-level object could not represent a capability-scoped HOLD or a system-scoped FREEZE at all:
+there is no single task to hang them on.
+
+| | Scope | Blocks | Target |
+|---|---|---|---|
+| `stop` | task | that task | Jira key |
+| `hold` | capability | **new** claims only — current owners continue | capability id |
+| `freeze` | system | all new claims; ownership preserved | none |
+
+**RESUME is the clearing operation, never a fourth stored kind**, and clearing never deletes:
+the record stays as evidence the condition existed. At most one *active* intervention per
+(kind, scope, target) — a second would make clearing ambiguous.
+
+**Queues and capacity are derived reads.** `queue.py` computes queue membership, eligibility,
+claimability and contention; `capacity.py` answers five operational questions from ownership,
+queue depth, Work Effort and defined seats. **Nothing is stored**: a queue is a second authority
+that drifts, and a stored `claimable` flag is true only for the instant it was computed.
+
+`registry/topology.json` bounds seat expansion. **A ceiling is a safety bound, not a forecast** —
+where no evidence supports more, it is current+1. A new seat is justified only by proven parallel
+demand *and* every defined seat already owning work: **a dormant seat is not an unavailable
+seat.**
+
 ## Checks
 
 ```

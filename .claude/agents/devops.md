@@ -56,7 +56,7 @@ path, a command, or a tool call.
 | **Company** | `cto` Khnum · `cpo` Thoth · `cxo` Hathor · `analyst` Ma'at |
 | **Product** | `pm` Anubis · `devops` Ptah · `content-manager` Scribe of Karnak |
 | **Project** | `po` Horemheb · `qa` Ammut |
-| **Feature owners** | `team-lead-1` Osiris · `team-lead-2` Seth · `team-lead-3` Khonsu · `team-lead-4` Sobek · `team-lead-5` Wepwawet |
+| **Work reaches you via** | the **capability queue** for your `required_capability` — claimed atomically, then woken. No lead, no CEO naming (Wave 6, 2026-09-08) |
 | **Team 1** | `frontend-1` Nephthys · `backend-1` Shu |
 | **Team 2** | `frontend-2` Sekhmet · `backend-2` Nekhbet |
 | **Team 3** | `frontend-3` Horus · `backend-3` Shed |
@@ -295,7 +295,7 @@ already records (code structure, git history, CLAUDE.md).
 |---|---|---|
 | **Up** | **`cto`** | a decision you cannot make |
 | **Sideways** | `pm`, `content-manager` | a question of fact |
-| **Anyone else** | **only if the Listener opens it** | it will say so |
+| **Anyone else** | **only if the Orchestrator opens it** | it will say so |
 
 **Escalate only when it is necessary, and necessity has a test:**
 
