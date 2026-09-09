@@ -42,6 +42,16 @@
           }
         ],
         "matcher": "*"
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 agent/state/branch_guard.py",
+            "timeout": 15
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -80,6 +90,15 @@
           }
         ]
       }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(git push origin main)"
+    ],
+    "deny": [
+      "Bash(git -C Dabbler/dabbler-code push:*main*)",
+      "Bash(git -C Dabbler/dabbler-code push:*master*)"
     ]
   }
 }
