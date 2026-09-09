@@ -568,8 +568,20 @@ hook = os.path.join(repo_root(), "agent", "scripts", "flow-hook.sh")
 ok("47. telemetry is untouched — flow-hook.sh unmodified by ACCELERATE",
    os.path.exists(hook) and "accelerate" not in open(hook).read().lower())
 capsrc = open(os.path.join(repo_root(), "agent", "state", "capacity.py")).read()
-ok("    and ACCELERATE emits no telemetry event",
-   "telemetry" not in capsrc.lower() and "jsonl" not in capsrc.lower())
+# Scoped to the PLANNER, which is what this property is about: ACCELERATE's
+# selection and capacity derivation must not depend on Wave 8 machinery. Wave 8
+# later added an advisory recorder around the run boundary; that is a separate
+# function and cannot influence a plan.
+def _fn(src, name):
+    return src.split("def %s" % name)[1].split("\ndef ")[0]
+
+
+ok("    ACCELERATE PLANNING depends on no telemetry",
+   all("telemetry" not in _fn(capsrc, n).lower() and "jsonl" not in _fn(capsrc, n).lower()
+       for n in ("safe_parallel_plan", "accelerate_plan", "scheduler_condition",
+                 "blocked_reasons", "expansion_justified", "claimable_items")))
+ok("    and ACCELERATE reads no event to decide anything",
+   "read_events" not in capsrc)
 
 ok("48. no hard-coded seat count anywhere in the selector",
    not any(str(n) in capsrc.split("ACCELERATE")[1] for n in (" 8,", " 9,", "== 8")))

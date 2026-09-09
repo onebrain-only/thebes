@@ -836,6 +836,11 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
         for f in sorted(set(rec) & EVENT_BANNED_FIELDS):
             errs.append("%s: learning carries banned field %r" % (where, f))
 
+    elif kind == "coverage":
+        _req(rec, ["coverage_id"], errs, where)
+        for f in sorted(set(rec) & EVENT_BANNED_FIELDS):
+            errs.append("%s: coverage carries banned field %r" % (where, f))
+
     elif kind == "event":
         _req(rec, ["event_id", "event_type", "observed_at", "source", "seq"],
              errs, where)
@@ -1055,7 +1060,8 @@ def check(runtime=None):
                         % (pid, jid, po))
     kinds = {"task": "tasks", "routing": "routing", "exception": "exceptions",
              "dependency": "dependencies", "intervention": "interventions",
-             "policy": "policies", "event": "events", "learning": "learning"}
+             "policy": "policies", "event": "events", "learning": "learning",
+             "coverage": "coverage"}
     seen_ids = {}
     edges = []
     active_iv = []
@@ -1078,7 +1084,8 @@ def check(runtime=None):
             idf = {"task": "work_item_id", "routing": "request_id",
                    "exception": "exception_id", "dependency": "dependency_id",
                    "intervention": "intervention_id", "policy": "policy_id",
-                   "event": "event_id", "learning": "learning_id"}[kind]
+                   "event": "event_id", "learning": "learning_id",
+                   "coverage": "coverage_id"}[kind]
             rid = rec.get(idf)
             if rid != fn[:-5]:
                 errs.append("%s: filename does not match %s %r" % (p, idf, rid))

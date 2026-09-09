@@ -70,8 +70,9 @@ def emit_review_decided(task, evidence_ref=None):
     return emit({
         "event_type": "review_decided",
         "work_item_id": task.get("work_item_id"),
-        "project_id": task.get("project_id"),
-        "product_id": task.get("product_id"),
+        # No project_id/product_id: an event REFERENCES the work item, and the
+        # project is derivable from it. Carrying it would couple an advisory record
+        # to the Project registry for no analytical gain.
         "required_capability": prof.get("required_capability"),
         "review_type": rc.get("review_type"),
         "review_cycle": rc.get("review_cycle"),
@@ -84,6 +85,20 @@ def emit_review_decided(task, evidence_ref=None):
 
 # ---------------------------------------------------------------- blockers
 
+def _safe_read(event_type=None, work_item_id=None):
+    """Advisory READS must not raise into orchestration either.
+
+    `emit` already refuses to break an authoritative write. This closes the other
+    half: the canonical reconciliation boundary calls telemetry to work out which
+    edges changed, and a broken or unreadable event store must degrade to "no
+    history" rather than propagate an exception into planning.
+    """
+    try:
+        return store.read_events(event_type, work_item_id)
+    except Exception:                                    # noqa: BLE001 - deliberate
+        return []
+
+
 def open_blockers(work_item_id, events=None):
     """Reason codes whose LATEST recorded edge is `entered`. Derived, never stored.
 
@@ -91,8 +106,7 @@ def open_blockers(work_item_id, events=None):
     honest — there is no separate "current blockers" field to fall out of step with
     the transitions that produced it.
     """
-    evs = events if events is not None else store.read_events("blocker_observed",
-                                                              work_item_id)
+    evs = events if events is not None else _safe_read("blocker_observed", work_item_id)
     latest = {}
     for e in evs:
         if e.get("work_item_id") != work_item_id:
@@ -109,19 +123,19 @@ def _occurrence(work_item_id, reason_code, events):
                    and e.get("transition") == "entered")
 
 
-def observe_blockers(work_item_id, reason_codes, capability=None, project_id=None):
+def observe_blockers(work_item_id, reason_codes, capability=None):
     """Record only the CHANGES between the last observed blocker set and this one.
 
     Unchanged -> nothing is written. That is the difference between a factual record
     of being blocked and a record of how often somebody looked.
     """
-    evs = store.read_events("blocker_observed", work_item_id)
+    evs = _safe_read("blocker_observed", work_item_id)
     current = set(reason_codes or [])
     open_now = open_blockers(work_item_id, evs)
     written = []
     for code in sorted(current - open_now):
         ev = emit({"event_type": "blocker_observed", "work_item_id": work_item_id,
-                   "project_id": project_id, "required_capability": capability,
+                   "required_capability": capability,
                    "reason_code": code, "transition": "entered",
                    "occurrence": _occurrence(work_item_id, code, evs),
                    "entered_at": store.now()})
@@ -132,7 +146,7 @@ def observe_blockers(work_item_id, reason_codes, capability=None, project_id=Non
                  and e.get("transition") == "entered"]
         occ = prior[-1].get("occurrence") if prior else 1
         ev = emit({"event_type": "blocker_observed", "work_item_id": work_item_id,
-                   "project_id": project_id, "required_capability": capability,
+                   "required_capability": capability,
                    "reason_code": code, "transition": "cleared", "occurrence": occ,
                    "entered_at": prior[-1].get("entered_at") if prior else None,
                    "cleared_at": store.now()})
@@ -144,7 +158,7 @@ def observe_blockers(work_item_id, reason_codes, capability=None, project_id=Non
 def blocker_episodes(work_item_id=None):
     """Paired entered/cleared edges. An OPEN blocker gets NO duration — not zero,
     not "so far": a duration needs two trustworthy timestamps and it has one."""
-    evs = store.read_events("blocker_observed", work_item_id)
+    evs = _safe_read("blocker_observed", work_item_id)
     out, open_ = [], {}
     for e in evs:
         key = (e.get("work_item_id"), e.get("reason_code"), e.get("occurrence"))
@@ -190,35 +204,131 @@ def emit_acceleration_outcome(policy, plan, max_simultaneous_owners=None,
     })
 
 
+# ---------------------------------------------------------------- coverage markers
+
+def wave8_boundary():
+    """When Wave 8 began observing. Established once, on first reconciliation.
+
+    Everything factual that happened BEFORE this instant is `historical-derived`, and
+    its absence from the event log is not a defect — the system could not have
+    recorded what it had no code to record. Without this line every pre-Wave-8 review
+    and ACCELERATE run would be reported as missing telemetry, which would be false.
+    """
+    rec = store.read_coverage(store.COVERAGE_SYSTEM)
+    if rec and rec.get("wave8_started_at"):
+        return rec["wave8_started_at"]
+    started = store.now()
+    try:
+        store.mark_coverage(store.COVERAGE_SYSTEM, wave8_started_at=started)
+    except Exception:                                    # noqa: BLE001 - advisory
+        return started
+    return started
+
+
+def mark_blocker_coverage(work_item_id):
+    """Record that this item's blocker truth WAS reconciled. Zero != unknown."""
+    try:
+        return store.mark_coverage(work_item_id, blocker_observed_at=store.now())
+    except Exception:                                    # noqa: BLE001 - advisory
+        return None
+
+
+def blocker_coverage_known(work_item_id):
+    rec = store.read_coverage(work_item_id)
+    return bool(rec and rec.get("blocker_observed_at"))
+
+
 # ---------------------------------------------------------------- completeness
 
-def completeness(tasks=None):
-    """Where the event history is INCOMPLETE, stated as fact rather than hidden.
+def completeness(tasks=None, policies=None):
+    """Coverage per DIMENSION. `overall` is complete only if every dimension is.
 
-    A settled review with no `review_decided` event is not evidence that no review
-    happened — it is evidence that telemetry did not record one, which is a different
-    claim and the read side must be able to make it. Work predating Wave 8 lands here
-    by construction, which is correct: those facts are historical-derived, and
-    backfilling them as events would be fabrication.
+    The previous shape exposed a single `complete` flag computed from review history
+    alone, so a runtime with one review event and no blocker or acceleration coverage
+    reported `complete: True`. That was not a partial answer, it was a wrong one: a
+    retrospective reading it would present unobserved blockers as observed absence.
+
+    Each dimension now answers separately, and each distinguishes ZERO from UNKNOWN.
     """
     tasks = store.read_all("task") if tasks is None else tasks
+    boundary = (store.read_coverage(store.COVERAGE_SYSTEM) or {}).get("wave8_started_at")
+
+    # ---- review history -------------------------------------------------
     decided = {(e.get("work_item_id"), e.get("review_type"), e.get("review_cycle"))
-               for e in store.read_events("review_decided")}
-    missing = []
+               for e in _safe_read("review_decided")}
+    missing_reviews, historical_reviews = [], []
     for t in tasks:
         rc = t.get("review_context") or {}
-        if rc.get("review_result") in ("pass", "fail"):
-            key = (t.get("work_item_id"), rc.get("review_type"), rc.get("review_cycle"))
-            if key not in decided:
-                missing.append({"work_item_id": t.get("work_item_id"),
-                                "review_type": rc.get("review_type"),
-                                "review_cycle": rc.get("review_cycle"),
-                                "why": "settled review with no wave8-event"})
-    total = len(store.read_events())
+        if rc.get("review_result") not in ("pass", "fail"):
+            continue
+        key = (t.get("work_item_id"), rc.get("review_type"), rc.get("review_cycle"))
+        if key in decided:
+            continue
+        row = {"work_item_id": t.get("work_item_id"),
+               "review_type": rc.get("review_type"),
+               "review_cycle": rc.get("review_cycle")}
+        # Decided BEFORE Wave 8 existed: historical-derived, not a missing event.
+        if boundary and (rc.get("decided_at") or "") < boundary:
+            historical_reviews.append(dict(row, why="decided before Wave 8 began"))
+        else:
+            missing_reviews.append(dict(row, why="settled review with no wave8-event"))
+    review = {"status": "complete" if not missing_reviews else "incomplete",
+              "missing": missing_reviews, "historical_derived": historical_reviews,
+              "recorded": len(decided)}
+
+    # ---- blocker coverage -----------------------------------------------
+    observed, unknown = [], []
+    for t in tasks:
+        (observed if blocker_coverage_known(t.get("work_item_id")) else unknown)\
+            .append(t.get("work_item_id"))
+    edges = _safe_read("blocker_observed")
+    blocker = {
+        "status": ("complete" if tasks and not unknown else
+                   "unknown" if not observed else "partial"),
+        "observed_items": sorted(observed), "unknown_items": sorted(unknown),
+        "edges_recorded": len(edges),
+        "note": ("An item with no edges AND no coverage marker is UNKNOWN, not zero. "
+                 "Zero blockers is only a fact once observation has happened."),
+    }
+
+    # ---- acceleration history -------------------------------------------
+    pols = store.read_all("policy") if policies is None else policies
+    covered = {e.get("policy_id") for e in _safe_read("acceleration_outcome")}
+    missing_runs, historical_runs = [], []
+    for p in pols:
+        if p.get("policy_kind") != "accelerate" or p["policy_id"] in covered:
+            continue
+        row = {"policy_id": p["policy_id"], "scope": p.get("scope"),
+               "target": p.get("target")}
+        if boundary and (p.get("activated_at") or "") < boundary:
+            historical_runs.append(dict(row, why="activated before Wave 8 began"))
+        else:
+            missing_runs.append(dict(row, why="activation with no terminal outcome"))
+    accel = {"status": "complete" if not missing_runs else "incomplete",
+             "covered_runs": sorted(covered), "missing_terminal_outcomes": missing_runs,
+             "historical_derived": historical_runs}
+
+    dims = (review["status"], blocker["status"], accel["status"])
+    if all(d == "complete" for d in dims):
+        overall = "complete"
+    elif any(d in ("incomplete", "unknown") for d in dims) and \
+            any(d == "complete" for d in dims):
+        overall = "partial"
+    else:
+        overall = "incomplete"
+
     return {
-        "wave8_events": total,
-        "complete": not missing and total > 0,
-        "missing_review_events": missing,
-        "note": ("Wave 8 events begin when Wave 8 was released. Facts older than that "
-                 "are historical-derived and are NEVER backfilled as events."),
+        "review_history": review,
+        "blocker_coverage": blocker,
+        "acceleration_history": accel,
+        "historical_boundary": {
+            "wave8_started_at": boundary,
+            "note": ("Wave 8 events begin at this instant. Facts older than it are "
+                     "historical-derived and are NEVER backfilled as events."),
+        },
+        "overall": overall,
+        "wave8_events": len(_safe_read()),
+        # `complete` is kept as a strict alias so no caller can read a partial
+        # answer as a whole one: it is true only when EVERY dimension is complete.
+        "complete": overall == "complete",
     }

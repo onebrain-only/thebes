@@ -25,6 +25,7 @@ Stdlib only.
 import os
 import sys
 import json
+import shutil
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -41,13 +42,13 @@ def fresh_runtime():
     store.LOCKS = os.path.join(store.RUNTIME, ".locks")
     validate.RUNTIME = store.RUNTIME
     for kind in ("tasks", "dependencies", "interventions", "policies", "events",
-                 "learning"):
+                 "learning", "coverage"):
         os.makedirs(os.path.join(store.RUNTIME, kind), exist_ok=True)
     return tmp
 
 
 ROSTER = {"frontend-1": "frontend", "frontend-2": "frontend",
-          "backend-1": "backend", "backend-2": "backend", "qa": "qa"}
+          "backend-1": "backend", "backend-2": "backend", "qa": "qa", "po": "po"}
 
 
 def fresh_roster():
@@ -294,8 +295,9 @@ ok("  telemetry.emit returned None rather than raising",
 os.remove(broken); os.makedirs(broken, exist_ok=True)
 comp = telemetry.completeness([store.read("task", "KAN-730")])
 ok("  the GAP is visible, not hidden",
-   comp["complete"] is False and comp["missing_review_events"]
-   and comp["missing_review_events"][0]["work_item_id"] == "KAN-730")
+   comp["complete"] is False
+   and comp["review_history"]["status"] == "incomplete"
+   and comp["review_history"]["missing"][0]["work_item_id"] == "KAN-730")
 ok("  and no event was fabricated to cover it",
    len(store.read_events("review_decided")) == 0)
 
@@ -453,5 +455,251 @@ ok(".flow remains uncorrelated and non-authoritative",
 ok("  flow-hook.sh untouched by Wave 8",
    "wave8" not in open(os.path.join(repo_root(), "agent", "scripts",
                                     "flow-hook.sh")).read().lower())
+
+
+# ================================================================ REMEDIATION
+#
+# The closure check found the primitives correct and UNWIRED: `observe_blockers` and
+# `emit_acceleration_outcome` had zero production callers, so real orchestration
+# produced no blocker or ACCELERATE telemetry at all — and `completeness()` reported
+# `complete: True` over coverage it had never checked.
+#
+# These tests exercise the PRODUCTION path. Not one of them calls an emitter directly:
+# if the wiring is removed, they fail.
+
+section("REMEDIATION — blocker edges come from NORMAL orchestration")
+
+fresh_runtime(); SBC = fresh_roster()
+NOFACTS = {"has_due_date": False, "has_acceptance_criteria": True}
+
+
+def ready(key, **kw):
+    return mk(key, sid="10008", canonical="ready", rc=None, **kw)
+
+
+t = ready("KAN-801")
+cap_mod = __import__("capacity")
+cap_mod.reconcile(tasks=[store.read("task", "KAN-801")],
+                  jira_by_key={"KAN-801": dict(NOFACTS)})
+edges = store.read_events("blocker_observed", "KAN-801")
+ok("1. normal orchestration derives a blocker and RECORDS the edge",
+   any(e["reason_code"] == "missing-due-date" and e["transition"] == "entered"
+       for e in edges))
+ok("   no emitter was called directly — the boundary did it", True)
+
+n = len(store.read_events("blocker_observed", "KAN-801"))
+for _ in range(5):
+    cap_mod.reconcile(tasks=[store.read("task", "KAN-801")],
+                      jira_by_key={"KAN-801": dict(NOFACTS)})
+ok("2. repeating the SAME orchestration adds no duplicate edge",
+   len(store.read_events("blocker_observed", "KAN-801")) == n)
+
+cap_mod.reconcile(tasks=[store.read("task", "KAN-801")],
+                  jira_by_key={"KAN-801": dict(FACTS)})
+ok("3. the due date becoming available CLEARS the blocker through orchestration",
+   any(e["reason_code"] == "missing-due-date" and e["transition"] == "cleared"
+       for e in store.read_events("blocker_observed", "KAN-801")))
+cap_mod.reconcile(tasks=[store.read("task", "KAN-801")],
+                  jira_by_key={"KAN-801": dict(NOFACTS)})
+ok("4. the blocker returning is a SECOND occurrence",
+   max(e["occurrence"] for e in store.read_events("blocker_observed", "KAN-801")
+       if e["reason_code"] == "missing-due-date") == 2)
+
+fresh_runtime(); SBC = fresh_roster()
+a = ready("KAN-810", capability="frontend"); b = ready("KAN-811", capability="frontend")
+store.create_dependency({"source_work_item": "KAN-810", "target_work_item": "KAN-811",
+                         "relation": "BLOCKS", "completion_condition": "DONE",
+                         "product_id": "dabbler", "created_by": "po", "reason_ref": "r"})
+cap_mod.reconcile(tasks=store.read_all("task"),
+                  jira_by_key={k: dict(FACTS) for k in ("KAN-810", "KAN-811")})
+ok("5. dependency-blocked observed through normal orchestration",
+   any(e["reason_code"] == "dependency-blocked"
+       for e in store.read_events("blocker_observed", "KAN-811")))
+
+fresh_runtime(); SBC = fresh_roster()
+o1 = mk("KAN-820", sid="10008", canonical="ready", owner="frontend-1", rc=None)
+c1 = mk("KAN-821", sid="10008", canonical="ready", rc=None)
+for k in ("KAN-820", "KAN-821"):
+    p_ = store.path_for("task", k); d_ = json.load(open(p_))
+    d_["surfaces"] = ["lib/app/app_router.dart"]; json.dump(d_, open(p_, "w"))
+cap_mod.reconcile(tasks=store.read_all("task"),
+                  jira_by_key={k: dict(FACTS) for k in ("KAN-820", "KAN-821")})
+ok("6. surface-contention observed through normal orchestration",
+   any(e["reason_code"] == "surface-contention"
+       for e in store.read_events("blocker_observed", "KAN-821")))
+
+fresh_runtime(); SBC = fresh_roster()
+pw = mk("KAN-830", capability="frontend", sid="10045", canonical="review", route="peer",
+        ch={"schema_change": True},
+        rc={"review_type": "peer", "review_owner": None, "review_result": "pending",
+            "review_cycle": 1})
+cap_mod.reconcile(tasks=store.read_all("task"), jira_by_key={"KAN-830": dict(FACTS)})
+ok("7. review-owner-unresolved observed through normal orchestration",
+   any(e["reason_code"] == "review-owner-unresolved"
+       for e in store.read_events("blocker_observed", "KAN-830")))
+
+for n_, (kind, target, code) in enumerate(
+        [("stop", "KAN-840", "task-stopped"),
+         ("hold", "frontend", "capability-held"),
+         ("freeze", None, "system-frozen")], start=8):
+    fresh_runtime(); SBC = fresh_roster()
+    ready("KAN-840", capability="frontend")
+    iv = store.create_intervention(kind, target, "ceo", "reason:x")
+    cap_mod.reconcile(tasks=store.read_all("task"), jira_by_key={"KAN-840": dict(FACTS)})
+    ok("%d. %s observed through normal orchestration" % (n_, kind.upper()),
+       any(e["reason_code"] == code
+           for e in store.read_events("blocker_observed", "KAN-840")))
+
+fresh_runtime(); SBC = fresh_roster()
+ready("KAN-850")
+cap_mod.reconcile(tasks=store.read_all("task"), jira_by_key={})
+ok("11. unverified-jira observed where the canonical blocker exists",
+   any(e["reason_code"] == "unverified-jira"
+       for e in store.read_events("blocker_observed", "KAN-850")))
+
+fresh_runtime(); SBC = fresh_roster()
+clean = ready("KAN-860", capability="frontend")
+cap_mod.reconcile(tasks=[store.read("task", "KAN-860")],
+                  jira_by_key={"KAN-860": dict(FACTS)})
+ok("12. a task with NO blockers still gets coverage — zero is now a fact",
+   telemetry.blocker_coverage_known("KAN-860")
+   and store.read_events("blocker_observed", "KAN-860") == [])
+
+
+section("REMEDIATION — ACCELERATE terminal outcome from the real run path")
+
+fresh_runtime(); SBC = fresh_roster()
+pol = store.set_execution_policy("accelerate", "product", "dabbler", "ceo", "ceo:r")
+plan = cap_mod.run_acceleration(store.read_all("task"), store.active_execution_policies(),
+                                SBC, jira_by_key={})
+ok("13. an empty scope reaches DRAINED and records ONE terminal event",
+   plan["condition"] == cap_mod.DRAINED
+   and len(store.read_events("acceleration_outcome")) == 1)
+
+fresh_runtime(); SBC = fresh_roster()
+for i in range(5):
+    ready("KAN-87%d" % i, capability="frontend")
+pol = store.set_execution_policy("accelerate", "product", "dabbler", "ceo", "ceo:r")
+tasks_ = store.read_all("task")
+jbk = {t_["work_item_id"]: dict(FACTS) for t_ in tasks_}
+plan = cap_mod.run_acceleration(tasks_, store.active_execution_policies(), SBC,
+                                jira_by_key=jbk)
+ok("14. a saturated run records ONE terminal event",
+   plan["condition"] == cap_mod.SATURATED
+   and len(store.read_events("acceleration_outcome")) == 1)
+ev = store.read_events("acceleration_outcome")[0]
+ok("    with factual terminal fields",
+   ev["condition"] == cap_mod.SATURATED and ev["selected_count"] >= 1
+   and ev["policy_id"] == pol["policy_id"])
+
+for _ in range(4):
+    cap_mod.run_acceleration(tasks_, store.active_execution_policies(), SBC,
+                             jira_by_key=jbk)
+ok("16. many intermediate plans still yield ONE outcome per activation",
+   len(store.read_events("acceleration_outcome")) == 1)
+ok("17. retrying the terminal emission returns the same event",
+   telemetry.emit_acceleration_outcome(pol, plan)["event_id"] == ev["event_id"])
+
+pol2 = store.set_execution_policy("accelerate", "capability", "frontend", "ceo", "r2")
+cap_mod.run_acceleration(tasks_, store.active_execution_policies(), SBC, jira_by_key=jbk)
+ok("18. a NEW activation is a new run",
+   len(store.read_events("acceleration_outcome")) == 2)
+
+fresh_runtime(); SBC = fresh_roster()
+ready("KAN-880")
+p_ = store.path_for("task", "KAN-880"); d_ = json.load(open(p_))
+d_["surfaces"] = None; json.dump(d_, open(p_, "w"))
+pol = store.set_execution_policy("accelerate", "product", "dabbler", "ceo", "r")
+plan = cap_mod.run_acceleration(store.read_all("task"), store.active_execution_policies(),
+                                SBC, jira_by_key={"KAN-880": dict(FACTS)})
+ok("15. a blocked run records BLOCKED once", plan["condition"] == cap_mod.BLOCKED
+   and len(store.read_events("acceleration_outcome")) == 1)
+
+fresh_runtime(); SBC = fresh_roster()
+ready("KAN-890")
+pol = store.set_execution_policy("accelerate", "product", "dabbler", "ceo", "r")
+ed = os.path.join(store.RUNTIME, "events"); shutil.rmtree(ed)
+with open(ed, "w") as fh:
+    fh.write("x")
+plan = cap_mod.run_acceleration(store.read_all("task"), store.active_execution_policies(),
+                                SBC, jira_by_key={"KAN-890": dict(FACTS)})
+ok("19. the run's terminal condition is authoritative despite telemetry failure",
+   plan["condition"] in (cap_mod.DRAINED, cap_mod.SATURATED, cap_mod.BLOCKED))
+cur = [x for x in store.active_execution_policies() if x["policy_id"] == pol["policy_id"]][0]
+cleared = store.clear_execution_policy(cur["policy_id"], cur["revision"], "ceo")
+ok("20. clearing the policy is independent of event success",
+   cleared["cleared_by"] == "ceo")
+os.remove(ed); os.makedirs(ed, exist_ok=True)
+
+
+section("REMEDIATION — completeness is scoped, and zero is not unknown")
+
+fresh_runtime(); SBC = fresh_roster()
+t = mk("KAN-900", route="self")
+o = store.open_review_context("KAN-900", t["revision"])
+store.record_review_result("KAN-900", o["revision"], "frontend-1", "pass", "jira:1")
+c = telemetry.completeness()
+ok("21. review complete + blockers unknown -> overall NOT complete",
+   c["review_history"]["status"] == "complete"
+   and c["blocker_coverage"]["status"] == "unknown"
+   and c["complete"] is False and c["overall"] != "complete")
+ok("29. `complete` can never be True while a dimension is unchecked",
+   c["complete"] == (c["overall"] == "complete"))
+
+cap_mod.reconcile(tasks=store.read_all("task"), jira_by_key={"KAN-900": dict(FACTS)})
+c = telemetry.completeness()
+ok("22. review + blocker coverage complete, no applicable run -> complete",
+   c["blocker_coverage"]["status"] == "complete"
+   and c["acceleration_history"]["status"] == "complete"
+   and c["complete"] is True)
+ok("25. after real observation, coverage is COMPLETE and the count is factual",
+   c["blocker_coverage"]["observed_items"] == ["KAN-900"]
+   and c["blocker_coverage"]["unknown_items"] == []
+   and c["blocker_coverage"]["edges_recorded"] == 1)   # in review => genuinely not-ready
+
+fresh_runtime(); SBC = fresh_roster()
+mk("KAN-901")
+c = telemetry.completeness()
+ok("26. zero blocker events WITHOUT observation -> unknown, not zero",
+   c["blocker_coverage"]["status"] == "unknown"
+   and c["blocker_coverage"]["unknown_items"] == ["KAN-901"])
+
+fresh_runtime(); SBC = fresh_roster()
+telemetry.wave8_boundary()
+pol = store.set_execution_policy("accelerate", "product", "dabbler", "ceo", "r")
+c = telemetry.completeness()
+ok("23. a post-Wave8 activation with no outcome -> acceleration incomplete",
+   c["acceleration_history"]["status"] == "incomplete"
+   and c["acceleration_history"]["missing_terminal_outcomes"][0]["policy_id"]
+   == pol["policy_id"])
+
+fresh_runtime(); SBC = fresh_roster()
+old_pol = store.set_execution_policy("accelerate", "product", "dabbler", "ceo", "r")
+pp = store.path_for("policy", old_pol["policy_id"]); dd = json.load(open(pp))
+dd["activated_at"] = "2020-01-01T00:00:00Z"; json.dump(dd, open(pp, "w"))
+store.mark_coverage(store.COVERAGE_SYSTEM, wave8_started_at="2026-09-09T08:00:00Z")
+c = telemetry.completeness()
+ok("24. a PRE-Wave8 run is historical-derived, NOT a missing event",
+   c["acceleration_history"]["historical_derived"]
+   and not c["acceleration_history"]["missing_terminal_outcomes"]
+   and c["acceleration_history"]["status"] == "complete")
+
+fresh_runtime(); SBC = fresh_roster()
+mk("KAN-910")
+out = retro.build("product", "dabbler", jira_by_key={})
+ok("27. retrospective REFUSES a negative blocker claim when coverage is unknown",
+   out["coverage_claims"]["may_claim_no_blocker_patterns"] is False
+   and "BLOCKER EVIDENCE INCOMPLETE" in out["coverage_claims"]["blocker_evidence"])
+cap_mod.reconcile(tasks=store.read_all("task"), jira_by_key={"KAN-910": dict(FACTS)})
+out = retro.build("product", "dabbler", jira_by_key={"KAN-910": dict(FACTS)})
+ok("28. it may state zero blockers ONLY once coverage is complete",
+   out["coverage_claims"]["may_claim_no_blocker_patterns"] is True)
+
+w = view.wave8_view(store.read_all("task"))
+ok("30. Agent View exposes SCOPED completeness truthfully",
+   set(w["coverage"]) == {"review_history", "blocker_coverage",
+                          "acceleration_history", "overall"}
+   and w["coverage"]["blocker_coverage"] == "complete")
+ok("    and still has no controls", w["controls"] is None)
 
 sys.exit(summary())

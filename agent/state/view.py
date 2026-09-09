@@ -760,6 +760,13 @@ def wave8_view(tasks, limit=20):
                                  "status": r.get("status")}
                                 for r in cands],
         "telemetry_completeness": telemetry.completeness(tasks),
+        "coverage": {
+            "review_history": telemetry.completeness(tasks)["review_history"]["status"],
+            "blocker_coverage": telemetry.completeness(tasks)["blocker_coverage"]["status"],
+            "acceleration_history":
+                telemetry.completeness(tasks)["acceleration_history"]["status"],
+            "overall": telemetry.completeness(tasks)["overall"],
+        },
         "controls": None,
         "note": ("Advisory. Learning and retrospectives mutate nothing and adopt "
                  "nothing; promotion into doctrine is an authorised decision made "
@@ -875,11 +882,13 @@ if __name__ == "__main__":
         print("  ACCELERATE   : not active (normal mode)")
     w = p.get("wave8") or {}
     if w.get("present"):
-        print("  WAVE 8       : %d events %s | learning candidates: %d%s"
+        cov = w.get("coverage") or {}
+        print("  WAVE 8       : %d events %s | learning candidates: %d"
               % (w.get("event_count", 0), w.get("events_by_type") or "",
-                 len(w.get("learning_candidates") or []),
-                 "" if (w.get("telemetry_completeness") or {}).get("complete")
-                 else "  [TELEMETRY INCOMPLETE]"))
+                 len(w.get("learning_candidates") or [])))
+        print("                 coverage: review=%s blockers=%s accelerate=%s -> %s"
+              % (cov.get("review_history"), cov.get("blocker_coverage"),
+                 cov.get("acceleration_history"), (cov.get("overall") or "?").upper()))
     else:
         print("  WAVE 8       : no domain events recorded yet")
     for qv in p["queues"]:

@@ -193,6 +193,12 @@ def build(scope_type="product", scope_id="dabbler", tasks=None, jira_by_key=None
                              "reconstructed from; it is never inferred")
         sprint.require_complete_changelog(changelog)     # fails closed, by design
 
+    # COVERAGE GATES THE CLAIM. Blocker facts derived here describe the CURRENT
+    # moment; blocker HISTORY comes from observed edges. Where coverage is unknown,
+    # the absence of a blocker pattern is not evidence of absence, so the retrospective
+    # must decline to say so rather than report a false negative.
+    coverage = telemetry.completeness(tasks)
+    blocker_status = coverage["blocker_coverage"]["status"]
     facts = _review_facts(tasks, events) + _blocker_facts(tasks, jira_by_key)
     pats = []
     pats += _group_patterns([f for f in facts if f.get("reason_code")],
@@ -214,13 +220,34 @@ def build(scope_type="product", scope_id="dabbler", tasks=None, jira_by_key=None
                 "correct and must not be downgraded", [p], target_scope="orchestrator"))
 
     accel = [e for e in events if e.get("event_type") == "acceleration_outcome"]
+    accel_status = coverage["acceleration_history"]["status"]
+
+    # A NEGATIVE claim requires coverage. "No recurring blockers" and "ACCELERATE
+    # produced no outcomes" are only sayable once observation has actually happened.
+    claims = {
+        "may_claim_no_blocker_patterns": blocker_status == "complete",
+        "may_claim_no_acceleration_outcomes": (
+            accel_status == "complete"
+            and not coverage["acceleration_history"]["historical_derived"]),
+        "blocker_coverage": blocker_status,
+        "acceleration_coverage": accel_status,
+    }
+    if not pats and blocker_status != "complete":
+        claims["blocker_evidence"] = (
+            "BLOCKER EVIDENCE INCOMPLETE — no pattern is reported because blocker "
+            "coverage is %r, not because none exists" % blocker_status)
+    if not accel and accel_status != "complete":
+        claims["acceleration_evidence"] = (
+            "ACCELERATION EVIDENCE INCOMPLETE — coverage is %r; historical runs "
+            "predate Wave 8 and were never recorded as events" % accel_status)
     return {
+        "coverage_claims": claims,
         "scope_type": scope_type, "scope_id": scope_id,
         "generated_at": store.now(), "read_only": True, "advisory": True,
         "facts": facts, "patterns": pats, "recommendations": recs,
         "acceleration_outcomes": accel,
         "blocker_episodes": telemetry.blocker_episodes(),
-        "telemetry_completeness": telemetry.completeness(tasks),
+        "telemetry_completeness": coverage,
         "origins_present": sorted({f.get("origin") for f in facts}) or [],
         "authority": "NONE — a retrospective is derived analysis and mutates nothing",
     }

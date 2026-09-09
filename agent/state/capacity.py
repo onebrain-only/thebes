@@ -313,6 +313,84 @@ def blocked_reasons(tasks, capabilities, jira_by_key=None, **kw):
     return dict(sorted(hist.items()))
 
 
+# ---------------------------------------------------------------- the canonical boundary
+
+def reconcile(tasks=None, jira_by_key=None, edges=None, lifecycles=None,
+              interventions=None, observe=True, now=None):
+    """THE canonical orchestration reconciliation point.
+
+    One place where the Orchestrator assembles the COMPLETE blocker truth for every
+    work item — readiness, dependency, contention, interventions, Jira freshness, and
+    the review blockers `completion_reasons` derives — and, having assembled it,
+    records the edges.
+
+    Why here and nowhere else: `unclaimable_reasons` is the function that combines
+    those facts, but it is called from Agent View (which must never write) and from
+    inside `store.claim`'s lock (where writing an advisory record would be reckless).
+    Instrumenting it would put telemetry in both places. So observation belongs to the
+    boundary that *plans*, not to the predicate that *answers*.
+
+    Telemetry is emitted AFTER each item's truth is derived and never influences it.
+    `observe=False` gives the same derivation with no writes, for read-only callers.
+    """
+    import telemetry                                     # noqa: E402
+    tasks = store.read_all("task") if tasks is None else tasks
+    if observe:
+        telemetry.wave8_boundary()
+    out = {}
+    for t in tasks:
+        key = t.get("work_item_id")
+        cap = q.capability_of(t)
+        reasons = list(q.unclaimable_reasons(
+            t, all_tasks=tasks, edges=edges, lifecycles=lifecycles,
+            interventions=interventions, jira=_facts_for(t, jira_by_key), now=now))
+        # Review blockers are real blockers and belong in the same picture.
+        for r in q.completion_reasons(t, interventions=interventions):
+            if r in ("review-owner-unresolved",) and r not in reasons:
+                reasons.append(r)
+        out[key] = reasons
+        if observe:
+            telemetry.observe_blockers(key, reasons, capability=cap)
+            telemetry.mark_blocker_coverage(key)
+    return out
+
+
+def run_acceleration(tasks, policies, seats_by_capability, edges=None,
+                     jira_by_key=None, observe=True, **kw):
+    """A whole ACCELERATE run: reconcile, plan, and record ONE terminal outcome.
+
+    The terminal outcome belongs to the RUN, not to a plan. `accelerate_plan` is
+    advisory and may be computed many times during a run — by the scheduler, by a
+    recompute after a release, by Agent View rendering. Emitting there would turn one
+    activation into many, so the event is written here, once, when the run finishes.
+
+    Emission is idempotent on the activation, so a retry does not forge a second run,
+    and it is advisory: if it fails, the run's terminal condition and the policy are
+    both untouched. Clearing the policy stays a separate act — telemetry never
+    controls lifecycle.
+    """
+    import telemetry                                     # noqa: E402
+    reconcile(tasks=tasks, jira_by_key=jira_by_key, edges=edges,
+              interventions=kw.get("interventions"), observe=observe)
+    plan = accelerate_plan(tasks, policies, seats_by_capability, edges=edges,
+                           jira_by_key=jira_by_key, **kw)
+    owned = [t for t in tasks
+             if (t.get("ownership") or {}).get("seat_id")
+             and q.capability_of(t) in set(plan.get("capabilities") or [])]
+    unused = None
+    for p in plan.get("plans") or []:
+        if p.get("claimable") and not p.get("free_seats"):
+            unused = "no free seat for claimable work in %s" % p.get("capability")
+            break
+    if observe:
+        for pol in policies or []:
+            if pol.get("policy_kind") == "accelerate" and not pol.get("cleared_at"):
+                telemetry.emit_acceleration_outcome(
+                    pol, plan, max_simultaneous_owners=len(owned),
+                    unused_capacity_reason=unused)
+    return plan
+
+
 def accelerate_plan(tasks, policies, seats_by_capability, edges=None,
                     jira_by_key=None, **kw):
     """`jira_by_key` maps work_item_id -> that item's live Jira facts.

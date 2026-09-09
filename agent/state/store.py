@@ -40,6 +40,9 @@ KINDS = {
     "policy":       ("policies",      "pol"),
     "event":        ("events",        "evt"),
     "learning":     ("learning",      "lrn"),
+    # Coverage is NOT an event. It records that observation HAPPENED, which is the
+    # only way "no blockers" can be told apart from "nobody looked".
+    "coverage":     ("coverage",      None),
 }
 
 
@@ -54,7 +57,7 @@ def now():
 def new_id(kind):
     prefix = KINDS[kind][1]
     if prefix is None:
-        raise StateError("task ids are Jira keys, not generated")
+        raise StateError("%s ids are natural keys, not generated" % kind)
     return "%s-%s" % (prefix, uuid.uuid4())
 
 
@@ -1146,6 +1149,46 @@ def intervention_blocks_claim(work_item_id, capability, interventions=None):
     return None
 
 
+# ---------------------------------------------------------------- coverage
+#
+# ZERO IS NOT UNKNOWN.
+#
+# A work item with no blocker events might have had no blockers, or might never have
+# been looked at. Those are different claims and the read side must never merge them,
+# so observation itself is recorded: a coverage record says "this item's blocker
+# truth WAS reconciled at this time". Absence of the record means unknown.
+#
+# This is deliberately NOT a fourth event type. It is a small mutable marker, not a
+# fact about the work, and it carries no history.
+
+COVERAGE_SYSTEM = "system"
+
+
+def mark_coverage(coverage_id, **fields):
+    """Upsert a coverage marker. Advisory, like everything else in Wave 8."""
+    with _Lock("coverage"):
+        cur = read("coverage", coverage_id)
+        if cur is None:
+            rec = dict({"coverage_id": coverage_id, "schema_version": SCHEMA_VERSION,
+                        "revision": 1, "created_at": now(), "updated_at": now()},
+                       **fields)
+            _validate_one("coverage", rec)
+            _atomic_write(path_for("coverage", coverage_id), rec)
+            return rec
+        merged = dict(cur, **fields)
+        merged["revision"] = cur["revision"] + 1
+        merged["updated_at"] = now()
+        _validate_one("coverage", merged)
+        _atomic_write(path_for("coverage", coverage_id), merged)
+        return merged
+
+
+def read_coverage(coverage_id=None):
+    if coverage_id is not None:
+        return read("coverage", coverage_id)
+    return read_all("coverage")
+
+
 # ---------------------------------------------------------------- domain events
 #
 # ADVISORY. A DOMAIN EVENT IS NEVER WORKFLOW AUTHORITY.
@@ -1533,7 +1576,8 @@ def _id_field(kind):
     return {"task": "work_item_id", "routing": "request_id",
             "exception": "exception_id", "dependency": "dependency_id",
             "intervention": "intervention_id", "policy": "policy_id",
-            "event": "event_id", "learning": "learning_id"}[kind]
+            "event": "event_id", "learning": "learning_id",
+            "coverage": "coverage_id"}[kind]
 
 
 def _validate_one(kind, record):
