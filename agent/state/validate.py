@@ -729,6 +729,23 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
             _review_coherence(rec, prof, canonical, got, errs, where)
         validate_review_context(rec.get("review_context"), canonical, prof, errs,
                                 where, rec=rec)
+        cr = rec.get("completion_reconciliation")
+        if cr is not None:
+            if not isinstance(cr, dict):
+                errs.append("%s: completion_reconciliation must be an object" % where)
+            else:
+                for f in ("by", "at", "completion_ref", "from_status",
+                          "to_review_status", "route"):
+                    if not cr.get(f):
+                        errs.append("%s: completion_reconciliation.%s is required"
+                                    % (where, f))
+                if cr.get("by") and cr["by"] not in ("po", "ceo"):
+                    errs.append("%s: completion_reconciliation.by %r is not a "
+                                "reconciliation authority" % (where, cr.get("by")))
+                if cr.get("route") and cr["route"] not in REVIEW_TYPES:
+                    errs.append("%s: completion_reconciliation.route %r is unknown"
+                                % (where, cr.get("route")))
+                _reflen(cr, ["completion_ref"], errs, where)
         er = rec.get("execution_recovery")
         if er is not None:
             if not isinstance(er, dict):

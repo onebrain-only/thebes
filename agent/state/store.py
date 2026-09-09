@@ -619,6 +619,11 @@ def recover_execution_to_ready(work_item_id, expected_revision, recovery_ref, ac
             raise StateError("review-in-progress: %s carries a review context; its "
                              "route decides what happens next, not recovery"
                              % work_item_id)
+        if cur.get("completion_reconciliation") is not None:
+            raise StateError("already-reconciled-complete: %s is recorded as factually "
+                             "complete and moving forward to review. Completed work is "
+                             "never sent backward to Ready merely to regain lifecycle "
+                             "reachability." % work_item_id)
         # STOP is task-scoped safety and blocks the recovery itself. HOLD and FREEZE
         # deliberately do NOT: they gate new CLAIMS, and recovery creates no
         # ownership. A recovered item under HOLD or FREEZE simply sits in Ready
@@ -634,6 +639,120 @@ def recover_execution_to_ready(work_item_id, expected_revision, recovery_ref, ac
         merged["execution_recovery"] = {"by": actor, "at": now(),
                                         "recovery_ref": recovery_ref,
                                         "from_status": sid}
+        merged["revision"] = cur["revision"] + 1
+        merged["updated_at"] = now()
+        _validate_one("task", merged)
+        _atomic_write(path_for("task", work_item_id), merged)
+        return merged
+
+
+def reconcile_completed_execution(work_item_id, expected_revision, actor,
+                                  completion_ref):
+    """Move ALREADY-COMPLETE orphaned execution FORWARD to its derived review. CAS'd.
+
+    TWO ORPHANS, TWO PATHS
+      `recover_execution_to_ready` is right for work that still needs executing. It
+      is wrong for work already finished: Ready is a PRE-execution queue, so sending
+      completed work there would imply execution is outstanding, invite a duplicate
+      implementation, create a pointless claim, risk handing finished work to a new
+      executor, and distort the item's history. KAN-155 was exactly that — applied to
+      production and every criterion verified, sitting in `Back-end` because nobody
+      transitioned it.
+
+    COMPLETION EVIDENCE IS NOT VALIDATION EVIDENCE
+      So this moves the item to its review route and NEVER to Done. That the executor
+      verified its own acceptance criteria during execution is not a validation
+      verdict; execution verification and canonical review are different authorities,
+      and the item still has to pass its route.
+
+    `executor_evidence` ALONE IS NOT PROOF OF COMPLETION
+      It proves who executed something, not that the ticket finished — every stranded
+      item in this family carries it, including the ones that were merely stalled. So
+      an explicit `completion_ref` is required, naming the factual record (an applied
+      migration, a verification comment, a commit). Completion is asserted by an
+      authority and evidenced, never inferred from state shape.
+
+    THE ROUTE IS DERIVED, NOT PASSED
+      There is no route argument. The target comes from `policy.validation_route`
+      over the item's own characteristics and must agree with the stored route, so a
+      caller cannot reach an easier review by asking for one. An item whose profile
+      was never completed is refused rather than guessed at.
+
+    Jira is not touched here, no ownership is created, no review owner is chosen and
+    no verdict is recorded. It authorises the forward move and names the target; the
+    transition, the observation and `open_review_context` follow separately.
+    """
+    import board, policy                                # noqa: E402
+    if expected_revision is None:
+        raise StateError("expected_revision is required; there is no force update")
+    if not completion_ref:
+        raise StateError("completion_ref is required — executor evidence proves who "
+                         "executed, not that the work FINISHED, so completion must be "
+                         "evidenced explicitly and never inferred")
+    if actor not in RECOVERY_AUTHORITIES:
+        raise StateError("unauthorised-recovery-actor: %r may not reconcile completed "
+                         "execution. Deciding that work is factually finished is a "
+                         "Product lifecycle judgement (%s)."
+                         % (actor, "/".join(RECOVERY_AUTHORITIES)))
+    with record_lock("task", work_item_id):
+        cur = read("task", work_item_id)
+        if cur is None:
+            raise StateError("task %s does not exist" % work_item_id)
+        if cur["revision"] != expected_revision:
+            raise StateError("stale write refused: task %s is at revision %d, caller "
+                             "expected %d" % (work_item_id, cur["revision"],
+                                              expected_revision))
+        if cur.get("record_type") != "executable":
+            raise StateError("container records hold no execution to reconcile")
+
+        lc = cur.get("lifecycle") or {}
+        sid = str(lc.get("jira_status_id") or "")
+        prof = dict(cur.get("execution_profile") or {})
+        cap = prof.get("required_capability")
+        if lc.get("canonical") != "development":
+            raise StateError(
+                "not-orphaned-execution: %s is %r. Forward reconciliation applies only "
+                "to an item still sitting in a capability EXECUTION status."
+                % (work_item_id, lc.get("canonical")))
+        if not cap or sid != board.execution_status_for(cap):
+            raise StateError("wrong-execution-status: %s is at %s but capability %r "
+                             "executes in %s" % (work_item_id, sid or "none", cap,
+                                                 board.execution_status_for(cap)))
+        if cur.get("ownership") is not None:
+            raise StateError("already-owned: %s is owned by %s — reconciliation is for "
+                             "ORPHANED completed work"
+                             % (work_item_id, (cur["ownership"] or {}).get("seat_id")))
+        if cur.get("review_context") is not None:
+            raise StateError("review-in-progress: %s already carries a review context"
+                             % work_item_id)
+
+        ch = prof.get("characteristics")
+        if ch is None:
+            raise StateError("incomplete-profile: %s has no characteristics, so no "
+                             "review route can be derived. Complete the profile through "
+                             "the ordinary readiness path first." % work_item_id)
+        stored = prof.get("validation_route")
+        if stored not in policy.STRICTNESS:
+            raise StateError("no-validation-route: %s has no derived route; forward "
+                             "reconciliation never guesses one" % work_item_id)
+        derived = policy.validation_route(ch)
+        if policy.STRICTNESS[stored] < policy.STRICTNESS[derived]:
+            raise StateError("route-incoherent: %s stores %r but its characteristics "
+                             "derive %r. Reconciliation will not carry a route weaker "
+                             "than the work requires." % (work_item_id, stored, derived))
+        target = board.review_status_for(stored)
+        if target is None:
+            raise StateError("no review status for route %r" % stored)
+
+        for iv in active_interventions():
+            if iv.get("kind") == "stop" and iv.get("target") == work_item_id:
+                raise StateError("task-stopped: a STOP is active on %s; lifecycle "
+                                 "progression waits until it is cleared" % work_item_id)
+
+        merged = dict(cur)
+        merged["completion_reconciliation"] = {
+            "by": actor, "at": now(), "completion_ref": completion_ref,
+            "from_status": sid, "to_review_status": target, "route": stored}
         merged["revision"] = cur["revision"] + 1
         merged["updated_at"] = now()
         _validate_one("task", merged)

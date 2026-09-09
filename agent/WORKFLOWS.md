@@ -173,7 +173,8 @@ A transition made by the wrong seat is a process failure, not a shortcut.
 | its **execution status** (`Front-end` / `Back-end` / `Design` / `Content` / `Operations`) | **the executing worker** |
 | its **review status** (`QA-Test` / `Self-review` / `Peer-review`) | **the executing worker** — the status is chosen by system policy, not by the worker |
 | back to its **same** execution status (review FAIL) | **the review owner** |
-| **back to `Ready` from an execution status, when the item has NO owner** | **`po`** — execution recovery, added 2026-09-09. See below |
+| **back to `Ready` from an execution status, when the item has NO owner and the work is INCOMPLETE** | **`po`** — execution recovery, added 2026-09-09. See below |
+| **forward to the derived review status from an execution status, when the item has NO owner and the work is COMPLETE** | **`po`** — completed-execution reconciliation, added 2026-09-09. See below |
 | `Done` | **the review owner** — SELF: the worker · PEER: the reviewer · QA: `qa` |
 
 **EXECUTION RECOVERY — the orphaned-execution row above.** An executable item can end up
@@ -197,6 +198,29 @@ not, because they gate new claims rather than lifecycle reconciliation, and a re
 under either simply sits in `Ready` unclaimable, which is truthful rather than hidden. The
 recovery is complete only when **Jira reads `Ready` (10008)** and the observation has landed —
 Persistent State never pretends an item is Ready while Jira still shows execution.
+
+**TWO ORPHANS, TWO PATHS — and the difference is whether the work is finished.** Recovery
+to `Ready` is right for work that still needs executing. It is **wrong** for work already
+complete: `Ready` is a **pre-execution** queue, so sending finished work there would imply
+execution is outstanding, invite a duplicate implementation, create a pointless claim, risk
+handing completed work to a new executor, and distort the item's history. **Completed work is
+never sent backward to `Ready` merely to regain lifecycle reachability.**
+
+**COMPLETED-BUT-UNTRANSITIONED EXECUTION** moves **forward** instead, through
+`store.reconcile_completed_execution`, to the review status its own **derived** route names —
+and **never directly to `Done`**. *Completion evidence is not validation evidence:* that an
+executor verified its acceptance criteria while executing is not a verdict, because execution
+verification and canonical review are different authorities. The item still passes its route.
+
+**`executor_evidence` alone is not proof of completion.** It proves who executed something,
+not that the ticket finished — every orphan in this family carries it, including the merely
+stalled ones. So an explicit `completion_ref` naming the factual record (an applied migration,
+a verification comment, a commit) is required. **The route is derived, never passed:** there is
+no route argument, so no caller can reach an easier review by asking for one, and an item whose
+profile was never completed is refused rather than guessed at. Reconciliation creates no
+ownership, chooses no reviewer, records no verdict and fabricates no completion. A task-scoped
+STOP blocks it; HOLD and FREEZE do not, since they gate new execution claims rather than
+truthful reconciliation.
 
 **THERE ARE NO TEAM LEADS.** The five `team-lead-N` seats were **removed in Wave 6,
 2026-09-08**. Nothing replaced them as a seat, and nothing should: their three remaining duties
