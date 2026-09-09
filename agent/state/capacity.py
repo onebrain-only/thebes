@@ -60,20 +60,54 @@ def free_seats(capability, tasks, seats_by_capability):
 
 # ---- B/C. queue depth vs available seats ------------------------------------
 
-def claimable_items(capability, tasks, **kw):
+def _reject_shared_jira(kw):
+    """A BATCHED boundary must never take one `jira=` fact object.
+
+    `eligibility_reasons(task, jira=...)` describes ONE item — its due date, its
+    acceptance criteria, its status. Passing a single dict to a function that
+    evaluates many tasks silently answers every item with some other item's facts,
+    which is how a task with no due date inherits one. The unsafe call is refused
+    rather than quietly reinterpreted: a caller that means "no live facts" already
+    has a way to say so, which is to pass nothing and get `unverified-jira`.
+    """
+    if "jira" in kw:
+        raise TypeError(
+            "batched planning does not accept a shared `jira=` fact object — one "
+            "item's due date and acceptance criteria are not another's. Pass "
+            "`jira_by_key={work_item_id: facts}`; an item absent from the map is "
+            "correctly reported unverified-jira.")
+
+
+def _facts_for(task, jira_by_key):
+    """This task's OWN Jira facts, or None. Never another task's, never invented."""
+    if not jira_by_key:
+        return None
+    return jira_by_key.get(task.get("work_item_id"))
+
+
+def claimable_items(capability, tasks, jira_by_key=None, **kw):
+    """Claimable work of one capability, each item judged on ITS OWN Jira facts.
+
+    An item with no entry in `jira_by_key` keeps the fail-closed answer
+    (`unverified-jira`) — absent facts are never fabricated and never borrowed.
+    """
+    _reject_shared_jira(kw)
     return [t for t in tasks
-            if q.capability_of(t) == capability and q.claimable(t, all_tasks=tasks, **kw)]
+            if q.capability_of(t) == capability
+            and q.claimable(t, all_tasks=tasks, jira=_facts_for(t, jira_by_key), **kw)]
 
 
 # ---- D. is another seat justified? ------------------------------------------
 
-def expansion_justified(capability, tasks, seats_by_capability, **kw):
+def expansion_justified(capability, tasks, seats_by_capability,
+                        jira_by_key=None, **kw):
     """Proven parallel demand only. Returns (bool, reason).
 
     The bar is deliberately high, and the second clause is the important one: a queue
     with two items does NOT justify a new seat while a defined seat sits dormant. Use
     the seats that exist first.
     """
+    _reject_shared_jira(kw)
     cfg = topology().get(capability)
     if cfg is None:
         return False, "unknown-capability"
@@ -85,7 +119,7 @@ def expansion_justified(capability, tasks, seats_by_capability, **kw):
     free = free_seats(capability, tasks, seats_by_capability)
     if free:
         return False, "existing-seat-dormant"
-    items = claimable_items(capability, tasks, **kw)
+    items = claimable_items(capability, tasks, jira_by_key=jira_by_key, **kw)
     if len(items) < 2:
         return False, "no-parallel-demand"
     # Mutually contended work cannot run in parallel, so a second seat would not help.
@@ -109,9 +143,10 @@ def next_seat_id(capability, seats_by_capability, historical_ids=()):
 
 # ---- E. does the work visibly not fit? --------------------------------------
 
-def overflow(capability, tasks, seats_by_capability, **kw):
+def overflow(capability, tasks, seats_by_capability, jira_by_key=None, **kw):
     """Work that cannot fit the seats that exist. Exposed, never silently absorbed."""
-    items = claimable_items(capability, tasks, **kw)
+    _reject_shared_jira(kw)
+    items = claimable_items(capability, tasks, jira_by_key=jira_by_key, **kw)
     effort = sum((t.get("execution_profile") or {}).get("work_effort") or 0
                  for t in items)
     seats = len(seats_for(capability, seats_by_capability)) or 1
@@ -189,7 +224,8 @@ def safe_parallel_plan(capability, tasks, seats_by_capability, edges=None,
     higher-ordered one is planned and the other waits, which is serialisation, not loss.
     """
     free = free_seats(capability, tasks, seats_by_capability)
-    pool = claimable_items(capability, tasks, **kw)
+    _reject_shared_jira(kw)
+    pool = claimable_items(capability, tasks, jira_by_key=jira_by_key, **kw)
     if covers is not None:
         # Scope is enforced HERE as well as when choosing capabilities: a
         # PRODUCT-scoped policy must not accelerate another product's work merely
@@ -213,7 +249,8 @@ def safe_parallel_plan(capability, tasks, seats_by_capability, edges=None,
         admitted.append(t)
 
     pairs = list(zip(free, [t.get("work_item_id") for t in admitted]))
-    expand, why = expansion_justified(capability, tasks, seats_by_capability, **kw)
+    expand, why = expansion_justified(capability, tasks, seats_by_capability,
+                                      jira_by_key=jira_by_key, **kw)
     return {
         "capability": capability,
         "free_seats": free,
@@ -229,7 +266,7 @@ def safe_parallel_plan(capability, tasks, seats_by_capability, edges=None,
     }
 
 
-def scheduler_condition(plans, tasks, capabilities, **kw):
+def scheduler_condition(plans, tasks, capabilities, jira_by_key=None, **kw):
     """DRAINED / SATURATED / BLOCKED — derived, never stored.
 
     These are SCHEDULER conditions and not Jira lifecycle. None of them is DONE, and
@@ -255,21 +292,36 @@ def scheduler_condition(plans, tasks, capabilities, **kw):
     return DRAINED
 
 
-def blocked_reasons(tasks, capabilities, **kw):
-    """The structured reasons in-scope work is not claimable. Reported, not solved."""
+def blocked_reasons(tasks, capabilities, jira_by_key=None, **kw):
+    """The structured reasons in-scope work is not claimable. Reported, not solved.
+
+    Each item is counted against its OWN facts, so a task whose Jira facts were
+    supplied is never reported `unverified-jira` merely because a neighbour's were
+    missing. That inaccuracy was real and is fixed at the source rather than
+    patched in the reporting.
+    """
     import collections
+    _reject_shared_jira(kw)
     hist = collections.Counter()
     for t in tasks:
         if q.capability_of(t) not in set(capabilities):
             continue
         if (t.get("ownership") or {}).get("seat_id"):
             continue
-        hist.update(q.unclaimable_reasons(t, all_tasks=tasks, **kw))
+        hist.update(q.unclaimable_reasons(t, all_tasks=tasks,
+                                          jira=_facts_for(t, jira_by_key), **kw))
     return dict(sorted(hist.items()))
 
 
 def accelerate_plan(tasks, policies, seats_by_capability, edges=None,
                     jira_by_key=None, **kw):
+    """`jira_by_key` maps work_item_id -> that item's live Jira facts.
+
+    ONE map serves both eligibility (has_due_date, has_acceptance_criteria,
+    status_id) and ordering (priority_rank, due_date), so there is no second map to
+    drift and no way for one item's priority or due date to reach another's.
+    Nothing is persisted: the facts arrive as a parameter and leave with the call.
+    """
     """The whole accelerated schedule: every covered capability, planned independently.
 
     Capabilities are planned SEPARATELY and never serialised behind one another —
@@ -290,8 +342,10 @@ def accelerate_plan(tasks, policies, seats_by_capability, edges=None,
     return {
         "capabilities": covered,
         "plans": plans,
-        "condition": scheduler_condition(plans, tasks, covered, **kw),
-        "blocked_reasons": blocked_reasons(tasks, covered, **kw),
+        "condition": scheduler_condition(plans, tasks, covered,
+                                         jira_by_key=jira_by_key, **kw),
+        "blocked_reasons": blocked_reasons(tasks, covered,
+                                           jira_by_key=jira_by_key, **kw),
         "review_work": [t.get("work_item_id") for t in q.review_work(tasks)],
         "review_waiting": [t.get("work_item_id") for t in q.review_waiting(tasks)],
     }

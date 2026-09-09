@@ -325,18 +325,23 @@ sbc = {"backend": ["backend-%d" % i for i in range(1, 9)],
 tasks = store.read_all("task")
 ok("a dormant defined seat is FREE, not unavailable",
    len(capacity.free_seats("backend", tasks, sbc)) > 0)
-just, why = capacity.expansion_justified("backend", tasks, sbc, jira=JIRA_OK, **FRESH)
+def by_key(items, facts):
+    """Per-item Jira facts. Each task names its OWN entry — the batched capacity
+    API refuses a single shared dict, because one item's due date is not another's."""
+    return {t.get("work_item_id"): dict(facts) for t in items}
+
+just, why = capacity.expansion_justified("backend", tasks, sbc, jira_by_key=by_key(tasks, JIRA_OK), **FRESH)
 ok("no new seat while a defined seat is dormant", just is False and why == "existing-seat-dormant")
 busy = [dict(t, ownership={"seat_id": s, "claimed_at": OBS, "claim_ref": "r"})
         for t, s in zip([task("B%d" % i) for i in range(8)], sbc["backend"])]
-j2, w2 = capacity.expansion_justified("backend", busy, sbc, jira=JIRA_OK, **FRESH)
+j2, w2 = capacity.expansion_justified("backend", busy, sbc, jira_by_key=by_key(busy, JIRA_OK), **FRESH)
 ok("all seats busy but no claimable demand -> still no expansion",
    j2 is False and w2 == "no-parallel-demand")
 ok("ceiling respected: content at ceiling refuses",
    capacity.expansion_justified("content", [], {"content": ["content-manager", "content-2"]},
-                                jira=JIRA_OK, **FRESH)[1] == "at-ceiling")
+                                jira_by_key={}, **FRESH)[1] == "at-ceiling")
 ok("non-expandable capability refuses",
-   capacity.expansion_justified("po", [], {"po": ["po"]}, jira=JIRA_OK, **FRESH)[1]
+   capacity.expansion_justified("po", [], {"po": ["po"]}, jira_by_key={}, **FRESH)[1]
    == "capability-not-expandable")
 ok("deterministic next id", capacity.next_seat_id("backend", sbc) == "backend-9")
 ok("historical id is NEVER recycled",

@@ -101,8 +101,14 @@ def kw(tasks):
     return {"jira": dict(JIRA_OK)}
 
 
+def by_key(items):
+    """Per-item Jira facts, one entry per task. The batched API refuses a single
+    shared dict — that is the whole point of the per-item boundary."""
+    return {t.get("work_item_id"): dict(JIRA_OK) for t in items}
+
+
 def plan_for(cap_name, tasks, sbc, **extra):
-    return cap.safe_parallel_plan(cap_name, tasks, sbc, jira=dict(JIRA_OK), **extra)
+    return cap.safe_parallel_plan(cap_name, tasks, sbc, jira_by_key=by_key(tasks), **extra)
 
 
 fresh_runtime()
@@ -347,7 +353,7 @@ b2 = mk("KAN-753", capability="backend", surfaces=["supabase/2.sql"])
 c1 = mk("KAN-754", capability="content", surfaces=["lib/l10n/en.arb"])
 tasks = store.read_all("task")
 whole = cap.accelerate_plan(tasks, store.active_execution_policies(), SBC,
-                            jira=dict(JIRA_OK))
+                            jira_by_key=by_key(tasks))
 by = {p_["capability"]: p_ for p_ in whole["plans"]}
 ok("26. unrelated capabilities fill in PARALLEL, never serialized behind each other",
    len(by["frontend"]["selected"]) == 2 and len(by["backend"]["selected"]) == 2
@@ -362,13 +368,13 @@ for seat, k in busy.items():
     mk(k, surfaces=["lib/%s.dart" % k], owner=seat)
 d1 = mk("KAN-763", surfaces=["lib/d1.dart"]); d2 = mk("KAN-764", surfaces=["lib/d2.dart"])
 tasks = store.read_all("task")
-just, why = cap.expansion_justified("frontend", tasks, SBC, jira=dict(JIRA_OK))
+just, why = cap.expansion_justified("frontend", tasks, SBC, jira_by_key=by_key(tasks))
 ok("    with every seat busy and genuine parallel demand, expansion IS justified",
    just is True and why == "parallel-demand")
 ok("29. the ceiling comes from topology, not from a constant here",
    cap.topology()["frontend"]["ceiling"] == 9)
 ok("    a non-expandable capability is refused",
-   cap.expansion_justified("po", tasks, SBC, jira=dict(JIRA_OK))[1]
+   cap.expansion_justified("po", tasks, SBC, jira_by_key=by_key(tasks))[1]
    in ("capability-not-expandable", "at-ceiling", "unknown-capability"))
 nid = cap.next_seat_id("frontend", SBC, historical_ids=("frontend-9",))
 ok("    next_seat_id never recycles a historical id", nid != "frontend-9")
@@ -437,7 +443,7 @@ o_ = mk("KAN-801", surfaces=["lib/o.dart"], product="other-product")
 pp = store.set_execution_policy("accelerate", "product", "dabbler", "ceo", "ceo:p")
 tasks = store.read_all("task")
 whole = cap.accelerate_plan(tasks, store.active_execution_policies(), SBC,
-                            jira=dict(JIRA_OK))
+                            jira_by_key=by_key(tasks))
 sel = sum((p_["selected"] for p_ in whole["plans"]), [])
 ok("35. PRODUCT scope isolation — only the named product participates",
    "KAN-800" in sel and "KAN-801" not in sel)
@@ -449,7 +455,7 @@ bk = mk("KAN-811", capability="backend", surfaces=["supabase/f.sql"])
 cpol = store.set_execution_policy("accelerate", "capability", "frontend", "ceo", "ceo:c")
 tasks = store.read_all("task")
 whole = cap.accelerate_plan(tasks, store.active_execution_policies(), SBC,
-                            jira=dict(JIRA_OK))
+                            jira_by_key=by_key(tasks))
 ok("36. CAPABILITY scope isolation — backend is not accelerated",
    whole["capabilities"] == ["frontend"])
 store.clear_execution_policy(cpol["policy_id"], cpol["revision"], "ceo")
@@ -461,7 +467,7 @@ mk("KAN-821", capability="cto", surfaces=["docs/ARCHITECTURE.md"])
 mk("KAN-822", capability="po", surfaces=["docs/x.md"])
 tasks = store.read_all("task")
 whole = cap.accelerate_plan(tasks, store.active_execution_policies(), SBC,
-                            jira=dict(JIRA_OK))
+                            jira_by_key=by_key(tasks))
 ok("38. executives/management are NOT woken by generic acceleration",
    "cto" not in whole["capabilities"] and "po" not in whole["capabilities"])
 ok("    they are excluded by name, and the list is explicit",
@@ -490,7 +496,7 @@ section("exit states are scheduler conditions, never Jira lifecycle")
 fresh_runtime(); SBC = fresh_roster()
 store.set_execution_policy("accelerate", "system", None, "ceo", "ceo:a")
 whole = cap.accelerate_plan(store.read_all("task"), store.active_execution_policies(),
-                            SBC, jira=dict(JIRA_OK))
+                            SBC, jira_by_key=by_key(store.read_all("task")))
 ok("42. no work at all -> ACCELERATION DRAINED", whole["condition"] == cap.DRAINED)
 
 fresh_runtime(); SBC = fresh_roster()
@@ -499,7 +505,7 @@ for i in range(5):
     mk("KAN-84%d" % i, surfaces=["lib/%d.dart" % i])
 tasks = store.read_all("task")
 whole = cap.accelerate_plan(tasks, store.active_execution_policies(), SBC,
-                            jira=dict(JIRA_OK))
+                            jira_by_key=by_key(tasks))
 ok("43. 5 claimable items against 3 seats -> ACCELERATION SATURATED",
    whole["condition"] == cap.SATURATED)
 ok("    exactly 3 selected, the rest deferred",
@@ -512,7 +518,7 @@ pth = store.path_for("task", "KAN-850")
 dd = json.load(open(pth)); dd["surfaces"] = None; json.dump(dd, open(pth, "w"))
 tasks = store.read_all("task")
 whole = cap.accelerate_plan(tasks, store.active_execution_policies(), SBC,
-                            jira=dict(JIRA_OK))
+                            jira_by_key=by_key(tasks))
 ok("44. work remains but none is claimable -> ACCELERATION BLOCKED",
    whole["condition"] == cap.BLOCKED)
 ok("    and the structured reasons are reported, not solved",
