@@ -280,7 +280,7 @@ def validate_surfaces(surfaces, errs, where):
 
 # ---------------------------------------------------------------- review
 
-def validate_review_context(rc, canonical, profile, errs, where):
+def validate_review_context(rc, canonical, profile, errs, where, rec=None):
     """Current review state — not a history. Jira's changelog and the ticket's own
     comments already hold the cycles; duplicating them here would create a second
     authority that drifts."""
@@ -312,6 +312,34 @@ def validate_review_context(rc, canonical, profile, errs, where):
         errs.append("%s: review_type %r does not match validation_route %r — the only "
                     "legal divergence is after a PEER-fail transfer, which sets "
                     "previous_owner" % (where, rt, route))
+    owner = rc.get("review_owner")
+    if owner is not None and owner not in seats():
+        errs.append("%s: review_owner %r is not a declared seat" % (where, owner))
+    if rc.get("review_result") == "pass" and owner is None:
+        errs.append("%s: review_result 'pass' with no review_owner — a verdict with "
+                    "no owner is a verdict nobody is accountable for" % where)
+    # SELF's owner IS the evidenced executor. Checked here as well as in
+    # open_review_context because the store guards the WRITE and the validator guards
+    # the FILE, and a hand-edited record reaches only the second.
+    if rt == "self" and owner is not None and rec is not None:
+        ev = sorted({e.get("seat_id") for e in (rec.get("executor_evidence") or [])
+                     if isinstance(e, dict) and e.get("seat_id")})
+        if len(ev) > 1:
+            errs.append("%s: SELF review_owner %r with %d distinct evidenced "
+                        "executors (%s) — SELF's owner is derived from exactly one, "
+                        "and conflicting evidence is surfaced, never resolved by "
+                        "picking" % (where, owner, len(ev), ", ".join(ev)))
+        elif not ev:
+            # WARN, not a hard failure, for the same reason a legacy status is: a
+            # record written before this invariant existed is repairable, and making
+            # it unloadable would make the migration state unwritable. The WRITE path
+            # (store.open_review_context) refuses outright, so nothing new lands here.
+            errs.append("%s: WARN SELF review_owner %r with no executor evidence — "
+                        "legitimate only for a record predating the SELF state path"
+                        % (where, owner))
+        elif ev[0] != owner:
+            errs.append("%s: SELF review_owner %r is not the evidenced executor %r"
+                        % (where, owner, ev[0]))
     if rt == "qa" and rc.get("review_owner") not in (None, "qa"):
         errs.append("%s: the QA route's owner is the qa seat, got %r"
                     % (where, rc.get("review_owner")))
@@ -692,7 +720,8 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
                                 % (where, cap, want, board.name_for(want), got,
                                    board.name_for(got)))
             _review_coherence(rec, prof, canonical, got, errs, where)
-        validate_review_context(rec.get("review_context"), canonical, prof, errs, where)
+        validate_review_context(rec.get("review_context"), canonical, prof, errs,
+                                where, rec=rec)
 
     elif kind == "routing":
         _req(rec, ["request_id", "originating_work_item", "required_capability",

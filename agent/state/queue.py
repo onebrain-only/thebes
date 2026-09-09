@@ -280,6 +280,83 @@ def execution_reasons(task, seat_id, interventions=None):
     return out
 
 
+# ---------------------------------------------------------------- completion
+#
+# A THIRD reason namespace, kept apart from the other two on purpose:
+#
+#   claimability      "may this UNOWNED work obtain an owner?"
+#   execution gate    "may this ALREADY-OWNED seat continue now?"
+#   completion        "has this work actually passed its validation route?"
+#
+# Completion is DERIVED, never stored. A second stored lifecycle would be a second
+# authority that drifts from the review context the moment anyone wrote to one and
+# not the other — which is precisely how an item ends up marked complete having
+# passed nothing.
+
+def completion_reasons(task, interventions=None):
+    """Why this item may NOT be transitioned to Done. Empty = eligible.
+
+    The rule this enforces is `WORKFLOWS.md` §2.3: a task reaches Done only through
+    its validation route, and only its review owner puts it there. Everything below
+    is that sentence made checkable.
+
+    What deliberately CANNOT make an item eligible: a Jira status of Done, a seat
+    saying it validated the work, an `agent/status` entry, executor evidence on its
+    own. None of them can produce a `pass` in the review context, and nothing else
+    is consulted here.
+    """
+    import store                                        # noqa: E402
+    out = []
+    if not is_executable(task):
+        return ["not-executable"]
+
+    lc = (task.get("lifecycle") or {}).get("canonical")
+    if lc == "done":
+        out.append("already-done")
+    elif lc != "review":
+        # There is no path from an execution status straight to Done.
+        out.append("not-in-review")
+
+    prof = task.get("execution_profile") or {}
+    if prof.get("completion_route") != "DONE":
+        out.append("no-completion-route")
+
+    rc = task.get("review_context")
+    if not isinstance(rc, dict):
+        # The unreconciled state: in review, with no record of a review.
+        out.append("no-review-context")
+    else:
+        result = rc.get("review_result")
+        if result != "pass":
+            out.append("review-not-passed" if result != "fail" else "review-failed")
+        if not rc.get("review_owner"):
+            out.append("review-owner-unresolved")
+        route = prof.get("validation_route")
+        # The one legal divergence is the PEER-fail transfer, which sets previous_owner.
+        if route and rc.get("review_type") != route and not rc.get("previous_owner"):
+            out.append("review-route-mismatch")
+
+    interventions = (store.active_interventions()
+                     if interventions is None else interventions)
+    key = task.get("work_item_id")
+    for iv in interventions or []:
+        if iv.get("kind") == "STOP" and iv.get("target") == key:
+            # STOP exists for a detected safety condition. Transitioning past one to
+            # Done would complete exactly the work somebody stopped.
+            out.append("task-stopped")
+            break
+
+    seen, uniq = set(), []
+    for r in out:
+        if r not in seen:
+            seen.add(r); uniq.append(r)
+    return uniq
+
+
+def completion_eligible(task, **kw):
+    return not completion_reasons(task, **kw)
+
+
 def execution_permitted(task, seat_id, **kw):
     return not execution_reasons(task, seat_id, **kw)
 

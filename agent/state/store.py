@@ -411,6 +411,193 @@ def set_characteristics(work_item_id, expected_revision, changes, author,
         return merged
 
 
+def evidenced_executors(task):
+    """The DISTINCT seats evidenced as having executed this work, sorted.
+
+    One list, one meaning, read the same way everywhere: `queue.unclaimable_reasons`
+    calls two of these `conflicting-evidence`, `policy.resolve_owner_or_wait` refuses
+    to name a SELF owner unless there is exactly one, and this helper is what both
+    of them are counting. Ownership is NOT evidence and never appears here — a seat
+    that holds a claim has not yet executed anything.
+    """
+    return sorted({e.get("seat_id") for e in (task.get("executor_evidence") or [])
+                   if isinstance(e, dict) and e.get("seat_id")})
+
+
+def open_review_context(work_item_id, expected_revision, opened_by=None,
+                        evidenced_reviewer=None):
+    """Open the validation route's review context. CAS'd.
+
+    THE MISSING STEP. Until this existed a route could be *computed* — policy has
+    derived the owner since Wave 5 — but never *recorded*, so a SELF item that passed
+    its validation had no supported path to Done and sat in `Self-review` reading
+    REVIEW STATE UNRECONCILED forever. This writes what policy already decides; it
+    decides nothing itself.
+
+    THE OWNER IS DERIVED, NEVER PASSED IN
+    `policy.resolve_owner_or_wait` is the authority for all three routes and is
+    reused unchanged. For SELF it returns the single evidenced executor, or None
+    where evidence is absent or conflicting — and here that None becomes a REFUSAL,
+    because SELF doctrine says the route cannot start rather than starting ownerless.
+    For PEER and QA a None owner is the legitimate WAITING state the doctrine
+    requires: the item sits in its review status with `review_owner` null rather than
+    being downgraded to an easier route, and this function writes exactly that.
+
+    REOPENING AFTER A FAIL
+    A context whose result is `fail` may be reopened on the SAME route with the cycle
+    incremented — that is the SELF and QA rework loop verbatim. PEER is excluded:
+    its failure path is `peer_fail_transfer`, which moves execution authority to the
+    reviewer, and letting a plain reopen stand in for it would drop that transfer.
+
+    Jira is never touched here. Persistent State owns the review context; Jira owns
+    the lifecycle status.
+    """
+    import policy, validate                             # noqa: E402
+    if expected_revision is None:
+        raise StateError("expected_revision is required; there is no force update")
+    with record_lock("task", work_item_id):
+        cur = read("task", work_item_id)
+        if cur is None:
+            raise StateError("task %s does not exist" % work_item_id)
+        if cur["revision"] != expected_revision:
+            raise StateError("stale write refused: task %s is at revision %d, caller "
+                             "expected %d" % (work_item_id, cur["revision"],
+                                              expected_revision))
+        if cur.get("record_type") != "executable":
+            raise StateError("container records carry no review context")
+
+        canonical = (cur.get("lifecycle") or {}).get("canonical")
+        if canonical != "review":
+            raise StateError("not-in-review: %s is in %r, and a review context is "
+                             "opened only once the item is in its review status"
+                             % (work_item_id, canonical))
+
+        prof = dict(cur.get("execution_profile") or {})
+        route = prof.get("validation_route")
+        if route not in policy.STRICTNESS:
+            raise StateError("no validation_route on %s — policy derives the route "
+                             "from characteristics before a review can open"
+                             % work_item_id)
+
+        prev = cur.get("review_context")
+        cycle = 1
+        if prev is not None:
+            if not isinstance(prev, dict):
+                raise StateError("review_context on %s is malformed" % work_item_id)
+            result = prev.get("review_result")
+            if result != "fail":
+                raise StateError("review-already-open: %s already has a %r review "
+                                 "context with result %r; a settled or pending review "
+                                 "is not reopened"
+                                 % (work_item_id, prev.get("review_type"), result))
+            if prev.get("review_type") == "peer":
+                raise StateError("a failed PEER review is not reopened here — "
+                                 "peer_fail_transfer moves execution to the reviewer")
+            cycle = int(prev.get("review_cycle") or 1) + 1
+
+        executors = evidenced_executors(cur)
+        owner, resolved = policy.resolve_owner_or_wait(
+            route, prof.get("required_capability"), validate.seats_by_capability(),
+            evidenced_reviewer=evidenced_reviewer, executor_seats=executors)
+
+        if resolved == policy.SELF and owner is None:
+            # Deliberately two distinct reasons: nobody has executed this yet, and
+            # two seats claim to have, are different findings needing different repairs.
+            if not executors:
+                raise StateError(
+                    "no-executor-evidence: SELF review of %s cannot start — its owner "
+                    "is the evidenced executor, and nothing has evidenced one. Evidence "
+                    "arises from store.release, not from ownership, a status file or a "
+                    "Jira status." % work_item_id)
+            raise StateError(
+                "conflicting-executor-evidence: SELF review of %s cannot start — %d "
+                "distinct seats are evidenced (%s). Ambiguity is surfaced, never "
+                "resolved by picking one."
+                % (work_item_id, len(executors), ", ".join(executors)))
+
+        rc = {"review_type": resolved,
+              "review_owner": owner,
+              "review_result": "pending",
+              "review_cycle": cycle,
+              "started_at": now()}
+        if opened_by:
+            rc["opened_by"] = opened_by
+        if prev is not None and prev.get("previous_owner"):
+            rc["previous_owner"] = prev["previous_owner"]
+
+        merged = dict(cur)
+        merged["review_context"] = rc
+        merged["revision"] = cur["revision"] + 1
+        merged["updated_at"] = now()
+        _validate_one("task", merged)
+        _atomic_write(path_for("task", work_item_id), merged)
+        return merged
+
+
+def record_review_result(work_item_id, expected_revision, reviewer, result,
+                         evidence_ref):
+    """Record the validation VERDICT. CAS'd.
+
+    Only the exact recorded `review_owner` may record it. That is the whole point of
+    deriving the owner rather than accepting one: if any actor could write `pass`
+    here, the route would be decorative. A conversation, a status file and a Jira
+    status are all incapable of reaching this function, which is why none of them can
+    make a task complete.
+
+    PASS records the verdict and nothing else. It does not transition Jira, does not
+    clear ownership and does not set the lifecycle to done — completion is DERIVED
+    from this state by `queue.completion_reasons`, and the Jira move is the
+    Orchestrator's separate act.
+
+    FAIL is recorded truthfully as `fail`. It does NOT invoke the PEER transfer, does
+    not invent a new owner, and does not restore ownership: SELF and QA doctrine
+    returns the item to its own execution status with the same owner and the cycle
+    incremented, and the cycle increments when the review is REOPENED, not when it
+    fails. Recording the failure and re-entering execution are two acts.
+    """
+    if expected_revision is None:
+        raise StateError("expected_revision is required; there is no force update")
+    if result not in ("pass", "fail"):
+        raise StateError("review_result must be 'pass' or 'fail', got %r" % result)
+    if not evidence_ref:
+        raise StateError("evidence_ref is required — a verdict with no evidence is "
+                         "an assertion, and the review exists to test assertions")
+    with record_lock("task", work_item_id):
+        cur = read("task", work_item_id)
+        if cur is None:
+            raise StateError("task %s does not exist" % work_item_id)
+        if cur["revision"] != expected_revision:
+            raise StateError("stale write refused: task %s is at revision %d, caller "
+                             "expected %d" % (work_item_id, cur["revision"],
+                                              expected_revision))
+        rc = cur.get("review_context")
+        if not isinstance(rc, dict):
+            raise StateError("no-review-context: %s has no open review context. Jira "
+                             "showing a review status does not create one."
+                             % work_item_id)
+        if rc.get("review_result") != "pending":
+            raise StateError("review-already-settled: %s is already %r; reopen the "
+                             "review to record another verdict"
+                             % (work_item_id, rc.get("review_result")))
+        owner = rc.get("review_owner")
+        if owner is None:
+            raise StateError("review-owner-unresolved: %s is waiting for an exact "
+                             "reviewer; no verdict may be recorded until one is "
+                             "resolved" % work_item_id)
+        if reviewer != owner:
+            raise StateError("not-review-owner: %s is owned for review by %s, not %s"
+                             % (work_item_id, owner, reviewer))
+
+        merged = dict(cur)
+        merged["review_context"] = dict(rc, review_result=result,
+                                        decided_at=now(), evidence_ref=evidence_ref)
+        merged["revision"] = cur["revision"] + 1
+        merged["updated_at"] = now()
+        _validate_one("task", merged)
+        _atomic_write(path_for("task", work_item_id), merged)
+        return merged
+
+
 def peer_fail_transfer(work_item_id, expected_revision, reviewer, evidence_ref):
     """PEER FAIL: the reviewer becomes the executor and self-reviews its own fix.
 
