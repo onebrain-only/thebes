@@ -136,6 +136,13 @@ ok("[T17] a commit MESSAGE mentioning a push is not a push",
 
 section("HOOK CONTRACT")
 
+_wrapper = os.path.join(state_path(), "..", "scripts", "branch-guard.sh")
+ok("[T21] the hook entry point resolves the repo root from its OWN location, so it "
+   "works from any cwd — a relative hook path blocked every call from a subdirectory",
+   'SELF=$(cd "$(dirname "$0")"' in open(_wrapper).read())
+ok("[T22] and it fails OPEN on infrastructure problems, CLOSED only on a verdict",
+   '[ "$rc" -eq 2 ] && exit 2' in open(_wrapper).read())
+
 ok("[T18] a DENY maps to hook exit code 2 in main()",
    "return 2" in open(os.path.join(state_path(), "branch_guard.py")).read())
 ok("[T19] the guard never shells out to anything but git",
