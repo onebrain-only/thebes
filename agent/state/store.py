@@ -43,6 +43,10 @@ KINDS = {
     # Coverage is NOT an event. It records that observation HAPPENED, which is the
     # only way "no blockers" can be told apart from "nobody looked".
     "coverage":     ("coverage",      None),
+    # A correction does not amend or delete the event it names. It is a separate
+    # append that the READ side honours; the original stays byte-identical and
+    # auditable forever.
+    "correction":   ("corrections",   "cor"),
 }
 
 
@@ -1239,11 +1243,181 @@ def _event_identity(rec):
     return (t, rec.get("event_id"))
 
 
-def read_events(event_type=None, work_item_id=None):
-    """All recorded events, oldest first. Read-only; nothing consumes them for policy."""
+SUPERSESSION_AUTHORITIES = ("po", "ceo")
+
+
+def supersede_task(work_item_id, expected_revision, replaced_by, authority,
+                   reason_ref, jira_status_id=None):
+    """Record that a work item was REPLACED, not completed. CAS'd.
+
+    THE GAP THIS CLOSES. A task that Product definition replaces has no
+    representable end state. `record_review_result` needs a verdict nobody reached;
+    `reconcile_completed_execution` describes work that finished; and leaving the
+    record alone leaves an open review context pointing at a reviewer who will never
+    review it, permanently disagreeing with Jira. KAN-141 sat in exactly that shape:
+    To Do in Jira, `lifecycle: review` with an open QA context in Persistent State,
+    after `po` correctly re-scoped it into KAN-162 under a CEO ruling.
+
+    WHAT IT REFUSES TO PRETEND. It never writes a verdict, never sets `done`, and
+    never touches the replacement. The open review context is CLEARED rather than
+    resolved, because no review happened — a `pass` here would be the fabrication
+    the whole validation model exists to prevent, and a `fail` would libel work that
+    was never judged. The replacement link and the reason are recorded so the
+    history reads truthfully in both directions.
+
+    Authority is Product-definition authority (`po`) or the CEO. An executor cannot
+    supersede its own work out of review.
+    """
+    if expected_revision is None:
+        raise StateError("expected_revision is required; there is no force update")
+    if authority not in SUPERSESSION_AUTHORITIES:
+        raise StateError("not-a-supersession-authority: %r may not replace a work "
+                         "item; only %s may — replacing work is Product definition, "
+                         "not execution"
+                         % (authority, "/".join(SUPERSESSION_AUTHORITIES)))
+    if not replaced_by:
+        raise StateError("replaced_by is required — an item superseded by nothing is "
+                         "an item cancelled, and that is a different act")
+    if replaced_by == work_item_id:
+        raise StateError("an item cannot supersede itself")
+    if not reason_ref:
+        raise StateError("reason_ref is required — a replacement with no recorded "
+                         "reason is indistinguishable from quietly dropping the work")
+    with record_lock("task", work_item_id):
+        cur = read("task", work_item_id)
+        if cur is None:
+            raise StateError("task %s does not exist" % work_item_id)
+        if cur["revision"] != expected_revision:
+            raise StateError("stale write refused: task %s is at revision %d, caller "
+                             "expected %d" % (work_item_id, cur["revision"],
+                                              expected_revision))
+        if (cur.get("lifecycle") or {}).get("canonical") == "done":
+            raise StateError("already-done: %s is complete; completed work is not "
+                             "superseded, it is superseded work that was never "
+                             "completed" % work_item_id)
+        rc = cur.get("review_context") or {}
+        if rc.get("review_result") == "pass":
+            raise StateError("already-validated: %s carries a PASS verdict; "
+                             "superseding it would discard a real review"
+                             % work_item_id)
+        if read("task", replaced_by) is None:
+            raise StateError("no-such-replacement: %s does not exist in Persistent "
+                             "State — a replacement link must point at a real record"
+                             % replaced_by)
+        merged = dict(cur)
+        # The review is CLEARED, not decided. Nothing here asserts an outcome.
+        merged["review_context"] = None
+        merged["ownership"] = None
+        merged["superseded"] = {"replaced_by": replaced_by, "by": authority,
+                                "reason_ref": reason_ref, "at": now(),
+                                "review_state_at_supersession": rc.get("review_result")
+                                or "none"}
+        if jira_status_id:
+            import board                                  # noqa: E402
+            merged["lifecycle"] = {
+                "canonical": board.canonical_for(jira_status_id),
+                "jira_column": board.column_for(jira_status_id),
+                "jira_status_id": jira_status_id,
+                "jira_status_name": board.name_for(jira_status_id),
+                "observed_at": now(), "source": "jira"}
+        merged["revision"] = cur["revision"] + 1
+        merged["updated_at"] = now()
+        _validate_one("task", merged)
+        _atomic_write(path_for("task", work_item_id), merged)
+        return merged
+
+
+def read_corrections(corrects_event_id=None):
+    """Advisory correction records, oldest first. Read-only."""
+    out = [c for c in read_all("correction")
+           if (corrects_event_id is None
+               or c.get("corrects_event_id") == corrects_event_id)]
+    return sorted(out, key=lambda c: (c.get("corrected_at") or "",
+                                      c.get("correction_id") or ""))
+
+
+def invalidated_event_ids():
+    """Event ids the read side must stop treating as factual evidence.
+
+    A set, not a filter over events, because every advisory reader needs the same
+    answer and none of them should have to know how a correction is shaped.
+    """
+    return {c.get("corrects_event_id") for c in read_all("correction")
+            if c.get("correction_kind") == "invalidate"}
+
+
+def correct_event(corrects_event_id, corrected_by, reason_ref, evidence_ref=None,
+                  correction_kind="invalidate"):
+    """Stop an advisory event counting as evidence. It is NOT edited or deleted.
+
+    THE SHAPE OF THE PROBLEM. Wave 8 events are append-only historical facts, and
+    `append_event` dedups on a natural key — so a false event cannot be repaired by
+    re-emitting the true one: the re-emit returns the existing record. There was
+    previously no way at all to stop a wrong advisory fact from being read as right,
+    and the only alternatives were hand-editing runtime or leaving it standing.
+
+    WHY CORRECTION RATHER THAN DELETION. Deleting the record would destroy the
+    audit: nobody could later see that the fact was ever asserted, by whom, or that
+    it was withdrawn. The original append stays byte-identical; this record
+    references it and the read side excludes it. `telemetry.completeness()` then
+    correctly reports the underlying history as MISSING rather than satisfied,
+    because an invalidated event is not a replacement for the event that never
+    happened.
+
+    WHAT IT DELIBERATELY CANNOT DO. It does not touch the task, ownership, the
+    review verdict, the lifecycle, Jira, or any authoritative state — an advisory
+    correction that could reach authority would be a way to rewrite a review by
+    complaining about its telemetry. It cannot amend an event's content, and there
+    is no general event-edit API. Authority is restricted to the CEO by
+    `validate.CORRECTION_AUTHORITIES`: an executor able to invalidate its own
+    telemetry could edit the record of its own reviews.
+    """
+    if not corrects_event_id:
+        raise StateError("corrects_event_id is required — a correction with no "
+                         "target is an assertion about nothing")
+    if not reason_ref:
+        raise StateError("reason_ref is required — a correction with no stated "
+                         "reason is indistinguishable from tidying away a fact")
+    from validate import CORRECTION_AUTHORITIES        # noqa: E402
+    if corrected_by not in CORRECTION_AUTHORITIES:
+        raise StateError("not-a-correction-authority: %r may not correct advisory "
+                         "history; only %s may"
+                         % (corrected_by, "/".join(sorted(CORRECTION_AUTHORITIES))))
+    with _Lock("events"):
+        target = read("event", corrects_event_id)
+        if target is None:
+            raise StateError("no-such-event: %s does not exist — a correction names "
+                             "a real record or it is fiction" % corrects_event_id)
+        for existing in read_all("correction"):
+            if (existing.get("corrects_event_id") == corrects_event_id
+                    and existing.get("correction_kind") == correction_kind):
+                # Write-once per (event, kind). Re-correcting is not a second fact.
+                return existing
+        rid = new_id("correction")
+        rec = {"correction_id": rid, "corrects_event_id": corrects_event_id,
+               "correction_kind": correction_kind, "corrected_by": corrected_by,
+               "reason_ref": reason_ref, "corrected_at": now(),
+               "created_at": now(), "updated_at": now(), "revision": 1,
+               "schema_version": SCHEMA_VERSION}
+        if evidence_ref:
+            rec["evidence_ref"] = evidence_ref
+        _validate_one("correction", rec)
+        _atomic_write(path_for("correction", rid), rec)
+        return rec
+
+
+def read_events(event_type=None, work_item_id=None, include_invalidated=True):
+    """All recorded events, oldest first. Read-only; nothing consumes them for policy.
+
+    `include_invalidated` defaults TRUE because this is the audit view: a corrected
+    event still happened and must remain visible. Advisory readers that reason about
+    facts pass False, or use `telemetry.active_events()`.
+    """
+    dead = set() if include_invalidated else invalidated_event_ids()
     out = [e for e in read_all("event")
            if (event_type is None or e.get("event_type") == event_type)
-           and (work_item_id is None or e.get("work_item_id") == work_item_id)]
+           and (work_item_id is None or e.get("work_item_id") == work_item_id)
+           and e.get("event_id") not in dead]
     # Ordered by SEQ, not by timestamp. `observed_at` is second-resolution, so two
     # events in the same second would otherwise tie and fall back to a random uuid —
     # which silently loses append order, and the blocker edge model reads "latest"
@@ -1577,7 +1751,7 @@ def _id_field(kind):
             "exception": "exception_id", "dependency": "dependency_id",
             "intervention": "intervention_id", "policy": "policy_id",
             "event": "event_id", "learning": "learning_id",
-            "coverage": "coverage_id"}[kind]
+            "coverage": "coverage_id", "correction": "correction_id"}[kind]
 
 
 def _validate_one(kind, record):

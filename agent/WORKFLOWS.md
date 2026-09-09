@@ -618,6 +618,54 @@ No session transcript is ever availability authority.
 
 ---
 
+## 3.1a ISOLATED EXECUTION — ONE WORKTREE PER SEAT, ONE SERIAL INTEGRATION
+
+**New 2026-09-09, and it is a correction to how ACCELERATE was operated, not to what it
+decides.** `safe_parallel_plan` was right that six frontend items were mutually
+non-contending. They still collided — in the **index**, not in the files.
+
+What happened: six seats executed against one checkout of `dabbler-code`. `frontend-5` staged
+four deletions for KAN-148; `frontend-6` ran `git commit` for KAN-156 and swept them in, because
+a shared index has no idea whose changes it holds. `frontend-6` then correctly read those
+deletions as contamination and tried three times to restore them — which would have **reverted a
+ticket that had already passed review**, stopped only by an external permission block. Undoing
+its own commit transiently orphaned `frontend-4`'s. **Disjoint file sets did not prevent any of
+it**, because the shared surface was never the files.
+
+**So disjoint file sets are necessary and not sufficient.** Concurrent executors get isolated
+Git worktrees (`agent/state/worktrees.py`):
+
+```
+canonical repository / integration branch (Canary)
+    +-- .claude/worktrees/product/<seat>/<work-item>/   [exec/<seat>/<work-item>]
+    +-- .claude/worktrees/product/<seat>/<work-item>/   [exec/<seat>/<work-item>]
+```
+
+Native `git worktree`, never a clone — a clone would let a seat's history diverge invisibly and
+would need fetching to integrate. Identity is **deterministic** from seat and work item, so a
+resumed invocation lands in the tree it left rather than a fresh empty one.
+
+**The mutation boundary.** A seat may `add`, `restore`, `reset`, `checkout` and `commit` **only
+inside its own worktree**. Never another seat's; never the canonical checkout, which is the
+**integration and reference workspace** and stops being a shared scratchpad. Most of this is
+enforced by Git itself rather than asked of the agent — a rule the tool refuses is worth more
+than one an agent has to remember.
+
+**Attribution refuses; it never cleans up.** A task commit carries only that task's declared
+paths, staged by explicit pathspec. `git commit` with no pathspec is exactly what produced the
+mislabelled commit. An undeclared change **refuses the commit** and is reported — it is never
+restored or reset away, because a cleanup is how the incident nearly destroyed finished work.
+
+**Execution parallel, integration serial.** Landing on `Canary` goes through one lock-serialised
+operation that verifies the expected task commit and the current head, detects conflict and
+**fails closed with the conflicting paths named** rather than guessing a merge, re-runs the
+gates and rolls back if one fails, and **never targets `main`**. A stale caller — one naming a
+head another integration has already moved — is refused rather than merged over.
+
+**Recovery uses the same path.** A commit stranded in another checkout (`e462d2f`, KAN-138, was)
+is integrated through this mechanism with the same locks, the same conflict check and the same
+gates. A recovered commit is not entitled to an easier path than an ordinary one.
+
 ## 3.2 WAVE 8 — ADVISORY TELEMETRY, RETROSPECTIVE AND LEARNING
 
 **None of this is authority.** Nothing in claimability, ownership, validation, lifecycle or
@@ -657,6 +705,36 @@ because an advisory write failed. There is deliberately **no transaction** spann
 and event files — claiming one would misdescribe what the filesystem guarantees. The gap becomes
 **visible** instead: `telemetry.completeness()` names settled reviews with no event, so a
 retrospective can say *telemetry is incomplete* rather than quietly under-reporting.
+
+**The other half of that rule, added 2026-09-09.** Because the failure is silent by design, the
+two layers must never disagree about what they will ACCEPT. The event schema applied the 300-char
+identifier bound to `evidence_ref` while the authoritative review record applied none, so every
+scoped verdict — the kind this system asks reviewers to write — committed and then vanished. Six
+of seven review decisions in the 2026-09-09 autonomous run were lost that way and nothing said
+so. `MAX_VERDICT_REF_LEN` is now the SHARED bound, checked in `validate_review_context` and in
+the event validator, so the advisory layer can never again reject what authority accepted.
+Raising a bound was the small half of the fix; making it shared was the point.
+
+### A false advisory fact is withdrawn, never erased
+
+**New 2026-09-09.** Events are append-only historical facts, and `append_event` dedups on a
+natural key — so a wrong event cannot be repaired by re-emitting the right one: the re-emit
+returns the record already there. Correcting one therefore has exactly one shape:
+
+- the original event stays **byte-identical** and remains visible in the audit view;
+- a separate **correction record** (`store.correct_event`) references it by id and states who
+  withdrew it and why;
+- every advisory reader — `telemetry`, `retrospective`, `learning` — stops counting it, through
+  a single filter rather than a rule each of them has to remember;
+- **completeness does not treat it as satisfied.** Withdrawing a lie is not the same as telling
+  the truth, so the underlying history is still reported as MISSING.
+
+**Only the CEO may correct.** An executor able to invalidate its own telemetry could edit the
+record of its own reviews. There is deliberately no amend, no replace and no general event-edit
+API: a corrected event whose content had been rewritten would be indistinguishable from one that
+was always right. A correction touches no task, no verdict, no lifecycle and no Jira field —
+an advisory correction that could reach authority would be a way to rewrite a review by
+complaining about its telemetry.
 
 ### Fact, pattern, recommendation — separated structurally
 

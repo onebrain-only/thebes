@@ -92,9 +92,15 @@ def _safe_read(event_type=None, work_item_id=None):
     half: the canonical reconciliation boundary calls telemetry to work out which
     edges changed, and a broken or unreadable event store must degrade to "no
     history" rather than propagate an exception into planning.
+
+    It is also the single point where CORRECTED events stop being facts. Every
+    advisory reader goes through here, so invalidation is honoured once rather than
+    remembered in each caller — `store.read_events` keeps the audit view by default
+    and this is the factual one.
     """
     try:
-        return store.read_events(event_type, work_item_id)
+        return store.read_events(event_type, work_item_id,
+                                 include_invalidated=False)
     except Exception:                                    # noqa: BLE001 - deliberate
         return []
 

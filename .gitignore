@@ -36,3 +36,9 @@
 # and make Git responsible for a live orchestration database. The state doctrine,
 # tooling and Company/Product/Project registry above it ARE tracked.
 /agent/state/runtime/
+
+# Per-executor Product worktrees (agent/state/worktrees.py). Real checkouts of the
+# Product repository, created and removed as work is claimed and released — they are
+# Git's own working state, not Thebes source, and tracking them would nest one
+# repository inside another's history.
+/.claude/worktrees/

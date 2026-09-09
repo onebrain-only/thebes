@@ -85,6 +85,21 @@ EVENT_BANNED_FIELDS = {
     "token", "tokens", "token_count", "cost", "usd", "api_key", "secret",
     "authorization", "password", "credential",
 }
+# ---- Wave 8 correction: the ONLY way an advisory fact stops counting ---------
+# An event is an append-only historical fact and stays byte-identical forever. When
+# one turns out to be false — a diagnostic mutation that wrote a fabricated
+# evidence_ref, say — the record is NOT edited and NOT deleted. A separate
+# correction record REFERENCES it, and the read side stops treating it as evidence.
+#
+# Deliberately not a general event-edit API. One kind, one direction: `invalidate`.
+# There is no "amend" and no "replace", because either would let the correction
+# layer author facts, and a corrected event whose content had been rewritten would
+# be indistinguishable from one that was always right.
+CORRECTION_KINDS = {"invalidate"}
+# Correcting advisory history is a governance act, not an execution act. An executor
+# that could invalidate its own telemetry could edit the record of its own reviews.
+CORRECTION_AUTHORITIES = {"ceo"}
+
 INTERVENTION_SCOPES = {"task", "capability", "system"}
 # kind determines scope exactly. A stop is always a task, a freeze is always system.
 KIND_SCOPE = {"stop": "task", "hold": "capability", "freeze": "system"}
@@ -114,6 +129,32 @@ PROFILE_NULL_IN_WAVE_4 = ["execution_complexity", "risk", "model", "reasoning_ef
                           "validation_route", "parallelism", "completion_route"]
 
 MAX_REF_LEN = 300      # identifier/reference fields; catches a pasted ticket body
+
+# A VERDICT reference is legitimately longer than a claim reference, and the two
+# bounds must never diverge between the authoritative layer and the advisory one.
+#
+# WHY THIS EXISTS. `record_review_result` wrote the verdict, then emitted the
+# advisory `review_decided` event through `telemetry.emit`, which never raises. The
+# event validator applied MAX_REF_LEN to `evidence_ref` while
+# `validate_review_context` applied NO bound at all, so every verdict whose evidence
+# exceeded 300 chars committed authoritatively and then vanished from Wave 8 in
+# silence. Six of seven review decisions on 2026-09-09 were lost that way.
+#
+# The asymmetry was the defect, not the length. A scoped verdict — "PASS on AC1 and
+# AC4 from source; AC2 and AC3 are live-catalogue facts and are NOT VERIFIABLE" — is
+# exactly the evidence this system asks reviewers to produce, and it does not fit in
+# an identifier. So the bound is raised and, more importantly, made SHARED: the same
+# constant now gates the review record and the event, and neither can reject what
+# the other accepts.
+#
+# 2000 is measured, not guessed. The longest legitimate verdict reference in runtime
+# at the time of the fix was 1127 chars (KAN-128, a scoped PEER pass naming five
+# unverifiable live facts); the longest executor claim reference was 268. 2000 keeps
+# roughly 1.8x headroom over the worst real case while still catching the thing the
+# cap exists for: a pasted ticket body, which on this board runs to several thousand
+# characters. Removing the bound entirely was rejected — a reference field that
+# accepts anything stops being a reference field.
+MAX_VERDICT_REF_LEN = 2000
 
 
 def seats():
@@ -167,6 +208,19 @@ def _req(rec, fields, errs, where):
     for f in fields:
         if f not in rec:
             errs.append("%s: missing required field %r" % (where, f))
+
+
+def _verdict_reflen(rec, fields, errs, where):
+    """The SHARED bound for verdict evidence, applied identically to the review
+    record and to the advisory event it produces. Kept separate from `_reflen` so
+    that raising one can never silently raise the other."""
+    for f in fields:
+        v = rec.get(f)
+        if isinstance(v, str) and len(v) > MAX_VERDICT_REF_LEN:
+            errs.append("%s: %r is %d chars — a verdict reference may state its "
+                        "scope but is still a reference, not a report body (max %d)"
+                        % (where, f, len(v), MAX_VERDICT_REF_LEN))
+    return errs
 
 
 def _reflen(rec, fields, errs, where):
@@ -338,6 +392,9 @@ def validate_review_context(rc, canonical, profile, errs, where, rec=None):
     owner = rc.get("review_owner")
     if owner is not None and owner not in seats():
         errs.append("%s: review_owner %r is not a declared seat" % (where, owner))
+    # The same bound the event carries. Checked HERE as well so the authoritative
+    # record can never hold a reference the advisory event would have to drop.
+    _verdict_reflen(rc, ["evidence_ref"], errs, where)
     if rc.get("review_result") == "pass" and owner is None:
         errs.append("%s: review_result 'pass' with no review_owner — a verdict with "
                     "no owner is a verdict nobody is accountable for" % where)
@@ -860,7 +917,11 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
             errs.append("%s: event carries banned field %r — events hold references "
                         "(an id, a comment ref, a revision), never bodies, prompts, "
                         "reasoning, tokens or secrets" % (where, f))
-        for f in ("evidence_ref", "reason_code", "unused_capacity_reason"):
+        # `evidence_ref` takes the SHARED verdict bound, not MAX_REF_LEN: the event
+        # layer must never reject evidence the authoritative review layer accepted,
+        # because `telemetry.emit` swallows the refusal and the fact disappears.
+        _verdict_reflen(rec, ["evidence_ref"], errs, where)
+        for f in ("reason_code", "unused_capacity_reason"):
             _reflen(rec, [f], errs, where)
         if et == "review_decided":
             _req(rec, ["work_item_id", "review_type", "review_cycle", "review_result",
@@ -893,6 +954,31 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
                 v = rec.get(f)
                 if v is not None and (not isinstance(v, int) or v < 0):
                     errs.append("%s: %s must be a non-negative integer" % (where, f))
+
+    elif kind == "correction":
+        _req(rec, ["correction_id", "corrects_event_id", "correction_kind",
+                   "corrected_by", "reason_ref", "corrected_at"], errs, where)
+        if rec.get("correction_kind") not in CORRECTION_KINDS:
+            errs.append("%s: unknown correction_kind %r — the only correction is "
+                        "%s, because amending an event would let the correction "
+                        "layer author facts"
+                        % (where, rec.get("correction_kind"),
+                           "/".join(sorted(CORRECTION_KINDS))))
+        if rec.get("corrected_by") not in CORRECTION_AUTHORITIES:
+            errs.append("%s: corrected_by %r is not an advisory-correction authority "
+                        "(%s) — an executor that could invalidate its own telemetry "
+                        "could edit the record of its own reviews"
+                        % (where, rec.get("corrected_by"),
+                           "/".join(sorted(CORRECTION_AUTHORITIES))))
+        cid = rec.get("corrects_event_id")
+        if not isinstance(cid, str) or not cid.startswith("evt-"):
+            errs.append("%s: corrects_event_id must name an event, got %r"
+                        % (where, cid))
+        # Same privacy rule as the event it corrects: a reason is a reference.
+        for f in sorted(set(rec) & EVENT_BANNED_FIELDS):
+            errs.append("%s: correction carries banned field %r" % (where, f))
+        _reflen(rec, ["reason_ref"], errs, where)
+        _verdict_reflen(rec, ["evidence_ref"], errs, where)
 
     elif kind == "policy":
         _req(rec, ["policy_id", "policy_kind", "scope", "activated_by", "reason_ref"],
@@ -1061,7 +1147,7 @@ def check(runtime=None):
     kinds = {"task": "tasks", "routing": "routing", "exception": "exceptions",
              "dependency": "dependencies", "intervention": "interventions",
              "policy": "policies", "event": "events", "learning": "learning",
-             "coverage": "coverage"}
+             "coverage": "coverage", "correction": "corrections"}
     seen_ids = {}
     edges = []
     active_iv = []
@@ -1085,7 +1171,7 @@ def check(runtime=None):
                    "exception": "exception_id", "dependency": "dependency_id",
                    "intervention": "intervention_id", "policy": "policy_id",
                    "event": "event_id", "learning": "learning_id",
-                   "coverage": "coverage_id"}[kind]
+                   "coverage": "coverage_id", "correction": "correction_id"}[kind]
             rid = rec.get(idf)
             if rid != fn[:-5]:
                 errs.append("%s: filename does not match %s %r" % (p, idf, rid))

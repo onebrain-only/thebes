@@ -170,7 +170,9 @@ def build(scope_type="product", scope_id="dabbler", tasks=None, jira_by_key=None
         raise ValueError("scope_type must be task/sprint/capability/product — SYSTEM "
                          "is deferred")
     tasks = store.read_all("task") if tasks is None else tasks
-    events = store.read_events()
+    # Corrected events are excluded: a retrospective reasons about what happened,
+    # and an invalidated advisory record is precisely a fact withdrawn.
+    events = store.read_events(include_invalidated=False)
 
     if scope_type == "task":
         tasks = [t for t in tasks if t.get("work_item_id") == scope_id]
