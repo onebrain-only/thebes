@@ -429,9 +429,20 @@ def evidenced_executors(task):
     to name a SELF owner unless there is exactly one, and this helper is what both
     of them are counting. Ownership is NOT evidence and never appears here — a seat
     that holds a claim has not yet executed anything.
+
+    ASSESSMENT IS NOT EXECUTION. An entry carrying a `classification` other than
+    `execution` is excluded here — it stays in the record, auditable, but it does not
+    establish executor identity. That distinction is doctrine (`CLAUDE.md`: "assessing
+    is not claiming"), and it was not enforced until 2026-09-10: a Preflight sizing
+    report written to a status file had been landing in this list as though the seat
+    had executed the work. Two consequences, both observed on real items: a SELF review
+    could not open because two seats appeared evidenced when only one had executed
+    (KAN-136), and a seat that had only sized an item was excluded from reviewing it
+    (KAN-138, backend-5).
     """
     return sorted({e.get("seat_id") for e in (task.get("executor_evidence") or [])
-                   if isinstance(e, dict) and e.get("seat_id")})
+                   if isinstance(e, dict) and e.get("seat_id")
+                   and e.get("classification", "execution") == "execution"})
 
 
 def open_review_context(work_item_id, expected_revision, opened_by=None,
@@ -1241,6 +1252,97 @@ def _event_identity(rec):
         return (t, rec.get("work_item_id"), rec.get("reason_code"),
                 rec.get("transition"), rec.get("occurrence"))
     return (t, rec.get("event_id"))
+
+
+EVIDENCE_CLASSIFICATIONS = ("execution", "assessment")
+# Reclassifying evidence is a governance act, not an execution one. A seat able to
+# reclassify its own entry could erase the record of what it did, which is the whole
+# thing evidence exists to prevent. `orchestrator` is included because verifying
+# ownership and lifecycle coherence is its stated duty; no `worker:` seat is.
+EVIDENCE_AUTHORITIES = ("ceo", "orchestrator")
+
+
+def classify_executor_evidence(work_item_id, expected_revision, seat_id,
+                               classification, authority, reason_ref,
+                               evidenced_at=None):
+    """Mark a stored evidence entry as ASSESSMENT rather than EXECUTION. CAS'd.
+
+    THE DEFECT THIS CLOSES. `CLAUDE.md` settles that "assessing is not claiming" —
+    Preflight sizing, surface assessment, planning and capability evaluation are
+    pre-execution factual acts that establish no executor identity. Nothing enforced
+    it. A seat that sized an item at Preflight and wrote a status line got that line
+    recorded as `executor_evidence`, indistinguishable from having done the work.
+
+    It surfaced twice on real items on 2026-09-09, in opposite directions:
+      * KAN-136 — a sizing entry plus a real execution entry made TWO seats appear
+        evidenced, so `open_review_context` refused to derive a SELF owner and a
+        completed item could not be reviewed at all.
+      * KAN-138 — a sizing entry made `backend-5` look like an executor, excluding it
+        from the PEER reviewer pool for work it had never touched.
+
+    WHAT IT DOES NOT DO. It does not delete, edit or overwrite the entry: `seat_id`,
+    `evidence_ref` and `evidenced_at` are left exactly as written, so the historical
+    record of who assessed what stays auditable. It adds a classification, the actor
+    and the reason. It touches no task lifecycle, no ownership, no review verdict, no
+    Jira field and no Product file — a reconciliation that could reach any of those
+    would be a way to rewrite a review by relabelling its evidence.
+
+    It is also not a general evidence editor. The only reclassification is
+    execution -> assessment; there is deliberately no way to promote an assessment
+    INTO execution evidence, because that would let a sizing report become a claim.
+    """
+    if expected_revision is None:
+        raise StateError("expected_revision is required; there is no force update")
+    if classification not in EVIDENCE_CLASSIFICATIONS:
+        raise StateError("unknown classification %r — expected one of %s"
+                         % (classification, "/".join(EVIDENCE_CLASSIFICATIONS)))
+    if classification == "execution":
+        raise StateError("promote-refused: evidence may be reclassified as assessment, "
+                         "never INTO execution. An assessment that could become "
+                         "execution evidence would be a sizing report turned into a "
+                         "claim, which is the defect this operation exists to close")
+    if authority not in EVIDENCE_AUTHORITIES:
+        raise StateError("not-an-evidence-authority: %r may not reclassify executor "
+                         "evidence; only %s may. A seat able to reclassify its own "
+                         "entry could erase the record of what it did"
+                         % (authority, "/".join(EVIDENCE_AUTHORITIES)))
+    if not reason_ref:
+        raise StateError("reason_ref is required — evidence reclassified without a "
+                         "stated reason is indistinguishable from evidence quietly "
+                         "disowned")
+    with record_lock("task", work_item_id):
+        cur = read("task", work_item_id)
+        if cur is None:
+            raise StateError("task %s does not exist" % work_item_id)
+        if cur["revision"] != expected_revision:
+            raise StateError("stale write refused: task %s is at revision %d, caller "
+                             "expected %d" % (work_item_id, cur["revision"],
+                                              expected_revision))
+        ev = list(cur.get("executor_evidence") or [])
+        hits = [e for e in ev if isinstance(e, dict) and e.get("seat_id") == seat_id
+                and (evidenced_at is None or e.get("evidenced_at") == evidenced_at)]
+        if not hits:
+            raise StateError("no-such-evidence: %s has no executor_evidence entry for "
+                             "%s%s" % (work_item_id, seat_id,
+                                       " at %s" % evidenced_at if evidenced_at else ""))
+        if len(hits) > 1:
+            raise StateError("ambiguous-evidence: %s has %d entries for %s; pass "
+                             "evidenced_at to name exactly one. Reclassifying the "
+                             "wrong entry is not recoverable by another reclassify"
+                             % (work_item_id, len(hits), seat_id))
+        target = hits[0]
+        if target.get("classification", "execution") != "execution":
+            return cur                                   # already reconciled; idempotent
+        merged = dict(cur)
+        merged["executor_evidence"] = [
+            dict(e, classification=classification, classified_by=authority,
+                 classified_at=now(), classification_reason_ref=reason_ref)
+            if e is target else e for e in ev]
+        merged["revision"] = cur["revision"] + 1
+        merged["updated_at"] = now()
+        _validate_one("task", merged)
+        _atomic_write(path_for("task", work_item_id), merged)
+        return merged
 
 
 SUPERSESSION_AUTHORITIES = ("po", "ceo")

@@ -105,6 +105,16 @@ INTERVENTION_SCOPES = {"task", "capability", "system"}
 KIND_SCOPE = {"stop": "task", "hold": "capability", "freeze": "system"}
 INTERVENTION_AUTHORITIES = {"ceo", "orchestrator"}
 
+# ---- Evidence classification (2026-09-10) ----------------------------------
+# `CLAUDE.md` settles that "assessing is not claiming". Preflight sizing, surface
+# assessment and planning establish no executor identity — but nothing enforced it,
+# so a sizing line in a status file was landing in `executor_evidence` and reading
+# as execution. An entry may be reclassified as `assessment`: it stays in the record,
+# auditable, and stops counting as execution provenance. There is deliberately no
+# path back to `execution` — that would let a sizing report become a claim.
+EVIDENCE_CLASSIFICATIONS = {"execution", "assessment"}
+EVIDENCE_AUTHORITIES = {"ceo", "orchestrator"}
+
 REVIEW_TYPES = {"self", "peer", "qa"}
 REVIEW_RESULTS = {"pending", "pass", "fail"}
 RECORD_TYPES = {"executable", "container"}
@@ -402,8 +412,13 @@ def validate_review_context(rc, canonical, profile, errs, where, rec=None):
     # open_review_context because the store guards the WRITE and the validator guards
     # the FILE, and a hand-edited record reaches only the second.
     if rt == "self" and owner is not None and rec is not None:
+        # Classification-aware, exactly as `store.evidenced_executors` is: an entry
+        # reclassified as `assessment` stays in the record but establishes no
+        # executor identity. Kept in step with the store deliberately — this rule
+        # living in two places is what let a reconciled record still fail here.
         ev = sorted({e.get("seat_id") for e in (rec.get("executor_evidence") or [])
-                     if isinstance(e, dict) and e.get("seat_id")})
+                     if isinstance(e, dict) and e.get("seat_id")
+                     and e.get("classification", "execution") == "execution"})
         if len(ev) > 1:
             errs.append("%s: SELF review_owner %r with %d distinct evidenced "
                         "executors (%s) — SELF's owner is derived from exactly one, "
@@ -715,6 +730,33 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
                     errs.append("%s: duplicate identical executor_evidence entry" % where)
                 seen.add(key)
                 _reflen(o, ["evidence_ref"], errs, where)
+                # ASSESSMENT IS NOT EXECUTION (2026-09-10). An entry may be
+                # reclassified as `assessment`, which keeps it in the record and
+                # auditable while removing it from executor derivation. The guard is
+                # here as well as in the store because the store protects the WRITE
+                # and this protects the FILE — a hand-edited record reaches only the
+                # second, and a fabricated `classification` would silently erase a
+                # seat's execution history.
+                cls = o.get("classification", "execution")
+                if cls not in EVIDENCE_CLASSIFICATIONS:
+                    errs.append("%s: unknown evidence classification %r — expected one "
+                                "of %s" % (where, cls,
+                                           "/".join(sorted(EVIDENCE_CLASSIFICATIONS))))
+                if cls != "execution":
+                    if o.get("classified_by") not in EVIDENCE_AUTHORITIES:
+                        errs.append("%s: evidence for %r is classified %r by %r, which "
+                                    "is not an evidence authority (%s) — a seat able to "
+                                    "reclassify its own entry could erase the record of "
+                                    "what it did"
+                                    % (where, o.get("seat_id"), cls,
+                                       o.get("classified_by"),
+                                       "/".join(sorted(EVIDENCE_AUTHORITIES))))
+                    if not o.get("classification_reason_ref"):
+                        errs.append("%s: evidence for %r is classified %r with no "
+                                    "classification_reason_ref — evidence set aside "
+                                    "without a stated reason is evidence quietly "
+                                    "disowned" % (where, o.get("seat_id"), cls))
+                    _reflen(o, ["classification_reason_ref"], errs, where)
 
         if ver == 1:
             for f in NULL_IN_WAVE_4:

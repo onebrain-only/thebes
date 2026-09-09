@@ -267,7 +267,11 @@ def unclaimable_reasons(task, all_tasks=None, edges=None, lifecycles=None,
         out.append("surface-contention")
 
     ev = task.get("executor_evidence") or []
-    if len({e.get("seat_id") for e in ev if isinstance(e, dict)}) > 1:
+    # Assessment entries are excluded: a Preflight sizing report is not a competing
+    # executor, and counting it as one made completed work unclaimable and
+    # unreviewable (KAN-136, KAN-138, 2026-09-09).
+    if len({e.get("seat_id") for e in ev if isinstance(e, dict)
+            and e.get("classification", "execution") == "execution"}) > 1:
         # Two or more evidenced seats is CONFLICTING evidence. It blocks and requires
         # reconciliation — it does not fall back to anyone choosing.
         out.append("conflicting-evidence")
