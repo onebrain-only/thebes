@@ -340,7 +340,7 @@ def completion_reasons(task, interventions=None):
                      if interventions is None else interventions)
     key = task.get("work_item_id")
     for iv in interventions or []:
-        if iv.get("kind") == "STOP" and iv.get("target") == key:
+        if iv.get("kind") == "stop" and iv.get("target") == key:
             # STOP exists for a detected safety condition. Transitioning past one to
             # Done would complete exactly the work somebody stopped.
             out.append("task-stopped")

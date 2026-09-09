@@ -347,7 +347,8 @@ ok("    ... and a done item is not re-completed", "already-done" in r)
 t = mk("KAN-944", evidence=("frontend-1",))
 o = store.open_review_context("KAN-944", t["revision"])
 p = store.record_review_result("KAN-944", o["revision"], "frontend-1", "pass", "ref:y")
-iv = [{"kind": "STOP", "target": "KAN-944", "intervention_id": "iv-1"}]
+iv = [{"kind": "stop", "scope": "task", "target": "KAN-944",
+       "intervention_id": "iv-1"}]
 ok("    a STOPped task is not completion-eligible even having PASSED",
    "task-stopped" in q.completion_reasons(p, interventions=iv))
 

@@ -598,6 +598,95 @@ def record_review_result(work_item_id, expected_revision, reviewer, result,
         return merged
 
 
+def self_fail_reentry(work_item_id, expected_revision, seat_id, reentry_ref):
+    """SELF FAIL: execution responsibility returns to the SAME exact reviewer. CAS'd.
+
+    THREE FAIL SEMANTICS, DELIBERATELY NOT ONE HANDLER
+      PEER FAIL  transfers execution to the REVIEWER, who is a different seat and
+                 whose taking over is the whole point (`peer_fail_transfer`).
+      QA FAIL    returns the item to the current executor; `qa` never executes.
+      SELF FAIL  returns it to the exact seat that is BOTH executor and reviewer.
+
+    Generalising them would cost each one its own invariant, so this is its own
+    operation and it asserts what only it can assert: the returning owner is
+    `review_context.review_owner` and nothing else may be substituted for it.
+
+    NOT A CLAIM, AND NOT QUEUE COMPETITION
+      Ownership returns to an executor the work already established through SELF
+      evidence, so no seat competes for it, no capability queue is consulted and
+      claimability is not evaluated. It is also NOT gated on dispatchability: whether
+      the session can currently wake that seat is unknowable here, and persistent
+      responsibility returning to a seat that cannot be woken is work waiting
+      truthfully. The alternative — substituting a reachable seat — is exactly the
+      fabricated selection the SELF route exists to prevent.
+
+    THE FAILURE STAYS ON THE RECORD
+      `review_context` is left exactly as it is, still reading fail at cycle N. The
+      next cycle is created later by `open_review_context`, which increments to N+1
+      when the fixed work is released and re-enters review. Erasing the failure here
+      to make room for the retry would make a failed review indistinguishable from
+      one that never happened.
+
+    JIRA IS NOT TOUCHED. This decides state; returning the issue to its capability's
+    execution status is the Orchestrator's separate act, and the status itself comes
+    from `transition_target(capability=...)` — never hard-coded per capability here.
+    """
+    if expected_revision is None:
+        raise StateError("expected_revision is required; there is no force update")
+    if not reentry_ref:
+        raise StateError("reentry_ref is required — re-entry is an ownership event "
+                         "and every ownership event names its authorising reason")
+    with record_lock("task", work_item_id):
+        cur = read("task", work_item_id)
+        if cur is None:
+            raise StateError("task %s does not exist" % work_item_id)
+        if cur["revision"] != expected_revision:
+            raise StateError("stale write refused: task %s is at revision %d, caller "
+                             "expected %d" % (work_item_id, cur["revision"],
+                                              expected_revision))
+        rc = cur.get("review_context")
+        if not isinstance(rc, dict):
+            raise StateError("no-review-context: %s has no review to have failed"
+                             % work_item_id)
+        if rc.get("review_type") != "self":
+            raise StateError("self_fail_reentry applies to the SELF route only — "
+                             "%s is on the %r route, whose failure path is different"
+                             % (work_item_id, rc.get("review_type")))
+        if rc.get("review_result") != "fail":
+            raise StateError("review-not-failed: %s is %r; re-entry follows a recorded "
+                             "FAIL, and is not a way to reopen a passing or pending "
+                             "review" % (work_item_id, rc.get("review_result")))
+        owner = rc.get("review_owner")
+        if not owner:
+            raise StateError("review-owner-unresolved: %s has no recorded SELF owner "
+                             "to return execution to" % work_item_id)
+        if seat_id != owner:
+            raise StateError("not-review-owner: SELF FAIL on %s returns execution to "
+                             "%s, the exact evidenced executor — not to %s. No other "
+                             "seat may take it." % (work_item_id, owner, seat_id))
+        if cur.get("ownership") is not None:
+            raise StateError("already-owned: %s is owned by %s; re-entry establishes "
+                             "ownership and never overwrites one"
+                             % (work_item_id, (cur["ownership"] or {}).get("seat_id")))
+        # STOP is task-scoped safety and blocks establishing ownership, exactly as it
+        # blocks a claim. HOLD and FREEZE deliberately do NOT apply: they gate NEW
+        # claims from a queue, and this is the return of responsibility the item
+        # already carries.
+        for iv in active_interventions():
+            if iv.get("kind") == "stop" and iv.get("target") == work_item_id:
+                raise StateError("task-stopped: a STOP is active on %s; execution may "
+                                 "not resume until it is cleared" % work_item_id)
+
+        merged = dict(cur)
+        merged["ownership"] = {"seat_id": owner, "claim_ref": reentry_ref,
+                               "claimed_at": now()}
+        merged["revision"] = cur["revision"] + 1
+        merged["updated_at"] = now()
+        _validate_one("task", merged)
+        _atomic_write(path_for("task", work_item_id), merged)
+        return merged
+
+
 def peer_fail_transfer(work_item_id, expected_revision, reviewer, evidence_ref):
     """PEER FAIL: the reviewer becomes the executor and self-reviews its own fix.
 
