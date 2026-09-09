@@ -253,5 +253,12 @@ ok("[19] the canonical path is actually present in the roles that log",
 ok("[19] and survived generation into the agents", len(good_agents) >= 9)
 ok("[19] the correction is recorded rather than silently swapped",
    any("Corrected 2026-09-09" in read(ROLES, f) for f in good_roles))
+# The roles cite WORKFLOWS §1 rule 5 as their authority. Fixing the roles while the
+# RULE still named the wrong workspace would leave the defect at its source, ready to
+# be copied back into the next role file written from it.
+WF = read(ROOT, "agent", "WORKFLOWS.md")
+ok("[19] the governing rule the roles cite does not name the wrong workspace either",
+   WRONG not in WF)
+ok("[19] and it names the canonical one", RIGHT in WF)
 
 sys.exit(summary())
