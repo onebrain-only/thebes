@@ -1893,3 +1893,53 @@ if it already ran against the pre-amendment scope.
 - **Accepted:** the moved private helper `_activityVisual` (file-private in activity_row.dart, single call site) — same shape as KAN-151's precedent.
 - **Handback:** transition to Done belongs to `frontend-5` (route: self). Messaged exec-kan152 to do it. I did not transition.
 - **Ruling — AC8's 37-line overage, no fourth ticket:** CONVENTIONS.md §8 explicitly instructs not to undertake splitting the whole file once legitimately in it past the bounded scope; DECISIONS.md 013 and T-010 confirm the 500-line figure is a non-blocking budget, not a launch gate, not retrofitted. The three-ticket chain took the file from 2,018 to 537 lines (73% reduction) across bounded, legitimate passes; the remainder is the screen's own state/handlers (`_handleNotificationTap` and its route-resolution helpers), correctly deferred by team-lead-5 as carrying real design judgement rather than being a mechanical extraction. Recorded as a deliberate decision on the ticket, not an open loose end.
+
+## 2026-09-09 — KAN-129/130/131 readiness prep (Wave 6 capability-queue path)
+
+**Task:** `team-lead` asked me to assess and, where genuinely legitimate, prepare the three live
+`Ready` issues (KAN-129, KAN-130, KAN-131, all parented to KAN-127) so they are canonically
+claimable ahead of a Product ACCELERATE acceptance run. Readiness prep only — no claim, no wake,
+no transition, no code touched.
+
+**KAN-129 — READY, prepared.** Frontend, single-file comment-block edit
+(`lib/data/repositories/profiles_repository.dart:4-12`) per T-050 (RULED). Confirmed live: the
+file still carries the directive language the ticket describes, matching scope. Explicit
+testable AC (4 items) already on the ticket. Created `agent/state/runtime/tasks/KAN-129.json`:
+`required_capability=frontend`, `work_effort=1` (one enumerable population of change, no
+dependency boundary — capacity-to-date SKILL.md §1), `surfaces=[lib/data/repositories/
+profiles_repository.dart]` (assessed), `shared_or_contended_surface=true` (system-derived —
+`lib/data/` is a SHARED prefix per policy.py/CONTRACT.md §4), all other characteristics false.
+Derived `validation_route=peer` via `store.set_characteristics` (system-policy, not chosen by
+me). Confirmed `queue.eligibility_reasons`/`unclaimable_reasons` both return `[]` — genuinely
+claimable now. **Jira write:** `duedate` null → `2026-09-11`, basis: 1 sitting, zero frontend
+queue contention (no other frontend task holds a runtime record; capacity.py shows all 8
+frontend seats free), same 2-board-day/sitting calendar convention already established for the
+Phase 0 chain — a conversion of a known count, not an estimate. Comment posted (full reasoning).
+
+**KAN-130, KAN-131 — NOT READY, not prepared.** Both lack `due_date`, and both are genuinely
+blocked: KAN-128 (which both depend on) is still `Peer-review` (10045), not Done — its own
+`due_date` (2026-09-10) hasn't been reached and its apply step (owning backend-N per G-028)
+hasn't happened. The ticket text names an "Earliest start Thursday 2026-09-10" but converting
+that into a committed ceiling `due_date` needs an earliest-vs-ceiling (rework-budget) judgement
+that no seat has supplied since `team-lead-4` was retired in Wave 6 — setting one myself would be
+estimating, not deriving, so I left it unset rather than invent it. **Did not** create task
+runtime records for KAN-130/KAN-131 themselves — an execution profile that can never be
+claimable without a `due_date` is left incomplete rather than made to look ready. **Did**
+create three factual `BLOCKS` dependency edges, since these hold regardless of due-date status:
+`KAN-128→KAN-130`, `KAN-128→KAN-131`, `KAN-130→KAN-131`, each citing the exact ticket text.
+Posted a comment on each ticket naming the missing fact, the dependency edges recorded, and what
+the derived characteristics/route would be once a `due_date` exists (both derive to PEER via
+`schema_change`/`money_path`; KAN-130 additionally carries `security_sensitive` for its two
+`SECURITY DEFINER` functions, KAN-131 explicitly does not since neither of its functions is
+`SECURITY DEFINER`). Acceptance criteria on both are explicit and testable (RULED T-051/T-052).
+
+**Jira writes, summary:** KAN-129 `duedate`: null → `2026-09-11`. KAN-130/KAN-131: no field
+writes, comments only. **Persistent State writes:** KAN-129 task record created (rev 1) then
+`set_surfaces`/`set_characteristics` (final rev 3); three dependency edges created
+(`dep-735f9712…` KAN-128→KAN-130, `dep-f5b7aa06…` KAN-128→KAN-131, `dep-f7b60a47…`
+KAN-130→KAN-131). No record created for KAN-128, KAN-130, or KAN-131's own task state beyond the
+dependency edges — KAN-128 already had a runtime record from `backend-1`'s Preflight, untouched.
+
+**Did not:** claim anything, wake any executor, activate ACCELERATE, transition any issue,
+touch KAN-136/KAN-138/KAN-155/KAN-141 (left read-only per instruction), touch Product code, or
+touch `main`.

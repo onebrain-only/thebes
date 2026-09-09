@@ -62,3 +62,26 @@ unchanged — **comment-only fix**"). If the reviewer reads AC2 as strictly byte
 **Handoff:** None. Self-review is the derived route; the ticket sits in Self-review (10044) awaiting
 it. Work stayed inside 1 sitting, the ticket's ceiling.
 
+
+## 2026-09-09 — KAN-129 (Nephthys, frontend-1)
+
+Comment-only rewrite of `lib/data/repositories/profiles_repository.dart` header block
+(lines 5-15), per T-050 remedy (4). States both profile stacks as fact, issues no
+directive, promises no removal or migration, marks neither stack deprecated.
+
+Verified at HEAD before asserting: `ProfilesRepository` has no non-`Result` method;
+`ProfileRepositoryImpl` imports `core/utils/either.dart` and carries 25 `Future<Either<`
+signatures; `profileControllerProvider` reaches it from `play_places_routes.dart`
+(router), `venues_screen.dart`, `sports_screen.dart` and `home_screen.dart`, 13 files
+outside `profile_providers.dart` in total. Cited by re-runnable grep, no count, no
+line numbers — the "six call sites" figure and the router line numbers were both stale.
+
+Gates: `flutter analyze --no-pub --no-fatal-infos` exit 0, 0 errors / 0 warnings /
+55 issues; `flutter test` exit 0, 106 passed. Baseline held on both.
+
+Commit 715bb85 on `Canary` (from b60e7cf), pushed. Jira comment 10770. Transitions
+Ready -> Front-end (8) on entry, Front-end -> Peer-review (7) on completion — both mine.
+Ownership released, revision 5 -> 6, `ownership: None`, executor evidence recorded.
+No reviewer chosen: `validation_route` is `peer`, system-derived.
+
+Not verified: the Cloudflare Canary deploy was not observed.

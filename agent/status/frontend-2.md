@@ -224,3 +224,33 @@ Worth carrying forward: the brief asserted a ticket edit had happened, and it ha
 not. Reading the live ticket rather than trusting the brief is what caught it, and
 building from `T-051` rather than from either text is what made the commit correct
 regardless of which was right.
+
+## 2026-09-09 — KAN-129 PEER review (reviewer, not executor)
+
+CEO-authorised PEER reviewer for KAN-129, a comment-only change to
+`lib/data/repositories/profiles_repository.dart` executed by `frontend-1` at
+Canary `715bb85`. Verified HEAD matches `origin/Canary` and the tree is clean
+before reading anything.
+
+Verdict: **PEER PASS**, all six criteria with evidence, posted to KAN-129 as
+comment `10771`. No directive language, no legacy/deprecated/abandoned wording, no
+removal or migration promise — one case-insensitive grep over the whole file for
+`legacy|deprecat|abandon|prefer|should|eventual|migrat|remov` returns nothing. The
+comment cites a re-runnable grep and contains no numeral at all. Every changed line
+in the commit is a `///` line, and the commit touches exactly one file.
+
+Gates re-measured myself rather than taken from the executor:
+`flutter analyze --no-pub --no-fatal-infos` exit 0, 0 errors / 0 warnings / 55
+infos; `flutter test` exit 0, 106 passing. Both match baseline.
+
+Two things worth carrying forward. First, the ticket's AC1 cites lines 4-12 and the
+block is at 5-15 — recorded as ticket drift, not an implementation defect; line 4 is
+a real blank line (`sed -n '4p' | od -c` -> a lone `\n`). Second, re-running the
+cited grep gives 38 hits / 14 files excluding the definition site, against the 36
+the ticket recorded three days ago. The count moved again, which is the argument for
+the design the executor chose: the comment is correct *because* it cites no number.
+
+Not recorded in Persistent State — the review context was opened with a null owner
+and there is no released operation to set `review_owner` afterwards. Known blocker,
+reported by the orchestrator, not mine to write; I wrote nothing under
+`agent/state/runtime/` and transitioned nothing in Jira.

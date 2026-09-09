@@ -535,6 +535,93 @@ def open_review_context(work_item_id, expected_revision, opened_by=None,
         return merged
 
 
+def resolve_review_owner(work_item_id, expected_revision, reviewer_seat_id,
+                         evidence_ref):
+    """Resolve the EXACT reviewer onto an already-open, unresolved PEER review. CAS'd.
+
+    THE GAP THIS CLOSES
+      A PEER review may legitimately wait with `review_owner: null` until an exact
+      reviewer is established — that is doctrine, not a defect, and it is why
+      `open_review_context` writes the waiting state rather than picking someone.
+      But nothing could then fill the owner in: `open_review_context` reopens only
+      after a recorded FAIL, and `peer_fail_transfer` needs a FAIL to exist. So a
+      review that started waiting stayed waiting even once the CEO named a reviewer.
+
+    THIS IS RESOLUTION, NOT REASSIGNMENT
+      Write-once. Once an owner is recorded, a later call with a different seat is
+      REFUSED. Reviewer replacement is a separate authority decision and is
+      deliberately not implemented here — an operation that could silently swap a
+      reviewer mid-review would let anyone choose their own.
+
+    It does not reopen the review, does not touch the cycle, the route, the result,
+    Jira, ownership or executor evidence. The intended path stays explicit:
+    resolve -> record_review_result -> completion eligibility -> Jira.
+    """
+    import policy, validate                             # noqa: E402
+    if expected_revision is None:
+        raise StateError("expected_revision is required; there is no force update")
+    if not reviewer_seat_id:
+        raise StateError("an exact reviewer is required — this operation exists so a "
+                         "reviewer can be NAMED, never inferred")
+    if not evidence_ref:
+        raise StateError("evidence_ref is required — it records what authorised this "
+                         "exact reviewer")
+    with record_lock("task", work_item_id):
+        cur = read("task", work_item_id)
+        if cur is None:
+            raise StateError("task %s does not exist" % work_item_id)
+        if cur["revision"] != expected_revision:
+            raise StateError("stale write refused: task %s is at revision %d, caller "
+                             "expected %d" % (work_item_id, cur["revision"],
+                                              expected_revision))
+        prof = cur.get("execution_profile") or {}
+        if prof.get("validation_route") != policy.PEER:
+            raise StateError("resolve_review_owner applies to the PEER route only — "
+                             "%s is on the %r route" % (work_item_id,
+                                                        prof.get("validation_route")))
+        rc = cur.get("review_context")
+        if not isinstance(rc, dict):
+            raise StateError("no-review-context: %s has no open review to resolve a "
+                             "reviewer onto" % work_item_id)
+        if rc.get("review_type") != policy.PEER:
+            raise StateError("review-not-peer: %s carries a %r review context; "
+                             "reviewer resolution does not generalise across review "
+                             "types" % (work_item_id, rc.get("review_type")))
+        if rc.get("review_result") != "pending":
+            raise StateError("review-already-settled: %s is %r; a reviewer is resolved "
+                             "before a verdict, never after"
+                             % (work_item_id, rc.get("review_result")))
+        if rc.get("review_owner"):
+            raise StateError("review-owner-already-resolved: %s is owned for review by "
+                             "%s. This operation is write-once; replacing a reviewer is "
+                             "a separate authority decision."
+                             % (work_item_id, rc.get("review_owner")))
+
+        # SAME eligibility doctrine as everywhere else — not a second model.
+        sbc = validate.seats_by_capability()
+        cap = prof.get("required_capability")
+        executors = evidenced_executors(cur)
+        eligible = policy.peer_eligible(cap, sbc, exclude=executors)
+        if reviewer_seat_id not in eligible:
+            raise StateError(
+                "invalid-peer-reviewer: %s is not an eligible PEER reviewer for %s "
+                "(capability %r, executor(s) %s excluded). A PEER reviewer must hold "
+                "the work's own capability, because PEER FAIL transfers execution to "
+                "it. Eligible: %s"
+                % (reviewer_seat_id, work_item_id, cap, executors or "none",
+                   ", ".join(eligible) or "none"))
+
+        merged = dict(cur)
+        merged["review_context"] = dict(rc, review_owner=reviewer_seat_id,
+                                        owner_resolved_at=now(),
+                                        owner_evidence_ref=evidence_ref)
+        merged["revision"] = cur["revision"] + 1
+        merged["updated_at"] = now()
+        _validate_one("task", merged)
+        _atomic_write(path_for("task", work_item_id), merged)
+        return merged
+
+
 def record_review_result(work_item_id, expected_revision, reviewer, result,
                          evidence_ref):
     """Record the validation VERDICT. CAS'd.
