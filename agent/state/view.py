@@ -709,6 +709,64 @@ def _policy_row(p):
             "activated_by": p.get("activated_by"), "reason_ref": p.get("reason_ref")}
 
 
+def wave8_view(tasks, limit=20):
+    """Wave 8 read side: events, learning, blocker patterns, ACCELERATE history.
+
+    Read-only, like everything else here, and deliberately CONTROL-FREE: there is no
+    accept, reject, promote, rewrite, rerun or change action, because a button that
+    adopts a recommendation would make Agent View an authority, which it is not.
+
+    It also reports where telemetry is INCOMPLETE rather than presenting a partial
+    history as a whole one — Wave 8 events begin at Wave 8, and everything older is
+    historical-derived by construction.
+    """
+    try:
+        import telemetry                                 # noqa: E402
+        import learning as learn                         # noqa: E402
+    except Exception:                                    # pragma: no cover
+        return {"present": False, "read_only": True, "advisory": True}
+
+    events = store.read_events()
+    by_type = collections.Counter(e.get("event_type") for e in events)
+    accel = [e for e in events if e.get("event_type") == "acceleration_outcome"]
+    blockers = collections.Counter(
+        e.get("reason_code") for e in events
+        if e.get("event_type") == "blocker_observed" and e.get("transition") == "entered")
+    cands = learn.candidates()
+    return {
+        "present": bool(events or cands),
+        "read_only": True, "advisory": True, "authoritative_for": [],
+        "event_count": len(events),
+        "events_by_type": dict(sorted(by_type.items())),
+        "recent_events": [{"event_type": e.get("event_type"),
+                           "work_item_id": e.get("work_item_id"),
+                           "observed_at": e.get("observed_at"),
+                           "source": e.get("source")}
+                          for e in events[-limit:]],
+        "recurring_blockers": dict(sorted(blockers.items(), key=lambda kv: -kv[1])),
+        "blocker_episodes": telemetry.blocker_episodes(),
+        "acceleration_history": [{"policy_id": e.get("policy_id"),
+                                  "scope": e.get("scope"), "target": e.get("target"),
+                                  "condition": e.get("condition"),
+                                  "selected_count": e.get("selected_count"),
+                                  "observed_at": e.get("observed_at")}
+                                 for e in accel],
+        "learning_candidates": [{"learning_id": r.get("learning_id"),
+                                 "scope_type": r.get("scope_type"),
+                                 "scope_id": r.get("scope_id"),
+                                 "pattern": r.get("pattern"),
+                                 "strength": r.get("strength"),
+                                 "occurrences": r.get("occurrences"),
+                                 "status": r.get("status")}
+                                for r in cands],
+        "telemetry_completeness": telemetry.completeness(tasks),
+        "controls": None,
+        "note": ("Advisory. Learning and retrospectives mutate nothing and adopt "
+                 "nothing; promotion into doctrine is an authorised decision made "
+                 "outside this view."),
+    }
+
+
 def build(now=None):
     """The whole read-only payload. Reads; never writes."""
     tasks = store.read_all("task")
@@ -746,6 +804,7 @@ def build(now=None):
         "meta": _meta(tasks, edges, interventions, binds, topo, now),
         "acceleration": acceleration_view(tasks, policies, binds, edges,
                                           interventions, lifecycles),
+        "wave8": wave8_view(tasks),
         "orchestrator": {
             "name": "Main Session",
             "role": ORCHESTRATOR_ROLE,
@@ -814,6 +873,15 @@ if __name__ == "__main__":
                  if a.get("capacity_unavailable") else ""))
     else:
         print("  ACCELERATE   : not active (normal mode)")
+    w = p.get("wave8") or {}
+    if w.get("present"):
+        print("  WAVE 8       : %d events %s | learning candidates: %d%s"
+              % (w.get("event_count", 0), w.get("events_by_type") or "",
+                 len(w.get("learning_candidates") or []),
+                 "" if (w.get("telemetry_completeness") or {}).get("complete")
+                 else "  [TELEMETRY INCOMPLETE]"))
+    else:
+        print("  WAVE 8       : no domain events recorded yet")
     for qv in p["queues"]:
         if qv["defined_seat_count"] or qv["blocked_count"]:
             print("  queue %-16s eligible=%d claimable=%d blocked=%d seats=%d unowned=%d"

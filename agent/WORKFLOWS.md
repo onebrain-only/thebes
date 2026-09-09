@@ -618,6 +618,82 @@ No session transcript is ever availability authority.
 
 ---
 
+## 3.2 WAVE 8 — ADVISORY TELEMETRY, RETROSPECTIVE AND LEARNING
+
+**None of this is authority.** Nothing in claimability, ownership, validation, lifecycle or
+ACCELERATE reads a domain event or a learning record, and deleting every one of them would
+change no decision the system makes. That is the test of "advisory", and it is asserted by
+tests rather than promised here.
+
+### Three domain events, not thirty
+
+Most workflow facts are **already durable** — `executor_evidence` appends, policies and
+interventions keep their cleared records, dependencies are records, and Jira's changelog
+reconstructs lifecycle. Emitting events for those would create a second copy of an authority
+that already exists, and a second copy drifts. Events are written **only** where a fact is
+otherwise destroyed or never stored:
+
+| Event | Why it must exist |
+|---|---|
+| `review_decided` | `review_context` is CURRENT state — reopening a failed review overwrites the previous cycle's result and its `evidence_ref`, so **why** a review failed does not survive |
+| `blocker_observed` | `unclaimable_reasons` is derived per call and kept nowhere, so nothing records that an item **was** blocked, or for how long |
+| `acceleration_outcome` | a plan and its terminal condition are derived then discarded; the policy record says a run happened, never what it did |
+
+**Blockers are EDGES, never poll samples.** An event is written only when the blocker set
+*changes*. Observing an unchanged blocker a hundred times writes nothing — otherwise the act of
+looking would manufacture the recurrence that learning later reads as a pattern, and the system
+would be learning from its own observation frequency. An **open** blocker gets **no duration**:
+a duration needs two trustworthy timestamps and it has one.
+
+**One ACCELERATE activation, one terminal outcome**, identified by the activation itself and
+deliberately not by a timestamp — a retry must not forge a second run. Events are ordered by a
+monotonic `seq`, because `observed_at` is second-resolution and would tie.
+
+### Advisory failure must never break authority
+
+An authoritative write commits **inside** its lock; the event is appended **after**, and the
+emitter never raises. A committed verdict is never rolled back, retried or reported invalid
+because an advisory write failed. There is deliberately **no transaction** spanning task state
+and event files — claiming one would misdescribe what the filesystem guarantees. The gap becomes
+**visible** instead: `telemetry.completeness()` names settled reviews with no event, so a
+retrospective can say *telemetry is incomplete* rather than quietly under-reporting.
+
+### Fact, pattern, recommendation — separated structurally
+
+A **FACT** cannot be constructed without `evidence_refs`. A **PATTERN** requires **two distinct
+occurrences**, distinct *by evidence reference* — re-reading one fact ten times is one
+occurrence. A **RECOMMENDATION** must cite the pattern it derives from. Strength is a
+deterministic ladder — `single-observation` · `repeated` · `strong-repeated` (≥4 occurrences
+across ≥2 distinct sources) — and **never a confidence number**, because a model's certainty is
+not a statistic and dressing it as one invites false precision.
+
+Scopes are **TASK · SPRINT · CAPABILITY · PRODUCT**; SYSTEM is deferred. SPRINT reuses
+`sprint.py` and inherits its refusal — an incomplete Jira changelog **fails closed** rather than
+being analysed, because a quiet under-report is worse than no report.
+
+**Every finding declares its origin.** Only a recorded event is `wave8-event`; anything
+reconstructed from state, Git or Jira is `historical-derived`, and **backfilling history as
+events is forbidden**. Work predating Wave 8 is labelled honestly rather than silently promoted.
+
+### Learning is capability-scoped and inert
+
+The subject is a **capability** — the work, not the worker. A seat id may appear inside
+`evidence_refs` because that is a fact, but **no operation scores, ranks or compares seats, and
+none may be added**: the moment a system rates its own workers, every later report is written
+for the rating. Runtime analysis may create a `candidate` and nothing else; `accepted`,
+`rejected`, `superseded` and `contradicted` require an authorised decision with a reason, and a
+superseded record keeps its status, text and evidence while the newer one points back at it.
+
+**Model, reasoning effort, complexity, risk, parallelism, token and cost analytics remain
+DEFERRED.** There is no factual source for tokens or cost, so none is estimated — and tool
+duration is not work.
+
+Agent View shows all of this **read-only, with no controls**: no accept, reject, promote,
+rewrite or rerun. `flow-hook.sh` and `.flow` are untouched and remain tool-level, uncorrelated
+and non-authoritative.
+
+---
+
 ## 4. THE HANDOFF RULE
 
 **Agents do not brief each other, and no agent hands execution to another.** Briefs come from

@@ -38,6 +38,8 @@ KINDS = {
     "dependency": ("dependencies", "dep"),
     "intervention": ("interventions", "int"),
     "policy":       ("policies",      "pol"),
+    "event":        ("events",        "evt"),
+    "learning":     ("learning",      "lrn"),
 }
 
 
@@ -908,7 +910,21 @@ def record_review_result(work_item_id, expected_revision, reviewer, result,
         merged["updated_at"] = now()
         _validate_one("task", merged)
         _atomic_write(path_for("task", work_item_id), merged)
-        return merged
+
+    # AUTHORITATIVE WRITE IS COMMITTED AND THE LOCK IS RELEASED.
+    #
+    # The verdict is now durable. What follows is ADVISORY: it records the fact that
+    # reopening a failed review would otherwise destroy. `telemetry.emit` never
+    # raises, so a failure here cannot roll back, retry or invalidate the verdict —
+    # there is deliberately no transaction spanning task state and event files, and
+    # claiming one would misdescribe what the filesystem guarantees. A missing event
+    # surfaces through `telemetry.completeness()` instead of corrupting the workflow.
+    try:
+        import telemetry                                 # noqa: E402
+        telemetry.emit_review_decided(merged)
+    except Exception:                                    # noqa: BLE001 - deliberate
+        pass
+    return merged
 
 
 def self_fail_reentry(work_item_id, expected_revision, seat_id, reentry_ref):
@@ -1128,6 +1144,101 @@ def intervention_blocks_claim(work_item_id, capability, interventions=None):
         if k == "stop" and iv.get("target") == work_item_id:
             return "task-stopped"
     return None
+
+
+# ---------------------------------------------------------------- domain events
+#
+# ADVISORY. A DOMAIN EVENT IS NEVER WORKFLOW AUTHORITY.
+#
+# Nothing in claimability, ownership, validation or lifecycle reads these records.
+# Deleting the whole `events` directory would change no decision the system makes —
+# it would only make the read side honestly poorer. That is the test of advisory.
+#
+# THREE TYPES, NOT THIRTY
+# Most workflow facts are already durable: executor_evidence appends, policies and
+# interventions retain their cleared records, dependencies are records, and Jira's
+# changelog reconstructs lifecycle. Emitting events for those would create a second
+# copy of an authority that already exists, and a second copy drifts. So events are
+# written ONLY where a fact is otherwise destroyed or never stored:
+#
+#   review_decided        review_context is CURRENT state — reopening a failed
+#                         review overwrites the previous cycle's result and its
+#                         evidence_ref, so WHY a review failed is lost today.
+#   blocker_observed      unclaimable_reasons is derived per call and kept nowhere,
+#                         so nothing records that an item WAS blocked, or for how long.
+#   acceleration_outcome  a plan and its terminal condition are derived and discarded;
+#                         the policy record says a run happened, never what it did.
+#
+# IMMUTABLE. There is no update operation for an event, only append.
+
+EVENT_TYPES = ("review_decided", "blocker_observed", "acceleration_outcome")
+EVENT_SOURCE = "wave8-event"
+
+
+def _event_identity(rec):
+    """The natural key that makes an event factually unique.
+
+    Not a uuid and not a timestamp: a retry must not become a second fact. A review
+    decision is identified by its cycle, an acceleration outcome by its activation,
+    a blocker transition by the edge it records.
+    """
+    t = rec.get("event_type")
+    if t == "review_decided":
+        return (t, rec.get("work_item_id"), rec.get("review_type"),
+                rec.get("review_cycle"))
+    if t == "acceleration_outcome":
+        # ONE activation, ONE terminal outcome. Deliberately NOT keyed on
+        # observed_at — a retry gets a new timestamp and would forge a second run.
+        return (t, rec.get("policy_id"))
+    if t == "blocker_observed":
+        return (t, rec.get("work_item_id"), rec.get("reason_code"),
+                rec.get("transition"), rec.get("occurrence"))
+    return (t, rec.get("event_id"))
+
+
+def read_events(event_type=None, work_item_id=None):
+    """All recorded events, oldest first. Read-only; nothing consumes them for policy."""
+    out = [e for e in read_all("event")
+           if (event_type is None or e.get("event_type") == event_type)
+           and (work_item_id is None or e.get("work_item_id") == work_item_id)]
+    # Ordered by SEQ, not by timestamp. `observed_at` is second-resolution, so two
+    # events in the same second would otherwise tie and fall back to a random uuid —
+    # which silently loses append order, and the blocker edge model reads "latest"
+    # to decide whether a blocker is still open. A monotonic seq makes order a fact.
+    return sorted(out, key=lambda e: (e.get("seq") or 0, e.get("event_id") or ""))
+
+
+def append_event(record):
+    """Append one immutable domain event. Returns the record, or the EXISTING one.
+
+    Idempotent by natural identity, so re-observing a fact is not a second fact —
+    which is what stops polling from manufacturing repetition that learning would
+    then read as a pattern.
+
+    Raises on a malformed event. Callers that are advisory must not let that reach an
+    authoritative operation; see `telemetry.emit`.
+    """
+    rec = dict(record)
+    if rec.get("event_type") not in EVENT_TYPES:
+        raise StateError("unknown event_type %r — the Wave 8 set is fixed at %s"
+                         % (rec.get("event_type"), "/".join(EVENT_TYPES)))
+    rec.setdefault("observed_at", now())
+    rec.setdefault("source", EVENT_SOURCE)
+    rec.setdefault("schema_version", SCHEMA_VERSION)
+    ident = _event_identity(rec)
+    with _Lock("events"):
+        for existing in read_all("event"):
+            if _event_identity(existing) == ident:
+                return existing
+        rid = new_id("event")
+        rec["event_id"] = rid
+        rec["seq"] = 1 + max([e.get("seq") or 0 for e in read_all("event")] or [0])
+        rec.setdefault("created_at", now())
+        rec.setdefault("updated_at", rec["created_at"])
+        rec.setdefault("revision", 1)
+        _validate_one("event", rec)
+        _atomic_write(path_for("event", rid), rec)
+        return rec
 
 
 # ---------------------------------------------------------------- execution policy
@@ -1421,7 +1532,8 @@ def release(work_item_id, seat_id, expected_revision, release_ref, authority=Non
 def _id_field(kind):
     return {"task": "work_item_id", "routing": "request_id",
             "exception": "exception_id", "dependency": "dependency_id",
-            "intervention": "intervention_id", "policy": "policy_id"}[kind]
+            "intervention": "intervention_id", "policy": "policy_id",
+            "event": "event_id", "learning": "learning_id"}[kind]
 
 
 def _validate_one(kind, record):

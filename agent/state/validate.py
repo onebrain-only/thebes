@@ -69,6 +69,22 @@ INTERVENTION_KINDS = {"stop", "hold", "freeze"}
 POLICY_KINDS = {"accelerate"}
 POLICY_SCOPES = {"system", "product", "capability"}
 POLICY_AUTHORITIES = {"ceo", "orchestrator"}
+
+# ---- Wave 8: advisory domain events -----------------------------------------
+# A fixed, small vocabulary. Events are ADVISORY and immutable; nothing in
+# claimability, ownership or lifecycle reads them. The banned-field list below is
+# the privacy rule made enforceable: events carry REFERENCES, never bodies.
+EVENT_TYPES = {"review_decided", "blocker_observed", "acceleration_outcome"}
+BLOCKER_TRANSITIONS = {"entered", "cleared"}
+ACCELERATION_CONDITIONS = {"ACCELERATION DRAINED", "ACCELERATION SATURATED",
+                           "ACCELERATION BLOCKED"}
+EVENT_BANNED_FIELDS = {
+    "prompt", "transcript", "transcript_path", "agent_transcript_path", "messages",
+    "conversation", "reasoning", "thinking", "chain_of_thought", "tool_input",
+    "tool_response", "last_assistant_message", "body", "description", "comment_body",
+    "token", "tokens", "token_count", "cost", "usd", "api_key", "secret",
+    "authorization", "password", "credential",
+}
 INTERVENTION_SCOPES = {"task", "capability", "system"}
 # kind determines scope exactly. A stop is always a task, a freeze is always system.
 KIND_SCOPE = {"stop": "task", "hold": "capability", "freeze": "system"}
@@ -800,6 +816,79 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
             errs.append("%s: decision_authority %r is not a declared seat" % (where, auth))
         _reflen(rec, ["question", "resolution_ref"], errs, where)
 
+    elif kind == "learning":
+        _req(rec, ["learning_id", "scope_type", "scope_id", "pattern",
+                   "evidence_refs", "occurrences", "status", "recommendation"],
+             errs, where)
+        if rec.get("scope_type") not in {"capability", "product", "workflow"}:
+            errs.append("%s: unknown learning scope_type %r" % (where, rec.get("scope_type")))
+        if rec.get("status") not in {"candidate", "accepted", "rejected",
+                                     "superseded", "contradicted"}:
+            errs.append("%s: unknown learning status %r" % (where, rec.get("status")))
+        if not rec.get("evidence_refs"):
+            errs.append("%s: a learning record requires evidence_refs" % where)
+        if rec.get("status") != "candidate" and not rec.get("decided_by"):
+            errs.append("%s: a decided learning record records who decided it — "
+                        "runtime analysis may only produce 'candidate'" % where)
+        if rec.get("decided_by") and rec["decided_by"] not in ("ceo", "cto"):
+            errs.append("%s: %r is not a learning decision authority"
+                        % (where, rec.get("decided_by")))
+        for f in sorted(set(rec) & EVENT_BANNED_FIELDS):
+            errs.append("%s: learning carries banned field %r" % (where, f))
+
+    elif kind == "event":
+        _req(rec, ["event_id", "event_type", "observed_at", "source", "seq"],
+             errs, where)
+        sq = rec.get("seq")
+        if not isinstance(sq, int) or sq < 1:
+            errs.append("%s: seq must be a positive integer — append order is a fact, "
+                        "not a timestamp tie-break" % where)
+        et = rec.get("event_type")
+        if et not in EVENT_TYPES:
+            errs.append("%s: unknown event_type %r" % (where, et))
+        if rec.get("source") not in ("wave8-event",):
+            errs.append("%s: event source must be 'wave8-event' — a historical-derived "
+                        "fact is NOT an event and must never be backfilled as one"
+                        % where)
+        # Privacy is a schema rule, not a convention: an event references, never copies.
+        for f in sorted(set(rec) & EVENT_BANNED_FIELDS):
+            errs.append("%s: event carries banned field %r — events hold references "
+                        "(an id, a comment ref, a revision), never bodies, prompts, "
+                        "reasoning, tokens or secrets" % (where, f))
+        for f in ("evidence_ref", "reason_code", "unused_capacity_reason"):
+            _reflen(rec, [f], errs, where)
+        if et == "review_decided":
+            _req(rec, ["work_item_id", "review_type", "review_cycle", "review_result",
+                       "review_owner", "decided_at"], errs, where)
+            if rec.get("review_type") not in REVIEW_TYPES:
+                errs.append("%s: unknown review_type %r" % (where, rec.get("review_type")))
+            if rec.get("review_result") not in ("pass", "fail"):
+                errs.append("%s: review_decided records a verdict, got %r"
+                            % (where, rec.get("review_result")))
+            c = rec.get("review_cycle")
+            if not isinstance(c, int) or c < 1:
+                errs.append("%s: review_cycle must be an integer >= 1" % where)
+        elif et == "blocker_observed":
+            _req(rec, ["work_item_id", "reason_code", "transition", "occurrence"],
+                 errs, where)
+            if rec.get("transition") not in BLOCKER_TRANSITIONS:
+                errs.append("%s: blocker transition must be entered/cleared, got %r — "
+                            "a blocker is an EDGE, never a poll sample"
+                            % (where, rec.get("transition")))
+            o = rec.get("occurrence")
+            if not isinstance(o, int) or o < 1:
+                errs.append("%s: occurrence must be an integer >= 1" % where)
+            if rec.get("transition") == "entered" and rec.get("cleared_at"):
+                errs.append("%s: an 'entered' event carries no cleared_at" % where)
+        elif et == "acceleration_outcome":
+            _req(rec, ["policy_id", "scope", "condition"], errs, where)
+            if rec.get("condition") not in ACCELERATION_CONDITIONS:
+                errs.append("%s: unknown terminal condition %r" % (where, rec.get("condition")))
+            for f in ("max_simultaneous_owners", "selected_count", "deferred_count"):
+                v = rec.get(f)
+                if v is not None and (not isinstance(v, int) or v < 0):
+                    errs.append("%s: %s must be a non-negative integer" % (where, f))
+
     elif kind == "policy":
         _req(rec, ["policy_id", "policy_kind", "scope", "activated_by", "reason_ref"],
              errs, where)
@@ -966,7 +1055,7 @@ def check(runtime=None):
                         % (pid, jid, po))
     kinds = {"task": "tasks", "routing": "routing", "exception": "exceptions",
              "dependency": "dependencies", "intervention": "interventions",
-             "policy": "policies"}
+             "policy": "policies", "event": "events", "learning": "learning"}
     seen_ids = {}
     edges = []
     active_iv = []
@@ -988,7 +1077,8 @@ def check(runtime=None):
                             "a single aggregate file would serialise every write" % p); continue
             idf = {"task": "work_item_id", "routing": "request_id",
                    "exception": "exception_id", "dependency": "dependency_id",
-                   "intervention": "intervention_id", "policy": "policy_id"}[kind]
+                   "intervention": "intervention_id", "policy": "policy_id",
+                   "event": "event_id", "learning": "learning_id"}[kind]
             rid = rec.get(idf)
             if rid != fn[:-5]:
                 errs.append("%s: filename does not match %s %r" % (p, idf, rid))
