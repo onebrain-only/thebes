@@ -213,4 +213,45 @@ ok("[18] the harness reads the canonical build script but does not modify it",
    "cloudflare-build" not in code_only(BUILD) or "cloudflare-build" in BUILD)
 ok("[18] no harness file lives under lib/", not exists(PRODUCT, "lib", "tests"))
 
+section("WORKSPACE PATH — the status log must point at the canonical checkout")
+
+# Root-caused 2026-09-09 by `devops` after four status entries were written into a
+# workspace nothing reads. Nine role files carried an absolute path naming
+# `Desktop/Thebes` — a real second checkout — inside the very paragraph explaining that
+# an absolute path exists to prevent "a second, unread log". The instruction was
+# creating the thing it warned about. Pinned here because it is invisible when wrong:
+# the write succeeds, the file exists, and only its directory is incorrect.
+ROLES = os.path.join(ROOT, "agent", "roles")
+AGENTS = os.path.join(ROOT, ".claude", "agents")
+WRONG = "Desktop/Thebes/agent/status"
+RIGHT = "Desktop/Thebes-Canonical/agent/status"
+
+
+def sweep(d):
+    bad, good = [], []
+    if not os.path.isdir(d):
+        return bad, good
+    for fn in sorted(os.listdir(d)):
+        if not fn.endswith(".md"):
+            continue
+        t = read(d, fn)
+        if WRONG in t:
+            bad.append(fn)
+        if RIGHT in t:
+            good.append(fn)
+    return bad, good
+
+
+bad_roles, good_roles = sweep(ROLES)
+bad_agents, good_agents = sweep(AGENTS)
+ok("[19] no ROLE file points the status log at the non-canonical workspace",
+   not bad_roles)
+ok("[19] no GENERATED agent points it there either — the defect regenerates if the "
+   "source is fixed but the build is not re-run", not bad_agents)
+ok("[19] the canonical path is actually present in the roles that log",
+   len(good_roles) >= 9)
+ok("[19] and survived generation into the agents", len(good_agents) >= 9)
+ok("[19] the correction is recorded rather than silently swapped",
+   any("Corrected 2026-09-09" in read(ROLES, f) for f in good_roles))
+
 sys.exit(summary())

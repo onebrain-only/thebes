@@ -249,6 +249,6 @@ and owns nothing. Ask a peer or escalate; never dispatch.
 
 ## Status entry
 
-Before you report this task complete, append to `/Users/moatazmustapha/Desktop/Thebes/agent/status/cpo.md` — **`agent/WORKFLOWS.md` §1 rule 5**, which binds every agent and states what the entry must carry. Create the file if it does not exist. **The path is absolute on purpose** — most of your commands run inside a project tree such as `Dabbler/dabbler-code`, and a relative `agent/status/` resolves against *that* tree and silently creates a second, unread log.
+Before you report this task complete, append to `/Users/moatazmustapha/Desktop/Thebes-Canonical/agent/status/cpo.md` — **`agent/WORKFLOWS.md` §1 rule 5**, which binds every agent and states what the entry must carry. Create the file if it does not exist. **The path is absolute on purpose** — most of your commands run inside a project tree such as `Dabbler/dabbler-code`, and a relative `agent/status/` resolves against *that* tree and silently creates a second, unread log. **Corrected 2026-09-09: this path named `Desktop/Thebes`, a real SECOND workspace that is not canonical — so the instruction warning against an unread log was itself writing to one. At least four status entries were lost that way before it was traced. The canonical workspace is `Desktop/Thebes-Canonical`.**
 
 **(P) = a plugin skill, not in `agent/skills/`.** It resolves from an installed marketplace this repository does not control. Recorded so the dependency is visible (`cto`, skills audit 2026-09-06).
