@@ -37,6 +37,7 @@ KINDS = {
     "exception":  ("exceptions",   "exc"),
     "dependency": ("dependencies", "dep"),
     "intervention": ("interventions", "int"),
+    "policy":       ("policies",      "pol"),
 }
 
 
@@ -817,6 +818,124 @@ def intervention_blocks_claim(work_item_id, capability, interventions=None):
     return None
 
 
+# ---------------------------------------------------------------- execution policy
+#
+# ACCELERATE IS NOT AN INTERVENTION, AND THIS IS NOT A STYLISTIC CHOICE.
+#
+# CONTRACT.md §3 permits an intervention "only for a concrete detected safety
+# condition" and "never for priority, ordinary scheduling, routine approval or
+# performance management". ACCELERATE *is* ordinary scheduling, so putting it in the
+# intervention namespace would place a scheduling record inside one the contract
+# defines as safety-only. It would also break three live invariants at once:
+# KIND_SCOPE binds each kind to exactly one scope (ACCELERATE needs three),
+# intervention_blocks_claim returns a BLOCKING reason for every kind, and every
+# caller of active_interventions() reads that list as "things that restrict".
+#
+# So policies live in their own record kind, their own directory and their own
+# reader. Nothing here is consulted by claimability, ownership or Jira lifecycle:
+# a policy changes only how aggressively the Orchestrator fills SAFE capacity, and
+# removing every policy record would leave behaviour identical to today's.
+
+POLICY_KINDS = ("accelerate",)
+POLICY_SCOPES = ("system", "product", "capability")
+
+
+def set_execution_policy(policy_kind, scope, target, activated_by, reason_ref):
+    """Activate an execution policy. Atomic under the policies lock.
+
+    Refuses a duplicate ACTIVE policy on the same (kind, scope, target) for the same
+    reason `create_intervention` does: a second one would make clearing ambiguous.
+    """
+    import validate                                     # noqa: E402
+    if policy_kind not in POLICY_KINDS:
+        raise StateError("unknown execution policy kind %r — the set is %s"
+                         % (policy_kind, "/".join(POLICY_KINDS)))
+    if scope not in POLICY_SCOPES:
+        raise StateError("unknown policy scope %r — system/product/capability only. "
+                         "There is deliberately no TASK scope: 'maximum parallelism' "
+                         "on one item is meaningless, and a task-scoped accelerator "
+                         "would be priority by another name." % scope)
+    if scope == "system":
+        target = None
+    elif not target:
+        raise StateError("a %s-scoped policy needs a target" % scope)
+    if not reason_ref:
+        raise StateError("reason_ref is required — a policy is an auditable act")
+    with _Lock("policies"):
+        for pol in active_execution_policies():
+            if (pol.get("policy_kind") == policy_kind and pol.get("scope") == scope
+                    and pol.get("target") == target):
+                raise StateError("an active %s policy already exists on %s target %r "
+                                 "(%s)" % (policy_kind, scope, target,
+                                           pol["policy_id"]))
+        rid = new_id("policy")
+        rec = {"policy_id": rid, "policy_kind": policy_kind, "scope": scope,
+               "target": target, "activated_by": activated_by,
+               "reason_ref": reason_ref, "cleared_by": None, "cleared_at": None,
+               "schema_version": SCHEMA_VERSION, "revision": 1,
+               "activated_at": now(), "created_at": now(), "updated_at": now()}
+        _validate_one("policy", rec)
+        _atomic_write(path_for("policy", rid), rec)
+        return rec
+
+
+def clear_execution_policy(policy_id, expected_revision, cleared_by):
+    """CLEAR ACCELERATE. CAS'd, and the cleared record is KEPT as history.
+
+    Clearing changes future scheduling pressure and NOTHING else. It does not cancel
+    ownership, does not stop a current owner and does not touch a single task record —
+    a policy that could revoke ownership on the way out would be an intervention, and
+    it deliberately is not one.
+    """
+    with _Lock("policies"):
+        cur = read("policy", policy_id)
+        if cur is None:
+            raise StateError("policy %s does not exist" % policy_id)
+        if cur["revision"] != expected_revision:
+            raise StateError("stale write refused: policy %s is at revision %d, caller "
+                             "expected %d" % (policy_id, cur["revision"],
+                                              expected_revision))
+        if cur.get("cleared_at"):
+            raise StateError("policy %s is already cleared" % policy_id)
+        merged = dict(cur, cleared_by=cleared_by, cleared_at=now(),
+                      revision=cur["revision"] + 1, updated_at=now())
+        _validate_one("policy", merged)
+        _atomic_write(path_for("policy", policy_id), merged)
+        return merged
+
+
+def active_execution_policies(policy_kind=None):
+    out = [p for p in read_all("policy") if not p.get("cleared_at")]
+    if policy_kind is not None:
+        out = [p for p in out if p.get("policy_kind") == policy_kind]
+    return sorted(out, key=lambda p: p.get("policy_id") or "")
+
+
+def accelerate_scopes_for(task, policies=None):
+    """Which active ACCELERATE policies cover this task. Empty = normal mode.
+
+    UNION, never override. A task is accelerated if ANY active policy covers it, and
+    there is no negative policy to express "normal" — absence already means normal.
+    One composable rule, no policy language, and nothing that can contradict itself.
+    """
+    pols = (active_execution_policies("accelerate") if policies is None
+            else [p for p in policies
+                  if p.get("policy_kind") == "accelerate" and not p.get("cleared_at")])
+    cap = (task.get("execution_profile") or {}).get("required_capability")
+    out = []
+    for p in pols:
+        sc, tgt = p.get("scope"), p.get("target")
+        if (sc == "system"
+                or (sc == "product" and tgt == task.get("product_id"))
+                or (sc == "capability" and tgt == cap)):
+            out.append(p)
+    return out
+
+
+def accelerated(task, policies=None):
+    return bool(accelerate_scopes_for(task, policies))
+
+
 # ---------------------------------------------------------------- ownership
 
 def set_surfaces(work_item_id, expected_revision, surfaces, author, basis_ref=None):
@@ -990,7 +1109,7 @@ def release(work_item_id, seat_id, expected_revision, release_ref, authority=Non
 def _id_field(kind):
     return {"task": "work_item_id", "routing": "request_id",
             "exception": "exception_id", "dependency": "dependency_id",
-            "intervention": "intervention_id"}[kind]
+            "intervention": "intervention_id", "policy": "policy_id"}[kind]
 
 
 def _validate_one(kind, record):

@@ -62,6 +62,13 @@ CANONICAL_STATES = set(board.CANONICAL_STATES)
 # there is no single task to hang them on. Claimability queries the records.
 
 INTERVENTION_KINDS = {"stop", "hold", "freeze"}
+# Execution policies are a SEPARATE namespace from interventions on purpose:
+# interventions restrict execution for a safety condition, policies change how
+# aggressively safe capacity is filled. CONTRACT.md §3 forbids using the first for
+# the second, so they never share a vocabulary, a scope table or a reader.
+POLICY_KINDS = {"accelerate"}
+POLICY_SCOPES = {"system", "product", "capability"}
+POLICY_AUTHORITIES = {"ceo", "orchestrator"}
 INTERVENTION_SCOPES = {"task", "capability", "system"}
 # kind determines scope exactly. A stop is always a task, a freeze is always system.
 KIND_SCOPE = {"stop": "task", "hold": "capability", "freeze": "system"}
@@ -722,6 +729,16 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
             _review_coherence(rec, prof, canonical, got, errs, where)
         validate_review_context(rec.get("review_context"), canonical, prof, errs,
                                 where, rec=rec)
+        ls = rec.get("logical_surfaces")
+        if ls is not None:
+            if not isinstance(ls, list) or not all(isinstance(o, str) and o.strip()
+                                                   for o in ls):
+                errs.append("%s: logical_surfaces is an optional list of non-empty "
+                            "object names — a compatibility declaration, not a model "
+                            "of the database" % where)
+            elif len(ls) > 20:
+                errs.append("%s: logical_surfaces names %d objects; it declares known "
+                            "overlap, not an inventory" % (where, len(ls)))
 
     elif kind == "routing":
         _req(rec, ["request_id", "originating_work_item", "required_capability",
@@ -752,6 +769,38 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
         if auth and auth not in seatset:
             errs.append("%s: decision_authority %r is not a declared seat" % (where, auth))
         _reflen(rec, ["question", "resolution_ref"], errs, where)
+
+    elif kind == "policy":
+        _req(rec, ["policy_id", "policy_kind", "scope", "activated_by", "reason_ref"],
+             errs, where)
+        k, sc, tgt = rec.get("policy_kind"), rec.get("scope"), rec.get("target")
+        if k not in POLICY_KINDS:
+            errs.append("%s: unknown execution policy kind %r" % (where, k))
+        if sc not in POLICY_SCOPES:
+            errs.append("%s: unknown policy scope %r — system/product/capability only; "
+                        "there is no TASK scope" % (where, sc))
+        if sc == "system":
+            if tgt is not None:
+                errs.append("%s: a system-scoped policy takes no target, got %r"
+                            % (where, tgt))
+        elif sc == "product":
+            if not tgt or (prods and tgt not in prods):
+                errs.append("%s: a product-scoped policy needs a known product target, "
+                            "got %r" % (where, tgt))
+        elif sc == "capability":
+            if tgt not in CAPABILITIES:
+                errs.append("%s: a capability-scoped policy needs a known capability "
+                            "target, got %r" % (where, tgt))
+        for f in ("activated_by", "cleared_by"):
+            v = rec.get(f)
+            if v and v not in POLICY_AUTHORITIES and v not in seatset:
+                errs.append("%s: %s %r is not a policy authority (%s) or a declared "
+                            "seat" % (where, f, v, "/".join(sorted(POLICY_AUTHORITIES))))
+        if rec.get("cleared_at") and not rec.get("cleared_by"):
+            errs.append("%s: a cleared policy records who cleared it" % where)
+        if rec.get("cleared_by") and not rec.get("cleared_at"):
+            errs.append("%s: a policy with cleared_by records when" % where)
+        _reflen(rec, ["reason_ref"], errs, where)
 
     elif kind == "intervention":
         _req(rec, ["intervention_id", "kind", "scope", "created_by", "reason_ref"],
@@ -886,10 +935,12 @@ def check(runtime=None):
             errs.append("registry: project %s/%s binds PO seat %r which is not declared"
                         % (pid, jid, po))
     kinds = {"task": "tasks", "routing": "routing", "exception": "exceptions",
-             "dependency": "dependencies", "intervention": "interventions"}
+             "dependency": "dependencies", "intervention": "interventions",
+             "policy": "policies"}
     seen_ids = {}
     edges = []
     active_iv = []
+    active_pol = []
     for kind, sub in kinds.items():
         d = os.path.join(runtime, sub)
         if not os.path.isdir(d):
@@ -907,7 +958,7 @@ def check(runtime=None):
                             "a single aggregate file would serialise every write" % p); continue
             idf = {"task": "work_item_id", "routing": "request_id",
                    "exception": "exception_id", "dependency": "dependency_id",
-                   "intervention": "intervention_id"}[kind]
+                   "intervention": "intervention_id", "policy": "policy_id"}[kind]
             rid = rec.get(idf)
             if rid != fn[:-5]:
                 errs.append("%s: filename does not match %s %r" % (p, idf, rid))
@@ -919,6 +970,8 @@ def check(runtime=None):
                 edges.append(rec)
             if kind == "intervention" and not rec.get("cleared_at"):
                 active_iv.append(rec)
+            if kind == "policy" and not rec.get("cleared_at"):
+                active_pol.append(rec)
     # At most one ACTIVE intervention per (kind, scope, target): a second would make
     # clearing ambiguous — which one did RESUME clear?
     seen_iv = {}

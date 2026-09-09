@@ -142,6 +142,46 @@ def surfaces_collide(a_surfaces, b_surfaces):
     return False
 
 
+# --------------------------------------------------- logical-object compatibility
+#
+# A NARROW COMPATIBILITY MECHANISM, NOT A MODEL OF THE DATABASE.
+#
+# File surfaces are the canonical contention model and are unchanged. They cannot see
+# a collision that exists only in the database: two migrations touching one PostgreSQL
+# function collide with no shared path. `settle_game` and `trgfn_payment_to_ledger`
+# are the cases actually encountered, and they are EXAMPLES, not the architecture.
+#
+# So this reads an OPTIONAL, declared `logical_surfaces` list off the task. It is
+# deliberately separate from `surfaces`, trivial to extend and trivial to delete when
+# a real model replaces it.
+#
+# THE CONSERVATIVE RULE, and the whole point of keeping it separate:
+#   declared overlap  -> the tasks SERIALIZE.
+#   nothing declared  -> file-surface rules still apply, and NOTHING here licenses a
+#                        claim that no logical contention exists. Absence of evidence
+#                        is not evidence of safety — the same rule `surfaces: null`
+#                        already enforces for paths.
+
+def logical_objects(task):
+    """Declared logical objects, normalised. Absence is UNKNOWN, never 'none'."""
+    return {str(o).strip().lower()
+            for o in ((task or {}).get("logical_surfaces") or []) if str(o).strip()}
+
+
+def logical_collide(a, b):
+    """Do two tasks declare a factual overlap on the same logical object?"""
+    return bool(logical_objects(a) & logical_objects(b))
+
+
+def contends(a, b):
+    """The full contention question: file surfaces OR declared logical objects.
+
+    Callers should use this rather than `surfaces_collide` alone wherever they are
+    deciding whether two items may run concurrently.
+    """
+    return surfaces_collide(a.get("surfaces"), b.get("surfaces")) or logical_collide(a, b)
+
+
 def surfaces_assessed(task):
     """Has this item's surface scope been assessed at all?
 
@@ -165,15 +205,17 @@ def contending_owner(task, all_tasks):
             "from an absence. Claimability must reject this before contention is "
             "evaluated." % task.get("work_item_id"))
     mine = task.get("surfaces") or []
-    if not mine:
-        # Assessed and empty: a real answer. Nothing declared, so nothing collides.
+    if not mine and not logical_objects(task):
+        # Assessed and empty, with no declared logical object either: a real answer.
         return None
     for other in all_tasks:
         if other.get("work_item_id") == task.get("work_item_id"):
             continue
         if not (other.get("ownership") or {}).get("seat_id"):
             continue
-        if surfaces_collide(mine, other.get("surfaces")):
+        # File surfaces are canonical; a declared logical overlap serializes as well,
+        # so an empty path set does not make a database collision invisible.
+        if contends(task, other):
             return other.get("work_item_id")
     return None
 
@@ -278,6 +320,41 @@ def execution_reasons(task, seat_id, interventions=None):
             out.append("task-stopped")
             break
     return out
+
+
+# ---------------------------------------------------------------- review work
+#
+# DERIVED, and it reuses the review semantics that already exist rather than adding a
+# second authority over who reviews what. The owner was decided by policy and recorded
+# by store.open_review_context; this only reports what is outstanding.
+
+def review_work(tasks, capability=None):
+    """Open reviews with an exact owner — schedulable review work.
+
+    A PEER item whose `review_owner` is null is DELIBERATELY excluded. It is waiting
+    for an authorised reviewer, and acceleration must not treat waiting as a problem
+    to solve by picking one.
+    """
+    out = []
+    for t in tasks or []:
+        rc = t.get("review_context")
+        if not isinstance(rc, dict) or rc.get("review_result") != "pending":
+            continue
+        if not rc.get("review_owner"):
+            continue
+        if capability is not None and capability_of(t) != capability:
+            continue
+        out.append(t)
+    return sorted(out, key=lambda t: t.get("work_item_id") or "")
+
+
+def review_waiting(tasks):
+    """Open reviews with NO owner — reported, never filled by inference."""
+    return sorted((t for t in tasks or []
+                   if isinstance(t.get("review_context"), dict)
+                   and t["review_context"].get("review_result") == "pending"
+                   and not t["review_context"].get("review_owner")),
+                  key=lambda t: t.get("work_item_id") or "")
 
 
 # ---------------------------------------------------------------- completion

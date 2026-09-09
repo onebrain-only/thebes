@@ -652,6 +652,63 @@ def _meta(tasks, edges, interventions, binds, topo, now=None):
     }
 
 
+def acceleration_view(tasks, policies, binds, edges, interventions, lifecycles):
+    """Active ACCELERATE, as FACT. Read-only, like everything else here.
+
+    Agent View observes and never invents, so this reports what the policy records and
+    the derivation say and nothing more. There are no controls: no activate, no clear,
+    and nothing that animates to imply speed. `capacity_unavailable` is stated only
+    where it is factual — a capability with claimable work and no free seat — and
+    dispatchability stays UNKNOWN because it is not knowable from state.
+    """
+    active = [p for p in (policies or []) if not p.get("cleared_at")
+              and p.get("policy_kind") == "accelerate"]
+    base = {"active": False, "policies": [], "condition": None,
+            "accelerated_owned": 0, "remaining_claimable": 0,
+            "capacity_unavailable": [], "blocked_reasons": {},
+            "review_work": [], "review_waiting": [], "read_only": True}
+    if not active:
+        return base
+
+    sbc = seats_by_capability(binds)
+    kw = {"lifecycles": lifecycles, "interventions": interventions}
+    try:
+        plan = cap_mod.accelerate_plan(tasks, active, sbc, edges=edges, **kw)
+    except Exception:
+        # Observability must never be the thing that breaks. An underivable plan is
+        # reported as unknown, not as an empty one that would read like "no work".
+        return dict(base, active=True, condition=NOT_OBSERVED,
+                    policies=[_policy_row(p) for p in active])
+
+    covered = set(plan["capabilities"])
+    owned = [t for t in tasks
+             if (t.get("ownership") or {}).get("seat_id")
+             and q.capability_of(t) in covered]
+    unavailable = [pl["capability"] for pl in plan["plans"]
+                   if pl["claimable"] and not pl["free_seats"]]
+    return {
+        "active": True,
+        "policies": [_policy_row(p) for p in active],
+        "condition": plan["condition"],
+        "capabilities": plan["capabilities"],
+        "accelerated_owned": len(owned),
+        "remaining_claimable": sum(len(pl["claimable"]) for pl in plan["plans"]),
+        "selected": {pl["capability"]: pl["selected"] for pl in plan["plans"]},
+        "capacity_unavailable": unavailable,
+        "blocked_reasons": plan["blocked_reasons"],
+        "review_work": plan["review_work"],
+        "review_waiting": plan["review_waiting"],
+        "dispatchability": "UNKNOWN",
+        "read_only": True,
+    }
+
+
+def _policy_row(p):
+    return {"policy_id": p.get("policy_id"), "scope": p.get("scope"),
+            "target": p.get("target"), "activated_at": p.get("activated_at"),
+            "activated_by": p.get("activated_by"), "reason_ref": p.get("reason_ref")}
+
+
 def build(now=None):
     """The whole read-only payload. Reads; never writes."""
     tasks = store.read_all("task")
@@ -664,6 +721,7 @@ def build(now=None):
                   for t in tasks}
     ident = _naming()
     reviewers = review_owner_map(tasks)
+    policies = store.read_all("policy")
 
     items = sorted(
         (work_item(t, tasks, edges, interventions, lifecycles, now) for t in tasks),
@@ -686,6 +744,8 @@ def build(now=None):
 
     return {
         "meta": _meta(tasks, edges, interventions, binds, topo, now),
+        "acceleration": acceleration_view(tasks, policies, binds, edges,
+                                          interventions, lifecycles),
         "orchestrator": {
             "name": "Main Session",
             "role": ORCHESTRATOR_ROLE,
@@ -743,6 +803,17 @@ if __name__ == "__main__":
           % (p["ownership"]["active_count"], p["ownership"]["by_work_item"] or "—"))
     print("  interventions: %s" % (p["interventions"]["empty_state"]
                                    or p["interventions"]["active"]))
+    a = p["acceleration"]
+    if a["active"]:
+        print("  ACCELERATE   : %s  scope=%s"
+              % (a["condition"], ", ".join("%s%s" % (x["scope"],
+                 ":" + x["target"] if x["target"] else "") for x in a["policies"])))
+        print("                 owned=%d remaining_claimable=%d%s"
+              % (a["accelerated_owned"], a["remaining_claimable"],
+                 "  capacity_unavailable=" + ",".join(a["capacity_unavailable"])
+                 if a.get("capacity_unavailable") else ""))
+    else:
+        print("  ACCELERATE   : not active (normal mode)")
     for qv in p["queues"]:
         if qv["defined_seat_count"] or qv["blocked_count"]:
             print("  queue %-16s eligible=%d claimable=%d blocked=%d seats=%d unowned=%d"

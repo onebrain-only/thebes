@@ -470,6 +470,107 @@ is not rerouted.
 
 ---
 
+## 3.1 ACCELERATE — MAXIMUM SAFE PARALLEL THROUGHPUT
+
+**ACCELERATE IS NOT AN INTERVENTION.** STOP, HOLD and FREEZE restrict execution for a detected
+safety condition; `CONTRACT.md` §3 forbids using them for scheduling. ACCELERATE is scheduling.
+It lives in its own `policy` record kind, its own directory and its own reader, and nothing in
+claimability, ownership or Jira lifecycle consults it.
+
+**NORMAL MODE** fills minimum sufficient capacity. **ACCELERATE MODE** fills maximum *safe*
+capacity. It changes **how aggressively safe capacity is filled**, never **what work is valid** —
+every candidate has already passed the same Ready, fresh-Jira, capability, effort, acceptance,
+due-date, dependency, contention and intervention predicates a normal claim passes.
+
+**ACCELERATE does not mean wake every agent.** Eight tasks against eight seats does not mean
+eight claims: if three are claimable, two of those collide and one is dependency-blocked, the
+honest answer is **two**.
+
+### Scopes — union, never override
+
+| Scope | Target |
+|---|---|
+| `system` | none |
+| `product` | `product_id`, e.g. `dabbler` |
+| `capability` | a capability in `topology.json`, e.g. `frontend` |
+
+A task is accelerated if **any** active policy covers it. There is no negative policy and no
+"NORMAL" record — **absence already means normal**, so nothing can contradict anything. **There
+is no TASK scope**: maximum parallelism on one item is meaningless, and a task-scoped accelerator
+would be priority under another name, which is exactly what interventions are forbidden to be.
+
+`CLEAR ACCELERATE` is the only inverse — there is deliberately no `NORMALIZE` synonym. **Clearing
+never cancels ownership**; current owners continue and only future scheduling pressure changes.
+
+### The loop the Orchestrator runs
+
+```
+while a policy covers work in scope:
+    refresh lifecycle           Jira REST -> observe_lifecycle
+    re-derive tasks, queues, capacity
+    for each covered capability, INDEPENDENTLY:
+        free defined seats  x  mutually non-contending claimable items
+        deterministic order -> store.claim (atomic) -> continuation gate -> wake
+    expansion ONLY if capacity.expansion_justified says so
+    on release/completion -> recompute immediately
+until DRAINED / SATURATED / BLOCKED
+```
+
+**The selector is advisory; `store.claim` is the authority.** It re-runs every predicate inside
+the record lock, so a plan that went stale fails at the claim rather than producing an unsafe
+ownership. There is no daemon and no second scheduler.
+
+### What it must never do
+
+Never bypass STOP, HOLD or FREEZE — **interventions always outrank ACCELERATE**, and it may
+never clear, weaken or mutate one. Never skip or downgrade validation: a PEER item with
+`review_owner: null` **keeps waiting**, because a large backlog does not make dangerous work
+safer. Never infer reviewer availability or dispatchability. Never expand seats merely because
+ACCELERATE is active — **existing dormant seats first**, always. Never wake `cto`, `cpo`, `cxo`,
+`pm`, `po` or `analyst` by generic throughput pressure: their involvement is an authority
+question, not a capacity one. And the Orchestrator never becomes a Product executor.
+
+### Ordering, and what is NOT a signal
+
+Live Jira priority, then due-date urgency, then dependency-unlock impact, then `work_item_id` as
+the stable tiebreak. A signal the caller cannot supply is **skipped, never guessed**, and no
+second Jira cache is kept. **Work Effort is not importance** — it is a sitting count, and it
+never puts two agents on one work item.
+
+### Contention, including what file surfaces cannot see
+
+File surfaces stay canonical. Two migrations can collide on one PostgreSQL function with no
+shared path, so a task may **declare** `logical_surfaces`; a declared overlap **serializes**.
+`settle_game` and `trgfn_payment_to_ledger` are the encountered examples, **not the
+architecture**. Nothing declared means **UNKNOWN** — never "no logical contention exists".
+
+### Exit states — scheduler conditions, not Jira lifecycle
+
+| | Meaning |
+|---|---|
+| `ACCELERATION DRAINED` | no eligible work remains in scope |
+| `ACCELERATION SATURATED` | safe concurrency is at its maximum while work remains |
+| `ACCELERATION BLOCKED` | work remains, none claimable, for structured reasons |
+
+**None of them is DONE**, none is written onto a task, and BLOCKED exists so "everything is
+stuck" never reads as "nothing to do".
+
+### Coordination, without chatter
+
+The Orchestrator may pass a **factual, actionable, one-directional** output from one worker to an
+exact dependent worker — a confirmed endpoint, finalised copy, a dependency reaching DONE — once,
+only when materially required. It transmits; it does not implement, does not supply missing
+Product decisions and does not open `A → Orchestrator → B → Orchestrator → A` discussion loops.
+**ACCELERATE does not lower the threshold for escalation.**
+
+### Across sessions
+
+The **policy persists**; **dispatchability does not**. A new session reads active policies,
+re-derives queues, ownership and capacity from scratch, and assumes nothing about who is online.
+No session transcript is ever availability authority.
+
+---
+
 ## 4. THE HANDOFF RULE
 
 **Agents do not brief each other, and no agent hands execution to another.** Briefs come from
