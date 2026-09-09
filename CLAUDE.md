@@ -330,14 +330,14 @@ Repo: `dabblersport/webapp`. Hosting: Cloudflare Pages, project `webapp`. Build 
 | Canonical repository | `https://github.com/dabblersport/dabbler-docs.git` |
 | Expected local path | `Dabbler/dabbler-docs/` (relative to this workspace root) |
 | Branch | `master` |
-| **Compatible governance baseline** | **`3ad0337c0f3a069a9bc2fc95a0a7938c6862f779`** |
+| **Compatible governance baseline** | **`70e88bcfda0580805849fb3ccc4e4b1afde3f35d`** |
 
 A fresh workspace must clone it separately — this repository's `.gitignore` excludes it, and nothing here reconstructs it:
 
 ```bash
 git clone <this repository> thebes && cd thebes
 git clone https://github.com/dabblersport/dabbler-docs.git Dabbler/dabbler-docs
-git -C Dabbler/dabbler-docs checkout 3ad0337c0f3a069a9bc2fc95a0a7938c6862f779
+git -C Dabbler/dabbler-docs checkout 70e88bcfda0580805849fb3ccc4e4b1afde3f35d
 ```
 
 **Branch versus baseline.** `master` says where governance development continues; the pinned commit says what *this* Thebes revision was verified against. **Cloning `master` is not guaranteed to reconstruct a historical Thebes architecture** — the two repositories advance independently, so a later `master` may carry authority rules this Thebes commit was never designed against. To reproduce exactly, check out the baseline above; to check you are on it, `git -C Dabbler/dabbler-docs rev-parse HEAD` must return it.

@@ -1943,3 +1943,49 @@ dependency edges — KAN-128 already had a runtime record from `backend-1`'s Pre
 **Did not:** claim anything, wake any executor, activate ACCELERATE, transition any issue,
 touch KAN-136/KAN-138/KAN-155/KAN-141 (left read-only per instruction), touch Product code, or
 touch `main`.
+
+## 2026-09-09 — KAN-136/KAN-138/KAN-155 recovery decision (team-lead's dispatch)
+
+**Task:** classify three orphaned Back-end items (ownership null, Jira unmoved) as RECOVER or
+LEAVE STRANDED, using `store.recover_execution_to_ready` (po/ceo-only) and run the ordinary
+readiness path on anything recovered. Live Jira was reachable this session via
+`agent/integrations/jira.py` directly (`mcp__atlassian__*` returned transient "trouble
+completing this action" on every call, including `getAccessibleAtlassianResources`, and
+`claude_ai_Atlassian_Rovo` needed re-auth — the REST module worked throughout, same as a
+`mcp__claude_ai_Supabase__list_migrations` permission-denied I hit and left unused, PO being
+read-only there anyway).
+
+**KAN-136 — RECOVERED.** backend-3's design pass (2026-09-06) and cto's T-061 ruling
+(comment 10647) settled the policy question, but AC1's confirmation-against-live-catalogue
+deliverable ("post-KAN-128/KAN-131") was never posted — KAN-131 is still `Ready`/unapplied, so
+it genuinely can't be. Stalled, not finished. Revision 7→8 (`recover_execution_to_ready`)
+→8→9 (`observe_lifecycle`, Jira transition `2`) →9→10 (`set_characteristics`, empty changes —
+all characteristics false, `shared_or_contended_surface` already false). `validation_route`
+derived **SELF**. Queue eligibility with live Jira facts supplied: `[]` — fully claimable now.
+`due_date` (2026-09-08, past) left untouched — no fresh capacity number for the
+confirmation-only remainder. Comment 10772 posted.
+
+**KAN-138 — RECOVERED.** Authoring leg complete (backend-4, e462d2f, comment 10742; cto G-028
+confirmation comment 10749, 2026-09-07) but no apply/verify comment ever followed — contrast
+KAN-155's 10750. Revision 7→8→9→ (surfaces fix) →10→ (characteristics) →11. **Caught a stale
+fact along the way**: the runtime record's `surfaces: []` carried a basis_ref reading "no
+migration authored" timestamped *after* the migration was actually authored — corrected via
+`set_surfaces` to the actual migration path, cited to comment 10742. Characteristics asserted
+(po, basis in the ticket text/comments): `schema_change`, `money_path`
+(`game_settlements`/`wallet_ledger`), `security_sensitive` (`SECURITY DEFINER`) all true.
+`validation_route` derived **PEER**. `due_date` deliberately left null — the only capacity
+number on the ticket (backend-5, 1 sitting/ceiling 2) priced authoring, now done; no count
+exists for the remaining apply+verify leg, so reusing it would misstate the work. Sits in
+Ready, correctly unclaimable (`missing-due-date`). Comment 10773 posted.
+
+**KAN-155 — NOT RECOVERED.** Comment 10750 shows the migration applied to production
+2026-09-07 under the CEO's direct authorization with every AC (1,2,3-counts,3-values,4,5,6,8,9)
+verified pass inside the transaction. Finished work sitting in the wrong status, not stalled
+work — recovering it to Ready would be wrong regardless of the mechanical orphan test passing.
+Left untouched (no state write, no Jira transition); flagged back to `team-lead` that it needs
+routing to review/Done, which is outside this task's authorized scope and outside `po`'s
+authority to transition on a route it didn't derive. Comment 10774 posted.
+
+**Did not:** claim anything, wake any executor, touch KAN-141 (out of scope per instruction),
+restore or prefer any previous executor, fabricate a due_date/AC/surfaces/route on any ticket,
+touch Product code, or touch `main`.

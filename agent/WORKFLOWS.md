@@ -173,7 +173,30 @@ A transition made by the wrong seat is a process failure, not a shortcut.
 | its **execution status** (`Front-end` / `Back-end` / `Design` / `Content` / `Operations`) | **the executing worker** |
 | its **review status** (`QA-Test` / `Self-review` / `Peer-review`) | **the executing worker** — the status is chosen by system policy, not by the worker |
 | back to its **same** execution status (review FAIL) | **the review owner** |
+| **back to `Ready` from an execution status, when the item has NO owner** | **`po`** — execution recovery, added 2026-09-09. See below |
 | `Done` | **the review owner** — SELF: the worker · PEER: the reviewer · QA: `qa` |
+
+**EXECUTION RECOVERY — the orphaned-execution row above.** An executable item can end up
+in a capability execution status with **no owner**: `release` clears ownership without
+touching Jira, and **release is deliberately permitted under STOP** because a STOP must not
+trap ownership. So the documented escape from a STOP produced a state with no documented exit
+— the validator accepted it, `claim` refused it as `not-ready`, and no seat was authorised to
+move it. `store.recover_execution_to_ready` closes that, and `po` authorises it because
+`Ready` is the Product-selected execution queue.
+
+**Recovery returns the work to the QUEUE, never to a seat.** `executor_evidence` is factual
+history and **not assignment authority** — a prior executor may be from an earlier session, no
+longer dispatchable, or simply no longer the right seat. Ownership after recovery is won the
+way every other item wins it: Ready, eligibility, claimability, atomic claim. If the former
+executor takes it again, capacity decided that, not history.
+
+It creates no ownership, erases no evidence, implies no completion and fabricates nothing — an
+item whose route was never derived comes back with it still null and stays unclaimable until
+the ordinary readiness path runs. **A task-scoped STOP blocks recovery**; HOLD and FREEZE do
+not, because they gate new claims rather than lifecycle reconciliation, and a recovered item
+under either simply sits in `Ready` unclaimable, which is truthful rather than hidden. The
+recovery is complete only when **Jira reads `Ready` (10008)** and the observation has landed —
+Persistent State never pretends an item is Ready while Jira still shows execution.
 
 **THERE ARE NO TEAM LEADS.** The five `team-lead-N` seats were **removed in Wave 6,
 2026-09-08**. Nothing replaced them as a seat, and nothing should: their three remaining duties

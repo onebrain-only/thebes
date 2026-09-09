@@ -535,6 +535,112 @@ def open_review_context(work_item_id, expected_revision, opened_by=None,
         return merged
 
 
+RECOVERY_AUTHORITIES = ("po", "ceo")
+
+
+def recover_execution_to_ready(work_item_id, expected_revision, recovery_ref, actor):
+    """Authorise returning an ORPHANED execution item to Ready. CAS'd.
+
+    THE STATE THIS RECOVERS
+      An executable item sitting in a capability execution status with `ownership:
+      null`. The validator accepts it, `claim` refuses it (`not-ready`), and until
+      now nothing could move it: the transition table had no execution-status ->
+      Ready row and no seat was authorised to perform one. It is not historical
+      residue — `release` clears ownership without touching Jira, and release is
+      deliberately permitted under STOP because a STOP must not trap ownership. So
+      the documented escape from a STOP produced a state with no documented exit.
+
+    EVIDENCE IS HISTORY, NOT ASSIGNMENT
+      Recovery does NOT restore the previous evidenced executor. That seat may be
+      from an earlier session, no longer dispatchable, or simply no longer the right
+      one; it is only the last seat that legitimately held execution. Ownership after
+      recovery is won the way every other item wins it — through Ready, eligibility,
+      claimability and an atomic claim. If the former executor claims it again, that
+      is capacity deciding, not history asserting. Preserving that line is the whole
+      point of the doctrine.
+
+    WHAT THIS WRITES, AND WHAT IT DOES NOT
+      Jira owns lifecycle, so this does not move the issue and does not pretend the
+      item is Ready while Jira still shows an execution status. It records the
+      AUTHORISATION — who recovered it, when, and against what reference — and the
+      lifecycle follows from the real Jira transition through observe_lifecycle. The
+      recovery is complete only when Jira reads Ready (10008) and the observation has
+      landed.
+
+      Everything else is preserved untouched: executor evidence, characteristics,
+      validation route, surfaces, Work Effort, dependencies and the profile. Nothing
+      is fabricated — an item whose route was never derived comes back with it still
+      null, and stays unclaimable until the ordinary readiness path runs.
+    """
+    import board                                        # noqa: E402
+    if expected_revision is None:
+        raise StateError("expected_revision is required; there is no force update")
+    if not recovery_ref:
+        raise StateError("recovery_ref is required — recovery is a lifecycle act and "
+                         "every lifecycle act names its reason")
+    if actor not in RECOVERY_AUTHORITIES:
+        raise StateError("unauthorised-recovery-actor: %r may not recover execution "
+                         "state. Ready is the Product-selected execution queue, so "
+                         "recovery into it is a Product lifecycle act (%s) — never an "
+                         "executor resetting its own work."
+                         % (actor, "/".join(RECOVERY_AUTHORITIES)))
+    with record_lock("task", work_item_id):
+        cur = read("task", work_item_id)
+        if cur is None:
+            raise StateError("task %s does not exist" % work_item_id)
+        if cur["revision"] != expected_revision:
+            raise StateError("stale write refused: task %s is at revision %d, caller "
+                             "expected %d" % (work_item_id, cur["revision"],
+                                              expected_revision))
+        if cur.get("record_type") != "executable":
+            raise StateError("container records hold no execution state to recover")
+
+        lc = cur.get("lifecycle") or {}
+        sid = str(lc.get("jira_status_id") or "")
+        canonical = lc.get("canonical")
+        if canonical != "development" or board.column_for(sid) is None:
+            raise StateError(
+                "not-orphaned-execution: %s is %r at status %s. Recovery applies only "
+                "to an item in a capability EXECUTION status — not Backlog, not Ready, "
+                "not a review status, not Done."
+                % (work_item_id, canonical, sid or "none"))
+        exec_ids = set(board.CAPABILITY_TO_STATUS_ID.values()) | {
+            board.DEFAULT_EXECUTION_STATUS_ID}
+        if sid not in exec_ids:
+            raise StateError("not-execution-status: %s is at %s (%s), which is not one "
+                             "of the capability execution lanes"
+                             % (work_item_id, sid, board.name_for(sid)))
+        if cur.get("ownership") is not None:
+            raise StateError("already-owned: %s is owned by %s — recovery is for "
+                             "ORPHANED execution, and never takes work from a current "
+                             "owner" % (work_item_id,
+                                        (cur["ownership"] or {}).get("seat_id")))
+        if cur.get("review_context") is not None:
+            raise StateError("review-in-progress: %s carries a review context; its "
+                             "route decides what happens next, not recovery"
+                             % work_item_id)
+        # STOP is task-scoped safety and blocks the recovery itself. HOLD and FREEZE
+        # deliberately do NOT: they gate new CLAIMS, and recovery creates no
+        # ownership. A recovered item under HOLD or FREEZE simply sits in Ready
+        # unclaimable, which is truthful rather than hidden.
+        for iv in active_interventions():
+            if iv.get("kind") == "stop" and iv.get("target") == work_item_id:
+                raise StateError("task-stopped: a STOP is active on %s; recovery waits "
+                                 "until it is cleared" % work_item_id)
+
+        # Its own field, not `provenance` — provenance is strictly per execution-profile
+        # FIELD, and recovery authorises a lifecycle move rather than setting one.
+        merged = dict(cur)
+        merged["execution_recovery"] = {"by": actor, "at": now(),
+                                        "recovery_ref": recovery_ref,
+                                        "from_status": sid}
+        merged["revision"] = cur["revision"] + 1
+        merged["updated_at"] = now()
+        _validate_one("task", merged)
+        _atomic_write(path_for("task", work_item_id), merged)
+        return merged
+
+
 def resolve_review_owner(work_item_id, expected_revision, reviewer_seat_id,
                          evidence_ref):
     """Resolve the EXACT reviewer onto an already-open, unresolved PEER review. CAS'd.

@@ -729,6 +729,19 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
             _review_coherence(rec, prof, canonical, got, errs, where)
         validate_review_context(rec.get("review_context"), canonical, prof, errs,
                                 where, rec=rec)
+        er = rec.get("execution_recovery")
+        if er is not None:
+            if not isinstance(er, dict):
+                errs.append("%s: execution_recovery must be an object" % where)
+            else:
+                for f in ("by", "at", "recovery_ref", "from_status"):
+                    if not er.get(f):
+                        errs.append("%s: execution_recovery.%s is required" % (where, f))
+                if er.get("by") and er["by"] not in ("po", "ceo"):
+                    errs.append("%s: execution_recovery.by %r is not a recovery "
+                                "authority — Ready is the Product-selected queue"
+                                % (where, er.get("by")))
+                _reflen(er, ["recovery_ref"], errs, where)
         ls = rec.get("logical_surfaces")
         if ls is not None:
             if not isinstance(ls, list) or not all(isinstance(o, str) and o.strip()
