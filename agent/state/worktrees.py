@@ -382,6 +382,72 @@ def integrate(seat_id, work_item_id, expected_commit, expected_head,
                 "branch": branch, "previous_head": head, "files": touched}
 
 
+def adopt_reconstructed(new_head, expected_head, repo=None, branch=None,
+                        allow_tree_change=False):
+    """Replace unpublished integration history with a re-attributed rebuild.
+
+    THE ONLY LEGITIMATE USE. Local-only commits whose ATTRIBUTION is wrong — a
+    task's changes sitting inside a commit that names a different ticket, which is
+    what a shared index produces — can be rebuilt into correctly attributed commits
+    before anything is published. Once history is on the remote this is no longer
+    available and the record stands as it is.
+
+    THE SAFETY PROPERTY IS TREE IDENTITY. The rebuilt head must produce a
+    byte-identical tree to the head it replaces. That is what makes this an
+    attribution rewrite rather than a content change, and it is what stops the
+    operation being used to smuggle a diff past review under the word "normalize".
+    `allow_tree_change` exists only so the refusal has a name; nothing in Thebes
+    passes it.
+
+    Everything else is verified rather than trusted: the branch is not protected,
+    the current head is exactly what the caller expects, the new head already
+    contains the remote's tip so nothing published is dropped, no other worktree has
+    the branch checked out, and the canonical tree is clean. Serialized under the
+    same integration lock as an ordinary landing, because it writes the same ref.
+    """
+    repo = repo or PRODUCT_REPO
+    branch = branch or INTEGRATION_BRANCH
+    _assert_not_protected(branch)
+    with _IntegrationLock(repo):
+        head = _git(repo, "rev-parse", branch)
+        if not head.startswith(expected_head.strip()):
+            raise WorktreeError("stale-adoption: %s is at %s, caller expected %s"
+                                % (branch, head[:7], expected_head))
+        new = _git(repo, "rev-parse", new_head)
+        old_tree = _git(repo, "rev-parse", head + "^{tree}")
+        new_tree = _git(repo, "rev-parse", new + "^{tree}")
+        if old_tree != new_tree and not allow_tree_change:
+            raise WorktreeError(
+                "content-change-refused: the reconstructed head produces tree %s but "
+                "the head it replaces produces %s. Re-attribution must not change "
+                "content — if the diff is genuinely different this is a new commit, "
+                "not a normalization" % (new_tree[:7], old_tree[:7]))
+        upstream = "origin/%s" % branch
+        if _rc(repo, "rev-parse", "--verify", upstream) == 0:
+            pub = _git(repo, "rev-parse", upstream)
+            if _rc(repo, "merge-base", "--is-ancestor", pub, new) != 0:
+                raise WorktreeError(
+                    "would-drop-published-history: %s (%s) is not an ancestor of the "
+                    "reconstructed head; refusing" % (upstream, pub[:7]))
+        for w in list_worktrees(repo):
+            if (w.get("branch") == branch
+                    and os.path.realpath(w["path"]) != os.path.realpath(repo)):
+                raise WorktreeError("branch-checked-out-elsewhere: %s is held by the "
+                                    "worktree at %s" % (branch, w["path"]))
+        if _git(repo, "status", "--porcelain"):
+            raise WorktreeError("dirty-integration-tree: refusing to move %s under "
+                                "uncommitted changes" % branch)
+        cur = _git(repo, "rev-parse", "--abbrev-ref", "HEAD")
+        if cur != branch:
+            raise WorktreeError("canonical checkout is on %r, not %r" % (cur, branch))
+        _git(repo, "reset", "--hard", new)
+        return {"result": "adopted", "branch": branch, "previous_head": head,
+                "new_head": new, "tree": new_tree,
+                "replaced": _git(repo, "log", "--format=%H",
+                                 "%s..%s" % (_git(repo, "merge-base", head, new),
+                                             head)).split()}
+
+
 # ---------------------------------------------------------------- cleanup
 
 def release(seat_id, work_item_id, repo=None, root=None, keep_branch=True):

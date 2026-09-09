@@ -322,5 +322,38 @@ ok("[12] multiple executors may hold worktrees simultaneously",
 ok("[12] but integration takes an exclusive lock",
    wt._IntegrationLock(REPO).p.endswith("thebes-integration.lock"))
 
+# --------------------------------------------- 13. re-attribution adoption
+
+section("ADOPTION — re-attribute unpublished history, never change content")
+
+sh(REPO, "checkout", "-q", "Canary")
+sh(REPO, "update-ref", "refs/remotes/origin/Canary", sh(REPO, "rev-list", "--max-parents=0", "Canary"))
+_head = sh(REPO, "rev-parse", "Canary")
+# A rebuild that reaches the SAME tree by different commits.
+sh(REPO, "branch", "-f", "rebuilt", _head)
+raises("[13] adoption refuses a stale expected head",
+       lambda: wt.adopt_reconstructed("rebuilt", "0000000", repo=REPO),
+       "stale-adoption")
+r = wt.adopt_reconstructed("rebuilt", _head, repo=REPO)
+ok("[13] an identical-tree adoption is allowed", r["result"] == "adopted")
+ok("[13] and preserves the tree exactly",
+   r["tree"] == sh(REPO, "rev-parse", "Canary^{tree}"))
+
+# A rebuild whose tree genuinely differs must be refused.
+f = wt.allocate("frontend-8", "KAN-950", repo=REPO, root=WTROOT)
+write(f["path"], "beta.dart", "// smuggled content\n")
+f_sha = wt.commit("frontend-8", "KAN-950", "KAN-950", ["beta.dart"], root=WTROOT)
+sh(REPO, "branch", "-f", "smuggle", f_sha)
+raises("[13] adoption REFUSES a reconstruction that changes content",
+       lambda: wt.adopt_reconstructed("smuggle", sh(REPO, "rev-parse", "Canary"),
+                                      repo=REPO),
+       "content-change-refused")
+ok("[13] Canary did not move on the refusal",
+   sh(REPO, "rev-parse", "Canary") == r["new_head"])
+raises("[13] adoption never targets main",
+       lambda: wt.adopt_reconstructed("rebuilt", _head, repo=REPO,
+                                      branch="main"),
+       "protected-branch")
+
 shutil.rmtree(TMP, ignore_errors=True)
 sys.exit(summary())
