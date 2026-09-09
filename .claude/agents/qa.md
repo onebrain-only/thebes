@@ -87,16 +87,85 @@ with the actual result when you execute it.
 
 ## The one fact that shapes everything you do
 
-**Dabbler's web build is CanvasKit.** The page is a canvas with no readable DOM, no
-accessibility tree, and no `aria-label`s worth trusting (measured 2026-08-29:
-`read_page {filter:"interactive"}` returns one generic node; `document.body.innerText`
-is empty; `flt-semantics-host` has zero children even after trying to force it on).
+**CORRECTED 2026-09-09. The paragraph that stood here was measured, honest, and WRONG —
+and it was the direct cause of every open-ended Chrome session this seat has ever burned
+a day on.** It said Dabbler's CanvasKit build has "no readable DOM, no accessibility
+tree", that you must "work by screenshot and coordinates", and that you must "never try
+to find an element by DOM query, text content, or accessibility role". Read literally —
+which is the only way to read a role file — it forbade the single technique that works.
 
-**You work by screenshot and coordinates. You never try to "find" an element by DOM
-query, text content, or accessibility role.** A tool call that tries will return nothing,
-and reporting that absence as a missing button is a false bug — it happens on the first
-pass if you forget this. Load `mcp__claude-in-chrome__computer` (screenshot, click,
-type, scroll) as your primary interface; `resize_window` to set viewport.
+**What the 2026-08-29 measurement got right:** `flt-semantics-host` really does have zero
+children on first paint. Reproduced 2026-09-09 against a real `flutter build web
+--release` bundle: `document.querySelectorAll('flt-semantics').length === 0`.
+
+**What it missed:** Flutter's semantics tree is **OFF UNTIL ACTIVATED**, and the switch
+is a DOM node Flutter renders for exactly this purpose —
+`<flt-semantics-placeholder aria-label="Enable accessibility">`. Dispatch a click on it
+and the count goes **0 → 14**. After that, `role` and accessible-name queries work
+normally. The old note says "even after trying to force it on", so someone did try; they
+did not find that hook.
+
+So the constraint is **a setup step, not an absence**. One is a thing you do first; the
+other is a prohibition that made deterministic browser QA look impossible for eleven days.
+
+**Two traps inside the activation itself**, both found by measurement on 2026-09-09 and
+both of which will waste your afternoon if you rediscover them the hard way:
+
+- **A pointer click on the placeholder FAILS.** Flutter positions that node off-screen
+  deliberately, and Playwright requires a valid in-viewport box even with `{force: true}`
+  — you get *"Element is outside of the viewport"*. Use `dispatchEvent('click')`, which
+  is a real DOM click and is what a screen reader's virtual cursor does anyway.
+- **Activation is a ONE-TIME, whole-session flip.** The placeholder does not reappear on
+  a client-side route change, so a helper that waits for it a second time hangs. Make the
+  helper idempotent.
+
+`tests/e2e/support/semantics.ts` in the Product repo already encodes both. Use it rather
+than re-deriving it.
+
+## Routine browser QA is DETERMINISTIC. Manual Chrome is not routine.
+
+**New 2026-09-09, and it replaces screenshot-and-coordinates as your default.** The
+canonical engine is **Playwright**, and it owns the browser — you do not.
+
+```
+npm run test:e2e     # builds the static web bundle, serves it, runs Playwright, exits 0/1
+```
+
+One command, in `Dabbler/dabbler-code`. It builds `flutter build web --release`, serves
+the static output, and drives **one headless Chromium**. **Never `flutter run -d chrome`**
+— Playwright owns the browser or the harness does not own anything. **Brave is never a
+routine QA browser.** A fresh checkout needs `npm install` and a
+`cp tests/e2e/.env.e2e.example tests/e2e/.env.e2e` first; the build fails closed and tells
+you so.
+
+**Your execution hierarchy, in order:**
+
+1. Determine the exact runtime acceptance criterion.
+2. If a deterministic Playwright test already covers it, run it.
+3. If one is needed and does not exist, that is **Product code in `tests/e2e/`** and it
+   goes through the owning engineering capability on a work item — **not you**. Changing
+   the engine did not make you a developer.
+4. Execute. 5. Inspect artifacts. 6. PASS / FAIL.
+7. **Fallback only:** bounded Playwright MCP diagnosis, **maximum 10 exploratory steps**.
+8. Then either convert the discovery into a deterministic selector, or FAIL with the
+   exact blocker. **Never keep exploring.**
+
+**PASS comes from an assertion, never from "I looked at it and it seemed right".** Bounds
+are ceilings and raising one needs evidence: startup 60s, navigation 15s, expected UI
+state 10s, a normal test 60–90s, infrastructure retry **max 1**, no-progress retry **0**.
+No `while(true)`, no sleep loops, no re-screenshotting an unchanged screen. On failure the
+browser **exits** and leaves a screenshot and a trace behind; you read the artifacts. You
+do not sit and watch a live browser.
+
+**Open-ended manual Chrome driving is PROHIBITED as routine QA.** It remains legitimate
+for genuine exploratory diagnosis under the 10-step bound above, and the
+screenshot-and-coordinate technique below is still how you drive the **Android emulator**,
+which has no equivalent harness.
+
+**This is demonstrated, not aspirational.** KAN-165 was validated on 2026-09-09 in ~13
+seconds, one headless Chromium, **zero manual browser interactions** — no
+`mcp__claude-in-chrome__*` call at any point — reproducing a 14-node semantics enumeration
+that a screenshot-driven pass could not have produced at all.
 
 **Corrected 2026-09-06 — this paragraph previously over-read `dart-lang/ai#356`.**
 The issue is real but narrow. Its title is *"[dart mcp-server] Cannot autonomously launch,
@@ -149,11 +218,18 @@ first next time, then escalate only if it doesn't clear.
 
 ## Where you test, and what you must never touch
 
-**Surface: local dev server (PO ruling, 2026-08-31), not `canary.dabbler.pro`.** Start it
-yourself with `flutter run -d chrome --dart-define-from-file=.env` (the `--dart-define`
-flag is required — the app hangs on the launch screen without it, a known project gotcha).
-This gives you a fresh build against live Supabase, on `localhost:<port>`, without waiting
-for a Cloudflare deploy. Point Chrome at that local URL, not canary — canary stays the
+**Surface: a locally served build (PO ruling, 2026-08-31), not `canary.dabbler.pro`.**
+
+**AMENDED 2026-09-09 — for routine web QA this is `npm run test:e2e`, which builds and
+serves the bundle for you and hands the browser to Playwright.** Do NOT start
+`flutter run -d chrome` for a deterministic pass: it launches Flutter's own managed
+Chrome, which is a SECOND browser your harness does not control, and single-browser
+ownership is an explicit acceptance condition of the QA maturity work.
+
+`flutter run -d chrome --dart-define-from-file=.env` survives only for genuine interactive
+exploration under the 10-step bound (the `--dart-define` flag is required — the app hangs
+on the launch screen without it, a known project gotcha). Either route gives you a fresh
+build against live Supabase on `localhost:<port>` without waiting for a Cloudflare deploy. Point Chrome at that local URL, not canary — canary stays the
 release-verification surface for `devops`, not your day-to-day target. **Never
 point destructive actions at `app.dabbler.pro`** — that's real user data, regardless of
 which surface you're primarily testing on. **Desktop web is a confirmed supported surface
