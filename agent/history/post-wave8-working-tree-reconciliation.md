@@ -29,7 +29,7 @@ groups. The tracked diff contained 12,023 insertions and 11 deletions.
 | .claude/settings.json; agent/WORKFLOWS.md; agent/scripts/desktop-scope-guard.sh | Durable Thebes source/configuration candidates | Preserve together. Existing changes register the desktop guard, document canonical checkout containment, and adjust Product push-deny patterns. Source classification is not behavioral acceptance of the guard. |
 | agent/state/.claude-flow/ | Runtime-only session state | Keep locally; eligible for an exact ignore rule, not deletion or source checkpoint. |
 | agent/state/.claude/agent-memory/ | Mixed local memory requiring curation | Keep every file. Contains reusable feedback as well as Product-specific state and local session knowledge. Do not blanket-delete or promote the directory wholesale. Curate durable workflow lessons separately before excluding this subtree from source history. |
-| agent/scripts/supabase-incident-guard.sh; agent/scripts/supabase-incident-guard-postuse.sh; agent/scripts/incidents/ | Incident-bound tooling; closure not verified | Preserve in place pending local closure evidence and an archival decision. Do not execute SQL or promote the permission lane into permanent doctrine. |
+| agent/scripts/supabase-incident-guard.sh; agent/scripts/supabase-incident-guard-postuse.sh; agent/scripts/incidents/ | Active incident tooling | Preserve in place, visible and untracked. CEO decision 2026-09-12: keep the incident active. Do not execute SQL or promote the permission lane into permanent doctrine. |
 
 The backend-6 journal diff explicitly corrects a retired seat header and replaces
 the empty-log placeholder with evidence. Numstat shows analogous three-line
@@ -43,6 +43,14 @@ No incident-hook reference was found in .claude/settings.json or
 .claude/settings.local.json. The latter retains a permission entry for hashing
 an incident SQL file; that is not an active hook. No removal is justified solely
 by hook absence.
+
+## Active incident decision — 2026-09-12
+
+The CEO directed that the incident remain active. The incident scripts, manifest
+and SQL payloads therefore remain in place and deliberately visible in `git status`.
+They are not durable governance and are not committed or ignored. Active status
+does not authorize execution, Product work, Jira changes or production access;
+the existing payload-specific authorization and environment checks remain required.
 
 ## Exact next implementation slice
 
