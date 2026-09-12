@@ -1,0 +1,179 @@
+# Thebes durable decisions and invariants
+
+Current as of 2026-09-12. Append or supersede; do not silently rewrite history.
+
+This log owns durable cross-program decisions and their rationale. Exact mechanics remain
+in the governing workflow/state source. Historical ticket decisions and Product technical
+decisions remain in their Product authorities and are not copied here.
+
+References elsewhere in the repository to numbered `G-`, `T-`, `P-` or `D-` decisions in
+an older `DECISIONS.md` refer to the frozen predecessor/Product governance history, not to
+the `D-001` series in this file. The canonical Thebes repository began at Wave 5 without
+importing those legacy logs; see `agent/history/program-chronology.md`.
+
+## D-001 — Repository memory is canonical
+
+**Status:** ACTIVE
+**Decision:** Conversation memory, provider memory and controller summaries are not
+canonical. Durable program facts, rules, rationale and lessons must be curated into the
+Thebes repository under the source that owns the concern.
+**Why:** Sessions are bounded, providers differ, and paraphrased handoffs lose constraints.
+A system whose operation depends on one conversation cannot be reconstructed safely.
+**Consequences:** `ROADMAP.md` owns program position; `PROGRAM_MEMORY.md` owns shared
+context; this file owns decisions; `LEARN.md` owns lessons; runtime facts remain in
+Persistent State. Duplicated prose is replaced with links.
+
+## D-002 — Reject autonomous swarm management as the default
+
+**Status:** ACTIVE
+**Historical input:** The controller record reports that an early swarm-style run consumed
+approximately 41% of a Max-plan allowance in roughly 20 minutes, largely through parallel
+management/coordination loops. The current repository has no primary token ledger for that
+incident, so the figures are preserved as controller-reported history, not repo-verified
+telemetry. Wave 8 commit `b1da48c` independently confirms tokens/cost were deferred because
+no factual source existed.
+**Decision:** Thebes uses a serial, controller-driven default. Parallel execution is a
+bounded policy choice based on independent work, ownership, surfaces, dependencies and
+actual model capacity—not an autonomous swarm or one-agent-per-ticket rule.
+**Why:** Management chatter and duplicate context can consume the constrained resource
+faster than useful execution. More seats do not create more model capacity.
+**Consequences:** No standing swarm, no agent supervising agents, no autonomous backlog
+burn-down, and no new seat merely because a ticket exists.
+
+## D-003 — No autonomous first or next Product ticket
+
+**Status:** ACTIVE
+**Decision:** A controller or executor may not infer permission to select the first or next
+Product ticket from queue availability, green tests, a completed task or remaining budget.
+**Why:** Queue mechanics answer what is claimable inside authorized Product scope; they do
+not establish that scope.
+**Consequences:** Bounded acceptance names exactly one existing ticket explicitly. Normal
+Product execution requires separate explicit authorization. Canonical protocol:
+`agent/ROADMAP.md` “Product acceptance protocol.”
+
+## D-004 — Role is not Seat
+
+**Status:** ACTIVE
+**Decision:** Role defines durable capability, authority and learning; Seat is a bounded
+instance of a Role. A seat is never repurposed because it is idle.
+**Why:** Treating seats as fungible workers turns specialist authority into an ungoverned
+pool and fragments learning into seat-specific silos.
+**Evidence:** Current constitution `agent/AGENTS.md`; Wave 6 `0f4f805`.
+
+## D-005 — Direct routing, no relay
+
+**Status:** ACTIVE
+**Decision:** Hierarchy defines responsibility, not mandatory communication hops. The
+controller routes directly to the owning capability; workers return to the declared target
+and do not brief chains of agents.
+**Why:** Relay roles add latency, token cost and opportunities for distortion without adding
+authority.
+**Evidence:** `agent/AGENTS.md` and `agent/WORKFLOWS.md` §4.
+
+## D-006 — SELF / QA / PEER are derived routes
+
+**Status:** ACTIVE
+**Decision:** Task characteristics are facts; the validation route is a system-derived
+consequence. SELF handles bounded low-risk work, QA validates running behavior where policy
+requires it, and PEER provides same-capability independent review for elevated risk.
+**Why:** Letting executors choose their own route lets them choose the strength of their own
+review.
+**Consequences:** No route downgrades for throughput. Exact policy is executable in
+`agent/state/policy.py` and documented in `agent/WORKFLOWS.md` §3.
+
+## D-007 — PEER failure transfers remediation to the reviewer
+
+**Status:** ACTIVE
+**Decision:** On PEER failure, the same-capability reviewer takes bounded ownership of the
+failed scope, remediates it, then SELF-reviews that remediation under the explicit exception
+recorded by Persistent State.
+**Why:** A reviewer who cannot repair the capability is not an effective peer; returning
+failure through a management relay recreates the coordination loop.
+**Consequences:** Pairing alone grants no cross-capability authority. No eligible peer means
+the work waits rather than downgrades.
+**Evidence:** `agent/state/README.md` review context and peer-fail transfer contract;
+`agent/WORKFLOWS.md` §3.
+
+## D-008 — Implementation complete is not Product authorization
+
+**Status:** ACTIVE
+**Decision:** Completing maintenance implementation, documentation or tests never causes an
+automatic mode transition or Product selection.
+**Why:** Technical readiness and business authorization are different facts.
+**Consequences:** The explicit roadmap gate always wins over historical queue/pull prose.
+The mode setter records state but does not authenticate human authorization.
+
+## D-009 — Reported observation begins investigation
+
+**Status:** ACTIVE
+**Decision:** `observed_condition` begins investigation. Reproduction is a separate explicit
+intent and is required only when the evidence needs it.
+**Why:** Mandatory reproduction before diagnosis creates ceremony, may target the wrong
+environment, and delays inspection of already-useful evidence.
+**Evidence:** Post-Wave-8 hardening `e3cf8c6` through `4948607`; operational-context contract
+in `agent/state/README.md`.
+
+## D-010 — Reported environment is authoritative
+
+**Status:** ACTIVE
+**Decision:** The environment named by the report is the primary target until evidence
+corrects it explicitly.
+**Why:** Quietly substituting Canary, a deployed site or an automation browser changes the
+question being investigated.
+**Consequences:** Comparative targets may add confidence but cannot replace the reported
+primary runtime.
+
+## D-011 — Browser under test is not browser automation
+
+**Status:** ACTIVE
+**Decision:** A report about local Flutter web in Chrome derives a local terminal launch as
+the primary path. Browser automation is a distinct execution environment and cannot be
+selected merely because the word “browser” appears.
+**Why:** Browser identity describes the runtime under test, not the tool used to control it.
+**Evidence:** `agent/state/README.md`; hardening tests in
+`agent/state/tests/test_operational_hardening.py`.
+
+## D-012 — Validation follows causal and changed surfaces
+
+**Status:** ACTIVE
+**Decision:** Required validation scope is derived from diagnosed cause and changed surface.
+Shared changes require shared automated coverage and proof on the reported primary runtime;
+platform-specific changes require proof on each affected platform. Mentioned but unaffected
+platforms are optional confidence targets.
+**Why:** Requiring every named platform wastes effort and can obscure whether the actual fix
+was proven; under-testing an affected platform is equally unsafe.
+**Evidence:** diagnosis/validation-plan contract in `agent/state/README.md`; hardening
+implementation `e3cf8c6` through `4948607`.
+
+## D-013 — Dependencies are enforced state, not prose
+
+**Status:** ACTIVE
+**Decision:** A cross-ticket order is enforced by one canonical Persistent State `BLOCKS`
+edge. Ticket prose and review criteria may explain or defend the order but do not replace
+claim-time enforcement.
+**Why:** Detecting wrong order at review is later and weaker than preventing an invalid claim.
+**Evidence:** KAN-192 → KAN-191 edge recorded in `agent/status/po.md`; dependency model in
+`agent/state/README.md`.
+
+## D-014 — Providers sit behind Thebes
+
+**Status:** ACTIVE TARGET DECISION; IMPLEMENTATION PENDING
+**Decision:** Claude Code is a provider, not the permanent executor. Codex, Claude Code and
+future execution engines sit behind a Thebes-owned provider adapter and receive minimum
+execution context assembled by Thebes.
+**Why:** Binding controllers directly to one provider makes orchestration, memory and
+recovery depend on a vendor-specific interface.
+**Core rule:** Codex does not brief Claude directly; Codex briefs Thebes, and Thebes briefs
+the selected provider.
+**Evidence:** historical target specification §§55–56; current target adopted in
+`agent/ROADMAP.md`. Current Claude-specific generator/wake gap remains documented, not hidden.
+
+## D-015 — Retrieval is deferred until measured need
+
+**Status:** ACTIVE TARGET DECISION; DEFERRED
+**Decision:** Do not add RAG merely because program history is large. Add a knowledge-scaling
+layer only after canonical direct reads become a measured bottleneck, and preserve source
+identity/provenance when retrieval is introduced.
+**Why:** Premature retrieval creates another derived index and another place for stale or
+decontextualized truth.
+**Evidence:** historical target specification §55; current sequence in `agent/ROADMAP.md`.

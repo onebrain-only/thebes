@@ -13,8 +13,10 @@ edit a file, read `CONTRACT.md`.
 > roster as though it were the company. **It was one product's project team.** One Brain is
 > the company; Dabbler is a product inside it; the app is one of Dabbler's four projects. The
 > roster now has that shape. Retired seat names still appear throughout the append-only
-> history in `DECISIONS.md`, `LEARN.md` and `STATUS.md` — **that history was deliberately not
-> rewritten.** Use the rename map in §2 to read it.
+> history in the predecessor repository and `STATUS.md` — **that history was deliberately not
+> rewritten.** Current `DECISIONS.md` and `LEARN.md` are cross-program durable sources, not
+> reconstructed copies of the absent legacy Product logs. Use the rename map in §2 to read
+> surviving historical records.
 
 ## 1. THE SHAPE
 
@@ -294,9 +296,10 @@ it does not own produces work someone else has to rewrite, which costs more than
 
 ### What changed on 2026-09-05 — the rename map
 
-**Read the append-only history with this table.** `DECISIONS.md`, `LEARN.md`, `STATUS.md` and
-the archived status files still use the left-hand names, and were **deliberately not
-rewritten** — rewriting a log to match a later reorganisation falsifies it.
+**Read surviving append-only history with this table.** `STATUS.md` and the archived status
+files still use the left-hand names, and were **deliberately not rewritten** — rewriting a
+log to match a later reorganisation falsifies it. Current `DECISIONS.md` and `LEARN.md`
+record cross-program decisions and lessons from their creation date forward.
 
 | Was | Is now | What happened |
 |---|---|---|

@@ -2,6 +2,23 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Shared program entry point
+
+Every controller/session, including ChatGPT, Work, Codex, Claude Code and generated agents,
+must read [agent/ROADMAP.md](agent/ROADMAP.md) before selecting Product work, switching
+operating mode, declaring a phase complete, or deciding what comes next. Then read
+[agent/PROGRAM_MEMORY.md](agent/PROGRAM_MEMORY.md) for shared architecture and source
+boundaries; consult [agent/DECISIONS.md](agent/DECISIONS.md),
+[agent/LEARN.md](agent/LEARN.md) and
+[agent/history/program-chronology.md](agent/history/program-chronology.md) when rationale,
+operational judgment or checkpoint history affects the task. Workflow/Role/State mechanics
+remain in their existing authoritative files below.
+
+The roadmap's source order and authorization/acceptance gate govern the ordinary execution
+instructions below. If a required source is unavailable or conflicts with runtime state,
+stop Product decisions and resolve the discrepancy in SYSTEM_MAINTENANCE; conversation
+memory cannot substitute for repository sources.
+
 ## The Orchestrator
 
 **This governs every session started in Thebes**, whatever the task and whoever opened it.
