@@ -1,12 +1,12 @@
-"""Provider-neutral Seat registry and current-Claude migration compatibility.
+"""Provider-neutral Seat registry.
 
 The public interface is deliberately small:
 
   read()                    Seat identity and Role mapping owned by Thebes.
   seats_by_capability()     The topology shape consumed by state policy.
-  claude_compatibility()    A temporary check for the active Claude adapter data.
 
-Claude bindings are never a fallback source for Seat identity or Role mapping.
+Provider renderers may consume this registry, but provider configuration is not
+validated here and is never a fallback source for Seat identity or Role mapping.
 """
 import json
 import os
@@ -15,7 +15,6 @@ import re
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SEATS_JSON = os.path.join(ROOT, "agent", "state", "registry", "seats.json")
-CLAUDE_BINDINGS_DIR = os.path.join(ROOT, ".claude", "bindings")
 
 _ID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
@@ -79,45 +78,3 @@ def seats_by_capability(path=SEATS_JSON):
     for seat, entry in read(path).items():
         out.setdefault(entry["capability"], []).append(seat)
     return out
-
-
-def _binding_fields(path):
-    fields = {}
-    try:
-        with open(path, encoding="utf-8", errors="replace") as fh:
-            for line in fh:
-                for key in ("name", "role"):
-                    if line.startswith(key + ":"):
-                        fields.setdefault(
-                            key, line.split(":", 1)[1].strip().strip('"').strip("'"))
-    except OSError:
-        pass
-    return fields
-
-
-def claude_compatibility(registry_path=SEATS_JSON,
-                         bindings_dir=CLAUDE_BINDINGS_DIR):
-    """Migration-only parity errors for the currently present Claude configuration.
-
-    A checkout with no Claude binding directory is valid provider-neutral architecture.
-    When the directory exists, it represents an active compatibility surface and must
-    cover the neutral roster exactly until the Claude renderer owns that translation.
-    """
-    if not os.path.isdir(bindings_dir):
-        return []
-    neutral = read(registry_path)
-    provider = {f[:-4] for f in os.listdir(bindings_dir) if f.endswith(".yml")}
-    expected = set(neutral)
-    errors = ["missing Claude binding for neutral seat %r" % seat
-              for seat in sorted(expected - provider)]
-    errors += ["extra Claude binding has no neutral seat %r" % seat
-               for seat in sorted(provider - expected)]
-    for seat in sorted(expected & provider):
-        fields = _binding_fields(os.path.join(bindings_dir, seat + ".yml"))
-        if fields.get("name") not in (None, seat):
-            errors.append("Claude binding %r declares incompatible seat identifier %r"
-                          % (seat, fields["name"]))
-        if fields.get("role") != neutral[seat]["role"]:
-            errors.append("Claude binding %r declares role %r; neutral registry requires %r"
-                          % (seat, fields.get("role"), neutral[seat]["role"]))
-    return errors

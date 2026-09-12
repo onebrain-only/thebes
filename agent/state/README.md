@@ -84,9 +84,11 @@ cycle check alone and together make a cycle.
 configuration, not concurrent runtime writes.
 
 `registry/seats.json` is the provider-neutral authority for Seat identity and Seat → Role
-mapping. `.claude/bindings/` remains Claude provider configuration (including model and effort)
-and temporarily duplicates the Role for the unchanged renderer. `validate.py --check` verifies
-that current compatibility surface, while the neutral registry itself does not require Claude.
+mapping. `.claude/bindings/` owns Claude-only rendering metadata, including model, effort,
+frontmatter, descriptions and memory settings. The Claude renderer combines those sources;
+`build-agents.sh --check` validates complete configuration coverage and the temporarily retained
+legacy `role:` parity. Provider-specific validation is not an invariant of this neutral state
+layer, and the neutral registry does not require Claude.
 
 **Honest limit:** `validate.py` **cannot prove a record went through `store.py`.** Runtime files
 carry no write ledger, so a careful manual edit is indistinguishable from a store write. The

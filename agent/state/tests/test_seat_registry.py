@@ -23,13 +23,6 @@ def write_registry(root, seats):
     return path
 
 
-def write_binding(root, seat, role, name=None):
-    os.makedirs(root, exist_ok=True)
-    with open(os.path.join(root, seat + ".yml"), "w") as fh:
-        fh.write("name: %s\nrole: %s\nmodel: sonnet\neffort: medium\n"
-                 % (name or seat, role))
-
-
 section("NEUTRAL REGISTRY — CANONICAL PARITY")
 entries = roster.read()
 fixture_path = os.path.join(ROOT, "agent", "execution", "tests", "fixtures",
@@ -52,10 +45,6 @@ topology = json.load(open(os.path.join(ROOT, "agent", "state", "registry",
 ok("topology defined-seat counts match the neutral registry",
    all(row["defined_seats"] == len(by_capability.get(capability, ()))
        for capability, row in topology.items()))
-ok("current Claude bindings match the neutral roster",
-   roster.claude_compatibility() == [])
-
-
 section("NEGATIVE — NO CLAUDE SOURCE REQUIRED")
 tmp = tempfile.mkdtemp()
 neutral = {"payments-3": "backend", "quality-specialist": "qa"}
@@ -65,7 +54,8 @@ isolated = roster.read(registry_path)
 ok("neutral registry reads with no .claude/bindings directory",
    set(isolated) == set(neutral))
 ok("absence of a provider directory is not a universal registry error",
-   roster.claude_compatibility(registry_path, missing_bindings) == [])
+   not hasattr(roster, "CLAUDE_BINDINGS_DIR")
+   and not hasattr(roster, "claude_compatibility"))
 
 runtime = os.path.join(tmp, "runtime")
 for kind in ("tasks", "dependencies", "interventions", "policies", "events",
@@ -96,19 +86,6 @@ ok("Agent View discovers Seat identity and Role without Claude bindings",
 ok("missing Claude display settings stay optional provider metadata",
    all(row["model"] is None and row["effort"] is None for row in payload["seats"]))
 
-
-section("CURRENT CLAUDE MIGRATION COMPATIBILITY")
-bindings = os.path.join(tmp, "bindings")
-write_binding(bindings, "payments-3", "frontend", name="different-seat")
-write_binding(bindings, "extra-seat", "qa")
-errors = roster.claude_compatibility(registry_path, bindings)
-ok("missing and extra provider configurations are rejected",
-   any("missing Claude binding" in e for e in errors)
-   and any("extra Claude binding" in e for e in errors))
-ok("incompatible provider Seat identifier is rejected",
-   any("incompatible seat identifier" in e for e in errors))
-ok("provider Role drift from neutral authority is rejected",
-   any("neutral registry requires" in e for e in errors))
 
 shutil.rmtree(tmp, ignore_errors=True)
 sys.exit(summary())

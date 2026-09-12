@@ -1,7 +1,7 @@
 # agent/AGENTS.md — The Agent Constitution
 
 **Owner:** analyst (write) · all agents (read)
-**Version:** v0.9 — provider-neutral Seat registry. Four levels, 26 seats, sixteen developers in eight paired teams
+**Version:** v1.0 — neutral Seat authority + Claude renderer boundary. Four levels, 26 seats, sixteen developers in eight paired teams
 **Last updated:** 2026-09-12
 
 **This file says what each agent *is*.** It does not say what an agent may write — that is
@@ -206,7 +206,7 @@ particular provider; they do not create its core identity.
 |---|---|---|
 | **Seat** | `agent/state/registry/seats.json` | Provider-neutral Seat identity and exact Seat → Role mapping authority |
 | **Role contract** | `agent/roles/<role-id>.md` | Durable behaviour, authority and execution contract. **Shared by every seat of that Role** |
-| **Claude provider config** | `.claude/bindings/<seat>.yml` | Claude model, effort, frontmatter and current renderer inputs. It temporarily duplicates `role:` for the unchanged Claude generator; validation requires parity with the neutral registry |
+| **Claude provider config** | `.claude/bindings/<seat>.yml` | Claude-only model, effort, colour/frontmatter, descriptions, memory and tool metadata. Legacy `role:` remains only as migration metadata; the Claude renderer validates it but does not consume it as authority |
 | ~~**Seat context**~~ | ~~`agent/seats/<seat>.md`~~ | **RETIRED WAVE 6.** Role + Binding is sufficient; the generator now *errors* on a binding that still declares `seat_context:`. Per-seat product knowledge in a seat file is exactly what Role ≠ Seat exists to prevent — old value: identity, team, pair. **Exit: Wave 6.** *(Corrected 2026-09-07: this said Wave 4 would absorb it. Wave 4 took only the PO's Project binding; the generator concatenates markdown, and team/pair are compatibility rather than target state.)* |
 | **Runtime definition** | `.claude/agents/<seat>.md` | Generated. Never hand-edited |
 
@@ -215,9 +215,11 @@ instantiate `backend`. `content-manager` is the seat; `content` is the Role. Eve
 currently maps one-to-one to a Role of the same name.
 
 **A Seat missing from the neutral registry is not a Seat.** A neutral Seat missing its Claude
-binding or generated definition is not dispatchable through the current Claude path. `role:` in
-the binding remains temporary generator metadata and is stripped before runtime frontmatter is
-emitted; it is not core Seat authority.
+configuration or generated definition is not dispatchable through the current Claude path.
+`agent/scripts/render_claude_agents.py` enumerates neutral Seats, resolves each Role from the
+neutral mapping, and combines that contract with Claude-only configuration. `role:` in a binding
+is retained only for migration parity validation and stripped before runtime frontmatter is
+emitted; it is not consumed as core Seat authority.
 
 ### Company level — One Brain
 
@@ -662,11 +664,10 @@ Role contracts serve twenty-six seats** (Wave 6, 2026-09-08): `frontend` (8 seat
 `agent/roles/` is the instruction the agent itself reads, in the second person. The two are
 complementary, not duplicates — §2 says what a seat *is*, the role file says how it *works*.
 
-`agent/roles/` is tool-neutral. The unchanged Claude renderer still generates
-`.claude/agents/<seat>.md` from the Role temporarily duplicated in
-`.claude/bindings/<seat>.yml`; Persistent State and Agent View no longer use that duplicate for
-Seat/Role discovery. Registry validation rejects drift between the two until the Claude
-configuration renderer is migrated in a later slice. **Never hand-edit
+`agent/roles/` is tool-neutral. The Claude renderer generates `.claude/agents/<seat>.md` by
+combining the neutral registry's Seat → Role mapping with Claude-only metadata from
+`.claude/bindings/<seat>.yml`. The retained `role:` duplicate is a checked migration guard, not
+renderer input. Persistent State and Agent View do not use it for Seat/Role discovery. **Never hand-edit
 `.claude/agents/`** — it is regenerated, and `build-agents.sh --check` fails if it has drifted.
 
 ---
@@ -763,6 +764,7 @@ to this one for the shape.
 
 | Date | Change |
 |---|---|
+| 2026-09-12 | **v1.0 — Claude configuration renderer boundary.** The Claude renderer now enumerates Seats and resolves Roles from `agent/state/registry/seats.json`, then combines them with Claude-only binding metadata. Legacy binding `role:` fields remain temporarily for migration validation but are not renderer authority. All 26 generated artifacts remain byte-identical; no provider execution is implemented. |
 | 2026-09-12 | **v0.9 — provider-neutral Seat registry.** `agent/state/registry/seats.json` becomes the canonical Seat identity and Seat → Role mapping source. Claude bindings remain unchanged provider configuration and temporarily duplicate the Role for the current renderer; validation checks migration parity. No provider adapter, selection or execution wiring is implemented. |
 | 2026-09-05 | **v0.8 — the developer expansion, CEO-directed.** Roster 17 → **30**. Each team leader gets three developers: `senior-frontend-N` plus `junior-frontend-Na`/`-Nb`, so 5 seniors and 10 juniors. **Each project gets one backend developer** — the app is the only staffed project, so `senior-backend` stays a single seat shared by all five leads. Renamed `senior-frontend`→`senior-frontend-1` and `junior-frontend`→`junior-frontend-1a`; the notification client memory moved to `senior-frontend-5`, whose lead owns D6. **Each senior is scoped to its lead's slices** so the five have disjoint file sets — the only thing that makes five parallel teams real rather than nominal (§5). `lib/core/**`, `lib/data/**` and the four contended files stay shared and serialised. **This puts `G-012`'s Phase 0 router split on the critical path**: at sixteen developers, `app_router.dart` is the schedule |
 | 2026-09-05 | **v0.7 — the company restructure, CEO-directed.** One Brain is the company; Dabbler is a product; the app is one of four projects. Four levels replace two. Roster 11 → **17**. Added `cxo`, `pm`, `content-manager`, `po`, `team-lead-1..5`, `junior-frontend`. Renamed `master-analyst`→`analyst`, `version-control`→`devops` (promoted to product level), `qa-tester`→`qa`, `backend-owner`→`senior-backend`, `flutter-feature-agent`→`senior-frontend`. Merged `task-auditor`→`po` and `app-store-submission-fixer`→`devops` (**the merge §9b proposed on 2026-08-28 and deferred for evidence**). Split `notifications-specialist` across the two seniors by evidence. **Deleted `orchestrator`** — routing is now the Orchestrator's own behaviour, via the new `route-to-seat` skill. Work groups into **11 stacks** across five leads, two active. Model/effort tiers reset by the CEO in §9b. **Append-only history was not rewritten** — see the rename map in §2 |

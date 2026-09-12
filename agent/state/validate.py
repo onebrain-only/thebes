@@ -27,7 +27,6 @@ RUNTIME = os.path.join(STATE, "runtime")
 REGISTRY = os.path.join(STATE, "registry")
 SEATS_JSON = os.path.join(REGISTRY, "seats.json")
 TOPOLOGY_JSON = os.path.join(REGISTRY, "topology.json")
-CLAUDE_BINDINGS_DIR = os.path.join(ROOT, ".claude", "bindings")
 SCHEMA_VERSIONS = {1, 2, 3}
 
 sys.path.insert(0, STATE)
@@ -1283,8 +1282,6 @@ def check(runtime=None):
     registry_errors = roster.validation_errors(SEATS_JSON)
     errs += ["seat registry: %s" % e for e in registry_errors]
     if not registry_errors:
-        errs += ["Claude compatibility: %s" % e for e in
-                 roster.claude_compatibility(SEATS_JSON, CLAUDE_BINDINGS_DIR)]
         seat_topology = seats_by_capability()
         for capability in sorted(set(seat_topology) - CAPABILITIES):
             errs.append("seat registry: unknown Role/capability %r" % capability)
