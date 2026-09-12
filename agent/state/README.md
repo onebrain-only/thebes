@@ -87,6 +87,15 @@ configuration, not concurrent runtime writes.
 carry no write ledger, so a careful manual edit is indistinguishable from a store write. The
 no-direct-edit rule is contractual, exactly like the no-delegation rule.
 
+## Operating mode
+
+`runtime/operating-mode/current.json` is the one execution-domain record. Its `mode` is either
+`SYSTEM_MAINTENANCE` or `PRODUCT_EXECUTION`, and transitions use revision CAS through
+`store.set_operating_mode()`. Maintenance blocks new Product claims and every Product execution
+wake, including continuation by an existing owner. It does not alter tasks, ownership, lifecycle,
+executor evidence, reviews, dependencies, interventions or execution policy. STOP/HOLD/FREEZE
+remain safety primitives; ACCELERATE/NORMAL remain scheduling pressure.
+
 ## Record shapes
 
 Documented here; enforced by `validate.py`. **These are executable Thebes rules, not JSON
@@ -97,7 +106,7 @@ Every record carries `schema_version`, `revision`, `created_at`, `updated_at`.
 
 **Task** — `runtime/tasks/<JIRA-KEY>.json`. `work_item_id` · `product_id` · `project_id` ·
 `record_type` · `lifecycle` · `executor_evidence` (list) · `execution_profile` (object or null) ·
-`review_context`. (`schema_version: 1` records carry the flat Wave 4 `canonical_lifecycle` /
+`review_context` · optional `operational_context`. (`schema_version: 1` records carry the flat Wave 4 `canonical_lifecycle` /
 `jira_operational_column` nulls instead; both versions validate.)
 
 **`record_type` — `executable` or `container`. ONE EXECUTABLE WORK ITEM = ONE
@@ -211,6 +220,25 @@ migration raises `schema_change` and the route moves SELF → PEER. Nobody walks
 `cto` may withdraw a safety characteristic, only before review has begun, and the route floor
 never drops within a lifecycle. Escalation is available to whoever finds the danger;
 de-escalation is not available to whoever would benefit from an easier review.
+
+**`operational_context` accepts the report as evidence.** `intent: observed_condition` derives
+`initial_phase: investigation`; it does not require a ceremonial reproduction before diagnosis.
+An explicit `reproduction_request` derives reproduction instead. `reported_environment` is the
+authority for `primary_target`, which is system-derived in the same CAS write. A report of local
+Flutter web on Chrome derives a terminal local launch (`flutter run -d chrome`) and does not
+silently select browser automation. A deployed or Canary target may be comparative evidence, but
+cannot replace a reported localhost primary target.
+
+After diagnosis, `set_diagnosis()` records the causal surface, changed surfaces and whether the
+change is shared or platform-specific. Policy derives a separate `validation_plan`; it does not
+reuse `validation_route`, because reviewer identity and validation location answer different
+questions. Shared changes require shared automated coverage plus proof on the reported primary
+runtime; other affected platforms are optional confidence targets. Platform-specific changes
+require evidence on each affected platform. Closure depends only on all required target ids
+having evidence; optional evidence is non-blocking.
+Changed paths under `android/`, `ios/` or `web/` derive platform specificity rather than trusting
+an executor's label. A later diagnosis recomputes the plan while retaining earlier required
+targets, so causal revision can strengthen or redirect validation without silently weakening it.
 
 **A PEER route with no available peer WAITS.** `review_owner` stays null and the item sits in
 `Peer-review`. It is never downgraded to QA or SELF for throughput — the absence of a

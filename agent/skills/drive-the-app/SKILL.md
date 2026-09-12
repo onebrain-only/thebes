@@ -94,6 +94,11 @@ as touching production data, and never point it at anything you would not want w
 
 ## Step 2b — Drive the app by hand (Chrome)
 
+When `operational_context.primary_target` names local Flutter web on Chrome, keep that localhost
+runtime authoritative. Start it through the terminal. Add browser automation only when UI
+interaction or browser inspection is needed; automation is a tool, not a replacement environment.
+Never substitute Canary for a reported localhost target.
+
 **[U] — documented in `agent/roles/qa.md`, not executed in this pass.**
 
 ```bash

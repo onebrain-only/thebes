@@ -158,3 +158,30 @@ rework cycle for the AC1 literal-reading gap flagged to `po`. **No date** — `p
 
 Ticket moved **To Do → In Review** (transition 31). Note it was never moved to `Development` by a
 lead; I pulled it from the board directly under the CEO's pull rule.
+
+## KAN-144 — delete FeatureFlags.squads (2026-09-09)
+
+**Reference search:** `grep -rn "FeatureFlags.squads" lib/ test/` → exactly one call site outside
+the definition, `lib/main.dart:88`. Matched the ticket's stated blast radius exactly.
+
+**Removed:** `lib/core/config/feature_flags.dart:75` (`static const bool squads = true;`),
+`lib/main.dart:88` (`'squads': FeatureFlags.squads,` in the `flags_snapshot` analytics event).
+Also corrected the now-inaccurate "these 5" comment to "these 4" at `feature_flags.dart:66`
+(same file, no scope change).
+
+**Post-removal grep:** no matches for `FeatureFlags.squads` in `lib/` or `test/`.
+
+**flutter analyze --no-pub --no-fatal-infos:** 0 errors, 0 warnings, 55 infos.
+**flutter test:** 106 tests passed, all green.
+
+**Untouched (verified):** `squads_repository.dart`/`_impl.dart`, `social/providers.dart` wiring,
+`session_cleanup.dart:65-68`'s squads provider invalidation, `supabase_config.dart:149`'s
+`squadsTable`, and EN/AR "squads" copy — none reference the deleted flag.
+
+**Runtime consequence:** the `flags_snapshot` analytics event no longer carries a `squads`
+dimension. Intended per P-035 — stops asserting a deleted slice into the live
+`rpc_track_event`/`analytics_events` sink. No route/screen/gate behaviour otherwise affected.
+
+**Commit `61ae33e` on `Canary`, not pushed.** Jira comment posted on KAN-144 (id 10797) via
+`agent/integrations/jira.py` — Atlassian MCP was down for this run, per team-lead's note.
+No transition performed (out of scope for this seat per the brief).

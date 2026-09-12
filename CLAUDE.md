@@ -13,13 +13,24 @@ your own thinking, not a seat, and there is no `orchestrator` agent to hand off 
 > queues, atomic claim and bounded interventions now exist, so central seat selection is over:
 > **ordinary work no longer needs the CEO to name anybody.**
 
-**Two modes, and you are always in exactly one:**
+**Two communication forms:**
 
 - **To the CEO, human language.** A question about this conversation, about something already
   done here, or a fact you can state without agent work — just answer it. Discuss, question,
   push back. Ordinary conversation.
 - **To an agent, a written prompt.** Never conversational text. The prompt contract is in the
   `route-to-seat` skill; follow it.
+
+**Operating mode is a separate machine-readable state, and every session is in exactly one:**
+
+- **`SYSTEM_MAINTENANCE`** — build, modify and test Thebes. Product claims and every Product
+  execution wake are refused; persisted Product lifecycle and ownership remain untouched.
+- **`PRODUCT_EXECUTION`** — execute selected Product work against stable Thebes infrastructure.
+  Do not redesign Thebes opportunistically from this mode.
+
+Read and transition the singleton through `store.current_operating_mode()` and
+`store.set_operating_mode()`. A transition changes only that record. It is independent of
+STOP/HOLD/FREEZE and ACCELERATE/NORMAL.
 
 ### The ordinary path — no lead, no CEO naming, no executive
 

@@ -47,6 +47,7 @@ KINDS = {
     # append that the READ side honours; the original stays byte-identical and
     # auditable forever.
     "correction":   ("corrections",   "cor"),
+    "operating_mode": ("operating-mode", None),
 }
 
 
@@ -143,6 +144,47 @@ def read_all(kind):
             with open(os.path.join(d, fn), encoding="utf-8") as fh:
                 out.append(json.load(fh))
     return out
+
+
+def current_operating_mode():
+    """Return the current execution domain without changing Product state.
+
+    A pre-hardening runtime has no record, so it keeps its historical Product
+    behavior until its first explicit transition. New sessions set a mode before
+    orchestration and thereafter use the singleton record.
+    """
+    import operations                                  # noqa: E402
+    rec = read("operating_mode", operations.CURRENT_MODE_ID)
+    return (rec or {}).get("mode", operations.PRODUCT_EXECUTION)
+
+
+def set_operating_mode(mode, changed_by, reason_ref, expected_revision=None):
+    """Create or CAS-transition the singleton operating-mode record."""
+    import operations                                  # noqa: E402
+    if mode not in operations.OPERATING_MODES:
+        raise StateError("unknown operating mode %r" % mode)
+    if not changed_by or not reason_ref:
+        raise StateError("changed_by and reason_ref are required")
+    rid = operations.CURRENT_MODE_ID
+    with record_lock("operating_mode", rid):
+        cur = read("operating_mode", rid)
+        if cur is None:
+            if expected_revision is not None:
+                raise StateError("operating mode does not exist; expected_revision must be null")
+            rec = {"operating_mode_id": rid, "mode": mode, "changed_by": changed_by,
+                   "reason_ref": reason_ref, "schema_version": SCHEMA_VERSION,
+                   "revision": 1, "created_at": now(), "updated_at": now()}
+        else:
+            if expected_revision is None:
+                raise StateError("expected_revision is required; there is no force update")
+            if cur["revision"] != expected_revision:
+                raise StateError("stale write refused: operating mode is at revision %d, "
+                                 "caller expected %d" % (cur["revision"], expected_revision))
+            rec = dict(cur, mode=mode, changed_by=changed_by, reason_ref=reason_ref,
+                       revision=cur["revision"] + 1, updated_at=now())
+        _validate_one("operating_mode", rec)
+        _atomic_write(path_for("operating_mode", rid), rec)
+        return rec
 
 
 def create(kind, record, rid=None):
@@ -416,6 +458,111 @@ def set_characteristics(work_item_id, expected_revision, changes, author,
         merged["execution_profile"] = prof
         merged["revision"] = cur["revision"] + 1
         merged["updated_at"] = now()
+        _validate_one("task", merged)
+        _atomic_write(path_for("task", work_item_id), merged)
+        return merged
+
+
+def set_operational_context(work_item_id, expected_revision, intent,
+                            reported_environment, author, evidence_ref):
+    """Persist reported intent and derive its authoritative primary target atomically."""
+    import operations                                  # noqa: E402
+    if expected_revision is None:
+        raise StateError("expected_revision is required; there is no force update")
+    if intent not in operations.TASK_INTENTS:
+        raise StateError("unknown task intent %r" % intent)
+    if not author or not evidence_ref:
+        raise StateError("author and evidence_ref are required")
+    try:
+        target = operations.derive_primary_target(reported_environment)
+    except ValueError as exc:
+        raise StateError(str(exc))
+    with record_lock("task", work_item_id):
+        cur = read("task", work_item_id)
+        if cur is None:
+            raise StateError("task %s does not exist" % work_item_id)
+        if cur["revision"] != expected_revision:
+            raise StateError("stale write refused: task %s is at revision %d, caller "
+                             "expected %d" % (work_item_id, cur["revision"],
+                                              expected_revision))
+        if cur.get("record_type") != "executable":
+            raise StateError("container records carry no operational context")
+        context = {"intent": intent, "initial_phase": operations.initial_phase(intent),
+                   "reported_environment": dict(reported_environment or {}),
+                   "primary_target": target, "comparative_targets": [],
+                   "provenance": {"by": author, "at": now(),
+                                  "evidence_ref": evidence_ref}}
+        merged = dict(cur, operational_context=context,
+                      revision=cur["revision"] + 1, updated_at=now())
+        _validate_one("task", merged)
+        _atomic_write(path_for("task", work_item_id), merged)
+        return merged
+
+
+def set_diagnosis(work_item_id, expected_revision, causal_surface, changed_surfaces,
+                  platform_specificity, affected_platforms, author, evidence_ref):
+    """Record causal findings and derive validation scope in the same CAS write."""
+    import operations                                  # noqa: E402
+    if expected_revision is None:
+        raise StateError("expected_revision is required; there is no force update")
+    diagnosis = {"causal_surface": causal_surface,
+                 "changed_surfaces": sorted(set(changed_surfaces or [])),
+                 "platform_specificity": platform_specificity,
+                 "affected_platforms": sorted(set(affected_platforms or [])),
+                 "provenance": {"by": author, "at": now(), "evidence_ref": evidence_ref}}
+    if not causal_surface or not diagnosis["changed_surfaces"] or not author or not evidence_ref:
+        raise StateError("causal_surface, changed_surfaces, author and evidence_ref are required")
+    with record_lock("task", work_item_id):
+        cur = read("task", work_item_id)
+        if cur is None:
+            raise StateError("task %s does not exist" % work_item_id)
+        if cur["revision"] != expected_revision:
+            raise StateError("stale write refused: task %s is at revision %d, caller expected %d"
+                             % (work_item_id, cur["revision"], expected_revision))
+        context = dict(cur.get("operational_context") or {})
+        if not context:
+            raise StateError("operational_context is required before diagnosis")
+        prior_required = ((context.get("validation_plan") or {}).get("required") or [])
+        if prior_required:
+            diagnosis["retained_required"] = prior_required
+        try:
+            plan = operations.derive_validation_plan(diagnosis, context.get("primary_target"))
+        except ValueError as exc:
+            raise StateError(str(exc))
+        context["diagnosis"] = diagnosis
+        context["validation_plan"] = plan
+        merged = dict(cur, operational_context=context,
+                      revision=cur["revision"] + 1, updated_at=now())
+        _validate_one("task", merged)
+        _atomic_write(path_for("task", work_item_id), merged)
+        return merged
+
+
+def record_validation_evidence(work_item_id, expected_revision, target_id, evidence_ref):
+    """Attach evidence to one derived target; optional evidence never gates closure."""
+    if expected_revision is None:
+        raise StateError("expected_revision is required; there is no force update")
+    if not target_id or not evidence_ref:
+        raise StateError("target_id and evidence_ref are required")
+    with record_lock("task", work_item_id):
+        cur = read("task", work_item_id)
+        if cur is None:
+            raise StateError("task %s does not exist" % work_item_id)
+        if cur["revision"] != expected_revision:
+            raise StateError("stale write refused: task %s is at revision %d, caller expected %d"
+                             % (work_item_id, cur["revision"], expected_revision))
+        context = dict(cur.get("operational_context") or {})
+        plan = dict(context.get("validation_plan") or {})
+        known = {target.get("target_id")
+                 for target in (plan.get("required") or []) + (plan.get("optional") or [])}
+        if target_id not in known:
+            raise StateError("unknown validation target %r" % target_id)
+        evidence = dict(plan.get("evidence") or {})
+        evidence[target_id] = evidence_ref
+        plan["evidence"] = evidence
+        context["validation_plan"] = plan
+        merged = dict(cur, operational_context=context,
+                      revision=cur["revision"] + 1, updated_at=now())
         _validate_one("task", merged)
         _atomic_write(path_for("task", work_item_id), merged)
         return merged
@@ -1770,7 +1917,7 @@ def claim(work_item_id, seat_id, claim_ref, expected_revision, capability_of_sea
     A claim is NOT a wake. Nothing here invokes a seat; a seat is woken only after a
     claim has succeeded, and a wake never creates ownership.
     """
-    import queue as q                                   # noqa: E402
+    import operations, queue as q                       # noqa: E402
     with record_lock("task", work_item_id):
         cur = read("task", work_item_id)
         if cur is None:
@@ -1782,6 +1929,9 @@ def claim(work_item_id, seat_id, claim_ref, expected_revision, capability_of_sea
         if cur.get("ownership") is not None:
             raise StateError("already-owned: %s is owned by %s"
                              % (work_item_id, cur["ownership"].get("seat_id")))
+        mode_reason = operations.product_execution_reason(current_operating_mode())
+        if mode_reason:
+            raise StateError("not-claimable: " + mode_reason)
         cap = (cur.get("execution_profile") or {}).get("required_capability")
         if capability_of_seat is not None and capability_of_seat != cap:
             raise StateError("wrong-capability: seat %s is %r, task requires %r"
@@ -1853,7 +2003,8 @@ def _id_field(kind):
             "exception": "exception_id", "dependency": "dependency_id",
             "intervention": "intervention_id", "policy": "policy_id",
             "event": "event_id", "learning": "learning_id",
-            "coverage": "coverage_id", "correction": "correction_id"}[kind]
+            "coverage": "coverage_id", "correction": "correction_id",
+            "operating_mode": "operating_mode_id"}[kind]
 
 
 def _validate_one(kind, record):

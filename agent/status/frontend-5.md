@@ -374,3 +374,82 @@ bodies. Refusal was clean: revision stayed 8, ownership unchanged, nothing
 half-written. Re-ran with a 205-char identifier ref.
 
 I hold no work item. Not starting anything new.
+
+---
+## 2026-09-09 — KAN-148: delete 4 orphaned game-composer step screens
+
+Owned (revision 2, continuation gate passed). SELF validation route.
+
+Re-measured the "zero importers" claim myself rather than inheriting it:
+`git grep` for each filename and each class name
+(PlayerInvitationStep/ReviewConfirmationStep/SportFormatStep/VenueSlotStep)
+across lib/ and test/, excluding the file's own former path — zero hits for
+all four, both by filename and by class name. Checked each file's own
+imports too: none of the four imports another of the four. Confirmed the two
+files the ticket named as the directory's only external importers
+(play_places_routes.dart, sports_library_screen.dart) reference only
+game_detail_screen.dart / game_composer_screen.dart, never a step file.
+
+LOC re-measured with `wc -l`: 571 + 749 + 1179 + 525 = 3024 — matches the
+ticket's figure exactly.
+
+Deleted all four files via `git rm`, touched nothing else.
+flutter analyze --no-pub --no-fatal-infos: exit 0, 0 errors, 0 warnings, 55
+infos (was 56 in the documented baseline — consistent with removing dead
+code).
+flutter test: exit 0, 106/106 passing.
+
+Process anomaly (flagged to team-lead-2 and in the Jira comment): this
+Dabbler/dabbler-code checkout on Canary is shared by multiple concurrent
+agent sessions committing to the same working tree/index. Before I could
+make my own commit, my staged `git rm` was swept into a concurrent agent's
+KAN-156 commit (`a23c6d92f32c7f4f8fc8541e5cc1ce0cc5c8394a`, local only, not
+pushed) alongside its own unrelated change. Verified via `git show --stat`
+that the deletion inside that commit is exactly the four files I deleted.
+Did not attempt to reset/rebase to separate it out — HEAD and the staged
+index were observed changing between consecutive `git status` calls with no
+action from me, meaning other agents were actively committing/resetting in
+real time; a rewrite in that environment risks destroying concurrent
+in-flight work. Reported the actual SHA and the misattribution plainly
+rather than fabricating a clean KAN-148 commit. Did not push, did not
+transition the Jira ticket, did not touch agent/state/runtime.
+
+## 2026-09-09 — KAN-144 PEER review (cycle 1), reviewer not executor
+
+Resolved review_owner for KAN-144 (PEER route, CEO-authorised). Executor was
+frontend-4. Reviewed the published source at Canary b978647, not a local tree.
+
+Verdict: PASS. All five acceptance criteria met; nothing NOT VERIFIABLE.
+
+Re-derived rather than accepted: reference search for FeatureFlags.squads
+across lib/, test/ and the whole repo (no matches, exit 1); the quoted 'squads'
+key search (only squads-domain SQL, never the flag); git show --stat 7856b5e
+(exactly feature_flags.dart + main.dart, 1 insertion / 3 deletions); the
+history-normalisation claim, by tree hash — 7856b5e^{tree} == 61ae33e^{tree}
+== a780e13, so the SHA change is content-identical as the orchestrator note
+said; flutter analyze --no-pub --no-fatal-infos exit 0, 0 errors / 0 warnings
+/ 55 infos; flutter test exit 0, 106/106.
+
+Runtime consequence checked in source, not taken from the report: rpc_track_event
+(baseline_schema.sql:16086) inserts an untyped jsonb properties column with no
+key schema, and KAN-109's anon rule keys off _event_name = 'flags_snapshot',
+not payload contents. Dropping the squads dimension therefore has no failure
+mode — it is exactly the intended P-035 effect, and nothing else changes
+behaviour. Read P-035 first-hand at DECISIONS.md:5004-5063; the commit executes
+it exactly.
+
+Scope call I was asked to make: the untouched squads repository, provider
+wiring, session_cleanup invalidation, squadsTable constant and EN/AR copy are
+correct to leave. The flag was analytics-only and gated nothing, so no code path
+branched on it and no inconsistency is left behind. The open in/out scope
+question is po/cpo's, not this ticket's. The "these 5" -> "these 4" comment fix
+is inside a permitted file and is now factually accurate (4 flags remain in the
+ANALYTICS-ONLY block); the rework trigger is files touched beyond the two named,
+and no third file was touched.
+
+Noted for cpo/pm, outside this ticket: P-035 still reads "PROPOSED — awaiting PO
+ruling" in DECISIONS.md although its ticket has been executed.
+
+Posted the review as Jira comment 10837 on KAN-144. Did not transition the
+ticket, did not mark it Done, wrote no product code, committed and pushed
+nothing, did not touch agent/state/runtime.

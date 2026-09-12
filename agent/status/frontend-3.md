@@ -65,3 +65,30 @@ not verified from here (no push under this brief).
 - Owns `auth_onboarding`, `username_engine`, `app_boot` under STACKS.md §11 (`team-lead-3`).
 - Phase 0 exclusive grant (`CONTRACT.md` §4.1) expires with KAN-125 — subject to the lead
   confirming the Canary clause.
+
+## KAN-142 — 2026-09-09
+
+Claimed as current owner (revision 2), but found the defect already fixed on Canary by commit
+`6c5bca4` (2026-09-06, "fix(nav): repoint dead /phone-input to /auth-welcome, drop dead /bookings
+branch (KAN-142)"), predating this claim by three days. Verified against Canary HEAD (`715bb85`):
+`grep -rn "/bookings\|phone-input" lib/` returns nothing; both sign-in buttons in
+`transactions_screen.dart` and `activities_screen_v2.dart` already go to `RoutePaths.authWelcome`;
+the `'booking'` case in `notifications_screen_v2.dart`'s `_handleActivityTap` is already removed.
+`flutter analyze --no-pub --no-fatal-infos`: 0 errors, 0 warnings, 55 infos. `flutter test`: 106
+passed. No files touched — nothing left to change. Posted findings as a Jira comment on KAN-142
+and flagged the board/ownership drift (claimed as open work that was already closed) back to
+team-lead rather than re-doing or fabricating a diff.
+
+## 2026-09-09 — KAN-132 PEER review (cycle 1) — VERDICT: PASS
+
+Reviewer, not executor. Executor was `frontend-2`. Reviewed dabbler-code Canary `b978647`, clean tree.
+
+- Read KAN-132 and all 9 comments via `agent/integrations/jira.py`; read T-053 first-hand at `Dabbler/dabbler-docs/DECISIONS.md:7423`.
+- Re-derived the unreachability proof myself: `supabase_profile_repository`, `SupabaseProfileRepository` and `data/repositories/profile_repository.dart` all return zero hits across `lib`/`test`; `lib/providers.dart` references neither; no barrel exports them. The 6 broad-grep hits are the unrelated live `lib/features/profile/domain/repositories/profile_repository.dart`.
+- Verified delete-not-rename: `727448e` is two `D` entries, 92 deletions / 0 insertions; the class and its docstring exist nowhere in the tree; `profileRepositoryProvider` now has exactly one declaration (`lib/features/profile/presentation/providers/profile_providers.dart:73`).
+- Gates re-run by me: `flutter analyze --no-pub --no-fatal-infos` -> 55 info, 0 warning, 0 error; `flutter test` -> 106/106 passed.
+- Sequencing: `715bb85` (KAN-129) is the direct parent of `727448e` (KAN-132). AC 6 satisfied.
+- SHA re-attribution checked directly: `c0d84d9` and `727448e` share tree `8d18aac`, `git diff` between them is empty. Content unchanged.
+- AC 1 struck by `po` (comment 10638), not evaluated. No criterion required a database; nothing NOT VERIFIABLE.
+
+No defect found, so PEER FAIL execution transfer does not apply. Wrote no product code, committed nothing, transitioned nothing — recording the verdict is the Orchestrator's act. Review posted as Jira comment **10836**.

@@ -69,6 +69,8 @@ INTERVENTION_KINDS = {"stop", "hold", "freeze"}
 POLICY_KINDS = {"accelerate"}
 POLICY_SCOPES = {"system", "product", "capability"}
 POLICY_AUTHORITIES = {"ceo", "orchestrator"}
+OPERATING_MODES = {"SYSTEM_MAINTENANCE", "PRODUCT_EXECUTION"}
+OPERATING_MODE_AUTHORITIES = {"ceo", "orchestrator", "system-maintenance"}
 
 # ---- Wave 8: advisory domain events -----------------------------------------
 # A fixed, small vocabulary. Events are ADVISORY and immutable; nothing in
@@ -606,6 +608,72 @@ def validate_profile(prof, errs, where):
             errs.append("%s: provenance.%s present but the field is unset" % (where, field))
 
 
+def validate_operational_context(context, errs, where):
+    if context is None:
+        return
+    if not isinstance(context, dict):
+        errs.append("%s: operational_context must be an object" % where)
+        return
+    import operations                                  # noqa: E402
+    intent = context.get("intent")
+    if intent not in operations.TASK_INTENTS:
+        errs.append("%s: unknown task intent %r" % (where, intent))
+    else:
+        expected_phase = operations.initial_phase(intent)
+        if context.get("initial_phase") != expected_phase:
+            errs.append("%s: initial_phase must derive as %r for intent %r"
+                        % (where, expected_phase, intent))
+    reported = context.get("reported_environment")
+    if not isinstance(reported, dict):
+        errs.append("%s: reported_environment must be an object" % where)
+        return
+    try:
+        expected_target = operations.derive_primary_target(reported)
+    except ValueError as exc:
+        errs.append("%s: %s" % (where, exc))
+        expected_target = None
+    if expected_target is not None and context.get("primary_target") != expected_target:
+        errs.append("%s: primary_target must derive from reported_environment; the reported "
+                    "environment cannot be silently replaced" % where)
+    comparisons = context.get("comparative_targets")
+    if not isinstance(comparisons, list):
+        errs.append("%s: comparative_targets must be a list" % where)
+    provenance = context.get("provenance")
+    if not isinstance(provenance, dict) or not provenance.get("by") or not provenance.get("evidence_ref"):
+        errs.append("%s: operational_context provenance requires by and evidence_ref" % where)
+    elif len(str(provenance["evidence_ref"])) > MAX_REF_LEN:
+        errs.append("%s: operational_context evidence_ref exceeds %d characters"
+                    % (where, MAX_REF_LEN))
+    diagnosis = context.get("diagnosis")
+    plan = context.get("validation_plan")
+    if diagnosis is None and plan is not None:
+        errs.append("%s: validation_plan requires a causal diagnosis" % where)
+    if diagnosis is not None:
+        if not isinstance(diagnosis, dict):
+            errs.append("%s: diagnosis must be an object" % where)
+            return
+        if not diagnosis.get("causal_surface") or not diagnosis.get("changed_surfaces"):
+            errs.append("%s: diagnosis requires causal_surface and changed_surfaces" % where)
+        try:
+            expected_plan = operations.derive_validation_plan(diagnosis,
+                                                               context.get("primary_target"))
+        except ValueError as exc:
+            errs.append("%s: %s" % (where, exc))
+            expected_plan = None
+        if not isinstance(plan, dict):
+            errs.append("%s: diagnosis requires a validation_plan" % where)
+        elif expected_plan is not None:
+            comparable = dict(plan, evidence={})
+            if comparable != expected_plan:
+                errs.append("%s: validation_plan must derive from causal and changed surfaces"
+                            % where)
+            known = {target.get("target_id") for target in
+                     (plan.get("required") or []) + (plan.get("optional") or [])}
+            evidence = plan.get("evidence") or {}
+            if not isinstance(evidence, dict) or any(target not in known for target in evidence):
+                errs.append("%s: validation evidence must name a derived target" % where)
+
+
 # ---------------------------------------------------------------- records
 
 def _review_coherence(rec, prof, canonical, status_id, errs, where):
@@ -776,6 +844,7 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
 
         if ver >= 3:
             validate_ownership(rec.get("ownership"), errs, where, seatset)
+            validate_operational_context(rec.get("operational_context"), errs, where)
             assessed, surfaces = validate_surfaces(rec.get("surfaces"), errs, where)
             # shared_or_contended_surface stays SYSTEM-DERIVED, and it is derived from
             # something checkable: the declared paths. An actor cannot assert it, and it
@@ -803,7 +872,7 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
             # ONE EXECUTABLE WORK ITEM = ONE required_capability. A container spans
             # capabilities by design, so the executable invariants must not be
             # applied to it — and it must not carry the fields that imply execution.
-            for f in ("execution_profile", "review_context", "ownership"):
+            for f in ("execution_profile", "review_context", "ownership", "operational_context"):
                 if rec.get(f) is not None:
                     errs.append("%s: container records carry no %s — no capability, no "
                                 "Work Effort, no validation route, no review, no owner"
@@ -1022,6 +1091,17 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
         _reflen(rec, ["reason_ref"], errs, where)
         _verdict_reflen(rec, ["evidence_ref"], errs, where)
 
+    elif kind == "operating_mode":
+        _req(rec, ["operating_mode_id", "mode", "changed_by", "reason_ref"], errs, where)
+        if rec.get("operating_mode_id") != "current":
+            errs.append("%s: operating_mode_id must be the singleton 'current'" % where)
+        if rec.get("mode") not in OPERATING_MODES:
+            errs.append("%s: unknown operating mode %r" % (where, rec.get("mode")))
+        if rec.get("changed_by") not in OPERATING_MODE_AUTHORITIES:
+            errs.append("%s: changed_by %r is not an operating-mode authority"
+                        % (where, rec.get("changed_by")))
+        _reflen(rec, ["reason_ref"], errs, where)
+
     elif kind == "policy":
         _req(rec, ["policy_id", "policy_kind", "scope", "activated_by", "reason_ref"],
              errs, where)
@@ -1189,7 +1269,8 @@ def check(runtime=None):
     kinds = {"task": "tasks", "routing": "routing", "exception": "exceptions",
              "dependency": "dependencies", "intervention": "interventions",
              "policy": "policies", "event": "events", "learning": "learning",
-             "coverage": "coverage", "correction": "corrections"}
+             "coverage": "coverage", "correction": "corrections",
+             "operating_mode": "operating-mode"}
     seen_ids = {}
     edges = []
     active_iv = []
@@ -1213,7 +1294,8 @@ def check(runtime=None):
                    "exception": "exception_id", "dependency": "dependency_id",
                    "intervention": "intervention_id", "policy": "policy_id",
                    "event": "event_id", "learning": "learning_id",
-                   "coverage": "coverage_id", "correction": "correction_id"}[kind]
+                   "coverage": "coverage_id", "correction": "correction_id",
+                   "operating_mode": "operating_mode_id"}[kind]
             rid = rec.get(idf)
             if rid != fn[:-5]:
                 errs.append("%s: filename does not match %s %r" % (p, idf, rid))

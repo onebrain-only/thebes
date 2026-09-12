@@ -5,6 +5,12 @@ description: Diagnosis loop for hard bugs and performance regressions. Use when 
 
 # Diagnosing Bugs
 
+If Persistent State says `intent: observed_condition`, accept the report as the starting
+observation and begin investigation in its `primary_target`. Building or running a feedback loop
+is diagnostic work, not a prerequisite for believing the report. The reproduce-and-minimise gate
+below applies to `reproduction_request` and to regression-loop construction after investigation
+has identified the useful seam.
+
 A discipline for hard bugs. Skip phases only when explicitly justified.
 
 When exploring the codebase, read `CONTEXT.md` (if it exists) to get a clear mental model of the relevant modules, and check ADRs in the area you're touching.

@@ -31,6 +31,7 @@ from datetime import datetime, timedelta, timezone
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import board                                            # noqa: E402
 import policy                                           # noqa: E402
+import operations                                       # noqa: E402
 
 # How old a lifecycle observation may be and still back a claim commit. Matches the
 # horizon documented in README; a claim is the one operation where a stale read
@@ -241,6 +242,10 @@ def unclaimable_reasons(task, all_tasks=None, edges=None, lifecycles=None,
     cap = capability_of(task)
     out = []
 
+    mode_reason = operations.product_execution_reason(store.current_operating_mode())
+    if mode_reason:
+        out.append(mode_reason)
+
     if jira is None and jira_status_id is not None:
         jira = {"status_id": jira_status_id, "has_due_date": True,
                 "has_acceptance_criteria": True}
@@ -311,6 +316,9 @@ def execution_reasons(task, seat_id, interventions=None):
     """
     import store                                        # noqa: E402
     out = []
+    mode_reason = operations.product_execution_reason(store.current_operating_mode())
+    if mode_reason:
+        out.append(mode_reason)
     own = task.get("ownership")
     if not own:
         out.append("not-owned")

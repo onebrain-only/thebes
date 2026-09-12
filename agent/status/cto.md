@@ -2285,3 +2285,771 @@ applied; verification run and posted.
 * `G-009`'s carve-out vs `G-028` (whether my hands-on security-remediation data authority
   survives a ruling that says I never apply) remains open. This apply does not settle it:
   it ran on CEO authorization, not on that carve-out.
+
+## 2026-09-09 — KAN-163 ruling: `urgent` has no hourly cap row
+
+**Task.** `team-lead` routed one question: is the missing `urgent` row in
+`notification_hourly_caps` a defect, or intended design (as `should_bypass_quiet_hours` was kept
+as a dormant hook under my `KAN-150` ruling, comment 10716)? Ruling only — no implementation, no
+ticket writing, no transitions.
+
+**Verified live**, project ref `wtncuzcskpigqpmnxwws` (LINKED marker confirmed against
+`supabase projects list`; the two forbidden refs not read), via
+`supabase db dump --linked [--data-only] --schema public`:
+- `notification_hourly_caps` = 24 rows, 8 `plan_key`s × `{low,normal,high}`. No `urgent` row.
+- Live `can_send_notification_now` body carries `IF v_cap IS NULL THEN RETURN true`, `player_free`
+  fallback applied, no `SECURITY DEFINER`.
+- **Zero callers**: 5 occurrences in the live `public` dump (1 CREATE, 1 ALTER OWNER, 3 GRANTs),
+  none in `lib/`, `test/`, `supabase/functions/`.
+- **No kind emits `urgent`**: all 29 `notification_kinds` are `low|normal|high`; of 684
+  `notifications` rows, 29/643/12 and zero `urgent`.
+
+**Ruled: DEFECT, latent.** The `KAN-150` analogy fails on failure direction — that hook's dormant
+default *denies*; this one's *grants unlimited*. Fix is a **data** migration adding 8 `urgent`
+rows at `max_per_hour = 50` plus an in-transaction completeness assertion. **Rejected** flipping
+the NULL branch to deny: it would silence every user of any future capless plan, the exact failure
+`KAN-155` step 5 exists to prevent. `can_send_notification_now` unchanged.
+
+**Handover:** capability `backend`, `schema_change` (PEER, another `backend-N`), not `money_path`.
+Applied by the owning `backend-N` under `G-002` — not by me.
+
+**Outputs.** `Dabbler/dabbler-docs/DECISIONS.md` **T-067** (line 8748) · Jira comment **10840** on
+`KAN-163`.
+
+**Named, not ruled on:** all 8 live plans carry identical caps `5/10/20`, so the table
+differentiates no tier, against `KAN-155`'s stated intent of `pro` 10/25/50 and `prime`
+50/100/1000. Product question, `cpo`'s.
+
+**Effort note:** brief carried no MODEL/EFFORT line. The work needed real live verification —
+the decisive facts (no caller, no urgent-emitting kind) were not in the ticket and flipped the
+severity. A similar routed ruling should not be dispatched at low effort.
+
+## 2026-09-10 — Migration provenance ruling (T-068), read-only under CEO freeze
+
+**Task:** rule on migration provenance A–F. Decision + recovery plan only; no remediation.
+**Freeze honoured:** no db push, apply, repair, replay, rollback or DDL/DML. Reads only.
+**Project:** `wtncuzcskpigqpmnxwws` only. The two forbidden refs were not contacted.
+
+**Evidence routes.** `supabase migration list --linked` (3 matched / 25 local-only / 269
+remote-only / 28 local / 272 remote — team-lead's figures re-derived, confirmed exactly).
+`supabase db dump --linked` → 49,393 lines, 186 tables / 638 functions / 69 views.
+MCP `execute_sql` **denied** on this project; stored pooler URL password **fails auth** — dump
+was the only catalogue route, and `auth` schema is not in it.
+
+**Correction made mid-task:** the dump quotes all identifiers, so my first existence pass
+returned false zeroes. Reran every check quoted before asserting any absence.
+
+**Ruling.** Remote ledger authoritative for what ran; repo authoritative for nothing. Cause:
+MCP `apply_migration` writes its own second-precision version and never learns the repo
+filename. Proven by `data_export_requests` having no `sla_due_at` column while the live view's
+own COMMENT records why the generated column was abandoned — a live correction the repo never got.
+
+**Findings beyond the brief's hypothesis:**
+- **`settle_game` is BROKEN in production** — live body has no `::settlement_status` cast,
+  `game_settlements.status` is the enum, so `42804` on every call. KAN-138 never applied.
+- **KAN-68 fail-open is live** — `content_hits_blocklist` is SECURITY INVOKER with GRANT ALL to anon.
+- Filename stamps are decorative: git shows KAN-128's file added 3 days *before* KAN-138's
+  despite carrying the *later* stamp.
+- `kan78`/`kan93` (data migrations) **undeterminable read-only** — stated as such, not inferred.
+
+**Outputs:** `DECISIONS.md` **T-068** (Accepted); **KAN-138 comment id 10850**.
+**Not done, deliberately:** no ticket transitioned, no migration file touched, no Product code
+changed. Ticketing is `po`'s; execution the owning `backend-N`'s under `G-002`.
+**Flagged, not resolved:** no working ad-hoc SQL read path on this project (`devops`).
+
+### Same-day amendment — backend-4's KAN-155 finding weighed into F
+
+Routed in by `team-lead` mid-ruling. Verified in the file, not inherited: KAN-155 step 6's three
+assertions (`c.n <> 3` per plan, `v_caps_total <> 24`, and a values check shaped as a `NOT` over a
+low/normal/high whitelist) all trip once T-067's `urgent` row lands — the values half fails at any
+`max_per_hour`, which is sharper than reported.
+
+**Recommendation unchanged; strengthened, and urgency added.** Third distinct replay mode:
+undo (138/128) · duplicate (145, 42710) · **fail-closed on an assertion that was true when
+written** — the one a reviewer misses, because the assertion is correct code and the migration
+that breaks it was authorised by DECISIONS itself. Consequence: the replayable subset shrinks on
+its own, so rebaselining gets more expensive the longer it waits.
+
+**Corrected my own T-068 text.** `.temp/pooler-url` holds the literal `[YOUR-PASSWORD]` — never
+populated, not rotated. Step 2 is "set a password / restore MCP `execute_sql` for worker seats",
+not "recover one". Bounds feasibility of any data read incl. `kan78`/`kan93`. Named for `devops`.
+
+`backend-4`'s 8-plans/24-caps counts match T-067; corroboration only, nothing rests on them.
+Did not rule on KAN-155, KAN-168 or the freeze. **KAN-138 comment id 10851.**
+
+## 2026-09-10 — `settle_game` settlement-execution boundary (3 questions from `team-lead`)
+
+**Brief:** rule on the settlement boundary only. No SQL, no implementation, no production writes,
+no Jira. `po` capturing the work item in parallel.
+
+**Read live, read-only, production `wtncuzcskpigqpmnxwws`:** `pg_get_functiondef` on
+`settle_game(uuid,uuid,text,numeric,boolean)` + its `proacl`; `public.games` columns; FKs on
+`games`/`game_settlements`/`wallet_ledger`; `resolve_commission` body; all 13 tables carrying
+`game_id`; `payment_intents`/`venue_bookings`/`profiles` columns; row counts.
+
+**Ruling — `DECISIONS.md` T-069 (Accepted).**
+1. **Derive the organiser from `p_game_id`; remove `p_organiser_user_id` from the signature.**
+   Authoritative column is **`games.creator_user_id`**, measured: `profiles.id` in `auth.users`
+   **0/165**; `creator_user_id <> creator_profile_id` in **218/218** games; `creator_user_id` in
+   `auth.users` **218/218**; matches `profiles.user_id` **218/218**. Both destination FKs
+   (`game_settlements.organiser_user_id`, `wallet_ledger.user_id`) → `auth.users(id)`.
+   **`p_sport` ruled the same way** — it selects the fee via `resolve_commission`; derive from
+   `games.sport_id` → `sports.sport_key`.
+2. **`gross_collected` derived server-side, and there is no authoritative object today.** None of
+   the 13 `game_id` tables carries an amount; `payment_intents.booking_id` is `NOT NULL` →
+   `venue_bookings` (the `T-061` FK, permanent per `T-063`) and has no game link; `cost_cover` /
+   `joining_rule` are `free|paid` intent flags. `T-063`'s **`charges`** is the ruled object and
+   **does not exist**. Load-bearing consequence: **the fix is blocked on `charges`** — hardening
+   the gate alone leaves the amount forgeable.
+3. **`service_role` is the correct tier; `authenticated` permanently excluded.** Client path, when
+   it comes, is a *new narrower object* (edge function as `service_role`, or a definer RPC taking
+   only `p_game_id`, no amount) — **not** a definer wrapper forwarding a caller amount. **The
+   revoke is permanent posture, not containment to lift.** `proacl` verified
+   `postgres=X/postgres | service_role=X/postgres`.
+
+**Also flagged, not fixed:** `games.creator_user_id` has **no FK** — the 218/218 match is data, not
+a constraint. Deserves its own ticket.
+**Must not regress:** `KAN-128` `on conflict do nothing`; `KAN-138` `::public.settlement_status`.
+**Shipping:** `T-068` bars `db push`; `schema_change` ⇒ PEER route, backend reviewer; `G-002`
+owning `backend-N` applies. I am not a gate (routine confirmation retired Wave 5).
+**Not done, deliberately:** no SQL authored, no production write, no Jira touched, no ticket
+transitioned, no implementation authorised.
+**Inherited, not re-derived:** `team-lead`'s containment revoke and zero-caller sweep. Nothing in
+the ruling rests on them.
+**Effort feedback:** brief was correctly scoped; the decisive facts were three catalogue queries.
+The one thing the brief did not anticipate — that no trusted amount source exists at all — is what
+makes Q2 a blocker rather than a preference, and it changes the sequencing `po` must write.
+
+## 2026-09-10 — T-068 Amendment 2: the `3 / 25 / 269` tally was correct; the *reading* of it was not
+
+**Brief:** CEO-authorised, amend `T-068` **only**. Preserve historical context, do not rewrite.
+Freeze preserved and not in question. Hard limits: no migration file renamed, no `KAN-68`/`KAN-138`
+file amended, no ledger row written, no baseline/squash, no production, no Product code.
+
+**Recorded:** `DECISIONS.md` → `T-068` → **`#### Amendment 2 — 2026-09-10`**, inserted at the end of
+the `T-068` block (line 9094), immediately before `T-069`. **Purely additive — `diff` shows 0 lines
+removed, +127 inserted.** The existing "third replay failure mode" amendment (line 9038) is intact
+and untouched.
+
+**The correction, in one line:** `both:3 / local-only:25 / remote-only:269` is a **VERSION-SET
+DIFFERENCE**, not an applied-state classification. `migration list` diffs version timestamps — no
+names, no content, nothing from the catalogue. `backend-2` is right that the tally was mechanically
+correct (272−3=269, 28−3=25); the error was entirely in reading `local-only: 25` as "25 unapplied".
+**21 of those 25 were materially live under a different recorded timestamp.**
+
+**Rebaseline (backend-2, production mutations 0), 29 repo migrations:** 3 exact-version matches ·
+22 live under a different remote version/name · 2 DEFINITELY_NOT_LIVE · 2
+PARTIALLY_OR_DIFFERENTLY_LIVE · **0 UNDETERMINED**. Partitions agree: VERIFIED_LIVE 25 = 3+22, and
+the other 4 are exactly the four with no ledger entry.
+
+**Verified myself, not inherited:** `ls -1 *.sql | wc -l` = **29** (not 28) — `kan130_kan131` file
+mtime **2026-09-10 01:13:38**, added after the original tally, so 29−3 = **26** pending-looking
+today. Recorded explicitly because without it the amendment will not reconcile against a fresh run
+of the command. Also verified in-file: KAN-68's eleven unguarded `revoke all` (lines 77–113, raise
+nothing when already absent) · KAN-93's line-69 guard `<>36/9/3/6` — that census **is** live, so the
+guard PASSES and the backfill re-runs (it guards drift, not re-application) · KAN-130/131 line 196
+`drop column user_id restrict` on live wallets · KAN-138 `20260907130000` sorts **before** KAN-128
+`20260909090000`, so replay silently restores the uncast body over today's hotfix.
+
+**One brief claim corrected on the way through, and worth keeping.** "KAN-138 contains zero
+grant/revoke" is true of *statements* but `grep -ciE '\b(grant|revoke)\b'` on that file returns
+**4** — lines 120/127/134/293, **all in comments**. Recorded with the trap attached so the next
+reader does not "disprove" it with a word count. `T-068`'s quoted-identifier lesson, inverted.
+Live is currently **more restrictive than the file**.
+
+**Also cited:** both of today's hotfixes (`settle_game` md5 `d3c6238e…`, `content_hits_blocklist`
+md5 `a3203f50…`) are live with **no ledger row at all** — not a mismatched version, no entry.
+
+**Conclusion carried forward unchanged:** GENERAL MIGRATION FREEZE ACTIVE · no `db push` · no
+blanket repair · no historical replay · no ledger mutation without a separately approved,
+evidence-backed reconciliation plan. The amendment states it is not itself that plan.
+
+**Not done, deliberately:** no file renamed (rename-to-recorded-remote-version recorded **as a
+PROPOSAL, explicitly not authorised**) · `KAN-68`/`KAN-138` migration files untouched · no ledger
+write · no baseline/squash · no production · no Jira · nothing in the corpus but `T-068`.
+**Effort feedback:** correctly scoped. The one item needing independent work was #4 — the 28→29
+denominator — which is what makes the amendment reproducible; the rest was verification of
+`backend-2`'s findings against the repo files.
+
+## 2026-09-10 — three deferred rulings: KAN-174, KAN-173, KAN-131/KAN-140
+
+**Task:** rule on three technical questions deferred to `cto`, each blocking a chain. Routed by
+`team-lead`. Read-only against `wtncuzcskpigqpmnxwws`; **production mutations: 0**.
+
+**Output — three `DECISIONS.md` entries, plus two doc amendments I own:**
+
+- **`T-070`** — `rpc_potential_vibes` root fix (`KAN-174`). Fold the 7-arg into the 6-arg and drop
+  it; drop `rpc_potential_vibes_debug`; keep `SECURITY DEFINER` and the `anon` grant; clamp
+  `p_limit`; amend `SCHEMA.md:306-307` rather than supersede `T-027`.
+- **`T-071`** — `_wallet_recalc` (`KAN-173`). Separate forward-only fix **now**; do not ride
+  `KAN-130`/`131`.
+- **`T-072`** — `KAN-131` lands alone. **Supersedes `T-052`'s "one migration, not two"** on its
+  premise; `T-052`'s substance stands.
+- `Dabbler/dabbler-code/docs/SCHEMA.md` — added the condition under which a function-backed public
+  view is safe, and recorded that `anon-allowlist-check.yml` checks views and cannot see a function
+  two hops down.
+- `Dabbler/dabbler-code/docs/CONVENTIONS.md` §6d — new standing rule: a `SECURITY DEFINER` function
+  must never take caller identity as a parameter.
+
+**Findings that changed a ruling, each measured today:**
+
+1. **`backend-8`'s "no callers of the 7-arg of any kind" is wrong.** The 6-arg wrapper is its only
+   caller. Proven by probe: the 6-arg returns `score 1.0` / `reasons.source = 'stub'`, which is the
+   7-arg's literal body. **Dropping the 7-arg would have broken the 6-arg and an allowlisted view.**
+   A catalogue sweep cannot see overload dispatch.
+2. **Both halves of the wallet write path are dead, each failing on the column the other supplies.**
+   `_wallet_recalc` omits `owner_id` (NOT NULL) → 23502; `fn_get_wallet` omits `user_id` (NOT NULL)
+   → 23502. No `BEFORE INSERT` trigger on `wallets`. The table is stranded between two designs.
+3. **The four wallet paths share one trigger.** `settle_game`, `request_payout`,
+   `admin_cancel_payout`, `admin_wallet_adjust` all insert into `wallet_ledger`; none calls
+   `_wallet_recalc` directly. `trg_wallet_ledger_recalc` is the sole route. **One function body
+   closes four tickets' worth of symptom.**
+4. **`T-052`'s premises have failed.** `trgfn_payment_to_ledger` raises `42P01` on missing
+   `public.bookings` before reaching any wallet code; all five money tables hold 0 rows; Section B
+   was never written. The split `T-052` refused is now the only safe path.
+5. **The whole vibes family has no client caller.** `grep -rn "potential_vibes" lib/
+   supabase/functions/` → 0, with `rpc_username_availability` and `v_game_card` as controls in the
+   same command. Named for `cpo`; does not block `KAN-174`.
+
+**Governance:** all three rulings are **definition** changes, not data changes — `019`/`G-009` not
+engaged, ordinary `CONTRACT.md` §4.1 path (owning `backend-N` authors and applies under `G-002`,
+`backend-N` PEER). **No CEO authorization required for any of the three fixes.** Two genuine CEO
+items raised separately (quarantining `20260910090000_…`; `T-068` step 5's repo-vs-`apply_migration`
+policy choice). `KAN-155` untouched and still with the CEO.
+
+**Flagged to `po`:** `KAN-130` is **Done in Jira and not applied** — a `G-029` lifecycle defect, and
+the reason the roster assumed the sentinel had landed.
+
+**Blocked/unverified:** Atlassian MCP returned "We are having trouble completing this action" on
+every call; `KAN-140`'s current AC text is **not documented** to me and I did not infer it.
+
+**Effort note:** brief carried no MODEL/EFFORT line. This was correctly a high-effort dispatch —
+two of the three rulings inverted on facts that only live probing surfaced, and one overturned a
+prior `cto` decision. A low-effort pass would have accepted the brief's framing and shipped a
+`DROP` that broke an allowlisted view.
+
+## 2026-09-10 (2) — adjudicating the `wallets` evidence conflict; two more entries
+
+**Task:** `team-lead` routed a conflict between `backend-1`/`backend-2` (wallets cleanly unapplied)
+and `backend-4` (partially applied outside the ledger), with instructions to settle from live state
+and not from either account. Plus two side items. Read-only; **production mutations: 0**.
+
+**Verdict: `wallets` is CLEANLY UNAPPLIED.** `backend-1`/`backend-2` correct. `backend-4`'s
+measurements all correct, conclusion wrong.
+
+**Decisive evidence:** `20260829080500_baseline_schema.sql:26677-26688` — one of `T-068`'s three
+**ledger-matched** migrations, so confirmed-applied — declares the live shape column for column,
+same nullability, same ordinal order, plus `wallets_pkey`, all four indexes including
+`wallets_unique_idx (owner_type, owner_id, currency)`, the FK, RLS and both policies. **The
+baseline is a complete explanation of live state; there is no residue to attribute.** Section A
+tabulated statement by statement: **zero of nine ran.**
+
+**Why `backend-4` went wrong (both worth keeping):** (1) ordinal position carries no date
+information — `pg_dump` emits in `attnum` order, so a dump-derived baseline preserves pre-baseline
+column order; (2) it read the *absence* of a migration's target state as *progress toward* it. That
+is `T-068` Amendment 2's trap **running backwards** and now has equal billing.
+
+**Output:**
+- **`T-073`** — the adjudication, the inverse-trap generalisation, and **a correction to my own
+  `T-071`**.
+- **`T-074`** — `can_manage_venue` / `venue_members`, ruled consistently with `T-070` D4.
+- `T-068` Amendment 3 strengthened with the three-seat corroboration; **step 2's precondition is
+  now recorded SATISFIED**.
+- `CONVENTIONS.md` **§12h** extended (RLS form) and new **§12j**. Restored §12i's original
+  numbering after briefly renumbering it — §9:561 cites §12i and status logs cite it repeatedly.
+
+**I was wrong about something and have withdrawn it.** `T-071` claimed Section A does not restate
+`_wallet_recalc`. **It does** — A.8, correctly, owner-keyed with the right conflict arbiter. I
+grepped a keyword list instead of reading the section: the exact mistake `T-068` warns about, made
+by its author. Withdrawn in `T-073`. The rest of `T-071` stands, and the interim fix and A.8
+compose cleanly.
+
+**`can_manage_venue`:** defect confirmed by direct call — both it and `can_manage_venue_members`
+raise `42P01` on missing `public.organiser_profiles` (live table is `organiser`). **But
+`backend-4`'s reported symptom is wrong:** `venue_members` returns **0 rows, no error** to `anon`
+and `authenticated`, because RLS predicates evaluate per row and the table holds 0 rows. It is
+**inert and sealed shut** — the first INSERT hits `WITH CHECK` and raises, so it can never acquire
+the row that would make reads raise. **A probe that stopped at the table would have filed a real
+defect as a false positive** (§12h).
+
+**Ruled consistently with `T-070` D4, opposite remedy, and the discriminator is now written down:**
+when a missing relation is the only thing holding a defect shut — **fail-OPEN → drop the object**
+(`rpc_potential_vibes_debug`); **fail-CLOSED → fix the reference** (`can_manage_venue`). Binding
+condition on `po`'s ticket: the AC must be at the **predicate**, not the table — "`venue_members`
+returns rows" passes in both the broken and fixed states.
+
+**Not swept, and not asserted absent:** other `SECURITY DEFINER` bodies carrying stale relation
+references. Worth its own ticket.
+
+**Still blocked:** Atlassian MCP unavailable all session; `KAN-140` AC text remains **not
+documented** to me.
+
+## 2026-09-10 (3) — `T-072` amendment: Section A.9 ordering hazard; resend of Rulings 2/3
+
+`team-lead` reported my first report arrived truncated mid-Ruling 2 and asked for T-071, T-072,
+T-068 Am.3, the wallets verdict and the CEO batch. Resent. **T-070 not restated at their request.**
+
+**New ruling this round — `T-072` Amendment.** Verified `backend-4`'s `delete_my_account` finding:
+`games.creator_profile_id → profiles(id) ON DELETE RESTRICT` + `profiles.user_id → auth.users(id)
+ON DELETE CASCADE`, and live `delete_my_account` never references `public.games` → `23503` on the
+final `delete from auth.users`. **`select count(distinct creator_profile_id) from public.games`
+= 26** — figure exact.
+
+**It bears on Ruling 3, which is why I ruled rather than noted it.** Section A.9's rewritten
+`delete_my_account` **also has no `games` statement** — it was authored to replace the cascade A.6
+removes, not to audit the function. A.9 is a whole-body `CREATE OR REPLACE`, so **if the `games`
+fix lands first and Section A applies after, A.9 silently reverts it.** Fresh instance of the
+`KAN-138`-before-`KAN-128` trap (`T-044` / §6g / `T-068` §7). Ordering ruling recorded: the two
+tickets must not be authored independently; preferred remedy is to fold the `games` handling into
+A.9. `T-071`'s fix is **not** exposed — A.8 supersedes it by design.
+
+**Confirmed for `team-lead`:** their reading of why containment holds is correct — the 6-arg is
+`SECURITY DEFINER` owned by `postgres`, so its internal call to the 7-arg is checked against the
+owner. Evidence is my `authenticated` probe returning `score = 1.0` / `reasons.source = 'stub'`
+**after** the revoke. Containment can stand until the fold lands.
+
+**Corrected them a second time:** they restated "`venue_members` errors for every client" as fact.
+It does not — 0 rows, no error, to both client roles, because the table holds 0 rows and RLS
+predicates evaluate per row (`T-074`, §12h). The functions do raise when called directly.
+
+## 2026-09-10 (4) — `T-075`: `role_grants` routing + confirming KAN-171 / KAN-170; CEO batch closed
+
+`team-lead` asked for four items only and for the CEO list, plus a verdict on `role_grants` and
+confirmation/overturn of two peers' conclusions. Read-only; **production mutations: 0**.
+
+**`role_grants` confirmed, reproduced with `backend-7`'s control.** `role_grants_any_read` is
+`SELECT TO PUBLIC USING (true)`; `anon` reads **1 of 1** rows; control `posts` = 503 owner / **0
+anon** in the same session, so the non-zero is real RLS behaviour. **Also found: `roles` is
+`anon`-readable (3 rows)** — not in the original report, fix both together. `is_admin` discloses
+strictly less than the table; hardening it fixes nothing.
+
+**Ruled NOT CEO-reserved.** A policy is a definition, not data — `019` not engaged, ordinary
+`backend-N` under `G-002` + backend PEER. No client depends on it (`grep` → 0, `is_admin` found at
+`supabase_config.dart:166` as the control).
+
+**Confirmed both peers, overturned neither:** `KAN-171` (empty table = structure) and `KAN-170`
+(`ADD CONSTRAINT` validates without modifying). Added one availability caveat on `KAN-170` —
+a non-`NOT VALID` FK takes `SHARE ROW EXCLUSIVE` and full-scans; `NOT VALID` + `VALIDATE
+CONSTRAINT` if the lock bites. Does not change the authority verdict.
+
+**CEO batch, final — exactly two items**, both repo/policy, **zero production objects**:
+(1) delete/quarantine `20260910090000_kan130_kan131_…sql`; (2) decide `T-068` step 5
+(repo-as-source vs `apply_migration`-as-sole-channel). Everything else across `T-070`–`T-075` is a
+definition change on the ordinary `CONTRACT.md` §4.1 path. `KAN-155` unchanged, still CEO.
+
+## 2026-09-10 (5) — `T-076`: withdrawing my own CEO Item 1
+
+`team-lead`/`po` objected that CEO Item 1 (delete the gated file) was framed incompletely. **They
+are right and I withdrew it.** Deleting the file destroys Section A — the only authored fix for the
+`wallets` birth defect — moots `KAN-172` and orphans `KAN-176`. And it buys nothing: the only
+mechanism that executes Section A is `db push`, which `T-068` already bars outright. **Keeping the
+file needs no authorization; deleting it is the act that does.**
+
+**Ruled (c): keep the file unchanged; re-author Section A forward-only when the redesign is
+scheduled, deleting the old file in that same change as hygiene.** `po` must **reopen `KAN-130`**
+(`G-029`) — it reads Done while unapplied and is the only ticket owning the redesign.
+
+**Two peer facts verified, both corrected:**
+- `fn_get_wallet` — `backend-1` right that `anon`/`authenticated` hold EXECUTE, **wrong on the
+  consequence**: it is `SECURITY INVOKER`, so its INSERT meets `wallets_block_dml` (USING false).
+  A naive fix does **not** open an anon wallet-minting RPC; making it **definer** would. Binding:
+  don't make it definer, and revoke EXECUTE in the same change.
+- The venue family is **six** functions, not five — `backend-3`'s `can_*` sweep missed
+  `trgfn_organiser_profile_persona_guard`. All five `can_*` are definer with anon+auth EXECUTE.
+  `venues` (389 rows) is contained **only by a missing UPDATE grant**, not by row count — the same
+  one-GRANT-away posture as `T-070` D4. `T-074`'s remedy extends unchanged; fix as one ticket.
+
+**Batch result: nothing in `T-070`–`T-076` is CEO-reserved.** Item 1 withdrawn; only `KAN-146` and
+`T-068` step 5 remain, both predating these rulings.
+
+---
+
+## 2026-09-10 — `KAN-176` deletion disposition ruled (`T-077`)
+
+**Task:** `team-lead` — rule the per-table-class disposition blocking `KAN-176`'s AC1, plus the AC
+shape and the landing site. Rule only; no SQL, no implementation.
+**Output:** `DECISIONS.md` `T-077` (Accepted). Read-only against `wtncuzcskpigqpmnxwws`;
+**production mutations 0.** No DDL, no DML, no `apply_migration`, no `db push`. `T-068` freeze
+respected.
+
+**The brief's framing was right on the mechanism and wrong on the scope.** Verified independently
+rather than accepted: the live function handles **14/14** auth-keyed blockers and **0/16**
+profile-keyed ones — `team-lead` exactly right. But the blast radius is **45 users / 48 profiles**
+(of 162 profile-holding users, 259 auth users), not 26; 26 is the `games`-only slice.
+
+**The finding that reframed the ticket: 8 of the 16 were never undecided.** `comments`,
+`game_rating_events`, `post_hides`, `posts`, `squad_join_requests`, `squads`,
+`user_reputation_events`, `venue_rating_events` each carry a **`NOT NULL` auth-keyed `ON DELETE
+CASCADE`** beside the blocking profile-keyed FK. The schema already ruled those rows: delete. It also
+kills "anonymise in place" for them — nulling the profile column changes nothing when the auth
+cascade fires anyway.
+
+**Ruled:** the disposition line is **participation**, not shared-versus-private. A post is one
+person's speech (delete); a scheduled game with a roster is a shared appointment (do not).
+12 tables → `ON DELETE CASCADE`; 4 (`games`, `meetups`, `squads`, `challenges`) → reassign, deferred.
+
+**Mechanism ruled against the ticket's assumption:** change the FK action, do **not** add 12 `DELETE`
+statements. The cascade `profiles.user_id` already has from `auth.users` makes `po`'s multi-profile
+trap **structurally impossible**; a statement-based fix has to remember to loop.
+
+**`po`'s trap 1 is LIVE, not latent** — all three duplicate-profile pairs are one active + one
+inactive, and **all three inactive siblings hold blocking rows** (one holds more comments and
+reactions than its active sibling). Measured, not inferred.
+
+**AC shape ruled both ways:** migration enumerates (disposition is judgment, not derivable);
+acceptance criterion is dynamic over `pg_constraint`. A 16-name list was stale before writing — it
+hides that there are **~20 blocking constraints**, that `squads` blocks on two columns, that `posts`
+blocks on a plain *and* a composite FK, and that three tables carry **duplicate** constraints.
+
+**Split so Part A ships now:** Part A (12 tables, pure DDL) unblocks **21 of 45** users, needs no
+sentinel and no product call. Part B is blocked on `cpo`, not on a permission — **`fn_platform_owner_id`
+does not exist in production** (`pg_proc` zero rows); `T-052`'s sentinel is authored only inside the
+gated file and never applied.
+
+**Landing:** standalone forward-only migration; `AC6` amended off `A.9` per `T-076`. General rule
+earned: **whole-body `create or replace` from a snapshot is banned** for functions under concurrent
+change — that shape, not the missing `games` statement, is `A.9`'s actual defect.
+
+**CEO-reserved: NO for Part A.** One real reservation inside Part B only — creating a sentinel
+identity row is a production `INSERT`, barred by `019` and **not** covered by `G-009` (security
+remediation only). Not reached unless `cpo` rules "transfer to platform identity". Same gap as
+`KAN-155`; stays with the CEO.
+
+**Flagged to `KAN-170`:** `games.creator_user_id` is `NOT NULL` with **no FK in production** — that
+migration is unapplied (consistent with `T-068`). Its `ON DELETE` action must be chosen against
+`T-077` or it would pre-empt Part B by accident.
+
+**Effort note:** dispatched as a single ruling; it was correctly a high-effort one — the brief's
+16-table framing did not survive contact with `pg_constraint`, and the split that makes the ticket
+shippable was only visible from the live topology.
+
+## 2026-09-11 — `T-077` Am.1–3 + `T-078` (grant containment record)
+
+**Read-only throughout; production mutations 0.** Supabase MCP disconnected since Am.1 — all
+database claims since are repo body-and-DDL evidence, which `T-068` makes authoritative for nothing
+about what ran. Dart claims are the exception: the repo **is** authoritative for client code.
+
+**Am.1** — adopted `cpo`'s `P-044` sever-and-preserve over sentinel-reassignment; `SET NULL` reaches
+it with DDL only, so **nothing CEO-reserved remains**. Found the real trap: `can_view_squad`
+(`baseline:4278`) uses `p_owner IS NOT DISTINCT FROM p_viewer` — **null-matching**, so a nulled owner
+plus anon viewer grants owner-equivalent read. A hole, not a hidden row.
+
+**Am.2** — upheld `backend-6`'s trigger defect, corrected its mechanism: `trg_games_set_host` is
+column-scoped (`UPDATE OF creator_profile_id`), so the overwrite path can't fire; the real failure is
+`P0001` from `trgfn_games_set_host_user`. New finding: `trg_squads_owner_defaults` is unscoped and
+`COALESCE`s the null straight back — **silent** non-erasure. **Part A cleared**: zero `BEFORE DELETE`
+triggers on any of the 16 tables (only Supabase's `storage.*`), so `KAN-186` is unaffected.
+
+**Am.3** — `backend-8` right that the columns are `NOT NULL`. Approved `DROP NOT NULL` under a
+**strict order: authz predicates → triggers → DROP NOT NULL → FK action.** Measured the client:
+`games` null-safe, **`squads` crashes** (`squad.dart:14-15`, non-nullable `required` Freezed fields).
+**Formally superseded Decision 1's "REASSIGN"** — I left it standing after Am.1 withdrew it, which is
+what made the rulings read as contradictory. My error, now fixed in the document.
+
+**`T-078`** — recorded the seven production `EXECUTE` revokes (five previously unrecorded anywhere) in
+`docs/SCHEMA.md` §2g.1 with holders, reasons, and *pending live re-read* status. Ruled the unclosed
+half a **ticket**: `T-045` settled the `postgres` default-privilege rule for **tables** only, so the
+**function** default in `public` is open — if it grants `anon=X`, all seven revokes are one
+`DROP`+`CREATE` from being undone. Ticket's **first** AC is the confirming query, not the fix; I am
+not asserting the hole exists.
+
+**Pattern worth carrying:** three of four amendments came from a worker finding a defect in my ruling.
+That is the PEER route working as designed, and each was correct. The recurring root cause is mine —
+ruling a **mechanism** (`SET NULL`, `CASCADE`) without sweeping what else fires on the operation that
+mechanism performs. Hence Am.2's binding rule and Am.3's ordering rule; both are now general.
+
+**Owed on reconnect:** live `games` policy set, `can_view_with_scope`, `is_owner`,
+`pg_trigger.tgattr` scopes, `attnotnull` values, `unaccent`, and live `has_function_privilege` for all
+seven revokes plus the `content_hits_blocklist` bundle.
+
+## 2026-09-11 (cont.) — `T-078`, `T-079`, `T-080`; and a Jira round-trip that ate my own text
+
+**`T-079` — `KAN-178`'s anti-recursion invariant.** Ruled **behavioural, run as a non-owner role**.
+`team-lead`'s instinct was right and I could give it a concrete payoff: the ticket names **two**
+conditions and there are **three** — owner-exemption is a property of the *table's* owner while
+`SECURITY DEFINER` runs as the *function's* owner, so two catalogue reads pass while the property is
+broken. Also corrected the blast radius: `is_admin` is called by policies on six other tables, so a
+flip takes down authorization for **seven**, `financial_ledger` and `venue_payouts` included — only
+`role_grants` forms the cycle, but every caller pays. Instance count is **one**; said so explicitly so
+it is not reported as six latent defects.
+
+**`T-078`** — recorded the seven `EXECUTE` revokes in `SCHEMA.md` §2g.1 (five existed only in a
+transcript). Ruled the unclosed half a ticket: `T-045` settled the default-privilege rule for
+**tables**; the **function** default is open, and its first AC is the confirming query, not the fix.
+
+**`T-080`** — `T-001`–`T-011` carry an unevidenced review step (`KAN-64` closed straight to Done).
+All eleven still ACTIVE. **Ruled the remedy is re-derivation by a worker, not review by me** — a
+review of my own assessment by me is the same non-evidence the finding is about. Triaged: four are
+standing conventions needing nothing, `T-002` is closed by exercise (re-derived under `KAN-175` — the
+model), three risk acceptances re-examined at release-readiness, `T-011` marked **presumptively
+stale**. No audit epic; folded into work already touching each area.
+
+**A correction to my own T-077 that matters.** `po` found a Jira round-trip had eaten a clause in
+`KAN-186` and reconstructed it plausibly. It was reconstructing the wrong sentence — the tell was that
+the surviving list had **seven** tables where the dual-keyed class has eight. Tracing it found a real
+arithmetic error in **my** `T-077` Decision 1: *"the 8 dual-keyed, plus [five]"* enumerates 13 and
+double-listed `squads` in both bullets. Count of 12 always right, composition sentence wrong. Fixed
+with a dated correction, and Decision 1's superseded "reassign" marked inline so it cannot read as
+live again. **`team-lead` was right to refuse a plausible reconstruction** — it removes the only
+signal that something was lost.
+
+**Three arrivals at one rule this week**, now written into `T-080`: `T-077` Am.3 *end state not
+mechanism*, `T-079` *behavioural not catalogue*, `T-080` *re-derivable not attestable*. Prefer
+criteria that can be re-measured over steps that can only be attested.
+
+**Owed on reconnect** (unchanged plus): `is_admin.prosecdef` and its owner, `role_grants`'s owner and
+`relforcerowsecurity`, and **the live policy on `role_grants` — absent from the baseline's 353, so it
+postdates the dump and I have not seen its text.** If it differs from `KAN-178`'s description, `T-079`
+needs re-checking against the real predicate.
+
+## 2026-09-11 (burn-down) — `KAN-195` AC4 only
+
+**Mode acknowledged: backlog burn-down.** No `T-` entry raised for this, no `CONVENTIONS.md` audit
+performed while in the file, nothing else started.
+
+**AC4 complete.** Added **`CONVENTIONS.md` §12k — "Verifying a secret asserts its properties — never
+echo its value"** (`docs/CONVENTIONS.md:911-948`). Placed in §12 (*traps that make a correct
+measurement wrong*), which is the right home: this is a verification-technique trap, not a security
+policy, and it sits beside §12e on quoting.
+
+Worded as technique, per brief: the rule states plainly that the check which prompted it was careful,
+correct work that caught a real gap, and that quoting the file wholesale is the only thing that turned
+it into a disclosure. Carries a substitution table (assert presence/fingerprint/hash instead of
+contents) and two runnable commands. Explicitly covers the two cases people reach for the value to
+demonstrate — that a credential *loads*, and that it *changed*.
+
+**No credential value, and no characterisation of the relationship between the two values, appears in
+`CONVENTIONS.md`.** The rule forbids the latter in terms without illustrating it.
+
+**Untouched:** AC1 (CEO-only, needs Play Console), AC2 (done by `po`), the `T-003`/`T-081` analysis.
+
+**Owed-on-reconnect list is unchanged and unavailable** — Supabase token expired; every catalogue read
+on it (`T-077` Am.1-3, `T-078`, `T-079`) is still outstanding and blocked, not forgotten.
+
+## 2026-09-11 (burn-down) — `CONVENTIONS.md` §12a correction
+
+**Correction to an existing rule, not new governance.** `T-070` already ruled the remedy (fold the
+7-arg into the 6-arg, delete the identity parameter); §12a was **out of step with a decision that
+already existed**, not ahead of one. No new `T-` entry; no audit of §12's other subsections.
+
+**Amended §12a in place with a dated correction note**, `docs/CONVENTIONS.md`. The original text is
+kept intact and still correct — it reasoned only about the **6-arg wrapper**, which made its
+"do not tidy" framing imply present containment. `KAN-162` falsified that implication: 147 rows /
+137 users already reachable via the separately-granted **bare 7-arg overload**, where `p_me` is
+caller-supplied so the NULL never arises. **The route is the grant, not the predicate.**
+
+Added the generalisation, which is why it belongs in §12a and not only on the ticket: **a
+NULL-comparison predicate and the `EXECUTE` grant are independent exposure routes, and neutralising
+one says nothing about the other.** An overloaded object is contained only when every reachable entry
+point is closed; enumerate overloads and grants from the catalogue before calling anything contained.
+Same shape as `has_function_privilege` over reading one visible predicate. Both halves now stated so a
+reader cannot take the first and conclude safety — which is exactly what the section previously
+allowed. Found by `backend-3`.
+
+**Discovery ledger read, no action taken** — its `v_circle_feed_visible` lead (`SCHEMA.md:305`) is
+correctly filed as unverified and sits behind the same expired Supabase token as my owed-on-reconnect
+list. Not investigating it during burn-down.
+
+## 2026-09-11 (burn-down) — `T-079` Amendments 1 and 2
+
+**My error, verified and corrected.** `T-079`'s caveat claimed the live `role_grants` policy was
+"absent from the baseline's 353 — it post-dates the dump". **False.** Both policies are in the
+baseline and always were: `role_grants_any_read` (`:33303`, `FOR SELECT USING (true)`) and
+`role_grants_no_rw` (`:33307`, no `FOR` clause, so `FOR ALL`). Found by `backend-4`, reproduced by
+`team-lead`, verified by me before amending.
+
+**How I got it wrong is the part worth keeping.** My only sweep near this matched
+`CREATE POLICY … ON "public"."<t>" … is_admin`. `role_grants_any_read` is `USING (true)` and contains
+no `is_admin`, so **the search could not have returned it** — and I read its silence as absence. That
+is the exact rule I am bound by (*confirm your search could have found the thing*), and §12a's lesson
+arriving at my own expense on the same night I wrote it.
+
+**Three consequences, and the ruling got stronger:** `relforcerowsecurity` is now repo-confirmed false
+(`ENABLE`, no `FORCE`, `:33300`) — a second owed item discharged without the token. The existing
+policy does **not** call `is_admin`, so `T-079`'s cycle is **prospective** — its subject is the
+replacement policy `KAN-178` will add, not anything live. And I dropped the **353** denominator
+wherever I used it: it is the baseline file's raw count, not the repo policy population. `team-lead`
+and `backend-4` agree at **322 de-duplicated**; raw counts differ (326 vs 364) and neither regex is
+reconciled. 322 is what to build on.
+
+**Amendment 2 — ruled `KAN-178`'s shape** (design call on an open Ready ticket; no new ticket, no new
+`T-` entry): **replace in one migration, never drop `role_grants_any_read` without its successor in
+the same change** — dropping alone leaves SELECT `USING(false)`, and since definer functions owned by
+`postgres` bypass RLS, `is_admin()` keeps working and the break surfaces as a *partial* failure across
+the seven `T-079` tables. Worse than an outage. Also: scope `role_grants_no_rw` to writes or justify
+`FOR ALL` in the migration — a policy named `no_rw` that silently participates in SELECT, harmless
+only because a sibling grants reads, is the §12a shape, and would fail closed permanently if ever made
+RESTRICTIVE. Extended the `T-079` behavioural AC: as **non-admin `authenticated`**, SELECT returns
+**zero rows — not an error, not every row**, which catches recursion, fail-closed and fail-open in one
+test.
+
+**Two of my own claims corrected by workers tonight** (`T-077` Decision 1's arithmetic, this caveat),
+both by people declining to accept a plausible artifact. That is `T-080`'s rule working on me, which
+is what it was written for.
+
+## 2026-09-11 (burn-down) — `KAN-188` shape ruled: **(a) relocate**; no `T-` entry needed
+
+**Ruled (a)**, with `backend-2`'s analysis confirmed and extended by live catalogue reads (Supabase
+reconnected this pass).
+
+**No new governance.** `CONVENTIONS.md` **§6d already rules this** — its *"Option 2 is unsafe when a
+`security_invoker` view calls the function"* is precisely `backend-2`'s finding arriving through **RLS
+policies** instead of views; both evaluate **as the caller**. What §6d lacked was a third option, since
+neither of its two works here (option 1 is impossible — these functions *are* the authorization).
+**Added §6d option 3 — relocate out of the exposed schema** — as an extension to an existing rule, the
+same basis as the §12a correction, not a burn-down exception. No `T-` entry, no ticket.
+
+**Three live findings that de-risk (a):**
+- **No body-to-body sibling calls** among the six (`prosrc` checked against all sibling names, all
+  false). The silent-break hazard I was most concerned about **does not exist**.
+- **`util` already exists and already denies `USAGE` to `anon` and `authenticated`.** No new schema to
+  create or name. All five carry `search_path=public, row_security=off`, which travels with the
+  function, so unqualified `public` references keep resolving after the move.
+- **`is_venue_admin` has TWO overloads**, both INVOKER, both anon+auth executable. A by-name
+  enumeration covers one — the §12a trap again. It stays in `public` (INVOKER, so not an oracle), but
+  `KAN-188` must say so deliberately rather than by omission.
+
+**The counterintuitive core, written into §6d because it is what gets reversed:** a stored policy qual
+holds the **OID**. Schema `USAGE` is checked at *name resolution* (already done for a policy) — so
+removing it kills the RPC path only. `EXECUTE` is checked at *run time by OID* — so the policies still
+need it. **Revoke USAGE; KEEP EXECUTE.** That is the opposite of what option 2 trains, and reversing it
+reproduces the measured `42501`.
+
+**Rejected (c)** — narrowing the seven policies to `TO authenticated` is the most architecturally
+honest answer and the most dangerous to run now: it is policy surgery on surfaces other tickets hold,
+concurrent with `KAN-178` live in the same area. Revisit after burn-down. **(b)** is a fallback only if
+the one unverified condition fails.
+
+**One condition I could NOT verify and it is the load-bearing one:** whether `util` is absent from
+PostgREST's exposed-schema config. That is API configuration, not catalogue, and it is the actual
+containment boundary. `KAN-188` must confirm it before applying; if `util` is exposed, (a) fails and
+this goes back to `po` as (b).
+
+**Supabase reconnected.** The `T-077`/`T-078`/`T-079` owed-on-reconnect list is now executable and is
+NOT being worked during burn-down — flagged to `team-lead` rather than actioned unilaterally.
+
+## 2026-09-11 (burn-down) — §6d option 3 corrected: the plpgsql exception
+
+**`KAN-188` applied and verified by `backend-2`** (`20260911080000`): `ALTER … SET SCHEMA`, EXECUTE
+retained, `util` USAGE withheld, both `is_venue_admin` overloads asserted at 2. It also closed my one
+unverified condition the only way it could be closed — **not** from the catalogue (no
+`pgrst.db_schemas` role setting exists, so `pg_db_role_setting` genuinely cannot answer it) but from
+the **live API**: `Accept-Profile: util` → `PGRST106`, with two controls proving the probe
+discriminates. And it measured the oracle answering **`200 false` over HTTP as `anon`** before fixing
+it — armed *and firing*, not merely armed.
+
+**My rule needed a correction and the defect was the SCOPING of the check I mandated.** I had
+§6d option 3 assert the OID-survives-relocation property without bounding where it holds. It holds for
+stored policy quals and for `prosqlbody IS NOT NULL` bodies. It does **NOT** hold for **plpgsql**, nor
+for string-bodied `LANGUAGE sql` — those are stored as text and re-parsed **by name at run time**, so
+`pg_depend` records no edge. `rpc_my_venue_permissions` raised `42883` until its qualifiers moved.
+
+**This is the dangerous half, because the reasoning that makes relocation safe is exactly what fails.**
+A reader who has internalised *"the OID is held"* will not expect the exception, and it lands on a
+caller that was never part of the change. **My sibling sweep asked whether the five called each other
+— which proved nothing about a seventh function calling them.** Rewrote the condition to sweep
+**callers across the whole database**, with a runnable `prosqlbody IS NULL` query, and to update every
+hit in the same migration, authored from live per §6g.
+
+**T-055 note: NOT written — already covered.** §12h ("A probe can fail to reach the code under test
+without raising — the silent form of the `T-055` trap") is precisely the returns-early form, complete
+with a `RETURN 1;` early-return worked example and the general statement that *an assertion something
+is unchanged proves nothing unless you separately established it was reached*. `backend-2`'s
+no-JWT early return is a new **occurrence**, not a new lesson. Added only a cross-reference from §6d,
+since a relocation probe is an easy place to collect a worthless green. No duplication (§8).
+
+**Pattern, third time tonight:** each correction to my rulings came from a worker applying them and
+hitting the edge I had not bounded — `T-077` (triggers, then `NOT NULL`), `T-079` (an absence my search
+could not have found), now §6d (scope of a sweep). All three were my rule being *right and
+under-bounded*, not wrong. Worth stating in a future roadmap note: rulings need their **boundary
+conditions** enumerated as deliberately as their content.
+
+## 2026-09-11 (burn-down) — `T-079` Amendment 3: the two invoker helpers
+
+**`KAN-178` applied** (`20260911080427`). Amendment 2's shape held. `backend-5` took the stronger
+branch on the `FOR ALL` sibling — **scoped `role_grants_no_rw` to writes** rather than documenting it,
+*"documenting the trap still leaves the trap."* **That is better than the option I wrote**, and it is
+§12a's own reasoning turned back on me.
+
+**Verified the helper population rather than accepting two as given** (the §6d lesson): swept every
+function in `public` and `util` whose body references `role_grants` — **exactly two are
+`prosecdef=false`**, `is_moderator(uuid)` and `is_venue_admin(uuid)`, both `LANGUAGE sql`, both
+anon+auth executable. All other readers are definer. **The finding is complete, not a sample.**
+`role_grants` = **1 row, role `admin`** — zero `venue_admin`, zero `moderator`, so latent confirmed.
+
+**Ruled: both go `SECURITY DEFINER` *and* relocate to `util`, in one transaction.** The second half is
+the easy miss — **definer alone would CREATE an oracle that does not exist today.** While invoker they
+leak nothing the caller could not already read; definer + caller-supplied uuid + anon EXECUTE is
+exactly the `T-070` oracle `KAN-188` closed for their five siblings yesterday. Ordering is not free:
+definer-first opens the oracle, relocate-first leaves them answering false. Neither intermediate state
+may exist. §6d caller sweep runs first.
+
+**Operative constraint recorded: no `venue_admin` or `moderator` grant may be issued until this lands**
+— today the grant silently does nothing and the symptom surfaces nowhere near `role_grants`.
+
+**`TO authenticated` deviation: approved, and better than what I ruled.** Amendment 2 ruled the
+predicate and was silent on role scope. Same 0-row outcome either way, but it removes an anon-reachable
+definer invocation and moots the recursion question for `anon`. No objection at PEER.
+
+**Methodological note worth keeping:** `backend-5`'s probe nearly cited the wrong evidence — both
+helpers returned false, which proved nothing, because the uuid tested held `admin` and they would
+return false on the data regardless. The real evidence was the raw invoker read, true before / false
+after. It caught itself by asking what else the false could mean. **Fourth probe-that-passed-for-the-
+wrong-reason today, third caught by its own author** — the §12h discipline is propagating without
+being invoked by name, which is the outcome a convention is for.
+
+## 2026-09-11 — T-082: the parked KAN-138 file, and what retiring a gate leaves behind
+
+**Source:** `po-zero-lifecycle` flagged commit `9d855a5` directly and urgently. Substance correct;
+three framings wrong, one of them understating the hazard badly.
+
+**Recorded:** `DECISIONS.md` **T-082** (Accepted). **Note — numbered T-070 on first append and
+renumbered:** the corpus grew from 9,366 to 11,208 lines overnight (other seats appending) and
+`T-070`–`T-081` were taken. `grep -oE '^### T-[0-9]{3}' | sort | uniq -d` now returns empty.
+**Check the high-water mark before appending; do not assume yesterday's tail.**
+
+**Verified myself, read-only:** `9d855a5` = 2026-09-07 10:59:22 +0400, one file, 303 lines, commit
+body "AUTHORING ONLY — awaiting cto's G-028 confirmation". `git diff 9d855a5 -- <path>` **empty**;
+file unchanged. Line 170 declares the 5-param signature, line 191 the defective gate.
+Live `pg_proc`: **`settle_game(uuid,boolean)`, one row** — KAN-169/T-069 applied, 5-param gone.
+
+**The correction that matters.** Replay would **not** revert KAN-169. Signatures differ, so
+`CREATE OR REPLACE` **creates a second overload** beside the hardened one, which is left untouched
+along with its revoke. And `pg_default_acl` for `public`/`f` grants **`anon=X` and
+`authenticated=X`** (both `postgres` and `supabase_admin` as grantor) — the file has **zero
+executable GRANT/REVOKE** — so the replay product is an `anon`-reachable privilege-escalation
+function. **Worse than the pre-containment state**, because the containment protects a different
+object.
+
+**Superseded my own T-068 Amendment 2 §7** (in T-082, not by editing T-068): the "KAN-138/KAN-128
+ordering → replay restores the uncast body" bullet was right on 2026-09-10 and is now wrong — it is
+not an undo and sort order is irrelevant. Corrected in place of record, original left standing.
+
+**Corrected the G-028 framing.** `G-028` is a `CONTRACT.md` rule, **not a per-ticket approval
+token** — "close G-028 for KAN-138" is not an available act. The commit waited on G-028's *routine
+per-apply confirmation*, **retired by Wave 5 on 2026-09-08**, one day later. So the 4-day gap is
+**orphaning, not a neglected sign-off** — which decides the remedy: no sign-off was ever coming.
+
+**Ruled.** (1) File is dead, superseded by KAN-169/T-069, never to be applied; must say so *in the
+file* — annotate or delete, I did not rule between them, that is the migration tree's owner's call.
+Not authorised: applying it, `db push`, editing its SQL body, any ledger write. (2) Standing
+safeguard — **retiring a gate is incomplete until the queue behind it is re-routed or killed.**
+Same shape as T-068 Am2 §7's third replay mode. I did **not** implement a sweep and said so;
+**whether other artefacts were orphaned by the same Wave 5 retirement is NOT DOCUMENTED — I checked
+one commit, not the population.** That ticket is `po`'s.
+
+**Verified so it is not assumed wrong later:** backend-4's 899,999.10 AED exploit demo left **no
+residue** — `wallet_ledger` 0 rows/sum 0, `game_settlements` 0/0, `wallets` 0.
+**Did not claim a gap that is not there:** `anon-allowlist-check.yml` **does** gate anon-executable
+SECURITY DEFINER functions (`scripts/ci/check_anon_function_grants.sh`, with a disposable-Postgres
+self-test). But it is a **CI gate on push/PR** — nothing applied directly to the database passes
+through it, so it would not have caught this. Whether it reads the live catalogue or the repo I did
+**not** verify and said so.
+
+**Not done, deliberately:** no migration file edited or deleted, no SQL authored, no production
+change, no Jira, no ticket transitioned, no sweep performed, no ruling on `pg_default_acl`'s blanket
+EXECUTE (flagged as far larger than this ticket and explicitly not settled inside it).
+**Effort feedback:** worth the high-effort pass. Three of the reporter's framings were wrong and the
+real mechanism — overload creation plus default ACL — is invisible unless you check both `pg_proc`
+for the live signature and `pg_default_acl`. A low-effort pass would have ratified "it reverts the
+fix" and missed that the replay lands `anon`-executable.

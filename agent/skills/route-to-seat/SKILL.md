@@ -60,6 +60,7 @@ teams. **No `frontend-N` is senior to another**, so task shape never selects a s
 | Gate reason | What you do |
 |---|---|
 | `task-stopped` | **DO NOT WAKE.** Report: *STOP is active on this task; the owner must release, or await RESUME.* |
+| `system-maintenance-active` | **DO NOT WAKE.** Product execution is frozen; preserve ownership until `PRODUCT_EXECUTION` resumes. |
 | `not-owner` | **DO NOT WAKE.** The seat you were about to invoke does not own this work. |
 | `not-owned` | **DO NOT WAKE.** Claim first, or report the item unclaimable with its reasons. |
 

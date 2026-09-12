@@ -58,6 +58,25 @@ not executable merely because its children are.**
 
 ### How work reaches a seat — capability queues and claim
 
+Before this Product path is evaluated, Persistent State must be in `PRODUCT_EXECUTION`.
+`SYSTEM_MAINTENANCE` returns `system-maintenance-active` from claimability and refuses the
+continuation gate, including a wake for an already-owned task. Switching mode preserves all
+Product records; unfinished ownership may remain persisted and resume only after an explicit
+transition back to `PRODUCT_EXECUTION`.
+
+For defect reports, classify intent before execution. `observed_condition` starts at
+investigation: the report is already evidence that the condition was observed. Run the reported
+environment when it supplies logs, runtime state or causal evidence, but do not make reproduction
+a gate before diagnosis. The reported environment determines the primary target; localhost
+Chrome cannot be silently replaced by Canary or by browser automation.
+
+Once diagnosis identifies the cause, record causal and changed surfaces. Derive validation scope
+from those facts: shared code receives shared automated coverage and primary-runtime proof;
+platform-specific code requires that platform. A platform named in the original symptom is not
+mechanically required when the diagnosed and changed surface is shared. Reviewer route remains a
+separate policy decision. Every required validation target needs evidence; optional confidence
+evidence never blocks closure.
+
 **Wave 6, 2026-09-08.** Ready work is discoverable through a **capability queue**, and the queue
 key is the item's `required_capability`. Not the hierarchy, not a lead, not the frontend/backend
 pair, not a manager's routing.
@@ -295,6 +314,20 @@ same-capability seat may revise the number at its own Preflight.
    question returned, a diagnosis. Write that explicitly so the silence reads as
    deliberate rather than as an agent that stopped early. The principle is
    `MANIFESTO.md` §5; this is the operational form of it.
+
+6. **`~/Desktop/Thebes-Canonical` is the only top-level Thebes working directory.** **Added
+   2026-09-10**, after an audit found three unregistered siblings on `~/Desktop` — a frozen
+   historical clone, a governance-candidate scratch clone, and rename-backup bundles —
+   consuming ~16.5G, one carrying a live plaintext credential. None were created by a script;
+   they were ad-hoc `git clone`/`mkdir` actions with no rule against them. **Any temporary or
+   scratch checkout — a governance draft, a comparison clone, isolated executor work — goes
+   under `Thebes-Canonical/.claude/worktrees/` as a `git worktree` (the mechanism already used
+   for `wave7-agentview` and `product`), never as a new top-level Desktop directory.**
+   `agent/scripts/desktop-scope-guard.sh` (a `PreToolUse`/`Bash` hook in `.claude/settings.json`,
+   independent of `branch-guard.sh` and Product main protection) refuses a `git clone` or a new
+   directory created directly under `~/Desktop` outside this checkout. It is workspace-local,
+   fails open on its own errors, and does not police anything inside this checkout or touch
+   Product code, Jira, or global git config.
 
 ---
 

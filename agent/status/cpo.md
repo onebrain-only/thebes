@@ -762,3 +762,70 @@ ticket. Derivation design is `cto`'s.
 **Did not escalate to the CEO** despite the brief offering it: both premises ("real money", "first
 execution reachable") fail measurement, and the question was settleable by reading two function
 bodies and running a grep.
+
+---
+
+## 2026-09-10 — `KAN-176` Part B: what happens to games, meetups, squads and challenges when their creator deletes their account
+
+**Task:** `team-lead`, routed from `cto`'s `T-077`, which ruled Part A (12 tables → delete) and
+deliberately left Part B (4 tables, 26 users) as a product decision. No MODEL/EFFORT line in the
+brief; treated as role default.
+
+**Verdict: CONFLICTS for "delete them". ALIGNED for preservation. ALIGNED WITH CONSEQUENCE for the
+sentinel — preservation is right, the sentinel *framing* is wrong.** Recorded as **`P-044`** in
+`Dabbler/dabbler-docs/DECISIONS.md`.
+
+**One rule, not four:** a participation object outlives its creator; on deletion the departed
+person's link is **severed — every link, including the auth key** — and the object preserved. A
+*live* object needing somebody in charge passes that role to a **remaining participant**, never to
+Dabbler; deleted only if no participant remains. **The discriminator is live-vs-completed, not which
+table.** Today: `games` 218 (all completed) and `meetups` 1 → preserve+sever; `squads` 0 and
+`challenges` 0 → promote-else-delete when they exist.
+
+**What I measured rather than accepted** (read-only, `wtncuzcskpigqpmnxwws`, 0 mutations):
+- **All 218 games are in the past** (`start_at` 2025-11-18 → 2026-08-31), **zero** future-dated,
+  **zero** cancelled. `cto` framed the product question as *"a scheduled game whose organiser
+  leaves"* — **that scenario has zero live instances**, so it is not what blocks the 26 users, and I
+  refused to rule it on no evidence.
+- **175 of 218** games carry a non-creator participant. 602 `game_roster` rows, **396 belonging to 19
+  people other than the creator**, 600 with `left_at IS NULL`. `game_roster.game_id` is
+  `ON DELETE CASCADE` — deleting the games destroys those 396 rows. **That is the conflict**: those
+  rows are 19 players' history/ratings/achievements, which `04` Art 5.1 says are *theirs* and Art 4.2
+  says Dabbler holds *in trust on their behalf*.
+- **`games.creator_user_id` is populated on all 218 rows (26 distinct) and has no FK.** Severing only
+  `creator_profile_id` leaves the auth uuid on every row — `P-036`'s "anonymisation in appearance
+  only", live. Made binding: **both keys, or the erasure is cosmetic.**
+- `posts.game_id` is `ON DELETE NO ACTION` with 0 rows attached today — dormant, but it would *block*
+  a game delete the moment anyone posts about a game. The delete option is not even reachable later.
+
+**The mechanism finding that may dissolve the CEO-reserved blocker.** `T-077` says Part B needs a
+sentinel row and that inserting one is CEO-reserved. Making the organiser columns **nullable** with
+`ON DELETE SET NULL` reaches the same product outcome with **DDL only — no data insert, same class as
+Part A**, and `KAN-131` may then be unnecessary. I ruled the outcome and handed the feasibility call
+to `cto`; told `po` not to size Part B until that is answered.
+
+**Corpus finding, unprompted:** `13a` §E3.2 TICKET 3.2.1 commits *"account deletion (**soft-delete
+with 14-day SLA, then hard purge**)"* and `11` v2 §I.4 repeats the 14-day SLA. **The live
+`delete_my_account` is an immediate hard delete with no window.** Committed architecture the build
+contradicts; not this ticket's scope, handed on.
+
+**Recorded the commercial conflict of interest rather than leaning on it.** Preserving game history
+also preserves the talent-graph asset `03` values and `02` monetizes. `04` Art 9.2 is explicit that
+treating the graph as Dabbler's own asset forfeits the trust that makes it valuable, so I based the
+ruling solely on the other 19 players' claim and said in `P-044` that the commercial benefit must not
+be cited as a reason.
+
+**Two defects found and handed to `po`:** the `KAN-160`/`161` strings shipped today
+(`lib/l10n/app_en.arb:591,593`) disclose retention of *"Payment and booking records"* only — games are
+neither, so this ruling creates a second disclosure gap of exactly `P-036`'s kind; and
+`danger_zone_section.dart:373` still carries the hardcoded *"permanently delete … all associated
+data"* (which of the two renders, I did not verify).
+
+**Numbering defect found:** this log's own previous entry records a `KAN-138` verdict published to
+Jira comment `10747` as **`P-043`** — **and no `P-043` exists in `DECISIONS.md`**. Lost write, not a
+wrong-tree write (`~/Desktop/Thebes` does not exist). I took `P-044` rather than squat on a number a
+public Jira comment already cites. `po` re-lands `P-043` without renumbering.
+
+**Not delivered:** the Jira comment on `KAN-176`. The Atlassian MCP returned
+*"requires re-authorization (token expired)"*. The full verdict is in `P-044`; the comment needs
+re-posting once auth is restored.

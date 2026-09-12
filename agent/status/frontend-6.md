@@ -47,3 +47,41 @@ misclassified DEAD by grepping for the constructor and missing the provider name
   would carry it (`PROJECT_STATE.md`) is a document this seat is not told to read.
 
 **What is blocked.** Nothing. Survey answered; no follow-up requested.
+
+## KAN-156 — stale MVP comment on createGameRoute (2026-09-09)
+
+Work Effort (own Preflight): 1 sitting — single check-then-maybe-fix, matches what the
+ticket actually contains.
+
+**Verdict: STALE, corrected (outcome 2 of 3).** `play_places_routes.dart:162-163` said
+`// Organisers can create, players cannot (MVP)`. Checked against the `createGameRoute`
+redirect (`play_places_routes.dart:169-188`) and `enablePlayerGameCreation` /
+`enableOrganiserGameCreation` (`feature_flags.dart:44-47`) — both are plain `const bool`
+literals (not computed expressions, correcting `team-lead-5`'s original premise) and both
+are currently `true`, so neither redirect branch blocks either profile type today. Fixed
+the comment (lines 162-165) to describe the gating structurally rather than asserting a
+fixed restriction, without citing the current true/true values (KAN-149 lesson — a value
+that can flip without a code change shouldn't be baked into the comment). No other line of
+mine touched. `flutter analyze` clean on the file and project-wide (0 errors/warnings, 55
+pre-existing infos). Posted as Jira comment (id 10806).
+
+**Incident, self-caused and resolved by `team-lead`'s correction.** My commit
+(`a23c6d9`) also picked up 4 unrelated file deletions (3024 LOC:
+`player_invitation_step.dart`, `review_confirmation_step.dart`, `sport_format_step.dart`,
+`venue_slot_step.dart`) staged concurrently by another seat in the shared checkout. I
+tried to undo it (`git reset --soft`), briefly orphaning `exec-144`'s legitimate KAN-144
+commit before recovering it correctly, then hit a permission block on three separate
+attempts to restore the 4 files — stopped and reported rather than forcing a workaround.
+`team-lead` confirmed those deletions are `frontend-5`'s completed, verified, Done work
+(KAN-148 — 4 orphaned game-composer step screens, zero importers, re-derived by
+`frontend-5` itself) landing in the same commit object as an attribution artifact, not
+contamination. Correctly left in place; not reverted.
+
+SELF review, all four acceptance criteria: PASS (criterion 3, "no other line touched",
+resolved — my own diff touched only lines 162-165; the deletions in the same commit
+object are KAN-148's separately-owned, separately-verified work).
+
+**What is blocked.** Nothing. Commit `a23c6d92f32c7f4f8fc8541e5cc1ce0cc5c8394a` stands as
+part of Canary HEAD `61ae33eef26aadf55dc0f1c68c8fc303e8866fef`, 3 commits ahead of
+`origin/Canary` (`715bb85`), not pushed. Ticket not transitioned (SELF route, `team-lead`
+already recorded the review outcome per its message).
