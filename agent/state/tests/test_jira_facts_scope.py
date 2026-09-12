@@ -23,7 +23,8 @@ import json
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _harness import ok, raises, section, summary, repo_root, state_path   # noqa: E402
+from _harness import (fresh_seat_registry, ok, raises, section, summary, repo_root,
+                      state_path)   # noqa: E402
 
 sys.path.insert(0, state_path())
 import store, validate, queue as q, capacity as cap, board                 # noqa: E402
@@ -40,14 +41,9 @@ def fresh_runtime():
 
 
 def fresh_roster():
-    tmp = tempfile.mkdtemp()
-    b = os.path.join(tmp, "bindings")
-    os.makedirs(b, exist_ok=True)
-    for seat, role in {"frontend-1": "frontend", "frontend-2": "frontend",
-                       "backend-1": "backend", "backend-2": "backend"}.items():
-        with open(os.path.join(b, seat + ".yml"), "w") as fh:
-            fh.write('name: "%s"\nrole: %s\n' % (seat, role))
-    validate.BINDINGS = b
+    fresh_seat_registry(validate, {
+        "frontend-1": "frontend", "frontend-2": "frontend",
+        "backend-1": "backend", "backend-2": "backend"})
     return validate.seats_by_capability()
 
 

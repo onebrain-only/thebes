@@ -3,7 +3,8 @@
 
 AGENT VIEW IS OBSERVABILITY. IT IS NOT AUTHORITY.
 
-This module reads Persistent State, bindings, roles, topology, derived queues,
+This module reads Persistent State, the neutral Seat registry, optional provider
+settings, roles, topology, derived queues,
 capacity, historical status and flow telemetry, and returns one payload describing
 what Thebes knows right now. It writes nothing and holds no authority over routing,
 claim, ownership, release, lifecycle, validation route, reviewer selection,
@@ -50,13 +51,15 @@ import queue as q                                       # noqa: E402
 import store                                            # noqa: E402
 import capacity as cap_mod                              # noqa: E402
 import validate                                         # noqa: E402
+import roster                                           # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Module-level paths rather than values baked into functions, so a test can point the
 # roster at a synthetic directory without touching the live checkout — the same
 # reason store.RUNTIME is reassignable.
-BINDINGS_DIR = os.path.join(ROOT, ".claude", "bindings")
+SEATS_JSON = os.path.join(ROOT, "agent", "state", "registry", "seats.json")
+CLAUDE_BINDINGS_DIR = os.path.join(ROOT, ".claude", "bindings")
 AGENTS_DIR = os.path.join(ROOT, ".claude", "agents")
 NAMING_CSV = os.path.join(ROOT, "agent", "NAMING.csv")
 STATUS_DIR = os.path.join(ROOT, "agent", "status")
@@ -146,17 +149,12 @@ def _naming():
     return out
 
 
-def _binding(path):
-    """name/model/effort/role from one binding.
-
-    `role:` IS the capability identity. Capability is never parsed out of the seat
-    slug: `ux-engineer-1` is capability `ux-engineer` because its binding says so,
-    and a future `payments-3` works for the same reason with no edit here.
-    """
+def _claude_settings(path):
+    """Optional Claude-only model and effort display metadata."""
     out = {}
     try:
         for line in open(path, encoding="utf-8", errors="replace"):
-            for key in ("name", "model", "effort", "role"):
+            for key in ("model", "effort"):
                 if line.startswith(key + ":"):
                     out.setdefault(key, line.split(":", 1)[1].strip().strip('"').strip("'"))
     except OSError:
@@ -164,32 +162,19 @@ def _binding(path):
     return out
 
 
-def bindings():
-    """The live roster. The binding directory IS the roster — no fixed list, no count.
-
-    A seat added to `.claude/bindings/` appears on the next read; a retired one
-    disappears. Its `agent/status/` file survives as history, which is a different
-    question from whether the seat is live.
-    """
-    out = {}
-    if not os.path.isdir(BINDINGS_DIR):
-        return out
-    for fn in sorted(os.listdir(BINDINGS_DIR)):
-        if not fn.endswith(".yml"):
-            continue
-        seat = fn[:-4]
-        b = _binding(os.path.join(BINDINGS_DIR, fn))
-        out[seat] = {"seat_id": b.get("name") or seat,
-                     "capability": b.get("role") or None,
-                     "model": b.get("model") or None,
-                     "effort": b.get("effort") or None}
+def seat_registry():
+    """The live roster from Thebes; Claude settings never create or map a Seat."""
+    out = roster.read(SEATS_JSON)
+    for seat, entry in out.items():
+        settings = _claude_settings(os.path.join(CLAUDE_BINDINGS_DIR, seat + ".yml"))
+        entry.update({"model": settings.get("model"), "effort": settings.get("effort")})
     return out
 
 
-def seats_by_capability(binds=None):
-    binds = bindings() if binds is None else binds
+def seats_by_capability(entries=None):
+    entries = seat_registry() if entries is None else entries
     out = collections.defaultdict(list)
-    for seat, b in sorted(binds.items()):
+    for seat, b in sorted(entries.items()):
         if b.get("capability"):
             out[b["capability"]].append(seat)
     return dict(out)
@@ -426,14 +411,14 @@ def review_owner_map(tasks):
 
 # ---------------------------------------------------------------- queues
 
-def capability_universe(tasks, binds, topo):
+def capability_universe(tasks, roster_entries, topo):
     """Every capability that should render a queue.
 
     The union matters: `queue.queues()` derives capabilities from the tasks present,
     so a capability with no work would silently vanish rather than showing an honest
     empty queue.
     """
-    caps = set(topo) | set(seats_by_capability(binds))
+    caps = set(topo) | set(seats_by_capability(roster_entries))
     caps |= {q.capability_of(t) for t in tasks if q.capability_of(t)}
     return sorted(c for c in caps if c)
 
@@ -447,7 +432,7 @@ def _expansion(capability, tasks, sbc, topo):
         return False
 
 
-def queue_view(capability, tasks, binds, topo, interventions, edges, lifecycles,
+def queue_view(capability, tasks, roster_entries, topo, interventions, edges, lifecycles,
                now=None):
     mine = [t for t in tasks if q.capability_of(t) == capability]
     eligible = q.queue(tasks, capability)
@@ -466,7 +451,7 @@ def queue_view(capability, tasks, binds, topo, interventions, edges, lifecycles,
         else:
             claimable.append(t.get("work_item_id"))
 
-    sbc = seats_by_capability(binds)
+    sbc = seats_by_capability(roster_entries)
     defined = sorted(sbc.get(capability, []))
     busy = sorted(cap_mod.busy_seats(capability, tasks, sbc))
     hold = next((i for i in interventions
@@ -504,9 +489,9 @@ def queue_view(capability, tasks, binds, topo, interventions, edges, lifecycles,
 
 # ---------------------------------------------------------------- capacity
 
-def capacity_view(capability, tasks, binds, topo):
+def capacity_view(capability, tasks, roster_entries, topo):
     """Minimal Wave 6 facts. No utilisation, no scores, no forecasting, no tokens."""
-    sbc = seats_by_capability(binds)
+    sbc = seats_by_capability(roster_entries)
     defined = sorted(sbc.get(capability, []))
     busy = sorted(cap_mod.busy_seats(capability, tasks, sbc))
     mine = [t for t in tasks if q.capability_of(t) == capability]
@@ -628,7 +613,7 @@ def telemetry(limit=40):
 
 # ---------------------------------------------------------------- payload
 
-def _meta(tasks, edges, interventions, binds, topo, now=None):
+def _meta(tasks, edges, interventions, roster_entries, topo, now=None):
     generated = 0
     if os.path.isdir(AGENTS_DIR):
         generated = len([f for f in os.listdir(AGENTS_DIR) if f.endswith(".md")])
@@ -638,9 +623,9 @@ def _meta(tasks, edges, interventions, binds, topo, now=None):
         "task_count": len(tasks),
         "dependency_count": len(edges),
         "intervention_count": len(interventions),
-        "roster_count": len(binds),
+        "roster_count": len(roster_entries),
         "generated_agent_count": generated,
-        "registry_consistent": generated == len(binds),
+        "registry_consistent": generated == len(roster_entries),
         "capability_count": len(topo),
         "state_schema": store.SCHEMA_VERSION,
         "freshness_window_seconds": FRESHNESS_SECONDS,
@@ -652,7 +637,7 @@ def _meta(tasks, edges, interventions, binds, topo, now=None):
     }
 
 
-def acceleration_view(tasks, policies, binds, edges, interventions, lifecycles):
+def acceleration_view(tasks, policies, roster_entries, edges, interventions, lifecycles):
     """Active ACCELERATE, as FACT. Read-only, like everything else here.
 
     Agent View observes and never invents, so this reports what the policy records and
@@ -670,7 +655,7 @@ def acceleration_view(tasks, policies, binds, edges, interventions, lifecycles):
     if not active:
         return base
 
-    sbc = seats_by_capability(binds)
+    sbc = seats_by_capability(roster_entries)
     kw = {"lifecycles": lifecycles, "interventions": interventions}
     try:
         plan = cap_mod.accelerate_plan(tasks, active, sbc, edges=edges, **kw)
@@ -780,7 +765,7 @@ def build(now=None):
     edges = [e for e in store.read_all("dependency") if not e.get("retired_at")]
     interventions = store.active_interventions()
     all_interventions = store.read_all("intervention")
-    binds = bindings()
+    roster_entries = seat_registry()
     topo = topology()
     lifecycles = {t.get("work_item_id"): (t.get("lifecycle") or {}).get("canonical")
                   for t in tasks}
@@ -793,23 +778,23 @@ def build(now=None):
         key=lambda x: x["work_item_id"] or "")
 
     seats = []
-    for seat in sorted(binds):
-        s = seat_view(seat, binds[seat], tasks, interventions, now)
+    for seat in sorted(roster_entries):
+        s = seat_view(seat, roster_entries[seat], tasks, interventions, now)
         s["is_review_owner_of"] = reviewers.get(seat) or None
         s.update({"deity": (ident.get(seat) or {}).get("deity"),
                   "glyph": (ident.get(seat) or {}).get("glyph")})
         seats.append(s)
 
-    caps = capability_universe(tasks, binds, topo)
+    caps = capability_universe(tasks, roster_entries, topo)
     owners = collections.Counter(
         (t.get("ownership") or {}).get("seat_id") for t in tasks
         if (t.get("ownership") or {}).get("seat_id"))
     freeze = next((i for i in interventions if i.get("kind") == "freeze"), None)
-    live = set(binds)
+    live = set(roster_entries)
 
     return {
-        "meta": _meta(tasks, edges, interventions, binds, topo, now),
-        "acceleration": acceleration_view(tasks, policies, binds, edges,
+        "meta": _meta(tasks, edges, interventions, roster_entries, topo, now),
+        "acceleration": acceleration_view(tasks, policies, roster_entries, edges,
                                           interventions, lifecycles),
         "wave8": wave8_view(tasks),
         "orchestrator": {
@@ -828,11 +813,12 @@ def build(now=None):
         },
         "seats": seats,
         "work_items": items,
-        "queues": [queue_view(c, tasks, binds, topo, interventions, edges, lifecycles, now)
+        "queues": [queue_view(c, tasks, roster_entries, topo, interventions, edges,
+                              lifecycles, now)
                    for c in caps],
         "dependencies": dependency_view(edges, lifecycles),
         "interventions": intervention_view(all_interventions),
-        "capacity": [capacity_view(c, tasks, binds, topo) for c in caps],
+        "capacity": [capacity_view(c, tasks, roster_entries, topo) for c in caps],
         "ownership": {
             "by_work_item": {i["work_item_id"]: i["ownership"].get("seat_id")
                              for i in items if i["ownership"]["state"] == OWNING},
@@ -862,7 +848,7 @@ if __name__ == "__main__":
     print("  runtime      : %s tasks, %s deps, %s active interventions%s"
           % (m["task_count"], m["dependency_count"], m["intervention_count"],
              "  [%s]" % m["empty_state"] if m["empty_state"] else ""))
-    print("  roster       : %s bindings, %s generated (consistent=%s)"
+    print("  roster       : %s seats, %s generated (consistent=%s)"
           % (m["roster_count"], m["generated_agent_count"], m["registry_consistent"]))
     print("  freshness    : %s" % (m["lifecycle_freshness"] or "—"))
     print("  ownership    : %s active %s"

@@ -44,7 +44,7 @@ local-durable and git-ignored.**
 | Tracked | Local-durable, git-ignored |
 |---|---|
 | this README · `store.py` · `validate.py` | `runtime/tasks/` · `runtime/routing/` |
-| `registry/` — Company, Product, Projects | `runtime/exceptions/` · `runtime/dependencies/` |
+| `registry/` — Company, Product, Projects, Seats, topology | `runtime/exceptions/` · `runtime/dependencies/` |
 | | `runtime/.locks/` |
 
 Tracking mutable records would keep the working tree dirty during normal Product execution, let
@@ -82,6 +82,11 @@ cycle check alone and together make a cycle.
 
 **System Maintenance may edit this README, the tooling and `registry/` directly** — reviewed
 configuration, not concurrent runtime writes.
+
+`registry/seats.json` is the provider-neutral authority for Seat identity and Seat → Role
+mapping. `.claude/bindings/` remains Claude provider configuration (including model and effort)
+and temporarily duplicates the Role for the unchanged renderer. `validate.py --check` verifies
+that current compatibility surface, while the neutral registry itself does not require Claude.
 
 **Honest limit:** `validate.py` **cannot prove a record went through `store.py`.** Runtime files
 carry no write ledger, so a careful manual edit is indistinguishable from a store write. The
@@ -314,7 +319,8 @@ claimability and contention; `capacity.py` answers five operational questions fr
 queue depth, Work Effort and defined seats. **Nothing is stored**: a queue is a second authority
 that drifts, and a stored `claimable` flag is true only for the instant it was computed.
 
-`registry/topology.json` bounds seat expansion. **A ceiling is a safety bound, not a forecast** —
+`registry/seats.json` supplies defined Seats and capability routing; `registry/topology.json`
+bounds seat expansion. **A ceiling is a safety bound, not a forecast** —
 where no evidence supports more, it is current+1. A new seat is justified only by proven parallel
 demand *and* every defined seat already owning work: **a dormant seat is not an unavailable
 seat.**

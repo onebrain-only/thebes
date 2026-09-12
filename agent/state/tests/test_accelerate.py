@@ -25,7 +25,8 @@ import json
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _harness import ok, raises, section, summary, repo_root, state_path   # noqa: E402
+from _harness import (fresh_seat_registry, ok, raises, section, summary, repo_root,
+                      state_path)   # noqa: E402
 
 sys.path.insert(0, state_path())
 import store, validate, policy, queue as q, board, capacity as cap, view   # noqa: E402
@@ -47,13 +48,7 @@ ROSTER = {"frontend-1": "frontend", "frontend-2": "frontend", "frontend-3": "fro
 
 
 def fresh_roster(seats=None):
-    tmp = tempfile.mkdtemp()
-    b = os.path.join(tmp, "bindings")
-    os.makedirs(b, exist_ok=True)
-    for seat, role in (seats or ROSTER).items():
-        with open(os.path.join(b, seat + ".yml"), "w") as fh:
-            fh.write('name: "%s"\nmodel: sonnet\neffort: medium\nrole: %s\n' % (seat, role))
-    validate.BINDINGS = b
+    fresh_seat_registry(validate, seats or ROSTER)
     return validate.seats_by_capability()
 
 
@@ -585,7 +580,7 @@ ok("    and ACCELERATE reads no event to decide anything",
 
 ok("48. no hard-coded seat count anywhere in the selector",
    not any(str(n) in capsrc.split("ACCELERATE")[1] for n in (" 8,", " 9,", "== 8")))
-ok("    seat counts come from bindings and topology",
+ok("    seat counts come from the neutral registry and topology",
    len(SBC.get("frontend", [])) == 3)
 
 storesrc = open(os.path.join(repo_root(), "agent", "state", "store.py")).read()

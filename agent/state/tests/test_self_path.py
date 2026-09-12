@@ -25,7 +25,8 @@ import json
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _harness import ok, raises, section, summary, repo_root, state_path   # noqa: E402
+from _harness import (fresh_seat_registry, ok, raises, section, summary, repo_root,
+                      state_path)   # noqa: E402
 
 sys.path.insert(0, state_path())
 import store, validate, policy, queue as q, board                          # noqa: E402
@@ -44,15 +45,8 @@ def fresh_runtime():
 
 
 def fresh_roster(seats):
-    """Synthetic bindings, so seat topology is a fact about the fixture."""
-    tmp = tempfile.mkdtemp()
-    b = os.path.join(tmp, "bindings")
-    os.makedirs(b, exist_ok=True)
-    for seat, role in seats.items():
-        with open(os.path.join(b, seat + ".yml"), "w") as fh:
-            fh.write('name: "%s"\nmodel: sonnet\neffort: medium\nrole: %s\n' % (seat, role))
-    validate.BINDINGS = b
-    return tmp
+    """Synthetic neutral registry, so seat topology is a fixture fact."""
+    return fresh_seat_registry(validate, seats)
 
 
 ROSTER = {"frontend-1": "frontend", "frontend-2": "frontend",

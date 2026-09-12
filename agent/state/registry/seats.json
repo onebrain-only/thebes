@@ -1,0 +1,33 @@
+{
+  "record_type": "seat_registry",
+  "schema_version": 1,
+  "note": "Thebes-owned provider-neutral Seat identity and Role mapping. Provider model, effort, rendering and tool configuration do not belong here.",
+  "seats": {
+    "analyst": {"role": "analyst"},
+    "backend-1": {"role": "backend"},
+    "backend-2": {"role": "backend"},
+    "backend-3": {"role": "backend"},
+    "backend-4": {"role": "backend"},
+    "backend-5": {"role": "backend"},
+    "backend-6": {"role": "backend"},
+    "backend-7": {"role": "backend"},
+    "backend-8": {"role": "backend"},
+    "content-manager": {"role": "content"},
+    "cpo": {"role": "cpo"},
+    "cto": {"role": "cto"},
+    "cxo": {"role": "cxo"},
+    "devops": {"role": "devops"},
+    "frontend-1": {"role": "frontend"},
+    "frontend-2": {"role": "frontend"},
+    "frontend-3": {"role": "frontend"},
+    "frontend-4": {"role": "frontend"},
+    "frontend-5": {"role": "frontend"},
+    "frontend-6": {"role": "frontend"},
+    "frontend-7": {"role": "frontend"},
+    "frontend-8": {"role": "frontend"},
+    "pm": {"role": "pm"},
+    "po": {"role": "po"},
+    "qa": {"role": "qa"},
+    "ux-engineer-1": {"role": "ux-engineer"}
+  }
+}

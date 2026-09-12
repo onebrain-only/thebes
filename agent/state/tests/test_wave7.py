@@ -36,23 +36,28 @@ def fresh_runtime():
 
 
 def fresh_roster(seats):
-    """A synthetic binding directory. `seats` is {seat_id: role}.
+    """A synthetic neutral registry plus optional Claude display settings.
 
-    Pointing view at this proves the roster is read from bindings rather than from
-    any list inside the code — the whole point of the dynamic-roster requirement.
+    `seats` is {seat_id: role}; pointing view at it proves the roster remains dynamic.
     """
     tmp = tempfile.mkdtemp()
+    r = os.path.join(tmp, "seats.json")
     b = os.path.join(tmp, "bindings")
     a = os.path.join(tmp, "agents")
     s = os.path.join(tmp, "status")
     for d in (b, a, s):
         os.makedirs(d, exist_ok=True)
+    with open(r, "w") as fh:
+        json.dump({"record_type": "seat_registry", "schema_version": 1,
+                   "seats": {seat: {"role": role}
+                             for seat, role in seats.items()}}, fh)
     for seat, role in seats.items():
         with open(os.path.join(b, seat + ".yml"), "w") as fh:
             fh.write('name: "%s"\nmodel: sonnet\neffort: medium\nrole: %s\n' % (seat, role))
         with open(os.path.join(a, seat + ".md"), "w") as fh:
             fh.write("---\nname: %s\n---\n" % seat)
-    view.BINDINGS_DIR, view.AGENTS_DIR, view.STATUS_DIR = b, a, s
+    view.SEATS_JSON, view.CLAUDE_BINDINGS_DIR = r, b
+    view.AGENTS_DIR, view.STATUS_DIR = a, s
     view.NAMING_CSV = os.path.join(tmp, "naming.csv")
     view.TELEMETRY_JSONL = os.path.join(tmp, "events.jsonl")
     return tmp
@@ -154,29 +159,29 @@ def setup(seats=None, caps=None):
 
 # ---------------------------------------------------------------- roster
 
-section("Wave 7 — dynamic roster")
+section("Wave 7 — dynamic neutral roster")
 setup()
 p = view.build(now=NOW)
-ok("roster derives from bindings, not a fixed list",
+ok("roster derives from the neutral registry, not a fixed list",
    sorted(s["seat_id"] for s in p["seats"]) == sorted(STD))
-ok("roster count follows the binding directory",
+ok("roster count follows the neutral registry",
    p["meta"]["roster_count"] == len(STD))
 
 # A brand-new seat nobody has ever heard of must appear with no code change.
 setup(seats=dict(STD, **{"payments-3": "payments"}))
 p2 = view.build(now=NOW)
-ok("a synthetic new binding appears with no flow.py/view.py edit",
+ok("a synthetic new neutral Seat appears with no flow.py/view.py edit",
    any(s["seat_id"] == "payments-3" for s in p2["seats"]))
-ok("its capability comes from binding role:, not the slug",
+ok("its capability comes from neutral Role mapping, not the slug",
    [s for s in p2["seats"] if s["seat_id"] == "payments-3"][0]["capability"] == "payments")
 
 setup()
 p = view.build(now=NOW)
-ok("ux-engineer-1 capability is ux-engineer, derived from role:",
+ok("ux-engineer-1 capability is ux-engineer, derived from neutral Role mapping",
    [s for s in p["seats"] if s["seat_id"] == "ux-engineer-1"][0]["capability"] == "ux-engineer")
 
-# A slug that flatly contradicts its role. If capability were parsed from the name
-# this would come back "frontend"; role: is the only source, so it comes back backend.
+# A slug that flatly contradicts its neutral Role mapping. If capability were parsed
+# from the name this would come back "frontend"; the registry makes it backend.
 setup(seats=dict(STD, **{"frontend-9": "backend"}))
 p3 = view.build(now=NOW)
 ok("capability is never inferred from the seat slug",

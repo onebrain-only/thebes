@@ -37,7 +37,8 @@ import shutil
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _harness import ok, raises, section, summary, state_path       # noqa: E402
+from _harness import (fresh_seat_registry, ok, raises, section, summary,
+                      state_path)       # noqa: E402
 
 sys.path.insert(0, state_path())
 import store, validate, board, queue as q                           # noqa: E402
@@ -60,13 +61,7 @@ ROSTER = {"frontend-1": "frontend", "frontend-2": "frontend",
 
 
 def fresh_roster():
-    tmp = tempfile.mkdtemp()
-    b = os.path.join(tmp, "bindings")
-    os.makedirs(b, exist_ok=True)
-    for seat, role in ROSTER.items():
-        with open(os.path.join(b, seat + ".yml"), "w") as fh:
-            fh.write('name: "%s"\nrole: %s\n' % (seat, role))
-    validate.BINDINGS = b
+    fresh_seat_registry(validate, ROSTER)
     return validate.seats_by_capability()
 
 

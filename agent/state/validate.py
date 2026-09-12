@@ -25,12 +25,15 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 STATE = os.path.join(ROOT, "agent", "state")
 RUNTIME = os.path.join(STATE, "runtime")
 REGISTRY = os.path.join(STATE, "registry")
-BINDINGS = os.path.join(ROOT, ".claude", "bindings")
+SEATS_JSON = os.path.join(REGISTRY, "seats.json")
+TOPOLOGY_JSON = os.path.join(REGISTRY, "topology.json")
+CLAUDE_BINDINGS_DIR = os.path.join(ROOT, ".claude", "bindings")
 SCHEMA_VERSIONS = {1, 2, 3}
 
 sys.path.insert(0, STATE)
 import policy                                          # noqa: E402
 import board                                           # noqa: E402
+import roster                                          # noqa: E402
 
 CAPABILITIES = {"frontend", "backend", "qa", "content", "devops", "analyst",
                 "ux-engineer", "product-designer", "po", "pm", "cto", "cpo", "cxo"}
@@ -170,32 +173,22 @@ MAX_VERDICT_REF_LEN = 2000
 
 
 def seats():
-    if not os.path.isdir(BINDINGS):
+    try:
+        return set(roster.read(SEATS_JSON))
+    except roster.RegistryError:
         return set()
-    return {f[:-4] for f in os.listdir(BINDINGS) if f.endswith(".yml")}
 
 
 def seats_by_capability():
-    """Seat topology, read from the bindings' declared roles.
+    """Seat topology, read from the provider-neutral registry's declared Roles.
 
     Needed because a PEER route is only ownable where a second same-capability seat
     exists — and that is a fact about the repository, not a constant.
     """
-    out = {}
-    if not os.path.isdir(BINDINGS):
-        return out
-    for fn in sorted(os.listdir(BINDINGS)):
-        if not fn.endswith(".yml"):
-            continue
-        role = None
-        with open(os.path.join(BINDINGS, fn), encoding="utf-8") as fh:
-            for line in fh:
-                if line.startswith("role:"):
-                    role = line.split(":", 1)[1].strip()
-                    break
-        if role:
-            out.setdefault(role, []).append(fn[:-4])
-    return out
+    try:
+        return roster.seats_by_capability(SEATS_JSON)
+    except roster.RegistryError:
+        return {}
 
 
 def registry():
@@ -789,7 +782,8 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
     for f in generic_seat_fields:
         v = rec.get(f)
         if v and v not in seatset:
-            errs.append("%s: %s %r is not a declared seat in .claude/bindings/" % (where, f, v))
+            errs.append("%s: %s %r is not a declared seat in the neutral registry" %
+                        (where, f, v))
 
     if kind == "task":
         _req(rec, ["work_item_id", "product_id", "project_id"], errs, where)
@@ -1286,6 +1280,28 @@ def check_graph_addition(edges, new):
 def check(runtime=None):
     runtime = runtime or RUNTIME
     errs = []
+    registry_errors = roster.validation_errors(SEATS_JSON)
+    errs += ["seat registry: %s" % e for e in registry_errors]
+    if not registry_errors:
+        errs += ["Claude compatibility: %s" % e for e in
+                 roster.claude_compatibility(SEATS_JSON, CLAUDE_BINDINGS_DIR)]
+        seat_topology = seats_by_capability()
+        for capability in sorted(set(seat_topology) - CAPABILITIES):
+            errs.append("seat registry: unknown Role/capability %r" % capability)
+        try:
+            declared_topology = (json.load(open(TOPOLOGY_JSON, encoding="utf-8"))
+                                 .get("capabilities") or {})
+            for capability, row in sorted(declared_topology.items()):
+                actual = len(seat_topology.get(capability, ()))
+                if row.get("defined_seats") != actual:
+                    errs.append("registry: topology %r declares %r defined seats; neutral "
+                                "registry has %d" %
+                                (capability, row.get("defined_seats"), actual))
+            for capability in sorted(set(seat_topology) - set(declared_topology)):
+                errs.append("registry: neutral Seat capability %r has no topology entry" %
+                            capability)
+        except (OSError, ValueError, AttributeError) as e:
+            errs.append("registry: invalid topology (%s)" % e)
     prods, projs = registry()
     if "dabbler" not in prods:
         errs.append("registry: product 'dabbler' is missing")
