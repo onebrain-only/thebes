@@ -6,6 +6,7 @@ import inspect
 import subprocess
 import sys
 import unittest
+import dataclasses
 
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
@@ -27,6 +28,7 @@ from agent.execution.codex import (  # noqa: E402
     CodexUnsupportedModel,
     capabilities,
     prepare_codex_invocation,
+    render_codex_brief,
 )
 from agent.execution.provider import (  # noqa: E402
     ExecutionFeature,
@@ -69,7 +71,7 @@ class CodexProviderTests(unittest.TestCase):
                 original = request(model_intent=intent)
                 invocation = prepare_codex_invocation(original, session_ref="codex-session-1")
                 self.assertIs(original, invocation.request)
-                self.assertEqual(original.objective, invocation.prompt)
+                self.assertIn(original.objective, invocation.prompt)
                 self.assertEqual(model, invocation.model)
                 self.assertEqual("high", invocation.reasoning_effort)
                 self.assertEqual("workspace-write", invocation.sandbox)
@@ -79,6 +81,38 @@ class CodexProviderTests(unittest.TestCase):
                 self.assertEqual(original.primary_target, invocation.request.primary_target)
                 self.assertEqual(original.validation_targets,
                                  invocation.request.validation_targets)
+
+    def test_rendered_brief_preserves_every_executor_facing_constraint(self):
+        original = request()
+        before = dataclasses.asdict(original)
+        invocation = prepare_codex_invocation(original)
+        self.assertEqual(invocation.prompt,
+                         render_codex_brief(original, invocation.model,
+                                            invocation.reasoning_effort))
+        for required in (
+            original.work_item_id, original.seat_id, original.required_capability,
+            original.execution_kind.value, original.objective,
+            original.role_contract_ref, *original.context_refs,
+            original.workspace.repository_root, original.workspace.working_directory,
+            original.workspace.worktree_path, original.workspace.expected_revision,
+            *original.allowed_surfaces, *original.prohibited_actions,
+            original.reported_environment.environment_ref,
+            original.primary_target.environment_ref,
+            *(target.target_id for target in original.validation_targets),
+            original.return_contract.return_to,
+            *original.return_contract.required_evidence,
+            *original.return_contract.required_sections,
+            original.claim_ref, original.execution_lease_id,
+        ):
+            self.assertIn(required, invocation.prompt)
+        self.assertLess(invocation.prompt.index(original.context_refs[0]),
+                        invocation.prompt.index(original.context_refs[1]))
+        self.assertLess(invocation.prompt.index(original.context_refs[1]),
+                        invocation.prompt.index(original.context_refs[2]))
+        self.assertIn("transport-enforced", invocation.prompt)
+        self.assertIn("executor instruction", invocation.prompt)
+        self.assertIn("Do not substitute another environment", invocation.prompt)
+        self.assertEqual(before, dataclasses.asdict(original))
 
     def test_unsupported_request_features_models_and_efforts_fail_closed(self):
         calls = []
@@ -187,7 +221,9 @@ class CodexProviderTests(unittest.TestCase):
         self.assertIn('model_reasoning_effort="high"', command)
         self.assertIn(request().workspace.working_directory, command)
         self.assertIn("workspace-write", command)
-        self.assertEqual(request().objective, command[-1])
+        self.assertIn(request().objective, command[-1])
+        self.assertIn(request().allowed_surfaces[0], command[-1])
+        self.assertIn(request().primary_target.environment_ref, command[-1])
         self.assertTrue(kwargs["capture_output"])
         self.assertEqual("Codex report", raw)
 
@@ -215,10 +251,10 @@ class CodexLeaseSafetyTests(unittest.TestCase):
                         raise outcome
                     return outcome
 
+                provider = CodexProvider(transport)
                 result = execute_product_wake(
-                    CodexProvider(transport), "KAN-900", "backend-1",
-                    "authorization:bounded", lambda task, lease: request(),
-                    state_store=store,
+                    "KAN-900", "backend-1", "authorization:bounded",
+                    lambda task, lease: request(), (provider,), state_store=store,
                 )
                 self.assertEqual(ExecutionStatus.PROVIDER_FAILED, result.status)
                 self.assertEqual(code, result.failure.code)

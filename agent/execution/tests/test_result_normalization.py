@@ -209,9 +209,10 @@ class LeaseAndAuthoritySafetyTests(unittest.TestCase):
             events.append("request")
             return request()
 
+        provider = ClaudeProvider(transport)
         result = execute_product_wake(
-            ClaudeProvider(transport), "KAN-900", "backend-1",
-            "authorization:bounded", factory, state_store=store
+            "KAN-900", "backend-1", "authorization:bounded", factory, (provider,),
+            state_store=store
         )
         return result, events, calls
 

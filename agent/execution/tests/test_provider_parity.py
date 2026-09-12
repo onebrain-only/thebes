@@ -58,7 +58,7 @@ class ProviderParityTests(unittest.TestCase):
         self.assertEqual(original.validation_targets,
                          codex_invocation.request.validation_targets)
         self.assertEqual(original.objective, claude_wake.prompt)
-        self.assertEqual(original.objective, codex_invocation.prompt)
+        self.assertIn(original.objective, codex_invocation.prompt)
         self.assertEqual(ExecutionStatus.COMPLETED, claude_result.status)
         self.assertEqual(ExecutionStatus.COMPLETED, codex_result.status)
 

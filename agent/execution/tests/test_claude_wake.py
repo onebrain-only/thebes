@@ -101,15 +101,16 @@ def request(**changes):
 
 
 class ClaudeWakeCharacterizationTests(unittest.TestCase):
-    def test_controller_instruction_routes_native_wake_through_the_seam(self):
+    def test_controller_instruction_routes_every_wake_through_selection_and_seam(self):
         path = os.path.join(ROOT, "agent", "skills", "route-to-seat", "SKILL.md")
         with open(path, encoding="utf-8") as fh:
             instruction = fh.read()
         self.assertIn("agent.execution.wake.execute_product_wake", instruction)
-        self.assertIn("agent.execution.claude.ClaudeProvider", instruction)
-        self.assertIn("controller-native external `Agent` tool", instruction)
+        self.assertIn("selects exactly one", instruction)
+        self.assertIn("provider registry", instruction)
+        self.assertIn("When the selector chooses Claude", instruction)
+        self.assertIn("controller-native external\n`Agent` tool", instruction)
         self.assertIn("subagent_type=<seat>", instruction)
-        self.assertIn("normalizes the supported native outcome", instruction)
         self.assertIn("`ExecutionResult`", instruction)
 
     def test_exact_native_wake_and_request_order_are_preserved(self):
@@ -232,8 +233,8 @@ class WakeOrderTests(unittest.TestCase):
             )
 
         result = execute_product_wake(
-            provider, "KAN-900", "backend-1", "authorization:bounded",
-            factory, state_store=store
+            "KAN-900", "backend-1", "authorization:bounded", factory, (provider,),
+            state_store=store
         )
         self.assertEqual(ExecutionStatus.COMPLETED, result.status)
         self.assertEqual(raw, result.summary)
@@ -259,8 +260,8 @@ class WakeOrderTests(unittest.TestCase):
 
                 with self.assertRaises(WakeOrderError):
                     execute_product_wake(
-                        provider, "KAN-900", "backend-1", "authorization:bounded",
-                        factory, state_store=store
+                        "KAN-900", "backend-1", "authorization:bounded", factory,
+                        (provider,), state_store=store
                     )
                 self.assertEqual([], transport.wakes)
                 self.assertEqual("lease-close", events[-1])
@@ -277,9 +278,10 @@ class WakeOrderTests(unittest.TestCase):
             events.append("request")
             return request()
 
+        provider = ClaudeProvider(failing_transport)
         result = execute_product_wake(
-            ClaudeProvider(failing_transport), "KAN-900", "backend-1",
-            "authorization:bounded", factory, state_store=store
+            "KAN-900", "backend-1", "authorization:bounded", factory, (provider,),
+            state_store=store
         )
         self.assertEqual(ExecutionStatus.PROVIDER_FAILED, result.status)
         self.assertEqual(FailureCode.EXECUTOR_PROCESS_FAILURE, result.failure.code)

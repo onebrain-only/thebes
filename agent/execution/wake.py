@@ -1,19 +1,25 @@
 """Core-owned ordering around one already-authorized Product execution wake."""
 
+from agent.execution.result import receive_execution_result
+from agent.execution.selection import select_provider
+
 
 class WakeOrderError(ValueError):
     pass
 
 
-def execute_product_wake(provider, work_item_id, seat_id, reason_ref,
-                         request_factory, state_store=None,
+def execute_product_wake(work_item_id, seat_id, reason_ref, request_factory, providers,
+                         provider_override=None, state_store=None,
                          closed_by="orchestrator"):
-    """Gate, lease, build the request, execute once, and close the lease.
+    """Gate, lease, build, select, execute, receive, and close one request.
 
     ``request_factory`` runs only after the execution lease exists and receives
-    ``(authoritative_task, lease)``. Selection, claim, Product authorization,
-    routing, and lifecycle decisions happen before this helper and remain outside
-    both the provider and this ordering seam.
+    ``(authoritative_task, lease)``. ``providers`` is an explicit controller
+    registry, not a caller-selected executor. The existing selection policy
+    chooses one compatible provider (or creates its normalized failure), and
+    the existing core receipt boundary observes the normalized result. Claim,
+    Product authorization, routing, and lifecycle decisions remain outside this
+    ordering seam.
     """
     if state_store is None:
         from agent.state import store as state_store
@@ -23,7 +29,12 @@ def execute_product_wake(provider, work_item_id, seat_id, reason_ref,
     try:
         request = request_factory(task, lease)
         _validate_request_order(request, task, lease, work_item_id, seat_id)
-        return provider.execute(request)
+        selection = select_provider(request, providers, override=provider_override)
+        if selection.provider is None:
+            result = selection.failure_result(request)
+        else:
+            result = selection.provider.execute(request)
+        return receive_execution_result(result)
     finally:
         state_store.close_execution_lease(
             lease["execution_lease_id"], lease["revision"], closed_by

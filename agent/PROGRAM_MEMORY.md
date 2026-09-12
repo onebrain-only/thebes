@@ -69,10 +69,13 @@ wake creates no ownership; ownership must already exist and the continuation gat
 lease must authorize the invocation. Claude normalizes the native outcome into the
 provider-neutral `ExecutionResult`; provider failure and execution failure remain distinct.
 Completion is evidence for controller verification, not Product acceptance or lifecycle truth.
-Codex now uses the same request/result boundary through the local `codex exec` CLI; its model
-mapping and transport settings are provider-specific. The deterministic selector applies
-capability/model/effort gates and controller-authorized overrides without retry, fallback or
-workflow authority.
+The core wake constructs the request after the lease, passes it through the deterministic
+capability/model/effort-gated selector, executes exactly the selected provider, and sends every
+normalized result through inert core receipt before the exact lease closes. Codex uses that same
+request/result boundary through the local `codex exec` CLI; cwd, sandbox, timeout, model and
+reasoning effort are transport-enforced, while Role, context, surfaces, environment, validation
+and return constraints are an explicit deterministic executor brief. Controller-authorized
+overrides still pass through selection, with no retry, fallback or workflow authority.
 
 **FUTURE TARGET.** Provider invocation becomes an adapter boundary owned by Thebes. The
 controller should not embed Claude Code, Codex or any future provider as architectural

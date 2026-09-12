@@ -69,22 +69,22 @@ After the read-only continuation check passes, call
 Close that exact lease with `store.close_execution_lease()` when the invocation returns. A
 passing `assert_execution_permitted()` result without a lease is not wake authority.
 
-**The Claude wake now passes through the repository-owned provider seam.** For Product
-execution, use `agent.execution.wake.execute_product_wake`: it runs the continuation gate,
-opens the lease, and only then lets the request factory construct the provider-neutral
-`ExecutionRequest`. Pass that request to `agent.execution.claude.ClaudeProvider`. The request's
-`objective` is the already-written brief and must reach the native prompt unchanged; Role and
-context references keep their existing order. The provider resolves current model/effort from
-the Claude binding and must not substitute the request's neutral intent fields.
+**Every Product wake passes through the repository-owned provider path.** Use
+`agent.execution.wake.execute_product_wake`: it runs the continuation gate, opens the lease,
+lets the request factory construct the provider-neutral `ExecutionRequest`, selects exactly one
+compatible provider, receives its normalized `ExecutionResult` at the inert core boundary, then
+closes that lease. Supply an explicit provider registry; a controller-authorized override narrows
+the existing selector but never bypasses it. The request's `objective`, Role and ordered context
+remain core-owned.
 
-The actual transport remains the controller-native external `Agent` tool; there is no
-repository-callable Claude launcher. The injected controller transport issues exactly one wake
-with `subagent_type=<seat>` and that unchanged prompt, against the request's workspace and
-environment. The provider normalizes the supported native outcome into the provider-neutral
-`ExecutionResult`. The core helper closes the same lease after that return (including an external
-failure). Do not call the native execution wake around this seam. A completed invocation is
-evidence to verify, not Product acceptance, lifecycle movement, or permission to select or
-launch more work.
+When the selector chooses Claude, the actual transport remains the controller-native external
+`Agent` tool; there is no repository-callable Claude launcher. Its injected controller transport
+issues exactly one wake with `subagent_type=<seat>` and that unchanged prompt, against the
+request's workspace and environment. When it chooses Codex, the local CLI receives the same
+request as a deterministic brief: cwd/sandbox/timeout/model/effort are transport-enforced, while
+Role, context, surfaces, environment, validation and return constraints are explicit executor
+instructions. Do not call either transport around this seam. A completed invocation is evidence
+to verify, not Product acceptance, lifecycle movement, or permission to select or launch more work.
 
 **HOLD and FREEZE do not appear here** — they block new claims while current owners continue.
 Only a task-scoped STOP halts work already in flight.
