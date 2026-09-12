@@ -500,7 +500,8 @@ def set_operational_context(work_item_id, expected_revision, intent,
 
 
 def set_diagnosis(work_item_id, expected_revision, causal_surface, changed_surfaces,
-                  platform_specificity, affected_platforms, author, evidence_ref):
+                  platform_specificity, affected_platforms, author, evidence_ref,
+                  supersedes_validation_ref=None):
     """Record causal findings and derive validation scope in the same CAS write."""
     import operations                                  # noqa: E402
     if expected_revision is None:
@@ -522,13 +523,23 @@ def set_diagnosis(work_item_id, expected_revision, causal_surface, changed_surfa
         context = dict(cur.get("operational_context") or {})
         if not context:
             raise StateError("operational_context is required before diagnosis")
-        prior_required = ((context.get("validation_plan") or {}).get("required") or [])
-        if prior_required:
-            diagnosis["retained_required"] = prior_required
         try:
             plan = operations.derive_validation_plan(diagnosis, context.get("primary_target"))
         except ValueError as exc:
             raise StateError(str(exc))
+        prior_plan = context.get("validation_plan")
+        prior_required = {target.get("target_id")
+                          for target in (prior_plan or {}).get("required") or []}
+        new_required = {target.get("target_id") for target in plan.get("required") or []}
+        if prior_required - new_required:
+            if not supersedes_validation_ref:
+                raise StateError("re-diagnosis would remove required validation targets; "
+                                 "supersedes_validation_ref is required")
+            diagnosis["supersedes_validation_ref"] = supersedes_validation_ref
+            history = list(context.get("validation_history") or [])
+            history.append({"plan": prior_plan, "superseded_at": now(),
+                            "superseded_by": supersedes_validation_ref})
+            context["validation_history"] = history
         context["diagnosis"] = diagnosis
         context["validation_plan"] = plan
         merged = dict(cur, operational_context=context,

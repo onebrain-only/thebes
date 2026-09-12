@@ -37,10 +37,14 @@ def derive_primary_target(reported_environment):
     platform = env.get("platform")
     if locality not in LOCALITIES:
         raise ValueError("unknown reported-environment locality %r" % locality)
-    if locality == "local" and runtime == "flutter_web" and platform == "chrome":
-        return {"locality": "local", "runtime": runtime, "platform": platform,
-                "launch_method": "terminal", "launch_command": "flutter run -d chrome",
-                "browser_automation": False, "source": "reported_environment"}
+    if locality == "local":
+        target = {"locality": "local", "runtime": runtime, "platform": platform,
+                  "environment_ref": env.get("environment_ref"),
+                  "browser_automation": False, "source": "reported_environment"}
+        if runtime == "flutter_web" and platform == "chrome":
+            target.update({"launch_method": "terminal",
+                           "launch_command": "flutter run -d chrome"})
+        return target
     if locality == "deployed":
         return {"locality": "deployed", "runtime": runtime, "platform": platform,
                 "environment_ref": env.get("environment_ref"),
@@ -82,9 +86,6 @@ def derive_validation_plan(diagnosis, primary_target):
         for platform in affected:
             required.append({"target_id": "required-%s" % platform,
                              "kind": "runtime", "platform": platform})
-    for retained in (diagnosis or {}).get("retained_required") or []:
-        if retained.get("target_id") not in {target.get("target_id") for target in required}:
-            required.append(retained)
     return {"required": required, "optional": optional, "evidence": {}}
 
 

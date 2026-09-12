@@ -87,6 +87,11 @@ ok("observed condition starts investigation", context["initial_phase"] == "inves
 ok("localhost Chrome derives terminal Flutter target",
    context["primary_target"]["launch_command"] == "flutter run -d chrome"
    and context["primary_target"]["browser_automation"] is False)
+local_android = operations.derive_primary_target(
+    {"locality": "local", "runtime": "flutter", "platform": "android",
+     "environment_ref": "emulator-5554"})
+ok("other local runtimes preserve reported locality",
+   local_android["locality"] == "local" and local_android["platform"] == "android")
 bad = copy.deepcopy(observed)
 bad["operational_context"]["primary_target"] = {
     "locality": "deployed", "environment_ref": "canary", "source": "reported_environment"}
@@ -151,14 +156,23 @@ raises("changed Android surface cannot be labelled shared",
            ["android/app/src/main/AndroidManifest.xml"], "shared", ["android"],
            "worker:frontend-2", "diagnosis:wrong-scope"),
        "contradicts changed surfaces")
+raises("re-diagnosis cannot silently remove required targets",
+       lambda: store.set_diagnosis(
+           "KAN-993", two["revision"], "android-wrapper",
+           ["android/app/src/main/AndroidManifest.xml"], "platform_specific", ["android"],
+           "worker:frontend-1", "diagnosis:revised-cause"),
+       "supersedes_validation_ref is required")
 recomputed = store.set_diagnosis(
     "KAN-993", two["revision"], "android-wrapper",
     ["android/app/src/main/AndroidManifest.xml"], "platform_specific", ["android"],
-    "worker:frontend-1", "diagnosis:revised-cause")
+    "worker:frontend-1", "diagnosis:revised-cause", "review:corrected-cause")
 required_ids = {target["target_id"]
                 for target in recomputed["operational_context"]["validation_plan"]["required"]}
-ok("re-diagnosis retains earlier required safety coverage",
-   required_ids == {"required-android", "shared-automated", "primary-chrome"})
+ok("corrected diagnosis derives only current required scope",
+   required_ids == {"required-android"})
+ok("superseded plan remains auditable",
+   recomputed["operational_context"]["validation_history"][0]["superseded_by"]
+   == "review:corrected-cause")
 
 shutil.rmtree(tmp, ignore_errors=True)
 sys.exit(summary())

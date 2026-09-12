@@ -237,8 +237,9 @@ runtime; other affected platforms are optional confidence targets. Platform-spec
 require evidence on each affected platform. Closure depends only on all required target ids
 having evidence; optional evidence is non-blocking.
 Changed paths under `android/`, `ios/` or `web/` derive platform specificity rather than trusting
-an executor's label. A later diagnosis recomputes the plan while retaining earlier required
-targets, so causal revision can strengthen or redirect validation without silently weakening it.
+an executor's label. A later diagnosis recomputes the plan from the corrected cause. If that
+removes a previously required target, the write requires an explicit supersession reference and
+retains the prior plan in `validation_history`; correction is possible, but weakening is visible.
 
 **A PEER route with no available peer WAITS.** `review_owner` stays null and the item sits in
 `Peer-review`. It is never downgraded to QA or SELF for throughput — the absence of a

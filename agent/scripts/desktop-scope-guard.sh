@@ -41,29 +41,28 @@ print(cmd)
 ' 2>/dev/null)
 [ -n "$cmd" ] || exit 0
 
-case "$cmd" in
-  *git\ clone*)
-    case "$cmd" in
-      *Desktop*)
-        case "$cmd" in
-          *"$CANONICAL_NAME"*|*.worktrees*) exit 0 ;;
-          *)
-            echo "REFUSED: git clone targeting ~/Desktop outside $CANONICAL_NAME. Recurrence guard (2026-09-10): temporary/scratch clones must live under ${CANONICAL_NAME}/.worktrees/ — use a git worktree instead of a new top-level Desktop clone." >&2
-            exit 2
-            ;;
-        esac
-        ;;
-    esac
-    ;;
-  *mkdir*Desktop*|*cp\ -r*Desktop*|*rsync*Desktop*)
-    case "$cmd" in
-      *"$CANONICAL_NAME"*) exit 0 ;;
-      *)
-        echo "REFUSED: command would create a new entry directly under ~/Desktop outside $CANONICAL_NAME. Recurrence guard (2026-09-10): put temporary/scratch directories under ${CANONICAL_NAME}/.worktrees/ instead." >&2
-        exit 2
-        ;;
-    esac
-    ;;
-esac
+decision=$(printf '%s' "$cmd" | python3 -c '
+import os, re, sys
+cmd, canonical = sys.stdin.read(), sys.argv[1]
+if "Desktop" not in cmd:
+    print("PASS"); raise SystemExit
+if re.search(r"(^|[;&|\s])git\s+clone(\s|$)", cmd):
+    print("DENY"); raise SystemExit
+if not re.search(r"(^|[;&|\s])(mkdir|rsync|cp\s+-r)(\s|$)", cmd):
+    print("PASS"); raise SystemExit
+paths = re.findall(r"(?:~|/Users/[^/\s]+)?/Desktop(?:/[^\s;&|]+)?", cmd)
+for raw in paths:
+    path = os.path.normpath(os.path.expanduser(raw.strip("\"\x27()")))
+    desktop = os.path.expanduser("~/Desktop")
+    allowed = os.path.join(desktop, canonical)
+    if path != desktop and path != allowed and not path.startswith(allowed + os.sep):
+        print("DENY"); raise SystemExit
+print("PASS")
+' "$CANONICAL_NAME" 2>/dev/null) || exit 0
+
+if [ "$decision" = "DENY" ]; then
+  echo "REFUSED: command would create a Desktop entry outside $CANONICAL_NAME. Use a git worktree under the canonical checkout." >&2
+  exit 2
+fi
 
 exit 0

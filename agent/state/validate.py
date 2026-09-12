@@ -646,6 +646,14 @@ def validate_operational_context(context, errs, where):
                     % (where, MAX_REF_LEN))
     diagnosis = context.get("diagnosis")
     plan = context.get("validation_plan")
+    history = context.get("validation_history")
+    if history is not None:
+        if not isinstance(history, list) or any(
+                not isinstance(entry, dict) or not entry.get("plan")
+                or not entry.get("superseded_at") or not entry.get("superseded_by")
+                for entry in history):
+            errs.append("%s: validation_history entries require plan, superseded_at and "
+                        "superseded_by" % where)
     if diagnosis is None and plan is not None:
         errs.append("%s: validation_plan requires a causal diagnosis" % where)
     if diagnosis is not None:
@@ -654,6 +662,8 @@ def validate_operational_context(context, errs, where):
             return
         if not diagnosis.get("causal_surface") or not diagnosis.get("changed_surfaces"):
             errs.append("%s: diagnosis requires causal_surface and changed_surfaces" % where)
+        if diagnosis.get("supersedes_validation_ref") and not history:
+            errs.append("%s: supersedes_validation_ref requires validation_history" % where)
         try:
             expected_plan = operations.derive_validation_plan(diagnosis,
                                                                context.get("primary_target"))
