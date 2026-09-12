@@ -1,0 +1,55 @@
+{
+  "seat_count": 26,
+  "seats": {
+    "analyst": {"role": "analyst", "model": "opus", "effort": "medium"},
+    "backend-1": {"role": "backend", "model": "opus", "effort": "low"},
+    "backend-2": {"role": "backend", "model": "opus", "effort": "low"},
+    "backend-3": {"role": "backend", "model": "opus", "effort": "low"},
+    "backend-4": {"role": "backend", "model": "opus", "effort": "low"},
+    "backend-5": {"role": "backend", "model": "opus", "effort": "low"},
+    "backend-6": {"role": "backend", "model": "opus", "effort": "low"},
+    "backend-7": {"role": "backend", "model": "opus", "effort": "low"},
+    "backend-8": {"role": "backend", "model": "opus", "effort": "low"},
+    "content-manager": {"role": "content", "model": "sonnet", "effort": "low"},
+    "cpo": {"role": "cpo", "model": "opus", "effort": "low"},
+    "cto": {"role": "cto", "model": "opus", "effort": "low"},
+    "cxo": {"role": "cxo", "model": "opus", "effort": "low"},
+    "devops": {"role": "devops", "model": "sonnet", "effort": "low"},
+    "frontend-1": {"role": "frontend", "model": "opus", "effort": "low"},
+    "frontend-2": {"role": "frontend", "model": "opus", "effort": "low"},
+    "frontend-3": {"role": "frontend", "model": "opus", "effort": "low"},
+    "frontend-4": {"role": "frontend", "model": "opus", "effort": "low"},
+    "frontend-5": {"role": "frontend", "model": "opus", "effort": "low"},
+    "frontend-6": {"role": "frontend", "model": "opus", "effort": "low"},
+    "frontend-7": {"role": "frontend", "model": "opus", "effort": "low"},
+    "frontend-8": {"role": "frontend", "model": "opus", "effort": "low"},
+    "pm": {"role": "pm", "model": "sonnet", "effort": "medium"},
+    "po": {"role": "po", "model": "sonnet", "effort": "medium"},
+    "qa": {"role": "qa", "model": "sonnet", "effort": "medium"},
+    "ux-engineer-1": {"role": "ux-engineer", "model": "sonnet", "effort": "medium"}
+  },
+  "prompt_contract": {
+    "source": "agent/skills/route-to-seat/SKILL.md",
+    "required_phrases": [
+      "What you want, exactly.",
+      "What to read first.",
+      "What evidence you expect back.",
+      "What the agent may not do.",
+      "The shape of the reply."
+    ]
+  },
+  "workspace_and_lease": {
+    "worktree_source": "agent/state/worktrees.py",
+    "worktree_identity_phrase": "derived from (seat, work item) and nothing else",
+    "gate_source": "agent/skills/route-to-seat/SKILL.md",
+    "gate_phrase": "BEFORE ANY EXECUTION WAKE",
+    "lease_open_phrase": "immediately before the wake",
+    "lease_close_phrase": "when the invocation returns"
+  },
+  "return_behavior": {
+    "source": "agent/WORKFLOWS.md",
+    "direct_phrase": "sends its result to",
+    "return_target": "RETURN_TO",
+    "fallback_phrase": "COMPATIBILITY RE-WAKE"
+  }
+}
