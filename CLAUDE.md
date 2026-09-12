@@ -58,8 +58,9 @@ PO selects into Ready
          → claimability        (nine predicates, structured reasons)
             → ATOMIC CLAIM     (agent/state/store.py — CAS under a file lock)
                → ownership
-                  → WAKE       (Agent tool)
-                     → execution
+                  → WAKE
+                     → ExecutionRequest → provider selection → selected provider
+                        → normalized result → core receipt
 ```
 
 **CLAIM and WAKE are different acts and the order is not negotiable.** A claim is a Persistent

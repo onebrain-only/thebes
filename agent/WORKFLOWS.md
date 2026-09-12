@@ -87,7 +87,8 @@ pair, not a manager's routing.
 
 ```
 PO selects into Ready
-   → capability queue      → eligibility → claimability → ATOMIC CLAIM → ownership → WAKE
+   → capability queue → eligibility → claimability → ATOMIC CLAIM → ownership → WAKE
+      → ExecutionRequest → provider selection → selected provider → result receipt
 ```
 
 **READY IS NOT CLAIMABLE.** Ready means selected and prepared — the five facts below.

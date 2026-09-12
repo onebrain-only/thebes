@@ -6,13 +6,13 @@ Canonical checkout: `~/Desktop/Thebes-Canonical`. Do not create another clone.
 ## Current position
 
 **CURRENT FACT — MODE: `SYSTEM_MAINTENANCE`**
-**CURRENT FACT — CURRENT PHASE: Post-Wave-8 Operational Hardening**
+**CURRENT FACT — CURRENT PHASE: Phase 2 — Bounded Product Proof / Acceptance (PENDING AUTHORIZATION)**
 **CURRENT FACT — PRODUCT_ACCEPTANCE_STATUS: NOT AUTHORIZED / NOT STARTED**
 **CURRENT FACT — PRODUCT_EXECUTION_AUTHORIZED: NO**
 
-The current bounded step is this durable-documentation pass. It changes Thebes
-governance only. It does not select Product work, alter Product Jira lifecycle,
-touch Product code or production, begin acceptance, or implement an executor adapter.
+Post-Wave-8 Operational Hardening is closed. Phase 2 remains pending explicit authorization;
+this status does not select Product work, alter Product Jira lifecycle, touch Product code or
+production, or begin acceptance.
 
 Conversation memory is input to documentation work, never a canonical source. Fresh
 controllers read `CLAUDE.md`, then this roadmap, then the sources linked below. A
@@ -46,7 +46,7 @@ may start; **FUTURE TARGET** means architecture direction, not implemented capab
 | Stage | Status | Purpose and exit condition |
 | --- | --- | --- |
 | Phase 1 — Agent Architecture, Waves 1–8 | CLOSED | Establish the role/seat model, routing, durable state, Jira-derived lifecycle, queues/claims, observability and inert learning. Closed at the accepted Wave 8 baseline and remediation checkpoints recorded in `agent/history/program-chronology.md`. |
-| Post-Wave-8 Operational Hardening | CURRENT | Correct defects revealed by real operation, isolate Product from maintenance, establish durable program memory, and remove permanent provider coupling. Exit requires all accepted hardening slices complete and an explicit phase-closure decision; green tests alone do not close it. |
+| Post-Wave-8 Operational Hardening | CLOSED | Corrected real-operation defects, isolated Product from maintenance, established durable program memory, and removed permanent provider coupling. Closed after accepted provider-path remediation `ecac35d` and the final closure review. |
 | Phase 2 — Bounded Product Proof / Acceptance | PENDING AUTHORIZATION | Prove Thebes against exactly one explicitly selected existing Product ticket under controller observation. Exit requires recorded acceptance success and explicit authorization for normal Product execution. |
 | Phase 3 — Listener | FUTURE TARGET | Separate event/request/state ingress from controller conversation memory and ad-hoc polling. Exit criteria must be designed and approved before implementation. |
 | Phase 4 — Controller-to-Listener integration | FUTURE TARGET | Controllers brief Thebes through the Listener; they do not brief a concrete executor directly. Exit requires provider-neutral context handoff to be demonstrated. |
@@ -76,18 +76,18 @@ This table records durable purpose, not every implementation detail. See
 
 ## Current hardening work
 
-Evidence baseline: `fe997bb` plus this documentation pass. The operational-hardening
-test suite previously passed 38 isolated checks; this pass must re-run it and document
-the observed result rather than inheriting that number silently.
+Closure evidence: `fe997bb`, provider-path remediation `ecac35d`, and the final closure
+review. The operational-hardening suite passed 38 checks at closure; the full State suite
+passed 1,461 checks.
 
 | Area | State | Boundary / evidence |
 | --- | --- | --- |
-| Operating-mode isolation | IMPLEMENTED | `e3cf8c6`, `834b071`, `4948607`, `fe997bb`; claims and wakes are refused in maintenance, with wake authorization serialized by execution leases. Human authorization is still a governance gate, not authenticated by the setter. |
-| Observation → investigation | IMPLEMENTED | `agent/state/operations.py` and operational-context tests distinguish reported conditions from explicit reproduction requests. |
-| Reported environment authority | IMPLEMENTED | Operational context derives the primary target from the reported environment; local Flutter Chrome is not silently converted into browser automation. |
-| Causal-surface validation | IMPLEMENTED | Diagnosis records causal/changed surfaces and derives required versus optional validation targets. |
-| Shared program documentation | CURRENT SLICE | Roadmap, program memory, decision log, learning log, chronology and concise entry-point wiring. Exit: links and source order validate, classifications remain explicit, and no competing truth is introduced. |
-| Executor/provider abstraction | COMPLETE | Slices 1–3 added the neutral contract, neutral Seat/Role authority and byte-identical Claude renderer. Slice 4 routes Claude wake preparation through its seam; Slice 5 normalizes outcomes into `ExecutionResult`; Slice 6 adds the Codex CLI adapter; Slice 7 adds deterministic capability/model/effort-gated selection with controller-authorized overrides. Selection never changes lifecycle and never retries or falls back. |
+| Operating-mode isolation | COMPLETE | `e3cf8c6`, `834b071`, `4948607`, `fe997bb`; claims and wakes are refused in maintenance, with wake authorization serialized by execution leases. Human authorization is still a governance gate, not authenticated by the setter. |
+| Observation → investigation | COMPLETE | `agent/state/operations.py` and operational-context tests distinguish reported conditions from explicit reproduction requests. |
+| Reported environment authority | COMPLETE | Operational context derives the primary target from the reported environment; local Flutter Chrome is not silently converted into browser automation. |
+| Causal-surface validation | COMPLETE | Diagnosis records causal/changed surfaces and derives required versus optional validation targets. |
+| Shared program documentation | COMPLETE | Roadmap, program memory, decision log, learning log, chronology and concise entry-point wiring agree on the closed hardening milestone and pending Product authorization. |
+| Executor/provider abstraction | COMPLETE | Slices 1–3 added the neutral contract, neutral Seat/Role authority and byte-identical Claude renderer. Slices 4–6 added provider seams, normalized outcomes and the Codex CLI adapter. Slice 7 selects deterministically; remediation `ecac35d` wires selection and receipt into the wake, with one selected provider and no retry or fallback. |
 | Product acceptance | NOT AUTHORIZED / NOT STARTED | Protocol is canonical below. No ticket is selected. |
 
 ## Executor/provider target
