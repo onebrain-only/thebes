@@ -3,25 +3,32 @@
 The repository does not own a callable Claude transport. The native ``Agent``
 tool remains a controller capability. This module validates one already-built
 ``ExecutionRequest``, resolves current Claude binding defaults, and hands an
-immutable wake description to an injected controller transport exactly once.
-
-Slice 4 deliberately returns the transport's raw value unchanged. Converting
-that value into ``ExecutionResult`` belongs to Slice 5.
+immutable wake description to an injected controller transport exactly once,
+then normalizes only supported transport evidence into ``ExecutionResult``.
 """
 
 from dataclasses import dataclass
 import os
-from typing import Any, Callable, Optional, Tuple
+from typing import Any, Callable, Mapping, Optional, Tuple
 
 from agent.execution.provider import (
     ExecutionFeature,
     ExecutionRequest,
+    ExecutionResult,
+    ExecutionStatus,
     ExecutionTarget,
+    EvidenceClaim,
+    ChangedFileClaim,
+    EscalationRequirement,
+    Failure,
+    FailureCode,
     ModelIntent,
     ProviderCapabilities,
     ReasoningEffort,
     ReportedEnvironment,
     ReturnContract,
+    TestClaim,
+    TestStatus,
     ValidationTarget,
     Workspace,
 )
@@ -36,6 +43,44 @@ AGENTS_DIR = os.path.join(ROOT, ".claude", "agents")
 
 class ClaudeWakeError(ValueError):
     pass
+
+
+class ClaudeTransportFailure(Exception):
+    """A classified failure reported by the external controller transport."""
+
+    code = FailureCode.EXECUTOR_PROCESS_FAILURE
+
+    def __init__(self, message, raw_artifact_ref=None):
+        super().__init__(message)
+        self.raw_artifact_ref = raw_artifact_ref
+
+
+class ClaudeUnavailable(ClaudeTransportFailure):
+    code = FailureCode.UNAVAILABLE
+
+
+class ClaudeAuthenticationFailure(ClaudeTransportFailure):
+    code = FailureCode.AUTHENTICATION_FAILURE
+
+
+class ClaudeUnsupportedModel(ClaudeTransportFailure):
+    code = FailureCode.UNSUPPORTED_MODEL
+
+
+class ClaudeUnsupportedEffort(ClaudeTransportFailure):
+    code = FailureCode.UNSUPPORTED_EFFORT
+
+
+class ClaudeUnsupportedCapability(ClaudeTransportFailure):
+    code = FailureCode.UNSUPPORTED_CAPABILITY
+
+
+class ClaudeExecutorProcessFailure(ClaudeTransportFailure):
+    code = FailureCode.EXECUTOR_PROCESS_FAILURE
+
+
+class ClaudeMalformedResult(ClaudeTransportFailure):
+    code = FailureCode.MALFORMED_RESULT
 
 
 @dataclass(frozen=True)
@@ -94,8 +139,8 @@ def capabilities():
         constraints=(
             "transport is the controller-native external Agent tool",
             "subagent_type is the exact neutral Seat id",
-            "binding model and effort remain authoritative in Slice 4",
-            "raw transport results are not normalized until Slice 5",
+            "binding model and effort remain authoritative",
+            "transport evidence is normalized without workflow side effects",
         ),
     )
 
@@ -144,11 +189,19 @@ def prepare_claude_wake(request, session_ref=None, registry_path=SEATS_JSON,
             "Claude legacy Role %r does not match neutral Role %r"
             % (binding["role"], role_id)
         )
+    if binding["model"] not in ("opus", "sonnet"):
+        raise ClaudeUnsupportedModel(
+            "Claude configuration model %r is unsupported" % binding["model"]
+        )
+    if binding["effort"] not in tuple(effort.value for effort in ReasoningEffort):
+        raise ClaudeUnsupportedEffort(
+            "Claude configuration effort %r is unsupported" % binding["effort"]
+        )
 
     declared = capabilities()
     missing_features = request.required_execution_features - declared.execution_features
     if missing_features:
-        raise ClaudeWakeError(
+        raise ClaudeUnsupportedCapability(
             "Claude wake lacks execution feature(s): %s"
             % ", ".join(sorted(feature.value for feature in missing_features))
         )
@@ -179,6 +232,175 @@ def prepare_claude_wake(request, session_ref=None, registry_path=SEATS_JSON,
     )
 
 
+_RESULT_KEYS = frozenset({
+    "status", "summary", "evidence", "changed_files", "tests", "escalation",
+    "failure_message", "duration_seconds", "continuation_ref", "raw_artifact_ref",
+})
+
+
+def _optional_string(value, field):
+    if value is not None and (not isinstance(value, str) or not value.strip()):
+        raise ClaudeMalformedResult("%s must be a non-empty string or null" % field)
+    return value
+
+
+def _claims(rows, required, optional, build, field):
+    if rows is None:
+        return ()
+    if not isinstance(rows, (list, tuple)):
+        raise ClaudeMalformedResult("%s must be a list" % field)
+    claims = []
+    allowed = set(required) | set(optional)
+    for index, row in enumerate(rows):
+        if not isinstance(row, Mapping) or set(row) - allowed:
+            raise ClaudeMalformedResult("%s[%d] has an invalid shape" % (field, index))
+        if any(not isinstance(row.get(key), str) or not row[key].strip()
+               for key in required):
+            raise ClaudeMalformedResult("%s[%d] is missing required text" % (field, index))
+        try:
+            claims.append(build(row))
+        except (TypeError, ValueError) as exc:
+            raise ClaudeMalformedResult("%s[%d]: %s" % (field, index, exc))
+    return tuple(claims)
+
+
+def _evidence_claim(row):
+    summary = _optional_string(row.get("summary"), "evidence summary")
+    return EvidenceClaim(row["kind"], row["reference"], summary)
+
+
+def _changed_file_claim(row):
+    change_kind = _optional_string(row.get("change_kind"), "change_kind")
+    return ChangedFileClaim(row["path"], change_kind)
+
+
+def _test_claim(row):
+    evidence_ref = _optional_string(row.get("evidence_ref"), "test evidence_ref")
+    exit_code = row.get("exit_code")
+    if exit_code is not None and (not isinstance(exit_code, int)
+                                  or isinstance(exit_code, bool)):
+        raise ClaudeMalformedResult("test exit_code must be an integer or null")
+    return TestClaim(
+        row["command"], TestStatus(row["status"]), evidence_ref, exit_code
+    )
+
+
+def normalize_claude_result(request, wake, raw):
+    """Normalize only explicit Claude transport evidence; never infer workflow state."""
+    if isinstance(raw, str):
+        if not raw.strip():
+            raise ClaudeMalformedResult("Claude returned an empty result")
+        payload = {"status": "completed", "summary": raw}
+    elif isinstance(raw, Mapping):
+        payload = dict(raw)
+    else:
+        raise ClaudeMalformedResult("Claude result must be text or a result mapping")
+
+    unknown = set(payload) - _RESULT_KEYS
+    if unknown:
+        raise ClaudeMalformedResult(
+            "Claude result has unknown field(s): %s" % ", ".join(sorted(unknown))
+        )
+    status_value = payload.get("status")
+    try:
+        status = ExecutionStatus(status_value)
+    except (TypeError, ValueError):
+        raise ClaudeMalformedResult("Claude result has invalid status %r" % status_value)
+    if status == ExecutionStatus.PROVIDER_FAILED:
+        raise ClaudeMalformedResult("transport results cannot self-declare provider_failed")
+    summary = payload.get("summary")
+    if not isinstance(summary, str) or not summary.strip():
+        raise ClaudeMalformedResult("Claude result requires a non-empty summary")
+
+    evidence = _claims(
+        payload.get("evidence"), ("kind", "reference"), ("summary",),
+        _evidence_claim,
+        "evidence",
+    )
+    changed_files = _claims(
+        payload.get("changed_files"), ("path",), ("change_kind",),
+        _changed_file_claim,
+        "changed_files",
+    )
+    tests = _claims(
+        payload.get("tests"), ("command", "status"),
+        ("evidence_ref", "exit_code"),
+        _test_claim,
+        "tests",
+    )
+
+    escalation = payload.get("escalation")
+    if escalation is not None:
+        if (not isinstance(escalation, Mapping)
+                or set(escalation) - {"reason", "required_authority",
+                                      "required_capability"}
+                or not isinstance(escalation.get("reason"), str)
+                or not escalation["reason"].strip()):
+            raise ClaudeMalformedResult("escalation has an invalid shape")
+        required_authority = _optional_string(
+            escalation.get("required_authority"), "escalation required_authority"
+        )
+        required_capability = _optional_string(
+            escalation.get("required_capability"), "escalation required_capability"
+        )
+        escalation = EscalationRequirement(
+            escalation["reason"], required_authority, required_capability
+        )
+    if status == ExecutionStatus.NEEDS_INPUT and escalation is None:
+        raise ClaudeMalformedResult("needs_input requires a bounded escalation reason")
+    if status != ExecutionStatus.NEEDS_INPUT and escalation is not None:
+        raise ClaudeMalformedResult("escalation is valid only for needs_input")
+
+    failure_message = payload.get("failure_message")
+    if status == ExecutionStatus.EXECUTION_FAILED:
+        if not isinstance(failure_message, str) or not failure_message.strip():
+            raise ClaudeMalformedResult("execution_failed requires failure_message")
+        failure = Failure(FailureCode.EXECUTION_FAILURE, failure_message)
+    else:
+        if failure_message is not None:
+            raise ClaudeMalformedResult("failure_message is valid only for execution_failed")
+        failure = None
+
+    duration = payload.get("duration_seconds")
+    if (duration is not None
+            and (not isinstance(duration, (int, float)) or isinstance(duration, bool)
+                 or duration < 0)):
+        raise ClaudeMalformedResult("duration_seconds must be a non-negative number")
+    continuation = _optional_string(payload.get("continuation_ref"), "continuation_ref")
+    artifact = _optional_string(payload.get("raw_artifact_ref"), "raw_artifact_ref")
+
+    return ExecutionResult(
+        invocation_id=request.invocation_id,
+        status=status,
+        summary=summary,
+        evidence=evidence,
+        changed_files=changed_files,
+        tests=tests,
+        escalation=escalation,
+        failure=failure,
+        provider_id="claude-code",
+        resolved_model_ref=wake.model,
+        resolved_effort_ref=wake.effort,
+        duration_seconds=duration,
+        raw_artifact_ref=artifact,
+        continuation_ref=continuation or wake.session_ref,
+    )
+
+
+def _provider_failure(request, code, message, wake=None, raw_artifact_ref=None):
+    return ExecutionResult(
+        invocation_id=request.invocation_id,
+        status=ExecutionStatus.PROVIDER_FAILED,
+        summary=message,
+        failure=Failure(code, message),
+        provider_id="claude-code",
+        resolved_model_ref=wake.model if wake else None,
+        resolved_effort_ref=wake.effort if wake else None,
+        raw_artifact_ref=raw_artifact_ref,
+        continuation_ref=wake.session_ref if wake else None,
+    )
+
+
 class ClaudeProvider:
     """Two-operation provider seam using a controller-supplied native transport."""
 
@@ -199,12 +421,41 @@ class ClaudeProvider:
         return capabilities()
 
     def execute(self, request):
-        """Invoke the external transport once and preserve its raw return value."""
-        wake = prepare_claude_wake(
-            request,
-            session_ref=self._session_ref,
-            registry_path=self._registry_path,
-            bindings_dir=self._bindings_dir,
-            agents_dir=self._agents_dir,
-        )
-        return self._transport(wake)
+        """Invoke once and normalize without retry, fallback, or workflow mutation."""
+        try:
+            wake = prepare_claude_wake(
+                request,
+                session_ref=self._session_ref,
+                registry_path=self._registry_path,
+                bindings_dir=self._bindings_dir,
+                agents_dir=self._agents_dir,
+            )
+        except ClaudeTransportFailure as exc:
+            return _provider_failure(request, exc.code, str(exc),
+                                     raw_artifact_ref=exc.raw_artifact_ref)
+        except (ClaudeWakeError, roster.RegistryError, OSError) as exc:
+            return _provider_failure(request, FailureCode.UNAVAILABLE, str(exc))
+
+        try:
+            raw = self._transport(wake)
+        except ClaudeTransportFailure as exc:
+            return _provider_failure(request, exc.code, str(exc), wake,
+                                     exc.raw_artifact_ref)
+        except TimeoutError as exc:
+            return _provider_failure(request, FailureCode.TIMEOUT,
+                                     str(exc) or "Claude transport timed out", wake)
+        except Exception as exc:
+            return _provider_failure(request, FailureCode.EXECUTOR_PROCESS_FAILURE,
+                                     str(exc) or "Claude transport failed", wake)
+
+        try:
+            return normalize_claude_result(request, wake, raw)
+        except ClaudeMalformedResult as exc:
+            artifact = None
+            if isinstance(raw, Mapping):
+                candidate = raw.get("raw_artifact_ref")
+                if isinstance(candidate, str) and candidate.strip():
+                    artifact = candidate
+            return _provider_failure(
+                request, FailureCode.MALFORMED_RESULT, str(exc), wake, artifact
+            )

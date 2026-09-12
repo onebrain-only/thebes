@@ -84,8 +84,9 @@ whole model exists to prevent.
 - **Pass the wake through `agent.execution.wake.execute_product_wake` and
   `agent.execution.claude.ClaudeProvider`.** The repository seam prepares and validates the
   exact native `Agent` invocation; the controller still owns that external transport. Preserve
-  `subagent_type`, the written brief, workspace/environment, binding model/effort and the raw
-  return unchanged. No direct Product execution wake bypasses this seam.
+  `subagent_type`, the written brief, workspace/environment and binding model/effort. The provider
+  normalizes the native outcome into `ExecutionResult`; completion is invocation evidence, never
+  Product acceptance or lifecycle authority. No direct Product execution wake bypasses this seam.
 - Coordinate dependencies — only canonical `DONE` satisfies a `BLOCKS` edge.
 - Detect contention from declared **surfaces**, not from a boolean.
 - Create **bounded safety interventions** — STOP, HOLD, FREEZE — and clear them (RESUME).

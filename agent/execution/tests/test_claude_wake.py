@@ -22,6 +22,8 @@ from agent.execution.provider import (  # noqa: E402
     ExecutionKind,
     ExecutionProvider,
     ExecutionRequest,
+    ExecutionStatus,
+    FailureCode,
     ExecutionTarget,
     ModelIntent,
     MutationMode,
@@ -107,7 +109,8 @@ class ClaudeWakeCharacterizationTests(unittest.TestCase):
         self.assertIn("agent.execution.claude.ClaudeProvider", instruction)
         self.assertIn("controller-native external `Agent` tool", instruction)
         self.assertIn("subagent_type=<seat>", instruction)
-        self.assertIn("native raw value unchanged", instruction)
+        self.assertIn("normalizes the supported native outcome", instruction)
+        self.assertIn("`ExecutionResult`", instruction)
 
     def test_exact_native_wake_and_request_order_are_preserved(self):
         original = request()
@@ -155,12 +158,14 @@ class ClaudeWakeCharacterizationTests(unittest.TestCase):
         self.assertEqual(ModelIntent.COST_EFFICIENT, request().model_intent)
         self.assertEqual(ReasoningEffort.HIGH, request().reasoning_effort)
 
-    def test_provider_calls_one_transport_and_returns_raw_identity(self):
-        raw = {"current": "unstructured Claude return"}
+    def test_provider_calls_one_transport_and_normalizes_raw_text(self):
+        raw = "current unstructured Claude return"
         transport = RecordingTransport(raw)
         provider = ClaudeProvider(transport)
         self.assertIsInstance(provider, ExecutionProvider)
-        self.assertIs(raw, provider.execute(request()))
+        result = provider.execute(request())
+        self.assertEqual(ExecutionStatus.COMPLETED, result.status)
+        self.assertEqual(raw, result.summary)
         self.assertEqual(1, len(transport.wakes))
 
     def test_neutral_seat_capability_and_role_are_not_provider_choices(self):
@@ -215,7 +220,7 @@ class WakeOrderTests(unittest.TestCase):
     def test_permission_then_lease_then_request_then_transport_then_close(self):
         events = []
         store = FakeStore(events)
-        raw = object()
+        raw = "bounded invocation returned"
         provider = ClaudeProvider(RecordingTransport(raw, events))
 
         def factory(task, lease):
@@ -230,7 +235,8 @@ class WakeOrderTests(unittest.TestCase):
             provider, "KAN-900", "backend-1", "authorization:bounded",
             factory, state_store=store
         )
-        self.assertIs(raw, result)
+        self.assertEqual(ExecutionStatus.COMPLETED, result.status)
+        self.assertEqual(raw, result.summary)
         self.assertEqual(
             ["permission", "lease-open", "request", "transport", "lease-close"],
             events,
@@ -271,11 +277,12 @@ class WakeOrderTests(unittest.TestCase):
             events.append("request")
             return request()
 
-        with self.assertRaisesRegex(RuntimeError, "raw external failure"):
-            execute_product_wake(
-                ClaudeProvider(failing_transport), "KAN-900", "backend-1",
-                "authorization:bounded", factory, state_store=store
-            )
+        result = execute_product_wake(
+            ClaudeProvider(failing_transport), "KAN-900", "backend-1",
+            "authorization:bounded", factory, state_store=store
+        )
+        self.assertEqual(ExecutionStatus.PROVIDER_FAILED, result.status)
+        self.assertEqual(FailureCode.EXECUTOR_PROCESS_FAILURE, result.failure.code)
         self.assertEqual("lease-close", events[-1])
 
 

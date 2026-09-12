@@ -80,9 +80,11 @@ the Claude binding and must not substitute the request's neutral intent fields.
 The actual transport remains the controller-native external `Agent` tool; there is no
 repository-callable Claude launcher. The injected controller transport issues exactly one wake
 with `subagent_type=<seat>` and that unchanged prompt, against the request's workspace and
-environment. It returns the native raw value unchanged. The core helper closes the same lease
-after that return (including an external failure). Do not call the native execution wake around
-this seam, and do not interpret the raw result here; normalization is a later migration.
+environment. The provider normalizes the supported native outcome into the provider-neutral
+`ExecutionResult`. The core helper closes the same lease after that return (including an external
+failure). Do not call the native execution wake around this seam. A completed invocation is
+evidence to verify, not Product acceptance, lifecycle movement, or permission to select or
+launch more work.
 
 **HOLD and FREEZE do not appear here** — they block new claims while current owners continue.
 Only a task-scoped STOP halts work already in flight.

@@ -6,9 +6,9 @@ immutable request.  It cannot select work, claim ownership, change operating
 mode, choose validation, appoint a reviewer, mutate Jira/lifecycle, or launch a
 second executor.  Provider output is evidence to verify, never workflow truth.
 
-Slice 4 adds a Claude-specific wake-preparation adapter in a separate module.
-The contract here remains provider-neutral; live Claude result normalization and
-Codex support do not exist yet.
+The contract here remains provider-neutral. Concrete adapters may normalize
+provider-native outcomes into this evidence model, but Codex support and
+provider selection do not exist yet.
 """
 
 from dataclasses import dataclass
