@@ -62,9 +62,11 @@ does not write Product code, claim ordinary Product work for itself, select a va
 route, or appoint an ineligible reviewer.
 
 **CURRENT FACT — Executor.** A provider-hosted seat performs the bounded work its Role,
-ownership and prompt authorize. It reports evidence directly to the declared return
-target. A wake creates no ownership; ownership must already exist and the continuation
-gate and execution lease must authorize the invocation.
+ownership and prompt authorize. Thebes owns the provider-neutral `ExecutionRequest`; the
+Claude-specific seam validates it and prepares the exact native `Agent` wake. The controller
+still owns that external transport because no repository-callable Claude launcher exists. A
+wake creates no ownership; ownership must already exist and the continuation gate and execution
+lease must authorize the invocation. The current raw Claude result remains unnormalized.
 
 **FUTURE TARGET.** Provider invocation becomes an adapter boundary owned by Thebes. The
 controller should not embed Claude Code, Codex or any future provider as architectural
@@ -164,10 +166,11 @@ that says “blocked by” is documentation until the edge exists.
 lifecycle, Persistent State, capability queues, claims, ownership, execution gates and
 leases, safety interventions, Agent View, and advisory telemetry/learning.
 
-**CURRENT FACT.** Provider neutrality is not yet complete. Role contracts are mostly
-tool-neutral, but `agent/scripts/build-agents.sh`, generated Claude bindings and Agent-tool
-wakes still expose Claude-specific integration. No interchangeable provider adapter has
-been verified.
+**CURRENT FACT.** Provider neutrality is not yet complete. The neutral execution contract,
+Seat registry, Claude renderer and Claude wake-preparation seam exist. Claude bindings and the
+controller-native external Agent-tool transport remain provider-specific. Live result
+normalization, provider selection, an interchangeable Codex adapter and a repository-callable
+Claude transport do not exist.
 
 **FUTURE TARGET.** Listener → controller integration → Thebes Core → measured knowledge
 scaling is the approved direction, not current implementation. RAG is deferred until

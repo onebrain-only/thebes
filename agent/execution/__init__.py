@@ -1,7 +1,7 @@
-"""Provider-neutral execution contract.
+"""Provider-neutral execution contract and bounded provider seams.
 
-Slice 1 deliberately exposes only contract values and the two-method provider
-interface.  It has no runtime caller and no concrete provider implementation.
+The contract remains provider-neutral. Concrete adapters live in their own
+modules and may not acquire workflow authority.
 """
 
 from .provider import (  # noqa: F401

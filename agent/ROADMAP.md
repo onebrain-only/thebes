@@ -87,7 +87,7 @@ the observed result rather than inheriting that number silently.
 | Reported environment authority | IMPLEMENTED | Operational context derives the primary target from the reported environment; local Flutter Chrome is not silently converted into browser automation. |
 | Causal-surface validation | IMPLEMENTED | Diagnosis records causal/changed surfaces and derives required versus optional validation targets. |
 | Shared program documentation | CURRENT SLICE | Roadmap, program memory, decision log, learning log, chronology and concise entry-point wiring. Exit: links and source order validate, classifications remain explicit, and no competing truth is introduced. |
-| Executor/provider abstraction | IN PROGRESS | Slice 1 added an unused provider contract and fake. Slice 2 made `agent/state/registry/seats.json` the neutral Seat/Role authority. Slice 3 makes the Claude renderer combine that neutral mapping with Claude-only configuration while preserving all 26 generated artifacts byte for byte. Claude execution remains unchanged; no real provider adapter or caller exists. |
+| Executor/provider abstraction | IN PROGRESS | Slices 1–3 added the neutral contract, neutral Seat/Role authority and byte-identical Claude renderer. Slice 4 routes wake preparation through a Claude-specific seam using the existing `ExecutionRequest`; the controller-native external Agent tool remains the actual transport and its raw return remains unchanged. Result normalization, provider selection and Codex are not implemented. |
 | Product acceptance | NOT AUTHORIZED / NOT STARTED | Protocol is canonical below. No ticket is selected. |
 
 ## Executor/provider target
@@ -108,10 +108,10 @@ executor/provider adapter
 Claude Code is an available provider, not a permanent architectural dependency.
 Codex, Claude Code and future executors sit behind Thebes. Controllers communicate
 intent and constraints to Thebes; Thebes assembles minimum execution context and
-invokes a provider. The neutral Seat/Role registry and unused execution contract now exist, and
-Claude-specific rendering consumes the neutral mapping without treating binding Role metadata
-as authority. Agent-tool wakes and result ingestion remain known gaps, not evidence that the
-target is complete.
+invokes a provider. The neutral Seat/Role registry and execution contract now exist; Claude
+rendering and wake preparation consume them without taking core authority. The actual Agent-tool
+transport remains controller-native and external to the repository. Result normalization,
+provider selection and Codex remain known gaps, not evidence that the target is complete.
 
 ## Authorization invariant
 

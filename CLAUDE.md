@@ -81,6 +81,11 @@ whole model exists to prevent.
   invocation returns.** `assert_execution_permitted()` is a read-only explanation; only
   `store.open_execution_lease()` serialises wake authority against a maintenance transition.
   `SYSTEM_MAINTENANCE` cannot begin while an execution lease remains active.
+- **Pass the wake through `agent.execution.wake.execute_product_wake` and
+  `agent.execution.claude.ClaudeProvider`.** The repository seam prepares and validates the
+  exact native `Agent` invocation; the controller still owns that external transport. Preserve
+  `subagent_type`, the written brief, workspace/environment, binding model/effort and the raw
+  return unchanged. No direct Product execution wake bypasses this seam.
 - Coordinate dependencies — only canonical `DONE` satisfies a `BLOCKS` edge.
 - Detect contention from declared **surfaces**, not from a boolean.
 - Create **bounded safety interventions** — STOP, HOLD, FREEZE — and clear them (RESUME).

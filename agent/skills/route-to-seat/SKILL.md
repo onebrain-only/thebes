@@ -69,6 +69,21 @@ After the read-only continuation check passes, call
 Close that exact lease with `store.close_execution_lease()` when the invocation returns. A
 passing `assert_execution_permitted()` result without a lease is not wake authority.
 
+**The Claude wake now passes through the repository-owned provider seam.** For Product
+execution, use `agent.execution.wake.execute_product_wake`: it runs the continuation gate,
+opens the lease, and only then lets the request factory construct the provider-neutral
+`ExecutionRequest`. Pass that request to `agent.execution.claude.ClaudeProvider`. The request's
+`objective` is the already-written brief and must reach the native prompt unchanged; Role and
+context references keep their existing order. The provider resolves current model/effort from
+the Claude binding and must not substitute the request's neutral intent fields.
+
+The actual transport remains the controller-native external `Agent` tool; there is no
+repository-callable Claude launcher. The injected controller transport issues exactly one wake
+with `subagent_type=<seat>` and that unchanged prompt, against the request's workspace and
+environment. It returns the native raw value unchanged. The core helper closes the same lease
+after that return (including an external failure). Do not call the native execution wake around
+this seam, and do not interpret the raw result here; normalization is a later migration.
+
 **HOLD and FREEZE do not appear here** — they block new claims while current owners continue.
 Only a task-scoped STOP halts work already in flight.
 
