@@ -166,25 +166,26 @@ def set_operating_mode(mode, changed_by, reason_ref, expected_revision=None):
     if not changed_by or not reason_ref:
         raise StateError("changed_by and reason_ref are required")
     rid = operations.CURRENT_MODE_ID
-    with record_lock("operating_mode", rid):
-        cur = read("operating_mode", rid)
-        if cur is None:
-            if expected_revision is not None:
-                raise StateError("operating mode does not exist; expected_revision must be null")
-            rec = {"operating_mode_id": rid, "mode": mode, "changed_by": changed_by,
-                   "reason_ref": reason_ref, "schema_version": SCHEMA_VERSION,
-                   "revision": 1, "created_at": now(), "updated_at": now()}
-        else:
-            if expected_revision is None:
-                raise StateError("expected_revision is required; there is no force update")
-            if cur["revision"] != expected_revision:
-                raise StateError("stale write refused: operating mode is at revision %d, "
-                                 "caller expected %d" % (cur["revision"], expected_revision))
-            rec = dict(cur, mode=mode, changed_by=changed_by, reason_ref=reason_ref,
-                       revision=cur["revision"] + 1, updated_at=now())
-        _validate_one("operating_mode", rec)
-        _atomic_write(path_for("operating_mode", rid), rec)
-        return rec
+    with _Lock("execution-domain"):
+        with record_lock("operating_mode", rid):
+            cur = read("operating_mode", rid)
+            if cur is None:
+                if expected_revision is not None:
+                    raise StateError("operating mode does not exist; expected_revision must be null")
+                rec = {"operating_mode_id": rid, "mode": mode, "changed_by": changed_by,
+                       "reason_ref": reason_ref, "schema_version": SCHEMA_VERSION,
+                       "revision": 1, "created_at": now(), "updated_at": now()}
+            else:
+                if expected_revision is None:
+                    raise StateError("expected_revision is required; there is no force update")
+                if cur["revision"] != expected_revision:
+                    raise StateError("stale write refused: operating mode is at revision %d, "
+                                     "caller expected %d" % (cur["revision"], expected_revision))
+                rec = dict(cur, mode=mode, changed_by=changed_by, reason_ref=reason_ref,
+                           revision=cur["revision"] + 1, updated_at=now())
+            _validate_one("operating_mode", rec)
+            _atomic_write(path_for("operating_mode", rid), rec)
+            return rec
 
 
 def create(kind, record, rid=None):
@@ -464,7 +465,8 @@ def set_characteristics(work_item_id, expected_revision, changes, author,
 
 
 def set_operational_context(work_item_id, expected_revision, intent,
-                            reported_environment, author, evidence_ref):
+                            reported_environment, author, evidence_ref,
+                            supersedes_validation_ref=None):
     """Persist reported intent and derive its authoritative primary target atomically."""
     import operations                                  # noqa: E402
     if expected_revision is None:
@@ -487,11 +489,37 @@ def set_operational_context(work_item_id, expected_revision, intent,
                                               expected_revision))
         if cur.get("record_type") != "executable":
             raise StateError("container records carry no operational context")
-        context = {"intent": intent, "initial_phase": operations.initial_phase(intent),
-                   "reported_environment": dict(reported_environment or {}),
-                   "primary_target": target, "comparative_targets": [],
-                   "provenance": {"by": author, "at": now(),
-                                  "evidence_ref": evidence_ref}}
+        context = dict(cur.get("operational_context") or {})
+        prior_plan = context.get("validation_plan")
+        context.update({"intent": intent, "initial_phase": operations.initial_phase(intent),
+                        "reported_environment": dict(reported_environment or {}),
+                        "primary_target": target,
+                        "comparative_targets": context.get("comparative_targets") or [],
+                        "provenance": {"by": author, "at": now(),
+                                       "evidence_ref": evidence_ref}})
+        if context.get("diagnosis"):
+            new_plan = operations.derive_validation_plan(context["diagnosis"], target)
+            prior_required = {item.get("target_id")
+                              for item in (prior_plan or {}).get("required") or []}
+            new_required = {item.get("target_id") for item in new_plan["required"]}
+            if prior_required - new_required:
+                if not supersedes_validation_ref:
+                    raise StateError("operational-context change would remove required validation "
+                                     "targets; supersedes_validation_ref is required")
+                history = list(context.get("validation_history") or [])
+                history.append({"plan": prior_plan, "superseded_at": now(),
+                                "superseded_by": supersedes_validation_ref})
+                context["validation_history"] = history
+                context["diagnosis"] = dict(
+                    context["diagnosis"],
+                    supersedes_validation_ref=supersedes_validation_ref)
+            prior_evidence = (prior_plan or {}).get("evidence") or {}
+            known = {item.get("target_id")
+                     for item in new_plan["required"] + new_plan["optional"]}
+            new_plan["evidence"] = {target_id: evidence
+                                    for target_id, evidence in prior_evidence.items()
+                                    if target_id in known}
+            context["validation_plan"] = new_plan
         merged = dict(cur, operational_context=context,
                       revision=cur["revision"] + 1, updated_at=now())
         _validate_one("task", merged)
@@ -501,7 +529,7 @@ def set_operational_context(work_item_id, expected_revision, intent,
 
 def set_diagnosis(work_item_id, expected_revision, causal_surface, changed_surfaces,
                   platform_specificity, affected_platforms, author, evidence_ref,
-                  supersedes_validation_ref=None):
+                  supersedes_validation_ref=None, causal_platforms=None):
     """Record causal findings and derive validation scope in the same CAS write."""
     import operations                                  # noqa: E402
     if expected_revision is None:
@@ -510,6 +538,7 @@ def set_diagnosis(work_item_id, expected_revision, causal_surface, changed_surfa
                  "changed_surfaces": sorted(set(changed_surfaces or [])),
                  "platform_specificity": platform_specificity,
                  "affected_platforms": sorted(set(affected_platforms or [])),
+                 "causal_platforms": sorted(set(causal_platforms or [])),
                  "provenance": {"by": author, "at": now(), "evidence_ref": evidence_ref}}
     if not causal_surface or not diagnosis["changed_surfaces"] or not author or not evidence_ref:
         raise StateError("causal_surface, changed_surfaces, author and evidence_ref are required")
@@ -1929,7 +1958,8 @@ def claim(work_item_id, seat_id, claim_ref, expected_revision, capability_of_sea
     claim has succeeded, and a wake never creates ownership.
     """
     import operations, queue as q                       # noqa: E402
-    with record_lock("task", work_item_id):
+    with _Lock("execution-domain"):
+      with record_lock("task", work_item_id):
         cur = read("task", work_item_id)
         if cur is None:
             raise StateError("task %s does not exist" % work_item_id)

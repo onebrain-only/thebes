@@ -25,8 +25,6 @@ set -u
 
 SELF=$(cd "$(dirname "$0")" 2>/dev/null && pwd) || exit 0
 ROOT=$(cd "$SELF/../.." 2>/dev/null && pwd) || exit 0
-CANONICAL_NAME=$(basename "$ROOT")
-
 payload=$(cat 2>/dev/null) || exit 0
 [ -n "$payload" ] || exit 0
 
@@ -41,27 +39,14 @@ print(cmd)
 ' 2>/dev/null)
 [ -n "$cmd" ] || exit 0
 
-decision=$(printf '%s' "$cmd" | python3 -c '
-import os, re, sys
-cmd, canonical = sys.stdin.read(), sys.argv[1]
-if "Desktop" not in cmd:
-    print("PASS"); raise SystemExit
-if re.search(r"(^|[;&|\s])git\s+clone(\s|$)", cmd):
-    print("DENY"); raise SystemExit
-if not re.search(r"(^|[;&|\s])(mkdir|rsync|cp\s+-r)(\s|$)", cmd):
-    print("PASS"); raise SystemExit
-paths = re.findall(r"(?:~|/Users/[^/\s]+)?/Desktop(?:/[^\s;&|]+)?", cmd)
-for raw in paths:
-    path = os.path.normpath(os.path.expanduser(raw.strip("\"\x27()")))
-    desktop = os.path.expanduser("~/Desktop")
-    allowed = os.path.join(desktop, canonical)
-    if path != desktop and path != allowed and not path.startswith(allowed + os.sep):
-        print("DENY"); raise SystemExit
-print("PASS")
-' "$CANONICAL_NAME" 2>/dev/null) || exit 0
+decision=$(printf '%s' "$cmd" | PYTHONPATH="$ROOT/agent/state" python3 -c '
+import sys
+from desktop_scope_guard import decide
+print(decide(sys.stdin.read(), sys.argv[1]))
+' "$ROOT" 2>/dev/null) || exit 0
 
 if [ "$decision" = "DENY" ]; then
-  echo "REFUSED: command would create a Desktop entry outside $CANONICAL_NAME. Use a git worktree under the canonical checkout." >&2
+  echo "REFUSED: command would create a Desktop entry outside $(basename "$ROOT"). Use a git worktree under the canonical checkout." >&2
   exit 2
 fi
 

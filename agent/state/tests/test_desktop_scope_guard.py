@@ -20,6 +20,10 @@ ok("canonical name in clone URL cannot bypass destination check",
    verdict("git clone https://example.com/Thebes-Canonical.git ~/Desktop/Unauthorized").returncode == 2)
 ok("mixed mkdir destinations cannot hide an unauthorized path",
    verdict("mkdir ~/Desktop/Unauthorized ~/Desktop/Thebes-Canonical/allowed").returncode == 2)
+ok("relative mkdir after cd Desktop is refused",
+   verdict("cd ~/Desktop && mkdir Unauthorized").returncode == 2)
+ok("relative clone through git -C Desktop is refused",
+   verdict("git -C ~/Desktop clone x Unauthorized").returncode == 2)
 ok("directory creation inside canonical checkout is unaffected",
    verdict("mkdir ~/Desktop/Thebes-Canonical/.claude/worktrees/test").returncode == 0)
 

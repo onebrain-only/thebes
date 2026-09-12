@@ -1,5 +1,5 @@
 """Post-Wave-8 slice 1: operating-mode isolation."""
-import copy, os, shutil, sys, tempfile
+import copy, os, shutil, sys, tempfile, threading, time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _harness import ok, raises, section, summary, repo_root, state_path
@@ -173,6 +173,68 @@ ok("corrected diagnosis derives only current required scope",
 ok("superseded plan remains auditable",
    recomputed["operational_context"]["validation_history"][0]["superseded_by"]
    == "review:corrected-cause")
+corrected_context = store.set_operational_context(
+    "KAN-994", android["revision"], "observed_condition",
+    {"locality": "local", "runtime": "flutter_web", "platform": "chrome"},
+    "ceo", "report:corrected-environment")
+ok("context correction preserves diagnosis and validation plan",
+   corrected_context["operational_context"]["diagnosis"]["causal_surface"]
+   == "android-notification-channel"
+   and [item["target_id"] for item in
+        corrected_context["operational_context"]["validation_plan"]["required"]]
+   == ["required-android"])
+causal_task = store.create("task", task("KAN-995"), rid="KAN-995")
+causal_context = store.set_operational_context(
+    "KAN-995", causal_task["revision"], "observed_condition",
+    {"locality": "local", "runtime": "flutter", "platform": "android"},
+    "ceo", "report:android-shared-fix")
+causal = store.set_diagnosis(
+    "KAN-995", causal_context["revision"], "android-runtime-channel",
+    ["lib/bootstrap.dart"], "platform_specific", ["android"],
+    "worker:frontend-2", "diagnosis:android-cause", causal_platforms=["android"])
+ok("platform-specific cause remains required through a shared-code fix",
+   [item["target_id"] for item in causal["operational_context"]["validation_plan"]["required"]]
+   == ["required-android"])
+
+section("MODE/CLAIM LINEARIZATION")
+current_mode = store.read("operating_mode", "current")
+if current_mode["mode"] != operations.PRODUCT_EXECUTION:
+    current_mode = store.set_operating_mode(
+        operations.PRODUCT_EXECUTION, "ceo", "race:setup", current_mode["revision"])
+race_task = store.create("task", task("KAN-996"), rid="KAN-996")
+mode_read = threading.Event()
+release_claim = threading.Event()
+original_current_mode = store.current_operating_mode
+
+
+def delayed_current_mode():
+    value = original_current_mode()
+    mode_read.set()
+    release_claim.wait(2)
+    return value
+
+
+claim_result = []
+transition_result = []
+store.current_operating_mode = delayed_current_mode
+claim_thread = threading.Thread(target=lambda: claim_result.append(store.claim(
+    "KAN-996", "backend-3", "race", race_task["revision"],
+    capability_of_seat="backend", jira_status_id="10008")))
+claim_thread.start()
+mode_read.wait(2)
+transition_thread = threading.Thread(target=lambda: transition_result.append(
+    store.set_operating_mode(operations.SYSTEM_MAINTENANCE, "ceo", "race:maintenance",
+                             current_mode["revision"])))
+transition_thread.start()
+time.sleep(0.05)
+ok("maintenance transition waits for in-flight claim decision", transition_thread.is_alive())
+release_claim.set()
+claim_thread.join(2)
+transition_thread.join(2)
+store.current_operating_mode = original_current_mode
+ok("claim linearizes before the later maintenance transition",
+   bool(claim_result) and bool(transition_result)
+   and transition_result[0]["mode"] == operations.SYSTEM_MAINTENANCE)
 
 shutil.rmtree(tmp, ignore_errors=True)
 sys.exit(summary())

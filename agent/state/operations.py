@@ -59,17 +59,19 @@ def derive_validation_plan(diagnosis, primary_target):
     if specificity not in PLATFORM_SPECIFICITY:
         raise ValueError("unknown platform specificity %r" % specificity)
     affected = sorted(set((diagnosis or {}).get("affected_platforms") or []))
+    causal_platforms = sorted(set((diagnosis or {}).get("causal_platforms") or []))
     changed = (diagnosis or {}).get("changed_surfaces") or []
     path_platforms = sorted({platform for path in changed for platform, prefix in
                              (("android", "android/"), ("ios", "ios/"), ("web", "web/"))
                              if path.startswith(prefix)})
-    expected_specificity = "platform_specific" if path_platforms else "shared"
+    expected_specificity = "platform_specific" if path_platforms or causal_platforms else "shared"
     if specificity != expected_specificity:
         raise ValueError("platform specificity %r contradicts changed surfaces; expected %r"
                          % (specificity, expected_specificity))
-    if path_platforms and not set(path_platforms) <= set(affected):
-        raise ValueError("affected_platforms must include changed-surface platforms %s"
-                         % ", ".join(path_platforms))
+    required_platforms = set(path_platforms) | set(causal_platforms)
+    if required_platforms and not required_platforms <= set(affected):
+        raise ValueError("affected_platforms must include causal/changed-surface platforms %s"
+                         % ", ".join(sorted(required_platforms)))
     primary_platform = (primary_target or {}).get("platform")
     required, optional = [], []
     if specificity == "shared":
