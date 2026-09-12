@@ -646,6 +646,13 @@ def validate_operational_context(context, errs, where):
                     % (where, MAX_REF_LEN))
     diagnosis = context.get("diagnosis")
     plan = context.get("validation_plan")
+    context_history = context.get("context_history")
+    if context_history is not None:
+        if not isinstance(context_history, list) or any(
+                not isinstance(entry, dict) or not entry.get("superseded_at")
+                or not entry.get("superseded_by") for entry in context_history):
+            errs.append("%s: context_history entries require superseded_at and superseded_by"
+                        % where)
     history = context.get("validation_history")
     if history is not None:
         if not isinstance(history, list) or any(
@@ -1112,6 +1119,24 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
                         % (where, rec.get("changed_by")))
         _reflen(rec, ["reason_ref"], errs, where)
 
+    elif kind == "execution_lease":
+        _req(rec, ["execution_lease_id", "work_item_id", "seat_id",
+                   "mode_revision", "reason_ref"], errs, where)
+        if not str(rec.get("execution_lease_id") or "").startswith("lease-"):
+            errs.append("%s: execution_lease_id must start with lease-" % where)
+        if not JIRA_KEY.match(str(rec.get("work_item_id") or "")):
+            errs.append("%s: execution lease needs a Jira work_item_id" % where)
+        if rec.get("seat_id") not in seatset:
+            errs.append("%s: execution lease seat %r is not declared"
+                        % (where, rec.get("seat_id")))
+        if not isinstance(rec.get("mode_revision"), int) or rec["mode_revision"] < 0:
+            errs.append("%s: mode_revision must be a non-negative integer" % where)
+        if rec.get("closed_at") and not rec.get("closed_by"):
+            errs.append("%s: a closed execution lease records who closed it" % where)
+        if rec.get("closed_by") and not rec.get("closed_at"):
+            errs.append("%s: execution lease with closed_by records when" % where)
+        _reflen(rec, ["reason_ref"], errs, where)
+
     elif kind == "policy":
         _req(rec, ["policy_id", "policy_kind", "scope", "activated_by", "reason_ref"],
              errs, where)
@@ -1280,7 +1305,7 @@ def check(runtime=None):
              "dependency": "dependencies", "intervention": "interventions",
              "policy": "policies", "event": "events", "learning": "learning",
              "coverage": "coverage", "correction": "corrections",
-             "operating_mode": "operating-mode"}
+             "operating_mode": "operating-mode", "execution_lease": "execution-leases"}
     seen_ids = {}
     edges = []
     active_iv = []
@@ -1305,7 +1330,8 @@ def check(runtime=None):
                    "intervention": "intervention_id", "policy": "policy_id",
                    "event": "event_id", "learning": "learning_id",
                    "coverage": "coverage_id", "correction": "correction_id",
-                   "operating_mode": "operating_mode_id"}[kind]
+                   "operating_mode": "operating_mode_id",
+                   "execution_lease": "execution_lease_id"}[kind]
             rid = rec.get(idf)
             if rid != fn[:-5]:
                 errs.append("%s: filename does not match %s %r" % (p, idf, rid))

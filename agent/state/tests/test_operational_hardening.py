@@ -101,7 +101,8 @@ ok("validator rejects Canary replacing localhost",
 repro = store.set_operational_context(
     "KAN-990", observed["revision"], "reproduction_request",
     {"locality": "unknown", "runtime": None, "platform": None},
-    "po", "jira:explicit-reproduction-request")
+    "po", "jira:explicit-reproduction-request",
+    supersedes_context_ref="jira:report-reclassified")
 ok("explicit reproduction request starts reproduction",
    repro["operational_context"]["initial_phase"] == "reproduction")
 raises("unknown locality refused",
@@ -161,7 +162,7 @@ raises("re-diagnosis cannot silently remove required targets",
            "KAN-993", two["revision"], "android-wrapper",
            ["android/app/src/main/AndroidManifest.xml"], "platform_specific", ["android"],
            "worker:frontend-1", "diagnosis:revised-cause"),
-       "supersedes_validation_ref is required")
+       "requires supersedes_validation_ref")
 recomputed = store.set_diagnosis(
     "KAN-993", two["revision"], "android-wrapper",
     ["android/app/src/main/AndroidManifest.xml"], "platform_specific", ["android"],
@@ -176,13 +177,17 @@ ok("superseded plan remains auditable",
 corrected_context = store.set_operational_context(
     "KAN-994", android["revision"], "observed_condition",
     {"locality": "local", "runtime": "flutter_web", "platform": "chrome"},
-    "ceo", "report:corrected-environment")
+    "ceo", "report:corrected-environment",
+    supersedes_context_ref="report:environment-corrected")
 ok("context correction preserves diagnosis and validation plan",
    corrected_context["operational_context"]["diagnosis"]["causal_surface"]
    == "android-notification-channel"
    and [item["target_id"] for item in
         corrected_context["operational_context"]["validation_plan"]["required"]]
    == ["required-android"])
+ok("corrected report remains auditable",
+   corrected_context["operational_context"]["context_history"][0]["superseded_by"]
+   == "report:environment-corrected")
 causal_task = store.create("task", task("KAN-995"), rid="KAN-995")
 causal_context = store.set_operational_context(
     "KAN-995", causal_task["revision"], "observed_condition",
@@ -235,6 +240,23 @@ store.current_operating_mode = original_current_mode
 ok("claim linearizes before the later maintenance transition",
    bool(claim_result) and bool(transition_result)
    and transition_result[0]["mode"] == operations.SYSTEM_MAINTENANCE)
+
+section("EXECUTION LEASE SERIALIZES WAKE AUTHORITY")
+mode = store.read("operating_mode", "current")
+mode = store.set_operating_mode(
+    operations.PRODUCT_EXECUTION, "ceo", "lease:setup", mode["revision"])
+lease = store.open_execution_lease("KAN-996", "backend-3", "wake:KAN-996")
+raises("maintenance cannot begin while wake lease is active",
+       lambda: store.set_operating_mode(
+           operations.SYSTEM_MAINTENANCE, "ceo", "lease:block", mode["revision"]),
+       "active execution leases")
+closed = store.close_execution_lease(
+    lease["execution_lease_id"], lease["revision"], "orchestrator")
+ok("wake lease closure is durable", closed["closed_at"] and closed["closed_by"] == "orchestrator")
+maintenance_after_lease = store.set_operating_mode(
+    operations.SYSTEM_MAINTENANCE, "ceo", "lease:closed", mode["revision"])
+ok("maintenance begins after lease closes",
+   maintenance_after_lease["mode"] == operations.SYSTEM_MAINTENANCE)
 
 shutil.rmtree(tmp, ignore_errors=True)
 sys.exit(summary())

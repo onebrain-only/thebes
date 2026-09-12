@@ -22,11 +22,11 @@ def _outside_canonical_desktop(path, desktop, canonical):
     return (os.path.dirname(path) == desktop and path != canonical)
 
 
-def decide(command, root, home=None):
+def decide(command, root, cwd=None, home=None):
     home = home or os.path.expanduser("~")
     desktop = os.path.join(home, "Desktop")
     canonical = os.path.normpath(root)
-    cwd = canonical
+    cwd = os.path.normpath(cwd or canonical)
     try:
         tokens = _tokens(command)
     except ValueError:

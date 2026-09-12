@@ -60,6 +60,10 @@ whole model exists to prevent.
   `store.assert_execution_permitted(work_item_id, seat_id)` (reasons from
   `queue.execution_reasons`). **Two different questions:** claimability asks whether unowned work
   may get an owner; the continuation gate asks whether an owner may keep going.
+- **Open an execution lease immediately before every Product wake and close it when that
+  invocation returns.** `assert_execution_permitted()` is a read-only explanation; only
+  `store.open_execution_lease()` serialises wake authority against a maintenance transition.
+  `SYSTEM_MAINTENANCE` cannot begin while an execution lease remains active.
 - Coordinate dependencies — only canonical `DONE` satisfies a `BLOCKS` edge.
 - Detect contention from declared **surfaces**, not from a boolean.
 - Create **bounded safety interventions** — STOP, HOLD, FREEZE — and clear them (RESUME).

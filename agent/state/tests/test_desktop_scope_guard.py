@@ -7,8 +7,8 @@ from _harness import ok, section, summary, repo_root
 GUARD = os.path.join(repo_root(), "agent", "scripts", "desktop-scope-guard.sh")
 
 
-def verdict(command):
-    payload = json.dumps({"tool_input": {"command": command}})
+def verdict(command, cwd=None):
+    payload = json.dumps({"tool_input": {"command": command, "cwd": cwd}})
     return subprocess.run([GUARD], input=payload, text=True, capture_output=True)
 
 
@@ -24,6 +24,8 @@ ok("relative mkdir after cd Desktop is refused",
    verdict("cd ~/Desktop && mkdir Unauthorized").returncode == 2)
 ok("relative clone through git -C Desktop is refused",
    verdict("git -C ~/Desktop clone x Unauthorized").returncode == 2)
+ok("Bash tool cwd is authoritative for relative destinations",
+   verdict("mkdir Unauthorized", os.path.expanduser("~/Desktop")).returncode == 2)
 ok("directory creation inside canonical checkout is unaffected",
    verdict("mkdir ~/Desktop/Thebes-Canonical/.claude/worktrees/test").returncode == 0)
 

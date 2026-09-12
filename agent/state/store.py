@@ -48,6 +48,7 @@ KINDS = {
     # auditable forever.
     "correction":   ("corrections",   "cor"),
     "operating_mode": ("operating-mode", None),
+    "execution_lease": ("execution-leases", "lease"),
 }
 
 
@@ -167,6 +168,12 @@ def set_operating_mode(mode, changed_by, reason_ref, expected_revision=None):
         raise StateError("changed_by and reason_ref are required")
     rid = operations.CURRENT_MODE_ID
     with _Lock("execution-domain"):
+        if mode == operations.SYSTEM_MAINTENANCE:
+            active = [lease for lease in read_all("execution_lease")
+                      if not lease.get("closed_at")]
+            if active:
+                raise StateError("cannot enter SYSTEM_MAINTENANCE with active execution leases: %s"
+                                 % ", ".join(lease["execution_lease_id"] for lease in active))
         with record_lock("operating_mode", rid):
             cur = read("operating_mode", rid)
             if cur is None:
@@ -466,7 +473,7 @@ def set_characteristics(work_item_id, expected_revision, changes, author,
 
 def set_operational_context(work_item_id, expected_revision, intent,
                             reported_environment, author, evidence_ref,
-                            supersedes_validation_ref=None):
+                            supersedes_validation_ref=None, supersedes_context_ref=None):
     """Persist reported intent and derive its authoritative primary target atomically."""
     import operations                                  # noqa: E402
     if expected_revision is None:
@@ -490,7 +497,21 @@ def set_operational_context(work_item_id, expected_revision, intent,
         if cur.get("record_type") != "executable":
             raise StateError("container records carry no operational context")
         context = dict(cur.get("operational_context") or {})
+        prior_context = dict(context)
         prior_plan = context.get("validation_plan")
+        changed_report = bool(context) and (
+            context.get("intent") != intent
+            or context.get("reported_environment") != dict(reported_environment or {}))
+        if changed_report:
+            if not supersedes_context_ref:
+                raise StateError("operational-context correction requires supersedes_context_ref")
+            history = list(context.get("context_history") or [])
+            history.append({"intent": prior_context.get("intent"),
+                            "reported_environment": prior_context.get("reported_environment"),
+                            "primary_target": prior_context.get("primary_target"),
+                            "provenance": prior_context.get("provenance"),
+                            "superseded_at": now(), "superseded_by": supersedes_context_ref})
+            context["context_history"] = history
         context.update({"intent": intent, "initial_phase": operations.initial_phase(intent),
                         "reported_environment": dict(reported_environment or {}),
                         "primary_target": target,
@@ -557,16 +578,26 @@ def set_diagnosis(work_item_id, expected_revision, causal_surface, changed_surfa
         except ValueError as exc:
             raise StateError(str(exc))
         prior_plan = context.get("validation_plan")
+        prior_diagnosis = context.get("diagnosis")
+        diagnosis_changed = prior_diagnosis is not None and any(
+            prior_diagnosis.get(field) != diagnosis.get(field)
+            for field in ("causal_surface", "changed_surfaces", "platform_specificity",
+                          "affected_platforms", "causal_platforms"))
         prior_required = {target.get("target_id")
                           for target in (prior_plan or {}).get("required") or []}
         new_required = {target.get("target_id") for target in plan.get("required") or []}
+        if diagnosis_changed and not supersedes_validation_ref:
+            raise StateError("re-diagnosis requires supersedes_validation_ref")
         if prior_required - new_required:
             if not supersedes_validation_ref:
                 raise StateError("re-diagnosis would remove required validation targets; "
                                  "supersedes_validation_ref is required")
             diagnosis["supersedes_validation_ref"] = supersedes_validation_ref
+        if diagnosis_changed:
+            diagnosis["supersedes_validation_ref"] = supersedes_validation_ref
             history = list(context.get("validation_history") or [])
-            history.append({"plan": prior_plan, "superseded_at": now(),
+            history.append({"diagnosis": prior_diagnosis, "plan": prior_plan,
+                            "superseded_at": now(),
                             "superseded_by": supersedes_validation_ref})
             context["validation_history"] = history
         context["diagnosis"] = diagnosis
@@ -1945,6 +1976,50 @@ def assert_execution_permitted(work_item_id, seat_id):
     return cur
 
 
+def open_execution_lease(work_item_id, seat_id, reason_ref):
+    """Atomically authorize one Product wake against the current mode revision."""
+    import operations, queue as q                       # noqa: E402
+    if not reason_ref:
+        raise StateError("reason_ref is required")
+    with _Lock("execution-domain"):
+        mode = read("operating_mode", operations.CURRENT_MODE_ID)
+        if current_operating_mode() != operations.PRODUCT_EXECUTION:
+            raise StateError("execution refused: system-maintenance-active")
+        task = read("task", work_item_id)
+        if task is None:
+            raise StateError("task %s does not exist" % work_item_id)
+        reasons = q.execution_reasons(task, seat_id)
+        if reasons:
+            raise StateError("execution refused: " + ", ".join(reasons))
+        rid = new_id("execution_lease")
+        rec = {"execution_lease_id": rid, "work_item_id": work_item_id,
+               "seat_id": seat_id, "mode_revision": (mode or {}).get("revision", 0),
+               "reason_ref": reason_ref, "closed_at": None, "closed_by": None,
+               "schema_version": SCHEMA_VERSION, "revision": 1,
+               "created_at": now(), "updated_at": now()}
+        _validate_one("execution_lease", rec)
+        _atomic_write(path_for("execution_lease", rid), rec)
+        return rec
+
+
+def close_execution_lease(execution_lease_id, expected_revision, closed_by):
+    with _Lock("execution-domain"):
+        with record_lock("execution_lease", execution_lease_id):
+            cur = read("execution_lease", execution_lease_id)
+            if cur is None:
+                raise StateError("execution lease %s does not exist" % execution_lease_id)
+            if cur["revision"] != expected_revision:
+                raise StateError("stale write refused: execution lease is at revision %d, "
+                                 "caller expected %d" % (cur["revision"], expected_revision))
+            if cur.get("closed_at"):
+                raise StateError("execution lease is already closed")
+            rec = dict(cur, closed_at=now(), closed_by=closed_by,
+                       revision=cur["revision"] + 1, updated_at=now())
+            _validate_one("execution_lease", rec)
+            _atomic_write(path_for("execution_lease", execution_lease_id), rec)
+            return rec
+
+
 def claim(work_item_id, seat_id, claim_ref, expected_revision, capability_of_seat=None,
           jira_status_id=None):
     """Atomically take execution ownership. CAS'd inside the record lock.
@@ -2045,7 +2120,8 @@ def _id_field(kind):
             "intervention": "intervention_id", "policy": "policy_id",
             "event": "event_id", "learning": "learning_id",
             "coverage": "coverage_id", "correction": "correction_id",
-            "operating_mode": "operating_mode_id"}[kind]
+            "operating_mode": "operating_mode_id",
+            "execution_lease": "execution_lease_id"}[kind]
 
 
 def _validate_one(kind, record):

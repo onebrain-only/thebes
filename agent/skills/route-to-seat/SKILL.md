@@ -64,6 +64,11 @@ teams. **No `frontend-N` is senior to another**, so task shape never selects a s
 | `not-owner` | **DO NOT WAKE.** The seat you were about to invoke does not own this work. |
 | `not-owned` | **DO NOT WAKE.** Claim first, or report the item unclaimable with its reasons. |
 
+After the read-only continuation check passes, call
+`store.open_execution_lease(work_item_id, seat_id, reason_ref)` immediately before the wake.
+Close that exact lease with `store.close_execution_lease()` when the invocation returns. A
+passing `assert_execution_permitted()` result without a lease is not wake authority.
+
 **HOLD and FREEZE do not appear here** — they block new claims while current owners continue.
 Only a task-scoped STOP halts work already in flight.
 

@@ -28,22 +28,25 @@ ROOT=$(cd "$SELF/../.." 2>/dev/null && pwd) || exit 0
 payload=$(cat 2>/dev/null) || exit 0
 [ -n "$payload" ] || exit 0
 
-cmd=$(printf '%s' "$payload" | python3 -c '
+parsed=$(printf '%s' "$payload" | python3 -c '
 import json, sys
 try:
     data = json.load(sys.stdin)
 except Exception:
     sys.exit(0)
-cmd = (data.get("tool_input") or {}).get("command", "")
-print(cmd)
+tool_input = data.get("tool_input") or {}
+print(json.dumps({"command": tool_input.get("command", ""),
+                  "cwd": tool_input.get("cwd") or data.get("cwd") or ""}))
 ' 2>/dev/null)
+cmd=$(printf '%s' "$parsed" | python3 -c 'import json,sys; print(json.load(sys.stdin)["command"])' 2>/dev/null)
+cwd=$(printf '%s' "$parsed" | python3 -c 'import json,sys; print(json.load(sys.stdin)["cwd"])' 2>/dev/null)
 [ -n "$cmd" ] || exit 0
 
 decision=$(printf '%s' "$cmd" | PYTHONPATH="$ROOT/agent/state" python3 -c '
 import sys
 from desktop_scope_guard import decide
-print(decide(sys.stdin.read(), sys.argv[1]))
-' "$ROOT" 2>/dev/null) || exit 0
+print(decide(sys.stdin.read(), sys.argv[1], sys.argv[2] or None))
+' "$ROOT" "$cwd" 2>/dev/null) || exit 0
 
 if [ "$decision" = "DENY" ]; then
   echo "REFUSED: command would create a Desktop entry outside $(basename "$ROOT"). Use a git worktree under the canonical checkout." >&2

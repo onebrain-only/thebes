@@ -95,6 +95,10 @@ no-direct-edit rule is contractual, exactly like the no-delegation rule.
 wake, including continuation by an existing owner. It does not alter tasks, ownership, lifecycle,
 executor evidence, reviews, dependencies, interventions or execution policy. STOP/HOLD/FREEZE
 remain safety primitives; ACCELERATE/NORMAL remain scheduling pressure.
+Product wakes use short-lived `execution_lease` records. Lease creation and mode transition share
+the `execution-domain` lock: maintenance cannot begin while a wake remains authorized, and no
+lease can open after maintenance begins. `assert_execution_permitted()` remains useful for
+read-only reasons, but the lease is the atomic wake authority.
 
 ## Record shapes
 
