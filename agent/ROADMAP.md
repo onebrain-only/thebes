@@ -87,7 +87,7 @@ the observed result rather than inheriting that number silently.
 | Reported environment authority | IMPLEMENTED | Operational context derives the primary target from the reported environment; local Flutter Chrome is not silently converted into browser automation. |
 | Causal-surface validation | IMPLEMENTED | Diagnosis records causal/changed surfaces and derives required versus optional validation targets. |
 | Shared program documentation | CURRENT SLICE | Roadmap, program memory, decision log, learning log, chronology and concise entry-point wiring. Exit: links and source order validate, classifications remain explicit, and no competing truth is introduced. |
-| Executor/provider abstraction | IN PROGRESS | Slices 1–3 added the neutral contract, neutral Seat/Role authority and byte-identical Claude renderer. Slice 4 routes Claude wake preparation through its seam; Slice 5 normalizes outcomes into `ExecutionResult`; Slice 6 adds the explicit Codex CLI adapter on the same request/result contract. Neither provider can select work or change lifecycle. Provider selection is not implemented. |
+| Executor/provider abstraction | COMPLETE | Slices 1–3 added the neutral contract, neutral Seat/Role authority and byte-identical Claude renderer. Slice 4 routes Claude wake preparation through its seam; Slice 5 normalizes outcomes into `ExecutionResult`; Slice 6 adds the Codex CLI adapter; Slice 7 adds deterministic capability/model/effort-gated selection with controller-authorized overrides. Selection never changes lifecycle and never retries or falls back. |
 | Product acceptance | NOT AUTHORIZED / NOT STARTED | Protocol is canonical below. No ticket is selected. |
 
 ## Executor/provider target
@@ -112,8 +112,8 @@ invokes a provider. The neutral Seat/Role registry and execution contract now ex
 rendering and wake preparation consume them without taking core authority. The actual Agent-tool
 transport remains controller-native and external to the repository. Claude and Codex outcomes are
 normalized into provider-neutral evidence, with provider failure distinct from execution failure.
-Codex uses its local CLI adapter; provider selection remains a known gap, not evidence that the
-target is complete.
+Codex uses its local CLI adapter. Deterministic selection gates capability/model/effort fit and
+an authorized explicit override; it never retries, falls back or changes workflow truth.
 
 ## Authorization invariant
 

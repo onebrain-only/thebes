@@ -70,7 +70,9 @@ lease must authorize the invocation. Claude normalizes the native outcome into t
 provider-neutral `ExecutionResult`; provider failure and execution failure remain distinct.
 Completion is evidence for controller verification, not Product acceptance or lifecycle truth.
 Codex now uses the same request/result boundary through the local `codex exec` CLI; its model
-mapping and transport settings are provider-specific, while provider selection remains absent.
+mapping and transport settings are provider-specific. The deterministic selector applies
+capability/model/effort gates and controller-authorized overrides without retry, fallback or
+workflow authority.
 
 **FUTURE TARGET.** Provider invocation becomes an adapter boundary owned by Thebes. The
 controller should not embed Claude Code, Codex or any future provider as architectural
@@ -170,11 +172,12 @@ that says “blocked by” is documentation until the edge exists.
 lifecycle, Persistent State, capability queues, claims, ownership, execution gates and
 leases, safety interventions, Agent View, and advisory telemetry/learning.
 
-**CURRENT FACT.** Provider neutrality is not yet complete. The neutral execution contract,
+**CURRENT FACT.** The neutral execution contract,
 Seat registry, Claude renderer and Claude wake-preparation seam exist. Claude bindings and the
 controller-native external Agent-tool transport remain provider-specific. Claude and Codex result
-normalization use the neutral `ExecutionResult`; Codex's local CLI adapter exists, while provider
-selection and a repository-callable Claude transport do not.
+normalization use the neutral `ExecutionResult`; Codex's local CLI adapter and deterministic
+provider selector exist. Provider abstraction is complete; a repository-callable Claude transport,
+automatic retry and automatic fallback do not exist.
 
 **FUTURE TARGET.** Listener → controller integration → Thebes Core → measured knowledge
 scaling is the approved direction, not current implementation. RAG is deferred until

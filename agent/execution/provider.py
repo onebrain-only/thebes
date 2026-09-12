@@ -8,7 +8,8 @@ second executor.  Provider output is evidence to verify, never workflow truth.
 
 The contract here remains provider-neutral. Concrete adapters may normalize
 provider-native outcomes into this evidence model. Claude and Codex adapters
-exist; provider selection does not.
+exist; deterministic selection filters compatibility and never acquires
+workflow authority.
 """
 
 from dataclasses import dataclass
