@@ -7,8 +7,8 @@ mode, choose validation, appoint a reviewer, mutate Jira/lifecycle, or launch a
 second executor.  Provider output is evidence to verify, never workflow truth.
 
 The contract here remains provider-neutral. Concrete adapters may normalize
-provider-native outcomes into this evidence model, but Codex support and
-provider selection do not exist yet.
+provider-native outcomes into this evidence model. Claude and Codex adapters
+exist; provider selection does not.
 """
 
 from dataclasses import dataclass

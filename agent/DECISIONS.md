@@ -157,7 +157,7 @@ claim-time enforcement.
 
 ## D-014 — Providers sit behind Thebes
 
-**Status:** ACTIVE TARGET DECISION; IMPLEMENTATION PENDING
+**Status:** ACTIVE TARGET DECISION; provider adapters implemented, routing pending
 **Decision:** Claude Code is a provider, not the permanent executor. Codex, Claude Code and
 future execution engines sit behind a Thebes-owned provider adapter and receive minimum
 execution context assembled by Thebes.
@@ -166,7 +166,7 @@ recovery depend on a vendor-specific interface.
 **Core rule:** Codex does not brief Claude directly; Codex briefs Thebes, and Thebes briefs
 the selected provider.
 **Evidence:** historical target specification §§55–56; current target adopted in
-`agent/ROADMAP.md`. Current Claude-specific generator/wake gap remains documented, not hidden.
+`agent/ROADMAP.md`. Claude and Codex adapters exist; automatic provider routing remains deferred.
 
 ## D-015 — Retrieval is deferred until measured need
 

@@ -69,6 +69,8 @@ wake creates no ownership; ownership must already exist and the continuation gat
 lease must authorize the invocation. Claude normalizes the native outcome into the
 provider-neutral `ExecutionResult`; provider failure and execution failure remain distinct.
 Completion is evidence for controller verification, not Product acceptance or lifecycle truth.
+Codex now uses the same request/result boundary through the local `codex exec` CLI; its model
+mapping and transport settings are provider-specific, while provider selection remains absent.
 
 **FUTURE TARGET.** Provider invocation becomes an adapter boundary owned by Thebes. The
 controller should not embed Claude Code, Codex or any future provider as architectural
@@ -170,9 +172,9 @@ leases, safety interventions, Agent View, and advisory telemetry/learning.
 
 **CURRENT FACT.** Provider neutrality is not yet complete. The neutral execution contract,
 Seat registry, Claude renderer and Claude wake-preparation seam exist. Claude bindings and the
-controller-native external Agent-tool transport remain provider-specific. Claude result
-normalization now uses the neutral `ExecutionResult`; provider selection, an interchangeable
-Codex adapter and a repository-callable Claude transport do not exist.
+controller-native external Agent-tool transport remain provider-specific. Claude and Codex result
+normalization use the neutral `ExecutionResult`; Codex's local CLI adapter exists, while provider
+selection and a repository-callable Claude transport do not.
 
 **FUTURE TARGET.** Listener → controller integration → Thebes Core → measured knowledge
 scaling is the approved direction, not current implementation. RAG is deferred until
