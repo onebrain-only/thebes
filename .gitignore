@@ -37,6 +37,11 @@
 # tooling and Company/Product/Project registry above it ARE tracked.
 /agent/state/runtime/
 
+# Machine-written local session metadata. This is execution telemetry, not
+# durable Thebes knowledge; the adjacent agent-memory subtree is deliberately
+# not ignored wholesale because it still requires evidence-preserving curation.
+/agent/state/.claude-flow/
+
 # Per-executor Product worktrees (agent/state/worktrees.py). Real checkouts of the
 # Product repository, created and removed as work is claimed and released — they are
 # Git's own working state, not Thebes source, and tracking them would nest one
