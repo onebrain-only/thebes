@@ -42,6 +42,11 @@
 # not ignored wholesale because it still requires evidence-preserving curation.
 /agent/state/.claude-flow/
 
+# Misplaced local agent-memory snapshot reconciled in
+# agent/history/agent-memory-snapshot-reconciliation.md. Preserved on disk; not a
+# second canonical memory tree and not Persistent State source.
+/agent/state/.claude/
+
 # Per-executor Product worktrees (agent/state/worktrees.py). Real checkouts of the
 # Product repository, created and removed as work is claimed and released — they are
 # Git's own working state, not Thebes source, and tracking them would nest one
