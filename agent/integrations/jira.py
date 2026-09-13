@@ -31,8 +31,11 @@ Python stdlib only — urllib, json, base64. Same constitution as the state laye
 a fresh clone can run this with nothing installed.
 """
 import base64
+import getpass
 import json
 import os
+import subprocess
+import sys
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -99,32 +102,82 @@ def _env(name):
     return v.strip() if v else None
 
 
+_KEYCHAIN_SERVICES = {
+    "JIRA_API_TOKEN": "THEBES_JIRA_API_TOKEN",
+    "JIRA_ACCOUNT_EMAIL": "THEBES_JIRA_ACCOUNT_EMAIL",
+    "JIRA_CLOUD_ID": "THEBES_JIRA_CLOUD_ID",
+}
+
+
+def _keychain_lookup(service, account):
+    """Return one Keychain value, or None without exposing Keychain errors."""
+    if sys.platform != "darwin":
+        return None
+    try:
+        result = subprocess.run(
+            ["security", "find-generic-password", "-a", account, "-s", service, "-w"],
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            text=True, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
+def _credential(name):
+    """Resolve exactly one credential and return its non-secret source metadata."""
+    value = _env(name)
+    if value:
+        return value, "environment"
+    service = _KEYCHAIN_SERVICES.get(name)
+    if service:
+        try:
+            value = _keychain_lookup(service, getpass.getuser())
+        except (OSError, subprocess.SubprocessError):
+            value = None
+        if value:
+            return value, "keychain"
+    return None, "unavailable"
+
+
+def credential_source_metadata():
+    """Return only credential origins; never return credential values."""
+    return {name: _credential(name)[1] for name in _KEYCHAIN_SERVICES}
+
+
 def config():
     """Resolve non-secret configuration. Raises JiraNotConfigured if incomplete.
 
     The token is deliberately NOT returned. Nothing outside `_request` needs it,
     and a config dict is exactly the object that ends up in a debug print.
     """
-    if not _env("JIRA_API_TOKEN"):
+    token, _ = _credential("JIRA_API_TOKEN")
+    if not token:
         raise JiraNotConfigured("JIRA_API_TOKEN_NOT_AVAILABLE")
-    email = _env("JIRA_ACCOUNT_EMAIL")
+    email, _ = _credential("JIRA_ACCOUNT_EMAIL")
     if not email:
         raise JiraNotConfigured("JIRA_ACCOUNT_EMAIL_NOT_AVAILABLE")
     base = _env("JIRA_API_BASE")
     if not base:
-        cloud = _env("JIRA_CLOUD_ID")
+        cloud, _ = _credential("JIRA_CLOUD_ID")
         if not cloud:
             raise JiraNotConfigured("JIRA_API_BASE_NOT_AVAILABLE")
         base = "https://api.atlassian.com/ex/jira/" + cloud
-    return {"base": base.rstrip("/"), "email": email, "cloud_id": _env("JIRA_CLOUD_ID")}
+    cloud, _ = _credential("JIRA_CLOUD_ID")
+    return {"base": base.rstrip("/"), "email": email, "cloud_id": cloud}
 
 
 def _auth_header():
     """Build the Authorization value. The ONLY place the token is touched."""
-    token = _env("JIRA_API_TOKEN")
+    token, _ = _credential("JIRA_API_TOKEN")
     if not token:
         raise JiraNotConfigured("JIRA_API_TOKEN_NOT_AVAILABLE")
-    raw = ("%s:%s" % (_env("JIRA_ACCOUNT_EMAIL"), token)).encode("utf-8")
+    email, _ = _credential("JIRA_ACCOUNT_EMAIL")
+    if not email:
+        raise JiraNotConfigured("JIRA_ACCOUNT_EMAIL_NOT_AVAILABLE")
+    raw = ("%s:%s" % (email, token)).encode("utf-8")
     return "Basic " + base64.b64encode(raw).decode("ascii")
 
 
@@ -136,13 +189,14 @@ def _scrub(text):
     """
     if not text:
         return text
-    token = os.environ.get("JIRA_API_TOKEN")
+    token, _ = _credential("JIRA_API_TOKEN")
+    email, _ = _credential("JIRA_ACCOUNT_EMAIL")
     out = str(text)
     if token:
         out = out.replace(token, "[REDACTED]")
         try:
             b64 = base64.b64encode(
-                ("%s:%s" % (os.environ.get("JIRA_ACCOUNT_EMAIL", ""), token)).encode()
+                ("%s:%s" % (email or "", token)).encode()
             ).decode("ascii")
             out = out.replace(b64, "[REDACTED]")
         except Exception:                                   # pragma: no cover

@@ -14,6 +14,7 @@ reading `[]` and concluding there is no work, or `None` and concluding Done.
 
 Stdlib only, like the rest of the suite.
 """
+import base64
 import io
 import json
 import os
@@ -32,6 +33,7 @@ os.environ["JIRA_API_TOKEN"] = FAKE_TOKEN
 os.environ["JIRA_ACCOUNT_EMAIL"] = "nobody@example.invalid"
 os.environ["JIRA_API_BASE"] = "https://jira.example.invalid/ex/jira/FAKECLOUD"
 os.environ.pop("JIRA_CLOUD_ID", None)
+jira.sys.platform = "linux"  # Keep baseline tests independent of this Mac's Keychain.
 
 
 # ---------------------------------------------------------------- transport doubles
@@ -133,6 +135,117 @@ ok("_scrub removes the base64 Authorization value",
    sent.get_header("Authorization").split(" ", 1)[1]
    not in jira._scrub("leak " + sent.get_header("Authorization")))
 ok("_scrub leaves ordinary text alone", jira._scrub("plain text") == "plain text")
+
+
+# ---------------------------------------------------------------- credential resolution
+
+section("credential resolution — environment first, Keychain second")
+
+_real_lookup = jira._keychain_lookup
+_real_platform = sys.platform
+_credential_names = ("JIRA_API_TOKEN", "JIRA_ACCOUNT_EMAIL", "JIRA_CLOUD_ID", "JIRA_API_BASE")
+
+
+def set_credential_env(values):
+    for name in _credential_names:
+        os.environ.pop(name, None)
+    os.environ.update(values)
+
+
+def fake_keychain(values, error=False):
+    def lookup(service, account):
+        if error:
+            raise OSError("Keychain error containing hidden-keychain-value")
+        return values.get(service)
+    return lookup
+
+
+def capture(fn):
+    try:
+        fn()
+    except Exception as exc:
+        return exc
+    return None
+
+
+jira.sys.platform = "darwin"
+jira._keychain_lookup = fake_keychain({
+    "THEBES_JIRA_API_TOKEN": "keychain-token",
+    "THEBES_JIRA_ACCOUNT_EMAIL": "keychain@example.invalid",
+    "THEBES_JIRA_CLOUD_ID": "KEYCHAINCLOUD",
+})
+
+set_credential_env({
+    "JIRA_API_TOKEN": FAKE_TOKEN,
+    "JIRA_ACCOUNT_EMAIL": "nobody@example.invalid",
+    "JIRA_CLOUD_ID": "ENVCLOUD",
+})
+ok("environment credentials win over Keychain", jira.config()["email"] == "nobody@example.invalid")
+ok("environment source metadata is non-secret", jira.credential_source_metadata() == {
+    "JIRA_API_TOKEN": "environment", "JIRA_ACCOUNT_EMAIL": "environment",
+    "JIRA_CLOUD_ID": "environment"})
+
+set_credential_env({})
+keychain_cfg = jira.config()
+ok("Keychain resolves token email and cloud independently",
+   keychain_cfg == {"base": "https://api.atlassian.com/ex/jira/KEYCHAINCLOUD",
+                    "email": "keychain@example.invalid", "cloud_id": "KEYCHAINCLOUD"})
+ok("Keychain source metadata is non-secret", jira.credential_source_metadata() == {
+    "JIRA_API_TOKEN": "keychain", "JIRA_ACCOUNT_EMAIL": "keychain",
+    "JIRA_CLOUD_ID": "keychain"})
+
+set_credential_env({"JIRA_ACCOUNT_EMAIL": "env@example.invalid"})
+mixed_cfg = jira.config()
+ok("mixed credential fields resolve independently", mixed_cfg["email"] == "env@example.invalid"
+   and mixed_cfg["cloud_id"] == "KEYCHAINCLOUD")
+ok("mixed metadata preserves each source", jira.credential_source_metadata() == {
+    "JIRA_API_TOKEN": "keychain", "JIRA_ACCOUNT_EMAIL": "environment",
+    "JIRA_CLOUD_ID": "keychain"})
+
+jira._keychain_lookup = fake_keychain({})
+set_credential_env({})
+raises("absent environment and Keychain retain credential-unavailable failure",
+       jira.config, "JIRA_API_TOKEN_NOT_AVAILABLE")
+ok("unavailable source metadata is non-secret", jira.credential_source_metadata() == {
+    "JIRA_API_TOKEN": "unavailable", "JIRA_ACCOUNT_EMAIL": "unavailable",
+    "JIRA_CLOUD_ID": "unavailable"})
+
+jira._keychain_lookup = fake_keychain({}, error=True)
+e = capture(jira.config)
+ok("Keychain lookup errors do not expose values", "hidden-keychain-value" not in str(e))
+ok("Keychain lookup errors become safe unavailable failures", isinstance(e, jira.JiraNotConfigured))
+
+jira._keychain_lookup = fake_keychain({
+    "THEBES_JIRA_API_TOKEN": "keychain-token",
+    "THEBES_JIRA_ACCOUNT_EMAIL": "keychain@example.invalid",
+    "THEBES_JIRA_CLOUD_ID": "KEYCHAINCLOUD",
+})
+set_credential_env({
+    "JIRA_API_TOKEN": "environment-token",
+    "JIRA_ACCOUNT_EMAIL": "environment@example.invalid",
+    "JIRA_CLOUD_ID": "ENVCLOUD",
+})
+rec = install(http_error(401))
+e = capture(lambda: jira.get_issue("KAN-1"))
+ok("401 from environment credentials remains explicit authentication failure",
+   isinstance(e, jira.JiraAuthError))
+expected_env_auth = base64.b64encode(
+    b"environment@example.invalid:environment-token").decode("ascii")
+ok("401 does not silently switch to Keychain", rec.requests[0].get_header("Authorization")
+   == "Basic " + expected_env_auth)
+
+jira._keychain_lookup = _real_lookup
+jira.sys.platform = "linux"
+set_credential_env({})
+raises("non-macOS does not use Keychain", jira.config, "JIRA_API_TOKEN_NOT_AVAILABLE")
+
+jira.sys.platform = _real_platform
+jira._keychain_lookup = _real_lookup
+set_credential_env({
+    "JIRA_API_TOKEN": FAKE_TOKEN,
+    "JIRA_ACCOUNT_EMAIL": "nobody@example.invalid",
+    "JIRA_API_BASE": "https://jira.example.invalid/ex/jira/FAKECLOUD",
+})
 
 
 # ---------------------------------------------------------------- read: issue
