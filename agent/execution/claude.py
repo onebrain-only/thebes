@@ -8,7 +8,9 @@ then normalizes only supported transport evidence into ``ExecutionResult``.
 """
 
 from dataclasses import dataclass
+import json
 import os
+import subprocess
 from typing import Any, Callable, Mapping, Optional, Tuple
 
 from agent.execution.provider import (
@@ -79,6 +81,10 @@ class ClaudeExecutorProcessFailure(ClaudeTransportFailure):
     code = FailureCode.EXECUTOR_PROCESS_FAILURE
 
 
+class ClaudeTimeout(ClaudeTransportFailure):
+    code = FailureCode.TIMEOUT
+
+
 class ClaudeMalformedResult(ClaudeTransportFailure):
     code = FailureCode.MALFORMED_RESULT
 
@@ -104,6 +110,7 @@ class ClaudeWake:
     primary_target: ExecutionTarget
     validation_targets: Tuple[ValidationTarget, ...]
     return_contract: ReturnContract
+    timeout_seconds: int
     session_ref: Optional[str] = None
 
 
@@ -228,8 +235,97 @@ def prepare_claude_wake(request, session_ref=None, registry_path=SEATS_JSON,
         primary_target=request.primary_target,
         validation_targets=request.validation_targets,
         return_contract=request.return_contract,
+        timeout_seconds=request.timeout_seconds,
         session_ref=session_ref,
     )
+
+
+class ClaudeCliTransport:
+    """Direct local transport for the installed Claude Code CLI.
+
+    This is intentionally a narrow Phase-2 bridge.  ``--permission-prompts
+    none`` means a native Claude permission request is denied and returned as
+    structured ``needs_input`` evidence; it is never approved by Thebes or the
+    controller.  The CLI's working directory and timeout are transport-enforced.
+    """
+
+    def __init__(self, binary="claude", runner=subprocess.run):
+        self._binary = binary
+        self._runner = runner
+
+    def command(self, wake):
+        return (
+            self._binary,
+            "--print",
+            "--output-format", "json",
+            "--permission-mode", "dontAsk",
+            "--permission-prompts", "none",
+            "--model", wake.model,
+            "--effort", wake.effort,
+            wake.prompt,
+        )
+
+    def __call__(self, wake):
+        try:
+            completed = self._runner(
+                self.command(wake), capture_output=True, text=True,
+                timeout=wake.timeout_seconds, check=False,
+                cwd=wake.workspace.working_directory,
+            )
+        except FileNotFoundError as exc:
+            raise ClaudeUnavailable("Claude CLI is unavailable: %s" % exc)
+        except subprocess.TimeoutExpired as exc:
+            raise ClaudeTimeout("Claude CLI timed out: %s" % exc)
+        except OSError as exc:
+            raise ClaudeExecutorProcessFailure("Claude CLI could not start: %s" % exc)
+        if completed.returncode:
+            diagnostic = (completed.stderr or completed.stdout or
+                          "Claude CLI exited %d" % completed.returncode)
+            raise ClaudeExecutorProcessFailure(diagnostic.strip())
+        return _normalize_cli_output(completed.stdout)
+
+
+def _normalize_cli_output(raw):
+    """Map only documented CLI result fields into the existing result contract."""
+    try:
+        payload = json.loads(raw)
+    except (TypeError, ValueError) as exc:
+        raise ClaudeMalformedResult("Claude CLI returned invalid JSON: %s" % exc)
+    if not isinstance(payload, dict):
+        raise ClaudeMalformedResult("Claude CLI result must be an object")
+    summary = payload.get("result")
+    if not isinstance(summary, str) or not summary.strip():
+        summary = "Claude CLI returned no result text"
+    session_id = payload.get("session_id")
+    continuation = session_id if isinstance(session_id, str) and session_id else None
+    artifact = "claude-session:%s" % session_id if continuation else None
+    denials = payload.get("permission_denials") or []
+    if denials:
+        detail = "; ".join(str(item) for item in denials)
+        return {
+            "status": "needs_input",
+            "summary": summary,
+            "escalation": {
+                "reason": "Claude Code native permission required: %s" % detail,
+                "required_authority": "CEO",
+            },
+            "continuation_ref": continuation,
+            "raw_artifact_ref": artifact,
+        }
+    if payload.get("is_error") is True:
+        return {
+            "status": "execution_failed",
+            "summary": summary,
+            "failure_message": summary,
+            "continuation_ref": continuation,
+            "raw_artifact_ref": artifact,
+        }
+    return {
+        "status": "completed",
+        "summary": summary,
+        "continuation_ref": continuation,
+        "raw_artifact_ref": artifact,
+    }
 
 
 _RESULT_KEYS = frozenset({

@@ -11,6 +11,7 @@ import os
 import uuid
 
 from agent.execution.codex import CodexCliTransport, CodexProvider
+from agent.execution.claude import ClaudeCliTransport, ClaudeProvider
 from agent.execution.provider import (
     ExecutionFeature, ExecutionKind, ExecutionRequest, ExecutionTarget,
     ModelIntent, MutationMode, ReasoningEffort, ReportedEnvironment,
@@ -92,11 +93,11 @@ def load_brief(path):
 def available_provider_registry():
     """Compose only transports that this Codex environment can actually launch.
 
-    Claude's native Agent tool is controller-native to Claude Code and is not
-    callable from this repository or Codex CLI.  It is reported explicitly in
-    the controller result, rather than represented by a fabricated runner.
+    Claude's supported local CLI is invoked through the existing ClaudeProvider
+    seam.  Native permission prompts are denied and returned as needs-input
+    evidence rather than approved by this controller.
     """
-    return (CodexProvider(CodexCliTransport()),)
+    return (ClaudeProvider(ClaudeCliTransport()), CodexProvider(CodexCliTransport()))
 
 
 def execute(work_item_id, brief, *, authorization=None, state_store=store,
@@ -300,8 +301,11 @@ def _result_shell(work_item_id):
         "blocker": None,
         "result_receipt_status": "not-started",
         "lease_closure_status": "not-opened",
-        "claude_transport_from_codex": "unavailable",
-        "claude_transport_limitation": "Codex has no controller-native Claude Agent transport",
+        "claude_transport_from_codex": "available-via-local-claude-cli",
+        "claude_transport_limitation": (
+            "native prompts are denied in non-interactive controller execution and "
+            "returned as needs_input"
+        ),
         "codex_transport_status": "available-via-codex-exec",
     }
 
@@ -319,6 +323,16 @@ def _execution_result(execution):
                                    else None),
         "needs_input": (execution.escalation.reason if execution.escalation else None),
         "blocker": (failure.message if failure else None),
+        "summary": execution.summary,
+        "evidence": [{"kind": item.kind, "reference": item.reference,
+                      "summary": item.summary} for item in execution.evidence],
+        "changed_files": [{"path": item.path, "change_kind": item.change_kind}
+                          for item in execution.changed_files],
+        "tests": [{"command": item.command, "status": item.status.value,
+                   "evidence_ref": item.evidence_ref, "exit_code": item.exit_code}
+                  for item in execution.tests],
+        "continuation_ref": execution.continuation_ref,
+        "raw_artifact_ref": execution.raw_artifact_ref,
     }
 
 

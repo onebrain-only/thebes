@@ -149,16 +149,18 @@ class ControllerEntryTests(unittest.TestCase):
         self.assertEqual("completed", outcome["execution_status"])
         self.assertEqual("received", outcome["result_receipt_status"])
         self.assertEqual("closed", outcome["lease_closure_status"])
+        self.assertEqual("completed fixture", outcome["summary"])
         self.assertEqual("controller", calls[0].request.return_contract.return_to)
         self.assertEqual(("supabase/migrations/kan900.sql",), calls[0].request.allowed_surfaces)
 
-    def test_unavailable_claude_is_reported_not_faked_or_silently_hidden(self):
+    def test_available_claude_transport_is_reported_without_selecting_it_by_test_override(self):
         state = State()
         provider = CodexProvider(lambda invocation: "completed fixture")
         outcome = execute("KAN-900", brief(), authorization=Authorization(), state_store=state,
                           jira_client=Jira(), seat_registry=Registry(), providers=(provider,))
-        self.assertEqual("unavailable", outcome["claude_transport_from_codex"])
-        self.assertIn("no controller-native Claude", outcome["claude_transport_limitation"])
+        self.assertEqual("available-via-local-claude-cli",
+                         outcome["claude_transport_from_codex"])
+        self.assertIn("native prompts are denied", outcome["claude_transport_limitation"])
         self.assertEqual("codex-cli", outcome["selected_provider"])
 
     def test_provider_failure_is_received_once_without_fallback_or_retry(self):

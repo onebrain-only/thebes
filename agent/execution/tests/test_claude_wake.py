@@ -4,6 +4,7 @@
 import inspect
 import json
 import os
+import subprocess
 import sys
 import unittest
 
@@ -14,6 +15,7 @@ sys.path.insert(0, ROOT)
 
 from agent.execution.claude import (  # noqa: E402
     ClaudeProvider,
+    ClaudeCliTransport,
     ClaudeWakeError,
     prepare_claude_wake,
 )
@@ -197,6 +199,47 @@ class ClaudeWakeCharacterizationTests(unittest.TestCase):
         source = inspect.getsource(sys.modules[ClaudeProvider.__module__]).lower()
         self.assertNotIn("agent.state.store", source)
         self.assertNotIn("jira", source)
+
+
+class ClaudeCliTransportTests(unittest.TestCase):
+    def test_cli_transport_uses_print_json_workspace_and_request_timeout(self):
+        calls = []
+
+        def runner(command, **kwargs):
+            calls.append((command, kwargs))
+            return subprocess.CompletedProcess(
+                command, 0,
+                '{"result":"safe result","is_error":false,"session_id":"s-1",'
+                '"permission_denials":[]}', "",
+            )
+
+        transport = ClaudeCliTransport(runner=runner)
+        wake = prepare_claude_wake(request(timeout_seconds=321))
+        raw = transport(wake)
+        command, kwargs = calls[0]
+        self.assertEqual("claude", command[0])
+        self.assertIn("--print", command)
+        self.assertIn("--output-format", command)
+        self.assertIn("dontAsk", command)
+        self.assertEqual(wake.workspace.working_directory, kwargs["cwd"])
+        self.assertEqual(321, kwargs["timeout"])
+        self.assertEqual("completed", raw["status"])
+        self.assertEqual("s-1", raw["continuation_ref"])
+
+    def test_native_permission_denial_becomes_needs_input_not_a_bypass(self):
+        transport = ClaudeCliTransport(runner=lambda command, **kwargs: subprocess.CompletedProcess(
+            command, 0,
+            '{"result":"write denied","is_error":false,"session_id":"s-2",'
+            '"permission_denials":["Edit(supabase/migration.sql)"]}', "",
+        ))
+        result = ClaudeProvider(transport).execute(prepare_request_for_cli())
+        self.assertEqual(ExecutionStatus.NEEDS_INPUT, result.status)
+        self.assertIn("native permission required", result.escalation.reason)
+        self.assertEqual("s-2", result.continuation_ref)
+
+
+def prepare_request_for_cli():
+    return request()
 
 
 class FakeStore:
