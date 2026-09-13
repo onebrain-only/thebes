@@ -175,6 +175,12 @@ ok("[5] the resulting commit contains ONLY the declared path", touched == ["beta
 ok("[5] and does NOT contain the other seat's deletion — the original defect",
    "alpha.dart" not in touched)
 
+os.makedirs(os.path.join(b["path"], "test", "nested"), exist_ok=True)
+write(os.path.join(b["path"], "test", "nested"), "receipt_test.dart", "// receipt\n")
+ok("[5] untracked directories expand to their declared file paths",
+   wt.changed_files("frontend-6", "KAN-156", WTROOT) == ["test/nested/receipt_test.dart"])
+sh(b["path"], "clean", "-fd", "test")
+
 # ------------------------------------------------------- 6/7/8. integration
 
 section("INTEGRATION — serialized, fails closed, never main")

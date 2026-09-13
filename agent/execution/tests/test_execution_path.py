@@ -4,6 +4,7 @@
 import dataclasses
 import os
 import sys
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -17,8 +18,9 @@ sys.path.insert(0, TESTS)
 from agent.execution.claude import ClaudeProvider  # noqa: E402
 from agent.execution.codex import CodexProvider  # noqa: E402
 from agent.execution.provider import (  # noqa: E402
-    ExecutionFeature, ExecutionResult, ExecutionStatus, FailureCode,
+    ExecutionFeature, ExecutionResult, ExecutionStatus, FailureCode, ModelIntent,
     ProviderCapabilities,
+    ReasoningEffort,
 )
 from agent.execution.wake import execute_product_wake  # noqa: E402
 from test_claude_wake import FakeStore, RecordingTransport, request  # noqa: E402
@@ -69,7 +71,7 @@ class ExecutionPathIntegrationTests(unittest.TestCase):
         self.assertEqual(ExecutionStatus.COMPLETED, result.status)
         self.assertEqual(1, len(transport.wakes))
         self.assertEqual(1, receipt.call_count)
-        self.assertEqual(["permission", "lease-open", "request", "lease-close"], self.events)
+        self.assertEqual(["permission", "lease-open", "request", "receipt", "lease-close"], self.events)
 
     def test_codex_override_uses_the_same_request_and_full_rendered_brief(self):
         original = self._factory
@@ -139,6 +141,59 @@ class ExecutionPathIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(ExecutionStatus.COMPLETED, result.status)
         self.assertEqual(before, dataclasses.asdict(original))
+
+    def test_observer_can_end_while_one_wake_persists_result_before_lease_close(self):
+        started, finish = threading.Event(), threading.Event()
+        calls, receipts = [], {}
+
+        class ReceiptStore(FakeStore):
+            def record_execution_receipt(self, invocation_id, work_item_id, seat_id,
+                                         execution_lease_id, normalized_result):
+                self.events.append("receipt")
+                receipts[invocation_id] = normalized_result
+
+        class DelayedProvider:
+            def capabilities(self):
+                return ProviderCapabilities(
+                    provider_id="codex-cli", available=True,
+                    execution_features=frozenset(ExecutionFeature),
+                    supported_model_intents=frozenset(ModelIntent),
+                    supported_reasoning_efforts=frozenset(ReasoningEffort),
+                )
+
+            def execute(self, execution_request):
+                calls.append(execution_request.invocation_id)
+                started.set()
+                finish.wait(2)
+                return ExecutionResult(
+                    invocation_id=execution_request.invocation_id,
+                    status=ExecutionStatus.COMPLETED,
+                    summary="completed after observer interruption",
+                    provider_id="codex-cli",
+                )
+
+        events = []
+        state = ReceiptStore(events)
+        outcome = []
+        worker = threading.Thread(target=lambda: outcome.append(execute_product_wake(
+            "KAN-900", "backend-1", "authorization:bounded",
+            lambda task, lease: request(
+                claim_ref=task["ownership"]["claim_ref"],
+                execution_lease_id=lease["execution_lease_id"],
+                operating_mode_revision=lease["mode_revision"],
+            ), (DelayedProvider(),), provider_override="codex-cli", state_store=state,
+        )))
+        worker.start()
+        self.assertTrue(started.wait(1))
+        # Deliberately stop observing the initiating wake before completion.
+        self.assertEqual(1, len(calls))
+        finish.set()
+        worker.join(2)
+
+        self.assertEqual(ExecutionStatus.COMPLETED, outcome[0].status)
+        self.assertEqual(1, len(calls))
+        self.assertEqual("completed", receipts[calls[0]]["status"])
+        self.assertLess(events.index("receipt"), events.index("lease-close"))
 
 
 if __name__ == "__main__":

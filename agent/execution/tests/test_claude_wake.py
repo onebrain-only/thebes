@@ -259,6 +259,10 @@ class FakeStore:
     def close_execution_lease(self, lease_id, revision, closed_by):
         self.events.append("lease-close")
 
+    def record_execution_receipt(self, invocation_id, work_item_id, seat_id,
+                                 execution_lease_id, normalized_result):
+        self.events.append("receipt")
+
 
 class WakeOrderTests(unittest.TestCase):
     def test_permission_then_lease_then_request_then_transport_then_close(self):
@@ -282,7 +286,7 @@ class WakeOrderTests(unittest.TestCase):
         self.assertEqual(ExecutionStatus.COMPLETED, result.status)
         self.assertEqual(raw, result.summary)
         self.assertEqual(
-            ["permission", "lease-open", "request", "transport", "lease-close"],
+            ["permission", "lease-open", "request", "transport", "receipt", "lease-close"],
             events,
         )
 

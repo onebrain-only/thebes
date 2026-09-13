@@ -227,7 +227,18 @@ def changed_files(seat_id, work_item_id, root=None):
     out = []
     for line in p.stdout.splitlines():
         if line.strip():
-            out.append(line[3:].strip().split(" -> ")[-1])
+            changed = line[3:].strip().split(" -> ")[-1]
+            # Porcelain reports an untracked directory as one entry.  Attribution
+            # is file-level, though: treating `test/foo/` as an undeclared file
+            # makes a valid, explicitly declared untracked test set impossible to
+            # commit.  Expand only that directory inside this seat's worktree.
+            absolute = os.path.join(path, changed)
+            if line.startswith("?? ") and os.path.isdir(absolute):
+                for root, _dirs, files in os.walk(absolute):
+                    for name in files:
+                        out.append(os.path.relpath(os.path.join(root, name), path))
+            else:
+                out.append(changed)
     return sorted(set(out))
 
 

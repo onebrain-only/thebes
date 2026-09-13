@@ -1,6 +1,7 @@
 """Core-owned ordering around one already-authorized Product execution wake."""
 
 from agent.execution.result import receive_execution_result
+from agent.execution.receipt import normalized_result_payload
 from agent.execution.selection import select_provider
 
 
@@ -34,7 +35,15 @@ def execute_product_wake(work_item_id, seat_id, reason_ref, request_factory, pro
             result = selection.failure_result(request)
         else:
             result = selection.provider.execute(request)
-        return receive_execution_result(result)
+        normalized = receive_execution_result(result)
+        # This must precede lease closure.  A caller may stop observing this wake
+        # while the provider process continues; the terminal evidence remains
+        # recoverable without another provider invocation.
+        state_store.record_execution_receipt(
+            request.invocation_id, work_item_id, seat_id,
+            lease["execution_lease_id"], normalized_result_payload(normalized),
+        )
+        return normalized
     finally:
         state_store.close_execution_lease(
             lease["execution_lease_id"], lease["revision"], closed_by

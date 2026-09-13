@@ -21,7 +21,7 @@ SCOPE
 
 Stdlib only. No DELETE: records are retired or withdrawn, never removed.
 """
-import fcntl, json, os, re, sys, uuid
+import fcntl, hashlib, json, os, re, sys, uuid
 from datetime import datetime, timezone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -49,6 +49,10 @@ KINDS = {
     "correction":   ("corrections",   "cor"),
     "operating_mode": ("operating-mode", None),
     "execution_lease": ("execution-leases", "lease"),
+    # A receipt is inert, immutable evidence that a dispatched invocation reached
+    # a normalized terminal result.  It is deliberately separate from leases:
+    # closing a lease proves ordering cleanup, not what the provider returned.
+    "execution_receipt": ("execution-receipts", "receipt"),
 }
 
 
@@ -2020,6 +2024,63 @@ def close_execution_lease(execution_lease_id, expected_revision, closed_by):
             return rec
 
 
+def _receipt_id(invocation_id):
+    """Stable natural identity without placing arbitrary invocation text in a path."""
+    digest = hashlib.sha256(invocation_id.encode("utf-8")).hexdigest()
+    return "receipt-" + digest
+
+
+def record_execution_receipt(invocation_id, work_item_id, seat_id,
+                             execution_lease_id, normalized_result):
+    """Persist one normalized terminal result before its lease is closed.
+
+    The operation is idempotent only for byte-identical evidence from the same
+    invocation.  A second, different result is refused rather than overwriting
+    the first terminal record or making a duplicate execution look legitimate.
+    """
+    if not isinstance(normalized_result, dict):
+        raise StateError("normalized_result must be a JSON object")
+    if normalized_result.get("invocation_id") != invocation_id:
+        raise StateError("receipt invocation_id must match its normalized result")
+    if normalized_result.get("status") not in {
+            "completed", "needs_input", "execution_failed", "provider_failed"}:
+        raise StateError("receipt has no normalized terminal status")
+    rid = _receipt_id(invocation_id)
+    rec = {"execution_receipt_id": rid, "invocation_id": invocation_id,
+           "work_item_id": work_item_id, "seat_id": seat_id,
+           "execution_lease_id": execution_lease_id,
+           "provider_id": normalized_result.get("provider_id"),
+           "status": normalized_result["status"],
+           "normalized_result": normalized_result}
+    with _Lock("execution-domain"):
+        lease = read("execution_lease", execution_lease_id)
+        if lease is None:
+            raise StateError("execution receipt needs an existing execution lease")
+        if (lease.get("work_item_id"), lease.get("seat_id")) != (work_item_id, seat_id):
+            raise StateError("execution receipt does not match its execution lease")
+        with record_lock("execution_receipt", rid):
+            existing = read("execution_receipt", rid)
+            if existing is not None:
+                if existing.get("normalized_result") != normalized_result:
+                    raise StateError("conflicting terminal receipt for invocation %s"
+                                     % invocation_id)
+                return existing
+            rec["schema_version"] = SCHEMA_VERSION
+            rec["revision"] = 1
+            rec["created_at"] = now()
+            rec["updated_at"] = rec["created_at"]
+            _validate_one("execution_receipt", rec)
+            _atomic_write(path_for("execution_receipt", rid), rec)
+            return rec
+
+
+def read_execution_receipt(invocation_id):
+    """Recover durable normalized evidence without re-waking a provider."""
+    if not invocation_id:
+        raise StateError("invocation_id is required")
+    return read("execution_receipt", _receipt_id(invocation_id))
+
+
 def claim(work_item_id, seat_id, claim_ref, expected_revision, capability_of_seat=None,
           jira_status_id=None):
     """Atomically take execution ownership. CAS'd inside the record lock.
@@ -2121,7 +2182,8 @@ def _id_field(kind):
             "event": "event_id", "learning": "learning_id",
             "coverage": "coverage_id", "correction": "correction_id",
             "operating_mode": "operating_mode_id",
-            "execution_lease": "execution_lease_id"}[kind]
+            "execution_lease": "execution_lease_id",
+            "execution_receipt": "execution_receipt_id"}[kind]
 
 
 def _validate_one(kind, record):

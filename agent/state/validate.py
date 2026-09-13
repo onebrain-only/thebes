@@ -1130,6 +1130,28 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
             errs.append("%s: execution lease with closed_by records when" % where)
         _reflen(rec, ["reason_ref"], errs, where)
 
+    elif kind == "execution_receipt":
+        _req(rec, ["execution_receipt_id", "invocation_id", "work_item_id", "seat_id",
+                   "execution_lease_id", "status", "normalized_result"], errs, where)
+        if not str(rec.get("execution_receipt_id") or "").startswith("receipt-"):
+            errs.append("%s: execution_receipt_id must start with receipt-" % where)
+        if not isinstance(rec.get("invocation_id"), str) or not rec["invocation_id"]:
+            errs.append("%s: receipt invocation_id is required" % where)
+        if not JIRA_KEY.match(str(rec.get("work_item_id") or "")):
+            errs.append("%s: execution receipt needs a Jira work_item_id" % where)
+        if rec.get("seat_id") not in seatset:
+            errs.append("%s: execution receipt seat %r is not declared"
+                        % (where, rec.get("seat_id")))
+        if not str(rec.get("execution_lease_id") or "").startswith("lease-"):
+            errs.append("%s: receipt needs an execution lease" % where)
+        if rec.get("status") not in {"completed", "needs_input", "execution_failed", "provider_failed"}:
+            errs.append("%s: receipt status is not terminal" % where)
+        result = rec.get("normalized_result")
+        if not isinstance(result, dict) or result.get("invocation_id") != rec.get("invocation_id"):
+            errs.append("%s: receipt must preserve its normalized invocation identity" % where)
+        elif result.get("status") != rec.get("status"):
+            errs.append("%s: receipt status must match normalized result" % where)
+
     elif kind == "policy":
         _req(rec, ["policy_id", "policy_kind", "scope", "activated_by", "reason_ref"],
              errs, where)
@@ -1318,7 +1340,8 @@ def check(runtime=None):
              "dependency": "dependencies", "intervention": "interventions",
              "policy": "policies", "event": "events", "learning": "learning",
              "coverage": "coverage", "correction": "corrections",
-             "operating_mode": "operating-mode", "execution_lease": "execution-leases"}
+             "operating_mode": "operating-mode", "execution_lease": "execution-leases",
+             "execution_receipt": "execution-receipts"}
     seen_ids = {}
     edges = []
     active_iv = []
@@ -1344,7 +1367,8 @@ def check(runtime=None):
                    "event": "event_id", "learning": "learning_id",
                    "coverage": "coverage_id", "correction": "correction_id",
                    "operating_mode": "operating_mode_id",
-                   "execution_lease": "execution_lease_id"}[kind]
+                   "execution_lease": "execution_lease_id",
+                   "execution_receipt": "execution_receipt_id"}[kind]
             rid = rec.get(idf)
             if rid != fn[:-5]:
                 errs.append("%s: filename does not match %s %r" % (p, idf, rid))
