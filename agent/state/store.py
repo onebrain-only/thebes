@@ -1949,13 +1949,75 @@ def set_surfaces(work_item_id, expected_revision, surfaces, author, basis_ref=No
             # Who assessed the paths, when, and against what — recorded on the existing
             # per-field provenance mechanism rather than in a second source of truth.
             prov["surfaces"] = {"by": author, "at": now(), "basis_ref": basis_ref}
+            # Surface assessment changes a policy characteristic.  Materialise the
+            # corresponding policy result atomically so a fully assessed profile
+            # cannot reach planning without a validation route.
+            started = (cur.get("lifecycle") or {}).get("canonical") in (
+                "development", "review", "done")
+            route = policy.escalate(prof.get("validation_route"),
+                                    policy.validation_route(ch), started)
+            prof["validation_route"] = route
+            prof["completion_route"] = "DONE"
+            prov["validation_route"] = {"by": "system-policy", "at": now()}
+            prov["completion_route"] = {"by": "system-policy", "at": now()}
             prof["provenance"] = prov
+            prof.setdefault("profile_status", "partial")
+            prof["effective_fields"] = [
+                f for f in ("project_id", "required_capability", "work_effort",
+                            "characteristics", "validation_route", "completion_route")
+                if (merged.get(f) if f == "project_id" else prof.get(f)) is not None]
             merged["execution_profile"] = prof
         merged["revision"] = cur["revision"] + 1
         merged["updated_at"] = now()
         _validate_one("task", merged)
         _atomic_write(path_for("task", work_item_id), merged)
         return merged
+
+
+def reconcile_missing_validation_routes():
+    """Materialise routes for every classified legacy execution profile.
+
+    This is a generic Persistent State maintenance repair, never a Jira update or
+    task-key exception.  Profiles whose characteristics are absent remain unchanged
+    and queueing reports ``insufficient-characteristics``.
+    """
+    import policy                                       # noqa: E402
+    repaired = []
+    for row in read_all("task"):
+        if row.get("record_type") != "executable":
+            continue
+        key = row.get("work_item_id")
+        with record_lock("task", key):
+            cur = read("task", key)
+            prof = dict((cur or {}).get("execution_profile") or {})
+            if (not prof or prof.get("characteristics") is None
+                    or prof.get("validation_route") is not None):
+                continue
+            route = policy.validation_route_for_profile(prof)
+            if route is None:
+                continue
+            started = (cur.get("lifecycle") or {}).get("canonical") in (
+                "development", "review", "done")
+            prof["validation_route"] = policy.escalate(None, route, started)
+            prof["completion_route"] = "DONE"
+            prov = dict(prof.get("provenance") or {})
+            prov["validation_route"] = {"by": "system-policy", "at": now(),
+                                         "reconciled_from": "characteristics"}
+            prov["completion_route"] = {"by": "system-policy", "at": now()}
+            prof["provenance"] = prov
+            prof.setdefault("profile_status", "partial")
+            prof["effective_fields"] = [
+                f for f in ("project_id", "required_capability", "work_effort",
+                            "characteristics", "validation_route", "completion_route")
+                if (cur.get(f) if f == "project_id" else prof.get(f)) is not None]
+            merged = dict(cur)
+            merged["execution_profile"] = prof
+            merged["revision"] = cur["revision"] + 1
+            merged["updated_at"] = now()
+            _validate_one("task", merged)
+            _atomic_write(path_for("task", key), merged)
+            repaired.append(key)
+    return repaired
 
 
 def assert_execution_permitted(work_item_id, seat_id):

@@ -61,6 +61,16 @@ def is_executable(task):
     return task.get("record_type") == "executable"
 
 
+def validation_route_for(task):
+    """The canonical route a scheduler must carry for this task.
+
+    ``None`` means the profile lacks characteristics, not SELF.  A missing stored
+    route on an older profile is harmless when the canonical characteristics are
+    present: policy deterministically derives it here.
+    """
+    return policy.validation_route_for_profile(task.get("execution_profile") or {})
+
+
 # ---------------------------------------------------------------- eligibility
 
 def eligibility_reasons(task, jira=None):
@@ -88,6 +98,13 @@ def eligibility_reasons(task, jira=None):
         out.append("missing-capability")
     if prof.get("work_effort") is None:
         out.append("missing-work-effort")
+    try:
+        route = validation_route_for(task)
+    except ValueError:
+        out.append("invalid-characteristics")
+    else:
+        if route is None:
+            out.append("insufficient-characteristics")
 
     if jira is None:
         out.append("unverified-jira")

@@ -156,6 +156,23 @@ def validation_route(ch):
     return SELF
 
 
+def validation_route_for_profile(profile):
+    """Return the canonical route for a profile, or ``None`` if unclassified.
+
+    An empty characteristics object is a complete ordinary classification and
+    resolves to SELF.  ``None`` means characteristic evidence has not been
+    recorded, so scheduling must remain blocked rather than treating it as false.
+    This is a thin profile boundary over ``validation_route``: one policy
+    calculator remains authoritative for construction, queueing and planning.
+    """
+    if not isinstance(profile, dict):
+        return None
+    ch = profile.get("characteristics")
+    if ch is None:
+        return None
+    return validation_route(ch)
+
+
 def escalate(current, recomputed, execution_started):
     """Monotonic route movement.
 
