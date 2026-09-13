@@ -229,7 +229,7 @@ def safe_parallel_plan(capability, tasks, seats_by_capability, edges=None,
     """
     free = free_seats(capability, tasks, seats_by_capability)
     _reject_shared_jira(kw)
-    pool = claimable_items(capability, tasks, jira_by_key=jira_by_key, **kw)
+    pool = claimable_items(capability, tasks, jira_by_key=jira_by_key, edges=edges, **kw)
     if covers is not None:
         # Scope is enforced HERE as well as when choosing capabilities: a
         # PRODUCT-scoped policy must not accelerate another product's work merely

@@ -295,7 +295,7 @@ def unclaimable_reasons(task, all_tasks=None, edges=None, lifecycles=None,
 
     obs = _parse((task.get("lifecycle") or {}).get("observed_at"))
     ref = now or datetime.now(timezone.utc)
-    if jira_status_id is None:
+    if jira_status_id is None and jira is None:
         if obs is None or (ref - obs) > timedelta(seconds=CLAIM_FRESHNESS_SECONDS):
             out.append("stale-jira")
 

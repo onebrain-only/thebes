@@ -13,6 +13,12 @@ def plan_current_sprint(*, jira_client=jira, state_store=store, when=None):
     sid = sprint.sprint_id(when)
     issues = jira_client.search_issues('project = KAN AND labels = "%s"' % sid,
                                        limit=200)
+    return plan_issues(issues, sid, "canonical Dubai-time calendar plus Jira sprint label",
+                       state_store=state_store)
+
+
+def plan_issues(issues, scope_id, scope_source, *, state_store=store):
+    """Shared read-only scope-to-batch-plan adapter for controller entry points."""
     keys = [row["key"] for row in issues]
     all_tasks = state_store.read_all("task")
     by_key = {row.get("work_item_id"): row for row in all_tasks}
@@ -38,7 +44,7 @@ def plan_current_sprint(*, jira_client=jira, state_store=store, when=None):
     waves, assigned = [], {}
     for cap in sorted({queue.capability_of(t) for t in scoped if queue.capability_of(t)}):
         plan = capacity.safe_parallel_plan(
-            cap, scoped + [t for t in all_tasks if t not in scoped and (t.get("ownership") or {}).get("seat_id")],
+            cap, all_tasks,
             seats, edges=edges, jira_by_key=facts, covers=lambda t, ks=set(keys): t.get("work_item_id") in ks,
             interventions=[], include_execution_gate=False)
         if plan["assignments"]:
@@ -49,8 +55,8 @@ def plan_current_sprint(*, jira_client=jira, state_store=store, when=None):
         row["planned_executor"] = assignment and assignment["seat_id"]
         row["planned_provider"] = "claude-code" if assignment else None
         row["execution_wave"] = 1 if assignment else None
-    return {"result_class": "EMPTY_SPRINT" if not issues else "PLANNED", "sprint": sid,
-            "sprint_source": "canonical Dubai-time calendar plus Jira sprint label",
+    return {"result_class": "EMPTY_SPRINT" if not issues else "PLANNED", "scope": scope_id,
+            "scope_source": scope_source, "sprint": scope_id, "sprint_source": scope_source,
             "total_issues": len(issues), "issue_keys": keys, "admissions": admissions,
             "dependency_graph": [e for e in edges if e.get("source_work_item") in keys or e.get("target_work_item") in keys],
             "contention_graph": _contention(scoped, all_tasks),

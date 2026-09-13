@@ -6,6 +6,7 @@ import sys
 
 from . import ControllerInputError, execute, load_brief
 from .sprint_plan import plan_current_sprint
+from .backlog_plan import plan_backlog
 
 
 def main(argv=None):
@@ -16,14 +17,16 @@ def main(argv=None):
     run.add_argument("--brief-file", required=True,
                      help="JSON bounded execution brief prepared by the controller")
     sub.add_parser("plan-sprint", help="read-only plan for the current canonical sprint")
+    sub.add_parser("plan-backlog", help="read-only plan for the canonical Jira Product backlog")
     args = parser.parse_args(argv)
     try:
-        outcome = (plan_current_sprint() if args.command == "plan-sprint"
+        outcome = (plan_current_sprint() if args.command == "plan-sprint" else plan_backlog()
+                   if args.command == "plan-backlog"
                    else execute(args.work_item_id, load_brief(args.brief_file)))
     except ControllerInputError as exc:
         outcome = {"work_item_id": args.work_item_id, "blocker": str(exc)}
     print(json.dumps(outcome, indent=2, sort_keys=True))
-    return 0 if args.command == "plan-sprint" or outcome.get("execution_status") == "completed" else 1
+    return 0 if args.command in ("plan-sprint", "plan-backlog") or outcome.get("execution_status") == "completed" else 1
 
 
 if __name__ == "__main__":
