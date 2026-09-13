@@ -12,6 +12,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
 sys.path.insert(0, ROOT)
 
 from agent.controller import execute  # noqa: E402
+from agent.controller.allocation import SeatAllocationError, select_claim_seat  # noqa: E402
 from agent.execution.codex import CodexProvider, CodexUnavailable  # noqa: E402
 
 
@@ -28,7 +29,11 @@ class Authorization:
 class Registry:
     def read(self):
         return {"backend-1": {"seat_id": "backend-1", "role": "backend",
-                              "capability": "backend"}}
+                              "capability": "backend"},
+                "backend-2": {"seat_id": "backend-2", "role": "backend",
+                              "capability": "backend"},
+                "frontend-1": {"seat_id": "frontend-1", "role": "frontend",
+                               "capability": "frontend"}}
 
 
 class Jira:
@@ -60,6 +65,9 @@ class State:
         if kind == "execution_lease" and self.lease and rid == self.lease["execution_lease_id"]:
             return copy.deepcopy(self.lease)
         return None
+
+    def read_all(self, kind):
+        return [copy.deepcopy(self.task)] if kind == "task" else []
 
     def observe_lifecycle(self, work_item_id, revision, status_id):
         self.events.append("observe")
@@ -105,7 +113,6 @@ class State:
 
 def brief(**changes):
     value = {
-        "seat_id": "backend-1",
         "execution_kind": "implementation",
         "objective": "Implement exactly the selected bounded fixture work item.",
         "context_refs": ["CLAUDE.md", "agent/roles/backend.md"],
@@ -205,16 +212,46 @@ class ControllerEntryTests(unittest.TestCase):
         self.assertEqual("unavailable", outcome["provider_failure_code"])
         self.assertEqual("closed", outcome["lease_closure_status"])
 
-    def test_wrong_capability_seat_never_claims(self):
-        class WrongRegistry:
-            def read(self):
-                return {"frontend-1": {"capability": "frontend"}}
+    def test_busy_backend_selects_free_backend(self):
+        task = copy.deepcopy(State().task)
+        busy = copy.deepcopy(task)
+        busy["work_item_id"] = "KAN-901"
+        busy["ownership"] = {"seat_id": "backend-1"}
+        self.assertEqual("backend-2", select_claim_seat(task, Registry().read(), (task, busy)))
+
+    def test_multiple_free_seats_are_deterministic(self):
+        task = copy.deepcopy(State().task)
+        seats = {"backend-2": {"capability": "backend"},
+                 "backend-1": {"capability": "backend"}}
+        self.assertEqual("backend-1", select_claim_seat(task, seats, (task,)))
+
+    def test_all_busy_is_a_factual_allocation_failure(self):
+        task = copy.deepcopy(State().task)
+        one, two = copy.deepcopy(task), copy.deepcopy(task)
+        one["work_item_id"], one["ownership"] = "KAN-901", {"seat_id": "backend-1"}
+        two["work_item_id"], two["ownership"] = "KAN-902", {"seat_id": "backend-2"}
+        with self.assertRaisesRegex(SeatAllocationError, "no free active seats"):
+            select_claim_seat(task, Registry().read(), (task, one, two))
+
+    def test_explicit_pin_is_the_only_candidate(self):
+        task = copy.deepcopy(State().task)
+        task["execution_profile"]["pinned_seat_id"] = "backend-2"
+        self.assertEqual("backend-2", select_claim_seat(task, Registry().read(), (task,)))
+        task["execution_profile"]["pinned_seat_id"] = "frontend-1"
+        with self.assertRaisesRegex(SeatAllocationError, "not an active backend seat"):
+            select_claim_seat(task, Registry().read(), (task,))
+
+    def test_active_claim_excludes_seat_and_claim_stays_atomic(self):
+        task = copy.deepcopy(State().task)
+        busy = copy.deepcopy(task)
+        busy["work_item_id"], busy["ownership"] = "KAN-901", {"seat_id": "backend-1"}
+        self.assertEqual("backend-2", select_claim_seat(task, Registry().read(), (task, busy)))
         state = State()
-        outcome = execute("KAN-900", brief(seat_id="frontend-1"), authorization=Authorization(),
-                          state_store=state, jira_client=Jira(), seat_registry=WrongRegistry(),
-                          providers=())
-        self.assertIn("does not match", outcome["blocker"])
-        self.assertNotIn("claim", state.events)
+        outcome = execute("KAN-900", brief(), authorization=Authorization(), state_store=state,
+                          jira_client=Jira(), seat_registry=Registry(), providers=())
+        self.assertEqual("backend-1", outcome["seat_id"])
+        self.assertEqual(["mode", "observe", "claim", "continuation", "lease-open",
+                          "receipt", "lease-close"], state.events)
 
 
 if __name__ == "__main__":

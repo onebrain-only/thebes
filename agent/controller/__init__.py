@@ -20,6 +20,7 @@ from agent.execution.provider import (
 from agent.execution.wake import execute_product_wake
 from agent.integrations import jira
 from agent.state import roster, store
+from agent.controller.allocation import SeatAllocationError, select_claim_seat
 
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -125,7 +126,7 @@ def execute(work_item_id, brief, *, authorization=None, state_store=store,
         if task is None:
             result["blocker"] = "work-item-not-found"
             return result
-        seat_id, capability = _resolve_seat(task, brief, seat_registry)
+        seat_id, capability = _resolve_seat(task, seat_registry, state_store)
         result.update({"capability": capability, "seat_id": seat_id,
                        "seat_resolution_status": "capability-verified"})
 
@@ -163,18 +164,15 @@ def execute(work_item_id, brief, *, authorization=None, state_store=store,
         return result
 
 
-def _resolve_seat(task, brief, seat_registry):
-    seat_id = _required_text(brief, "seat_id")
+def _resolve_seat(task, seat_registry, state_store):
     capability = (task.get("execution_profile") or {}).get("required_capability")
     if not capability:
         raise ControllerInputError("work item has no required capability")
     seats = seat_registry.read()
-    entry = seats.get(seat_id)
-    if entry is None:
-        raise ControllerInputError("requested Seat is not declared: %s" % seat_id)
-    if entry["capability"] != capability:
-        raise ControllerInputError("requested Seat capability %r does not match %r"
-                                   % (entry["capability"], capability))
+    try:
+        seat_id = select_claim_seat(task, seats, state_store.read_all("task"))
+    except SeatAllocationError as exc:
+        raise ControllerInputError(str(exc))
     return seat_id, capability
 
 

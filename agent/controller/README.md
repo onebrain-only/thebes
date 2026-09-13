@@ -15,7 +15,6 @@ accept claim/lease/lifecycle overrides.
 
 ```json
 {
-  "seat_id": "backend-1",
   "execution_kind": "implementation",
   "objective": "The controller's bounded professional execution brief.",
   "context_refs": ["agent/roles/backend.md"],
@@ -56,8 +55,12 @@ accept claim/lease/lifecycle overrides.
 ```
 
 The task record supplies the required capability and declared surfaces. The
-neutral registry must confirm that `seat_id` has that capability. The controller
-brief becomes the immutable request objective without a second prompt format.
+controller deterministically selects the first free active neutral-registry seat
+with that exact capability; existing claims exclude seats. A task may carry an
+explicit `execution_profile.pinned_seat_id`, in which case only that declared,
+free, exact-capability seat is eligible. Historical `executor_evidence` never
+pins a future claim. The controller brief becomes the immutable request objective
+without a second prompt format.
 
 Product authorization remains a roadmap governance fact and Product execution
 remains gated by the runtime operating mode. In the current maintenance state,
