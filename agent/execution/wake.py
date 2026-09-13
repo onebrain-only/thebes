@@ -42,6 +42,7 @@ def execute_product_wake(work_item_id, seat_id, reason_ref, request_factory, pro
         state_store.record_execution_receipt(
             request.invocation_id, work_item_id, seat_id,
             lease["execution_lease_id"], normalized_result_payload(normalized),
+            provider_selection=selection.receipt_evidence(),
         )
         return normalized
     finally:

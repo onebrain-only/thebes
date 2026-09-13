@@ -2031,7 +2031,8 @@ def _receipt_id(invocation_id):
 
 
 def record_execution_receipt(invocation_id, work_item_id, seat_id,
-                             execution_lease_id, normalized_result):
+                             execution_lease_id, normalized_result,
+                             provider_selection=None):
     """Persist one normalized terminal result before its lease is closed.
 
     The operation is idempotent only for byte-identical evidence from the same
@@ -2045,13 +2046,16 @@ def record_execution_receipt(invocation_id, work_item_id, seat_id,
     if normalized_result.get("status") not in {
             "completed", "needs_input", "execution_failed", "provider_failed"}:
         raise StateError("receipt has no normalized terminal status")
+    if provider_selection is not None and not isinstance(provider_selection, dict):
+        raise StateError("provider_selection must be a JSON object")
     rid = _receipt_id(invocation_id)
     rec = {"execution_receipt_id": rid, "invocation_id": invocation_id,
            "work_item_id": work_item_id, "seat_id": seat_id,
            "execution_lease_id": execution_lease_id,
            "provider_id": normalized_result.get("provider_id"),
            "status": normalized_result["status"],
-           "normalized_result": normalized_result}
+           "normalized_result": normalized_result,
+           "provider_selection": provider_selection}
     with _Lock("execution-domain"):
         lease = read("execution_lease", execution_lease_id)
         if lease is None:
@@ -2061,7 +2065,8 @@ def record_execution_receipt(invocation_id, work_item_id, seat_id,
         with record_lock("execution_receipt", rid):
             existing = read("execution_receipt", rid)
             if existing is not None:
-                if existing.get("normalized_result") != normalized_result:
+                if (existing.get("normalized_result") != normalized_result
+                        or existing.get("provider_selection") != provider_selection):
                     raise StateError("conflicting terminal receipt for invocation %s"
                                      % invocation_id)
                 return existing

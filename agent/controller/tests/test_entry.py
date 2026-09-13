@@ -94,6 +94,14 @@ class State:
         self.lease["revision"] = 2
         return copy.deepcopy(self.lease)
 
+    def record_execution_receipt(self, invocation_id, work_item_id, seat_id,
+                                 execution_lease_id, normalized_result,
+                                 provider_selection=None):
+        self.events.append("receipt")
+        self.receipt = {"invocation_id": invocation_id,
+                        "normalized_result": normalized_result,
+                        "provider_selection": provider_selection}
+
 
 def brief(**changes):
     value = {
@@ -137,7 +145,7 @@ class ControllerEntryTests(unittest.TestCase):
         provider = CodexProvider(lambda invocation: calls.append(invocation) or "completed fixture")
         outcome = execute("KAN-900", brief(), authorization=Authorization(), state_store=state,
                           jira_client=jira, seat_registry=Registry(), providers=(provider,))
-        self.assertEqual(["mode", "observe", "claim", "continuation", "lease-open", "lease-close"],
+        self.assertEqual(["mode", "observe", "claim", "continuation", "lease-open", "receipt", "lease-close"],
                          state.events)
         self.assertEqual(["KAN-900"], jira.calls)
         self.assertEqual(1, len(calls))
@@ -150,6 +158,8 @@ class ControllerEntryTests(unittest.TestCase):
         self.assertEqual("received", outcome["result_receipt_status"])
         self.assertEqual("closed", outcome["lease_closure_status"])
         self.assertEqual("completed fixture", outcome["summary"])
+        self.assertEqual("claude-code", state.receipt["provider_selection"]["primary_provider_id"])
+        self.assertEqual("codex-cli", state.receipt["provider_selection"]["selected_provider_id"])
         self.assertEqual("controller", calls[0].request.return_contract.return_to)
         self.assertEqual(("supabase/migrations/kan900.sql",), calls[0].request.allowed_surfaces)
 

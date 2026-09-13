@@ -260,7 +260,8 @@ class FakeStore:
         self.events.append("lease-close")
 
     def record_execution_receipt(self, invocation_id, work_item_id, seat_id,
-                                 execution_lease_id, normalized_result):
+                                 execution_lease_id, normalized_result,
+                                 provider_selection=None):
         self.events.append("receipt")
 
 

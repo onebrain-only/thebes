@@ -1151,6 +1151,15 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
             errs.append("%s: receipt must preserve its normalized invocation identity" % where)
         elif result.get("status") != rec.get("status"):
             errs.append("%s: receipt status must match normalized result" % where)
+        selection = rec.get("provider_selection")
+        if selection is not None:
+            if not isinstance(selection, dict):
+                errs.append("%s: receipt provider_selection must be an object" % where)
+            elif not selection.get("primary_provider_id"):
+                errs.append("%s: receipt provider_selection identifies its primary provider" % where)
+            elif (selection.get("selected_provider_id") is None
+                  and result.get("provider_id") != "thebes-provider-selection"):
+                errs.append("%s: receipt without selected provider is only valid for selection failure" % where)
 
     elif kind == "policy":
         _req(rec, ["policy_id", "policy_kind", "scope", "activated_by", "reason_ref"],

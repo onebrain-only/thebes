@@ -19,7 +19,8 @@ sys.path.insert(0, os.path.join(ROOT, "agent", "state"))
 
 import store  # noqa: E402
 import validate  # noqa: E402
-from agent.execution.provider import ExecutionResult, ExecutionStatus  # noqa: E402
+from agent.execution.provider import (ExecutionResult, ExecutionStatus, Failure,
+                                      FailureCode)  # noqa: E402
 from agent.execution.receipt import normalized_result_payload  # noqa: E402
 
 
@@ -61,7 +62,14 @@ class DurableReceiptRecoveryTests(unittest.TestCase):
                                      provider_id="codex-cli")
             store.record_execution_receipt(
                 invocation, "KAN-198", "frontend-1",
-                self.lease["execution_lease_id"], normalized_result_payload(result))
+                self.lease["execution_lease_id"], normalized_result_payload(result),
+                provider_selection={
+                    "primary_provider_id": "claude-code",
+                    "selected_provider_id": "codex-cli",
+                    "primary_ineligibility": {
+                        "code": "unavailable", "message": "usage quota exhausted",
+                    },
+                })
             store.close_execution_lease(self.lease["execution_lease_id"],
                                         self.lease["revision"], "orchestrator")
 
@@ -81,13 +89,33 @@ class DurableReceiptRecoveryTests(unittest.TestCase):
         self.assertTrue(store.read("execution_lease", self.lease["execution_lease_id"])["closed_at"])
         self.assertEqual(["provider"], calls)
         self.assertEqual("codex-cli", recovered["provider_id"])
+        self.assertEqual("claude-code", recovered["provider_selection"]["primary_provider_id"])
 
         # Idempotent recovery stores no second result and does not invoke anything.
         again = store.record_execution_receipt(
             invocation, "KAN-198", "frontend-1", self.lease["execution_lease_id"],
-            recovered["normalized_result"])
+            recovered["normalized_result"], provider_selection=recovered["provider_selection"])
         self.assertEqual(recovered["execution_receipt_id"], again["execution_receipt_id"])
         self.assertEqual(["provider"], calls)
+
+    def test_selection_failure_keeps_a_receipt_when_no_executor_was_dispatched(self):
+        invocation = "controller-no-eligible-provider"
+        result = ExecutionResult(
+            invocation_id=invocation, status=ExecutionStatus.PROVIDER_FAILED,
+            summary="claude-code cannot execute: usage quota exhausted",
+            failure=Failure(FailureCode.UNAVAILABLE, "usage quota exhausted"),
+            provider_id="thebes-provider-selection",
+        )
+        receipt = store.record_execution_receipt(
+            invocation, "KAN-198", "frontend-1", self.lease["execution_lease_id"],
+            normalized_result_payload(result), provider_selection={
+                "primary_provider_id": "claude-code", "selected_provider_id": None,
+                "primary_ineligibility": {
+                    "code": "unavailable", "message": "usage quota exhausted",
+                },
+            })
+        self.assertEqual("provider_failed", receipt["status"])
+        self.assertIsNone(receipt["provider_selection"]["selected_provider_id"])
 
 
 if __name__ == "__main__":

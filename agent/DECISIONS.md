@@ -167,7 +167,20 @@ recovery depend on a vendor-specific interface.
 the selected provider.
 **Evidence:** historical target specification §§55–56; current target adopted in
 `agent/ROADMAP.md`. Claude and Codex adapters exist; deterministic selection gates capability,
-model and effort compatibility, while retry and fallback remain controller decisions.
+model and effort compatibility.
+
+## D-016 — Claude is the Product-code primary provider
+
+**Status:** ACTIVE
+**Decision:** For `PRODUCT_EXECUTION` requests that edit a Product repository, Claude Code is
+the default primary provider. Codex CLI is selected only when Claude has a pre-dispatch,
+provider-level unavailability or incompatibility that Thebes can name. The receipt records the
+primary considered, the ineligibility reason when applicable, and the provider selected.
+**Why:** The temporary Codex controller must not bias executor selection toward itself. A Product
+execution failure after Claude dispatch remains evidence for the same claimed work; it never
+causes a silent switch to Codex.
+**Consequences:** This does not alter non-Product reasoning/coordination routing, provider
+capability gates, immutable requests, leases, claims, validation routes, or retry policy.
 
 ## D-015 — Retrieval is deferred until measured need
 
