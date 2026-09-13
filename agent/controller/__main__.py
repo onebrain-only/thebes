@@ -5,6 +5,7 @@ import json
 import sys
 
 from . import ControllerInputError, execute, load_brief
+from .sprint_plan import plan_current_sprint
 
 
 def main(argv=None):
@@ -14,13 +15,15 @@ def main(argv=None):
     run.add_argument("work_item_id")
     run.add_argument("--brief-file", required=True,
                      help="JSON bounded execution brief prepared by the controller")
+    sub.add_parser("plan-sprint", help="read-only plan for the current canonical sprint")
     args = parser.parse_args(argv)
     try:
-        outcome = execute(args.work_item_id, load_brief(args.brief_file))
+        outcome = (plan_current_sprint() if args.command == "plan-sprint"
+                   else execute(args.work_item_id, load_brief(args.brief_file)))
     except ControllerInputError as exc:
         outcome = {"work_item_id": args.work_item_id, "blocker": str(exc)}
     print(json.dumps(outcome, indent=2, sort_keys=True))
-    return 0 if outcome.get("execution_status") == "completed" else 1
+    return 0 if args.command == "plan-sprint" or outcome.get("execution_status") == "completed" else 1
 
 
 if __name__ == "__main__":
