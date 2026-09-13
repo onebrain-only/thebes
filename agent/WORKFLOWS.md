@@ -63,6 +63,9 @@ Before this Product path is evaluated, Persistent State must be in `PRODUCT_EXEC
 continuation gate, including a wake for an already-owned task. Switching mode preserves all
 Product records; unfinished ownership may remain persisted and resume only after an explicit
 transition back to `PRODUCT_EXECUTION`.
+Read-only future planning may omit this *current* mode reason to show the wave that would be
+eligible after an authorised transition; it preserves every other claimability predicate and
+never authorises a claim or wake.
 Every Product wake also requires an execution lease opened immediately before invocation and
 closed when it returns. The lease and mode transition share one lock, so maintenance cannot
 become active between authorization and wake; entering maintenance waits until all wake leases

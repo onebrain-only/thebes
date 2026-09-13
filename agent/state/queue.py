@@ -98,13 +98,6 @@ def eligibility_reasons(task, jira=None):
         out.append("missing-capability")
     if prof.get("work_effort") is None:
         out.append("missing-work-effort")
-    try:
-        route = validation_route_for(task)
-    except ValueError:
-        out.append("invalid-characteristics")
-    else:
-        if route is None:
-            out.append("insufficient-characteristics")
 
     if jira is None:
         out.append("unverified-jira")
@@ -241,7 +234,8 @@ def contending_owner(task, all_tasks):
 # ---------------------------------------------------------------- claimability
 
 def unclaimable_reasons(task, all_tasks=None, edges=None, lifecycles=None,
-                        interventions=None, jira=None, jira_status_id=None, now=None):
+                        interventions=None, jira=None, jira_status_id=None, now=None,
+                        include_execution_gate=True):
     """Structured reasons this item cannot be claimed right now. Empty = claimable.
 
     Reasons are codes, not prose, so the Orchestrator can report *why* work is
@@ -259,9 +253,10 @@ def unclaimable_reasons(task, all_tasks=None, edges=None, lifecycles=None,
     cap = capability_of(task)
     out = []
 
-    mode_reason = operations.product_execution_reason(store.current_operating_mode())
-    if mode_reason:
-        out.append(mode_reason)
+    if include_execution_gate:
+        mode_reason = operations.product_execution_reason(store.current_operating_mode())
+        if mode_reason:
+            out.append(mode_reason)
 
     if jira is None and jira_status_id is not None:
         jira = {"status_id": jira_status_id, "has_due_date": True,

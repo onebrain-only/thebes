@@ -222,6 +222,10 @@ def safe_parallel_plan(capability, tasks, seats_by_capability, edges=None,
     walked in deterministic order and each is admitted only if it contends with
     nothing already admitted AND nothing already owned — so of two colliding items the
     higher-ordered one is planned and the other waits, which is serialisation, not loss.
+    ``include_execution_gate=False`` is exclusively for a read-only future plan:
+    it omits the current operating-mode reason while preserving every other
+    readiness, ownership, dependency, contention and intervention predicate.
+    It never authorises a claim; ``store.claim`` always uses the default gate.
     """
     free = free_seats(capability, tasks, seats_by_capability)
     _reject_shared_jira(kw)

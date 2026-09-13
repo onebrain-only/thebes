@@ -82,9 +82,9 @@ ordinary = write(task("KAN-903", {}))
 ok("a missing materialised route derives from canonical characteristics",
    q.validation_route_for(legacy) == policy.PEER
    and "missing-validation-route" not in q.eligibility_reasons(legacy, facts))
-ok("missing classification evidence stays separately blocked",
-   "insufficient-characteristics" in q.eligibility_reasons(unknown, facts)
-   and q.validation_route_for(unknown) is None)
+ok("missing classification evidence stays distinguishable from route derivation",
+   q.validation_route_for(unknown) is None
+   and "missing-validation-route" not in q.eligibility_reasons(unknown, facts))
 ok("ordinary legacy profile remains schedulable as SELF",
    q.eligibility_reasons(ordinary, facts) == [] and q.validation_route_for(ordinary) == policy.SELF)
 
@@ -108,5 +108,19 @@ ok("generic backfill repairs classified legacy records only",
    set(repaired) == {"KAN-901", "KAN-903"}
    and store.read("task", "KAN-901")["execution_profile"]["validation_route"] == policy.PEER
    and store.read("task", "KAN-902")["execution_profile"]["validation_route"] is None)
+
+section("maintenance does not hide a read-only future wave")
+mode = store.set_operating_mode("SYSTEM_MAINTENANCE", "ceo", "test:future-plan")
+future = task("KAN-905", {})
+now_plan = capacity.safe_parallel_plan("backend", [future], seats,
+                                       jira_by_key={"KAN-905": facts})
+future_plan = capacity.safe_parallel_plan(
+    "backend", [future], seats, jira_by_key={"KAN-905": facts},
+    include_execution_gate=False)
+ok("normal planning retains the maintenance execution gate",
+   now_plan["selected"] == [])
+ok("read-only future planning omits only the mode gate",
+   future_plan["selected"] == ["KAN-905"]
+   and future_plan["assignments"][0]["validation_route"] == policy.SELF)
 
 sys.exit(summary())

@@ -1979,7 +1979,8 @@ def reconcile_missing_validation_routes():
 
     This is a generic Persistent State maintenance repair, never a Jira update or
     task-key exception.  Profiles whose characteristics are absent remain unchanged
-    and queueing reports ``insufficient-characteristics``.
+    so callers can distinguish unavailable classification evidence from a missing
+    materialised route.
     """
     import policy                                       # noqa: E402
     repaired = []
