@@ -117,6 +117,41 @@ class DurableReceiptRecoveryTests(unittest.TestCase):
         self.assertEqual("provider_failed", receipt["status"])
         self.assertIsNone(receipt["provider_selection"]["selected_provider_id"])
 
+    def test_exact_ceo_approval_is_immutable_and_rejects_wrong_boundary(self):
+        invocation = "controller-permission-boundary"
+        result = {
+            "invocation_id": invocation, "status": "needs_input", "summary": "blocked",
+            "provider_id": "claude-code", "continuation_ref": "claude-session-1",
+            "escalation": {"reason": "Claude Code native permission required: "
+                           "mcp__claude_ai_Supabase__apply_migration",
+                           "required_authority": "CEO", "required_capability": None},
+            "evidence": [], "changed_files": [], "tests": [], "failure": None,
+            "resolved_model_ref": None, "resolved_effort_ref": None,
+            "duration_seconds": None, "raw_artifact_ref": None,
+        }
+        store.record_execution_receipt(
+            invocation, "KAN-198", "frontend-1", self.lease["execution_lease_id"], result,
+            provider_selection={"primary_provider_id": "claude-code",
+                                "selected_provider_id": "claude-code"})
+        before = store.read_execution_receipt(invocation)
+        approval = store.record_execution_approval(
+            invocation, "KAN-198", "frontend-1", "claude-session-1",
+            "mcp__claude_ai_Supabase__apply_migration", "ceo", "one native tool call")
+        self.assertEqual("claude-code", approval["provider_id"])
+        self.assertEqual(before, store.read_execution_receipt(invocation))
+        with self.assertRaisesRegex(store.StateError, "does not match"):
+            store.record_execution_approval(
+                invocation, "KAN-198", "frontend-1", "wrong-session",
+                "mcp__claude_ai_Supabase__apply_migration", "ceo", "one native tool call")
+        with self.assertRaisesRegex(store.StateError, "does not match"):
+            store.record_execution_approval(
+                invocation, "KAN-198", "frontend-1", "claude-session-1",
+                "mcp__claude_ai_Supabase__other", "ceo", "one native tool call")
+        with self.assertRaisesRegex(store.StateError, "wildcarded"):
+            store.record_execution_approval(
+                invocation, "KAN-198", "frontend-1", "claude-session-1",
+                "mcp__claude_ai_Supabase__*", "ceo", "one native tool call")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

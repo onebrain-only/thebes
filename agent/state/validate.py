@@ -1160,6 +1160,32 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
             elif (selection.get("selected_provider_id") is None
                   and result.get("provider_id") != "thebes-provider-selection"):
                 errs.append("%s: receipt without selected provider is only valid for selection failure" % where)
+        continuation_of = rec.get("continuation_of_invocation_id")
+        approval_id = rec.get("approval_id")
+        if (continuation_of is None) != (approval_id is None):
+            errs.append("%s: continuation receipt needs original invocation and approval together" % where)
+        if continuation_of is not None:
+            if not isinstance(continuation_of, str) or not continuation_of:
+                errs.append("%s: continuation original invocation is required" % where)
+            if not isinstance(approval_id, str) or not approval_id.startswith("approval-"):
+                errs.append("%s: continuation receipt needs an approval id" % where)
+
+    elif kind == "execution_approval":
+        _req(rec, ["execution_approval_id", "original_invocation_id", "work_item_id", "seat_id",
+                   "provider_id", "claude_session_id", "permission", "approving_authority",
+                   "approval_scope"], errs, where)
+        if not str(rec.get("execution_approval_id") or "").startswith("approval-"):
+            errs.append("%s: execution approval id must start with approval-" % where)
+        if not JIRA_KEY.match(str(rec.get("work_item_id") or "")):
+            errs.append("%s: execution approval needs a Jira work_item_id" % where)
+        if rec.get("seat_id") not in seatset:
+            errs.append("%s: execution approval seat %r is not declared" % (where, rec.get("seat_id")))
+        if rec.get("provider_id") != "claude-code":
+            errs.append("%s: execution approval is Claude Code only" % where)
+        if rec.get("approving_authority") != "ceo":
+            errs.append("%s: execution approval requires ceo authority" % where)
+        if "*" in str(rec.get("permission") or ""):
+            errs.append("%s: execution approval cannot be wildcarded" % where)
 
     elif kind == "policy":
         _req(rec, ["policy_id", "policy_kind", "scope", "activated_by", "reason_ref"],
@@ -1350,7 +1376,7 @@ def check(runtime=None):
              "policy": "policies", "event": "events", "learning": "learning",
              "coverage": "coverage", "correction": "corrections",
              "operating_mode": "operating-mode", "execution_lease": "execution-leases",
-             "execution_receipt": "execution-receipts"}
+             "execution_receipt": "execution-receipts", "execution_approval": "execution-approvals"}
     seen_ids = {}
     edges = []
     active_iv = []
@@ -1377,7 +1403,8 @@ def check(runtime=None):
                    "coverage": "coverage_id", "correction": "correction_id",
                    "operating_mode": "operating_mode_id",
                    "execution_lease": "execution_lease_id",
-                   "execution_receipt": "execution_receipt_id"}[kind]
+                   "execution_receipt": "execution_receipt_id",
+                   "execution_approval": "execution_approval_id"}[kind]
             rid = rec.get(idf)
             if rid != fn[:-5]:
                 errs.append("%s: filename does not match %s %r" % (p, idf, rid))

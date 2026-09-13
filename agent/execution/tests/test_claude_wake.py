@@ -17,6 +17,7 @@ from agent.execution.claude import (  # noqa: E402
     ClaudeProvider,
     ClaudeCliTransport,
     ClaudeWakeError,
+    prepare_claude_continuation_wake,
     prepare_claude_wake,
 )
 from agent.execution.provider import (  # noqa: E402
@@ -236,6 +237,21 @@ class ClaudeCliTransportTests(unittest.TestCase):
         self.assertEqual(ExecutionStatus.NEEDS_INPUT, result.status)
         self.assertIn("native permission required", result.escalation.reason)
         self.assertEqual("s-2", result.continuation_ref)
+
+    def test_approved_continuation_resumes_same_session_with_one_exact_tool(self):
+        wake = prepare_claude_continuation_wake(
+            request(), "claude-session-9", "mcp__claude_ai_Supabase__apply_migration")
+        command = ClaudeCliTransport().command(wake)
+        self.assertIn("--resume", command)
+        self.assertEqual("claude-session-9", command[command.index("--resume") + 1])
+        self.assertIn("--allowedTools", command)
+        self.assertEqual("mcp__claude_ai_Supabase__apply_migration",
+                         command[command.index("--allowedTools") + 1])
+        self.assertIn("dontAsk", command)
+        self.assertNotIn("bypassPermissions", command)
+        self.assertIn("Continue the existing task", wake.prompt)
+        with self.assertRaisesRegex(ClaudeWakeError, "exact session and permission"):
+            prepare_claude_continuation_wake(request(), "claude-session-9", "*")
 
 
 def prepare_request_for_cli():

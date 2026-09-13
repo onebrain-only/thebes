@@ -22,7 +22,11 @@ from agent.execution.provider import (  # noqa: E402
     ProviderCapabilities,
     ReasoningEffort,
 )
-from agent.execution.wake import execute_product_wake  # noqa: E402
+from agent.execution.wake import (  # noqa: E402
+    WakeOrderError,
+    execute_approved_claude_continuation,
+    execute_product_wake,
+)
 from test_claude_wake import FakeStore, RecordingTransport, request  # noqa: E402
 
 
@@ -195,6 +199,60 @@ class ExecutionPathIntegrationTests(unittest.TestCase):
         self.assertEqual(1, len(calls))
         self.assertEqual("completed", receipts[calls[0]]["status"])
         self.assertLess(events.index("receipt"), events.index("lease-close"))
+
+    def test_approved_continuation_keeps_lineage_and_refuses_replay_or_provider_switch(self):
+        approval = {
+            "execution_approval_id": "approval-1", "original_invocation_id": "original-1",
+            "work_item_id": "KAN-900", "seat_id": "backend-1", "provider_id": "claude-code",
+            "claude_session_id": "session-1", "permission": "mcp__example__write",
+        }
+        original = {"status": "needs_input", "provider_id": "claude-code"}
+
+        class ContinuationStore(FakeStore):
+            def __init__(self, events):
+                super().__init__(events)
+                self.receipts = {}
+
+            def read_execution_approval(self, approval_id):
+                return approval if approval_id == approval["execution_approval_id"] else None
+
+            def read_execution_receipt(self, invocation_id):
+                if invocation_id == "original-1":
+                    return original
+                return self.receipts.get(invocation_id)
+
+            def record_execution_receipt(self, invocation_id, work_item_id, seat_id,
+                                         execution_lease_id, normalized_result,
+                                         provider_selection=None, continuation_of=None,
+                                         approval_id=None):
+                self.events.append("receipt")
+                self.receipts[invocation_id] = {
+                    "normalized_result": normalized_result, "continuation_of": continuation_of,
+                    "approval_id": approval_id,
+                }
+
+        events, state = [], ContinuationStore([])
+        transport = RecordingTransport({"status": "completed", "summary": "continued"})
+        provider = ClaudeProvider(transport, session_ref="session-1",
+                                  approved_permission="mcp__example__write")
+        result = execute_approved_claude_continuation(
+            "approval-1", lambda task, lease, approval, original: request(), provider,
+            state_store=state)
+        self.assertEqual(ExecutionStatus.COMPLETED, result.status)
+        self.assertEqual("session-1", transport.wakes[0].session_ref)
+        persisted = state.receipts["continuation-approval-1"]
+        self.assertEqual("original-1", persisted["continuation_of"])
+        self.assertEqual("approval-1", persisted["approval_id"])
+        self.assertEqual("original-1", original.get("invocation_id", "original-1"))
+        with self.assertRaisesRegex(WakeOrderError, "already executed"):
+            execute_approved_claude_continuation(
+                "approval-1", lambda task, lease, approval, original: request(), provider,
+                state_store=state)
+        codex = CodexProvider(RecordingTransport("must not execute"))
+        with self.assertRaisesRegex(WakeOrderError, "provider switch"):
+            execute_approved_claude_continuation(
+                "approval-1", lambda task, lease, approval, original: request(), codex,
+                state_store=ContinuationStore([]))
 
 
 if __name__ == "__main__":

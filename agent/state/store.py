@@ -53,6 +53,9 @@ KINDS = {
     # a normalized terminal result.  It is deliberately separate from leases:
     # closing a lease proves ordering cleanup, not what the provider returned.
     "execution_receipt": ("execution-receipts", "receipt"),
+    # An approval is immutable, exact evidence for one native permission boundary.
+    # It is deliberately not a general permission or provider configuration.
+    "execution_approval": ("execution-approvals", "approval"),
 }
 
 
@@ -2032,7 +2035,8 @@ def _receipt_id(invocation_id):
 
 def record_execution_receipt(invocation_id, work_item_id, seat_id,
                              execution_lease_id, normalized_result,
-                             provider_selection=None):
+                             provider_selection=None, continuation_of=None,
+                             approval_id=None):
     """Persist one normalized terminal result before its lease is closed.
 
     The operation is idempotent only for byte-identical evidence from the same
@@ -2055,7 +2059,9 @@ def record_execution_receipt(invocation_id, work_item_id, seat_id,
            "provider_id": normalized_result.get("provider_id"),
            "status": normalized_result["status"],
            "normalized_result": normalized_result,
-           "provider_selection": provider_selection}
+           "provider_selection": provider_selection,
+           "continuation_of_invocation_id": continuation_of,
+           "approval_id": approval_id}
     with _Lock("execution-domain"):
         lease = read("execution_lease", execution_lease_id)
         if lease is None:
@@ -2084,6 +2090,60 @@ def read_execution_receipt(invocation_id):
     if not invocation_id:
         raise StateError("invocation_id is required")
     return read("execution_receipt", _receipt_id(invocation_id))
+
+
+def _approval_id(invocation_id, permission):
+    digest = hashlib.sha256((invocation_id + "\0" + permission).encode("utf-8")).hexdigest()
+    return "approval-" + digest
+
+
+def record_execution_approval(original_invocation_id, work_item_id, seat_id,
+                              claude_session_id, permission, approving_authority,
+                              approval_scope):
+    """Persist one CEO approval for the exact denied Claude tool, immutably."""
+    required = (original_invocation_id, work_item_id, seat_id, claude_session_id,
+                permission, approving_authority, approval_scope)
+    if any(not isinstance(value, str) or not value.strip() for value in required):
+        raise StateError("execution approval fields must be non-empty strings")
+    if approving_authority != "ceo":
+        raise StateError("execution approval requires ceo authority")
+    if "*" in permission:
+        raise StateError("execution approval cannot be wildcarded")
+    original = read_execution_receipt(original_invocation_id)
+    if original is None or original.get("status") != "needs_input":
+        raise StateError("execution approval needs an original needs_input receipt")
+    result = original.get("normalized_result") or {}
+    if (original.get("work_item_id"), original.get("seat_id")) != (work_item_id, seat_id):
+        raise StateError("execution approval does not match original execution identity")
+    if original.get("provider_id") != "claude-code":
+        raise StateError("execution approval is only valid for Claude Code")
+    if result.get("continuation_ref") != claude_session_id:
+        raise StateError("execution approval Claude session does not match original receipt")
+    escalation = result.get("escalation") or {}
+    if permission not in str(escalation.get("reason") or ""):
+        raise StateError("execution approval permission does not match original boundary")
+    rid = _approval_id(original_invocation_id, permission)
+    rec = {"execution_approval_id": rid, "original_invocation_id": original_invocation_id,
+           "work_item_id": work_item_id, "seat_id": seat_id, "provider_id": "claude-code",
+           "claude_session_id": claude_session_id, "permission": permission,
+           "approving_authority": approving_authority, "approval_scope": approval_scope}
+    with _Lock("execution-domain"):
+        with record_lock("execution_approval", rid):
+            existing = read("execution_approval", rid)
+            if existing is not None:
+                if any(existing.get(key) != value for key, value in rec.items()):
+                    raise StateError("conflicting approval for original execution")
+                return existing
+            rec.update(schema_version=SCHEMA_VERSION, revision=1, created_at=now(), updated_at=now())
+            _validate_one("execution_approval", rec)
+            _atomic_write(path_for("execution_approval", rid), rec)
+            return rec
+
+
+def read_execution_approval(approval_id):
+    if not approval_id:
+        raise StateError("execution approval id is required")
+    return read("execution_approval", approval_id)
 
 
 def claim(work_item_id, seat_id, claim_ref, expected_revision, capability_of_seat=None,

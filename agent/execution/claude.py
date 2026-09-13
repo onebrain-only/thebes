@@ -7,7 +7,7 @@ immutable wake description to an injected controller transport exactly once,
 then normalizes only supported transport evidence into ``ExecutionResult``.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 import os
 import subprocess
@@ -112,6 +112,7 @@ class ClaudeWake:
     return_contract: ReturnContract
     timeout_seconds: int
     session_ref: Optional[str] = None
+    approved_permission: Optional[str] = None
 
 
 def _binding_fields(path):
@@ -240,6 +241,26 @@ def prepare_claude_wake(request, session_ref=None, registry_path=SEATS_JSON,
     )
 
 
+def prepare_claude_continuation_wake(request, session_ref, approved_permission,
+                                     registry_path=SEATS_JSON,
+                                     bindings_dir=BINDINGS_DIR, agents_dir=AGENTS_DIR):
+    """Prepare one same-session resume after an exact, durable CEO approval."""
+    if (not isinstance(session_ref, str) or not session_ref.strip()
+            or not isinstance(approved_permission, str) or not approved_permission.strip()
+            or "*" in approved_permission):
+        raise ClaudeWakeError("Claude continuation requires one exact session and permission")
+    wake = prepare_claude_wake(request, session_ref=session_ref,
+                               registry_path=registry_path, bindings_dir=bindings_dir,
+                               agents_dir=agents_dir)
+    return replace(
+        wake,
+        prompt=("CEO explicitly approved this exact native permission: %s. "
+                "Continue the existing task; do not start a new task or change scope."
+                % approved_permission),
+        approved_permission=approved_permission,
+    )
+
+
 class ClaudeCliTransport:
     """Direct local transport for the installed Claude Code CLI.
 
@@ -254,7 +275,7 @@ class ClaudeCliTransport:
         self._runner = runner
 
     def command(self, wake):
-        return (
+        command = (
             self._binary,
             "--print",
             "--output-format", "json",
@@ -262,8 +283,12 @@ class ClaudeCliTransport:
             "--permission-prompts", "none",
             "--model", wake.model,
             "--effort", wake.effort,
-            wake.prompt,
         )
+        if wake.session_ref:
+            command += ("--resume", wake.session_ref)
+        if wake.approved_permission:
+            command += ("--allowedTools", wake.approved_permission)
+        return command + (wake.prompt,)
 
     def __call__(self, wake):
         try:
@@ -501,6 +526,7 @@ class ClaudeProvider:
     """Two-operation provider seam using a controller-supplied native transport."""
 
     def __init__(self, transport: Callable[[ClaudeWake], Any], session_ref=None,
+                 approved_permission=None,
                  registry_path=SEATS_JSON, bindings_dir=BINDINGS_DIR,
                  agents_dir=AGENTS_DIR):
         if not callable(transport):
@@ -509,6 +535,7 @@ class ClaudeProvider:
             )
         self._transport = transport
         self._session_ref = session_ref
+        self._approved_permission = approved_permission
         self._registry_path = registry_path
         self._bindings_dir = bindings_dir
         self._agents_dir = agents_dir
@@ -519,13 +546,18 @@ class ClaudeProvider:
     def execute(self, request):
         """Invoke once and normalize without retry, fallback, or workflow mutation."""
         try:
-            wake = prepare_claude_wake(
-                request,
-                session_ref=self._session_ref,
-                registry_path=self._registry_path,
-                bindings_dir=self._bindings_dir,
-                agents_dir=self._agents_dir,
-            )
+            if self._approved_permission is None:
+                wake = prepare_claude_wake(
+                    request, session_ref=self._session_ref,
+                    registry_path=self._registry_path, bindings_dir=self._bindings_dir,
+                    agents_dir=self._agents_dir,
+                )
+            else:
+                wake = prepare_claude_continuation_wake(
+                    request, self._session_ref, self._approved_permission,
+                    registry_path=self._registry_path, bindings_dir=self._bindings_dir,
+                    agents_dir=self._agents_dir,
+                )
         except ClaudeTransportFailure as exc:
             return _provider_failure(request, exc.code, str(exc),
                                      raw_artifact_ref=exc.raw_artifact_ref)
