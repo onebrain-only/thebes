@@ -1187,6 +1187,25 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
         if "*" in str(rec.get("permission") or ""):
             errs.append("%s: execution approval cannot be wildcarded" % where)
 
+    elif kind == "execution_continuation_preparation":
+        _req(rec, ["execution_continuation_id", "original_invocation_id", "original_receipt_id",
+                   "work_item_id", "seat_id", "provider_id", "claude_session_id", "permission",
+                   "required_capability", "validation_route", "repository_root", "working_directory",
+                   "worktree_path", "branch", "expected_revision", "authorization_ref",
+                   "authorization_scope", "prepared_by", "preparation_purpose",
+                   "historical_request_persisted"], errs, where)
+        if not str(rec.get("execution_continuation_id") or "").startswith("continuation-"):
+            errs.append("%s: continuation preparation id must start with continuation-" % where)
+        if (not JIRA_KEY.match(str(rec.get("work_item_id") or ""))
+                or rec.get("seat_id") not in seatset):
+            errs.append("%s: continuation preparation needs a known work item and seat" % where)
+        if rec.get("provider_id") != "claude-code" or rec.get("prepared_by") != "ceo":
+            errs.append("%s: continuation preparation must be CEO-authorized Claude Code" % where)
+        if rec.get("historical_request_persisted") is not False:
+            errs.append("%s: preparation must not rewrite historical request truth" % where)
+        if "*" in str(rec.get("permission") or ""):
+            errs.append("%s: continuation preparation cannot be wildcarded" % where)
+
     elif kind == "policy":
         _req(rec, ["policy_id", "policy_kind", "scope", "activated_by", "reason_ref"],
              errs, where)
@@ -1376,7 +1395,8 @@ def check(runtime=None):
              "policy": "policies", "event": "events", "learning": "learning",
              "coverage": "coverage", "correction": "corrections",
              "operating_mode": "operating-mode", "execution_lease": "execution-leases",
-             "execution_receipt": "execution-receipts", "execution_approval": "execution-approvals"}
+             "execution_receipt": "execution-receipts", "execution_approval": "execution-approvals",
+             "execution_continuation_preparation": "execution-continuations"}
     seen_ids = {}
     edges = []
     active_iv = []
@@ -1404,7 +1424,8 @@ def check(runtime=None):
                    "operating_mode": "operating_mode_id",
                    "execution_lease": "execution_lease_id",
                    "execution_receipt": "execution_receipt_id",
-                   "execution_approval": "execution_approval_id"}[kind]
+                   "execution_approval": "execution_approval_id",
+                   "execution_continuation_preparation": "execution_continuation_id"}[kind]
             rid = rec.get(idf)
             if rid != fn[:-5]:
                 errs.append("%s: filename does not match %s %r" % (p, idf, rid))

@@ -56,6 +56,7 @@ KINDS = {
     # An approval is immutable, exact evidence for one native permission boundary.
     # It is deliberately not a general permission or provider configuration.
     "execution_approval": ("execution-approvals", "approval"),
+    "execution_continuation_preparation": ("execution-continuations", "continuation"),
 }
 
 
@@ -2144,6 +2145,72 @@ def read_execution_approval(approval_id):
     if not approval_id:
         raise StateError("execution approval id is required")
     return read("execution_approval", approval_id)
+
+
+def _continuation_id(invocation_id):
+    return "continuation-" + hashlib.sha256(invocation_id.encode("utf-8")).hexdigest()
+
+
+def record_execution_continuation_preparation(
+        original_invocation_id, work_item_id, seat_id, claude_session_id, permission,
+        repository_root, working_directory, worktree_path, branch, expected_revision,
+        authorization_ref, authorization_scope, prepared_by="ceo"):
+    """Record CEO-supplied continuation context without amending historical evidence."""
+    required = (original_invocation_id, work_item_id, seat_id, claude_session_id, permission,
+                repository_root, working_directory, branch, expected_revision,
+                authorization_ref, authorization_scope, prepared_by)
+    if any(not isinstance(value, str) or not value.strip() for value in required):
+        raise StateError("continuation preparation fields must be non-empty strings")
+    if prepared_by != "ceo" or "*" in permission:
+        raise StateError("continuation preparation requires ceo and one exact permission")
+    original = read_execution_receipt(original_invocation_id)
+    task = read("task", work_item_id)
+    if original is None or original.get("status") != "needs_input":
+        raise StateError("continuation preparation needs original needs_input receipt")
+    if task is None or (task.get("ownership") or {}).get("seat_id") != seat_id:
+        raise StateError("continuation preparation needs the original active claim")
+    result = original.get("normalized_result") or {}
+    if (original.get("work_item_id"), original.get("seat_id"), original.get("provider_id")) != (
+            work_item_id, seat_id, "claude-code"):
+        raise StateError("continuation preparation does not match original execution")
+    if result.get("continuation_ref") != claude_session_id:
+        raise StateError("continuation preparation session does not match original receipt")
+    if permission not in str((result.get("escalation") or {}).get("reason") or ""):
+        raise StateError("continuation preparation permission does not match original boundary")
+    profile = task.get("execution_profile") or {}
+    capability, route = profile.get("required_capability"), profile.get("validation_route")
+    if not capability or not route:
+        raise StateError("continuation preparation needs canonical capability and validation route")
+    rid = _continuation_id(original_invocation_id)
+    rec = {
+        "execution_continuation_id": rid, "original_invocation_id": original_invocation_id,
+        "original_receipt_id": original["execution_receipt_id"], "work_item_id": work_item_id,
+        "seat_id": seat_id, "provider_id": "claude-code", "claude_session_id": claude_session_id,
+        "permission": permission, "required_capability": capability, "validation_route": route,
+        "repository_root": repository_root, "working_directory": working_directory,
+        "worktree_path": worktree_path, "branch": branch, "expected_revision": expected_revision,
+        "authorization_ref": authorization_ref, "authorization_scope": authorization_scope,
+        "prepared_by": prepared_by,
+        "preparation_purpose": "resume existing execution after permission gate",
+        "historical_request_persisted": False,
+    }
+    with _Lock("execution-domain"):
+        with record_lock("execution_continuation_preparation", rid):
+            existing = read("execution_continuation_preparation", rid)
+            if existing is not None:
+                if any(existing.get(key) != value for key, value in rec.items()):
+                    raise StateError("conflicting continuation preparation")
+                return existing
+            rec.update(schema_version=SCHEMA_VERSION, revision=1, created_at=now(), updated_at=now())
+            _validate_one("execution_continuation_preparation", rec)
+            _atomic_write(path_for("execution_continuation_preparation", rid), rec)
+            return rec
+
+
+def read_execution_continuation_preparation(original_invocation_id):
+    if not original_invocation_id:
+        raise StateError("original invocation id is required")
+    return read("execution_continuation_preparation", _continuation_id(original_invocation_id))
 
 
 def claim(work_item_id, seat_id, claim_ref, expected_revision, capability_of_seat=None,

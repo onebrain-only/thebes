@@ -2,6 +2,11 @@
 
 from dataclasses import replace
 
+from agent.execution.provider import (
+    ExecutionFeature, ExecutionKind, ExecutionRequest, ExecutionTarget, ModelIntent,
+    MutationMode, ReasoningEffort, ReportedEnvironment, ReturnContract, ValidationTarget,
+    Workspace,
+)
 from agent.execution.result import receive_execution_result
 from agent.execution.receipt import normalized_result_payload
 from agent.execution.selection import select_provider
@@ -9,6 +14,40 @@ from agent.execution.selection import select_provider
 
 class WakeOrderError(ValueError):
     pass
+
+
+def build_prepared_continuation_request(preparation, task, lease):
+    """Build the minimal new context expressly authorized for a historical resume."""
+    if not preparation or preparation.get("historical_request_persisted") is not False:
+        raise WakeOrderError("continuation preparation is absent or rewrites historical truth")
+    return ExecutionRequest(
+        invocation_id="prepared-" + preparation["execution_continuation_id"],
+        work_item_id=preparation["work_item_id"], seat_id=preparation["seat_id"],
+        required_capability=preparation["required_capability"],
+        execution_kind=ExecutionKind.IMPLEMENTATION,
+        objective=("Resume the existing Claude execution after its approved native permission "
+                   "gate. Continue only the original work item and declared surfaces."),
+        role_contract_ref="agent/roles/%s.md" % preparation["required_capability"],
+        context_refs=("CLAUDE.md", "agent/CONTRACT.md"),
+        workspace=Workspace(preparation["repository_root"], preparation["working_directory"],
+                            MutationMode.REPOSITORY_EDIT, preparation["worktree_path"],
+                            preparation["expected_revision"]),
+        allowed_surfaces=tuple(task.get("surfaces") or ()),
+        prohibited_actions=("select another Jira task", "change provider", "bypass permissions"),
+        operating_mode="PRODUCT_EXECUTION", operating_mode_revision=lease["mode_revision"],
+        claim_ref=(task.get("ownership") or {}).get("claim_ref"),
+        execution_lease_id=lease["execution_lease_id"],
+        reported_environment=ReportedEnvironment("local", environment_ref=preparation["repository_root"]),
+        primary_target=ExecutionTarget("local", environment_ref=preparation["repository_root"]),
+        validation_targets=(ValidationTarget(preparation["validation_route"], "review", True),),
+        model_intent=ModelIntent.BALANCED, reasoning_effort=ReasoningEffort.HIGH,
+        required_execution_features=frozenset({ExecutionFeature.REPOSITORY_READ,
+                                               ExecutionFeature.REPOSITORY_EDIT,
+                                               ExecutionFeature.SHELL,
+                                               ExecutionFeature.RESUMABLE_SESSIONS}),
+        timeout_seconds=900,
+        return_contract=ReturnContract("qa", ("changed files", "test output"), ("RESULT", "EVIDENCE")),
+    )
 
 
 def execute_product_wake(work_item_id, seat_id, reason_ref, request_factory, providers,
@@ -85,8 +124,12 @@ def execute_approved_claude_continuation(approval_id, request_factory, provider,
     if approval is None:
         raise WakeOrderError("continuation approval does not exist")
     original = state_store.read_execution_receipt(approval["original_invocation_id"])
+    preparation = state_store.read_execution_continuation_preparation(
+        approval["original_invocation_id"])
     if original is None or original.get("status") != "needs_input":
         raise WakeOrderError("continuation original receipt is not awaiting input")
+    if preparation is None:
+        raise WakeOrderError("continuation preparation does not exist")
     if original.get("provider_id") != "claude-code" or approval.get("provider_id") != "claude-code":
         raise WakeOrderError("continuation provider must remain Claude Code")
     if provider.capabilities().provider_id != "claude-code":

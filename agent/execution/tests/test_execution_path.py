@@ -24,6 +24,7 @@ from agent.execution.provider import (  # noqa: E402
 )
 from agent.execution.wake import (  # noqa: E402
     WakeOrderError,
+    build_prepared_continuation_request,
     execute_approved_claude_continuation,
     execute_product_wake,
 )
@@ -207,6 +208,13 @@ class ExecutionPathIntegrationTests(unittest.TestCase):
             "claude_session_id": "session-1", "permission": "mcp__example__write",
         }
         original = {"status": "needs_input", "provider_id": "claude-code"}
+        preparation = {
+            "execution_continuation_id": "continuation-1", "work_item_id": "KAN-900",
+            "seat_id": "backend-1", "required_capability": "backend",
+            "validation_route": "peer", "repository_root": "/repo",
+            "working_directory": "/repo", "worktree_path": "/repo", "expected_revision": "abc",
+            "historical_request_persisted": False,
+        }
 
         class ContinuationStore(FakeStore):
             def __init__(self, events):
@@ -220,6 +228,9 @@ class ExecutionPathIntegrationTests(unittest.TestCase):
                 if invocation_id == "original-1":
                     return original
                 return self.receipts.get(invocation_id)
+
+            def read_execution_continuation_preparation(self, invocation_id):
+                return preparation if invocation_id == "original-1" else None
 
             def record_execution_receipt(self, invocation_id, work_item_id, seat_id,
                                          execution_lease_id, normalized_result,
@@ -236,7 +247,8 @@ class ExecutionPathIntegrationTests(unittest.TestCase):
         provider = ClaudeProvider(transport, session_ref="session-1",
                                   approved_permission="mcp__example__write")
         result = execute_approved_claude_continuation(
-            "approval-1", lambda task, lease, approval, original: request(), provider,
+            "approval-1", lambda task, lease, approval, original: build_prepared_continuation_request(
+                preparation, task, lease), provider,
             state_store=state)
         self.assertEqual(ExecutionStatus.COMPLETED, result.status)
         self.assertEqual("session-1", transport.wakes[0].session_ref)
