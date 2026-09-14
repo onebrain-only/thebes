@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.join(ROOT, "agent", "state"))
 
 import store                                                        # noqa: E402
 
-from agent.controller import execute                                # noqa: E402
+from agent.controller import execute, resume                        # noqa: E402
 from agent.controller.continuation import (                         # noqa: E402
     continuable, denied_permissions, prepare, preparation_scope,
 )
@@ -34,8 +34,12 @@ from agent.controller.tests.test_validation_dispatch import (        # noqa: E40
 from agent.controller.tests.test_workspace_allocation import fresh_repo, sh  # noqa: E402
 from agent.execution.brief import CONTROL_PLANE_TOKENS, render_executor_brief  # noqa: E402
 from agent.execution.provider import (                               # noqa: E402
-    ExecutionFeature, ExecutionResult, ExecutionStatus, EscalationRequirement,
-    ModelIntent, ProviderCapabilities, ReasoningEffort,
+    ChangedFileClaim, ExecutionFeature, ExecutionResult, ExecutionStatus,
+    EscalationRequirement, ModelIntent, ProviderCapabilities, ReasoningEffort,
+    TestClaim, TestStatus,
+)
+from agent.execution.receipt import (                                # noqa: E402
+    execution_result_from_payload, normalized_result_payload,
 )
 
 
@@ -266,6 +270,134 @@ class PreparationRefusalTests(PreparationTestCase):
         self.assertIn("Write", scope)
         self.assertIn("Bash", scope)
         self.assertIn("same workspace", scope)
+
+
+class ResumeTests(PreparationTestCase):
+    """An approved continuation earns the same completion tail as a first wake."""
+
+    def _approve(self, outcome):
+        for permission in ("Write", "Bash"):
+            store.record_execution_approval(
+                original_invocation_id=outcome["invocation_id"],
+                work_item_id="KAN-900", seat_id="backend-1",
+                claude_session_id=SESSION, permission=permission,
+                approving_authority="ceo", approval_scope="fixture grant")
+
+    def test_resume_drives_the_real_continuation_and_then_the_tail(self):
+        make_task()
+        outcome, _ = self._run()
+        self.assertEqual("needs_input", outcome["execution_status"])
+        self._approve(outcome)
+        wakes = []
+
+        def transport(wake):
+            wakes.append(wake)
+            return "resumed and finished the Product work"
+
+        out = resume("KAN-900", state_store=store, jira_client=Jira(),
+                     workspace_allocator=self._allocator(),
+                     workspace_concluder=self._concluder(),
+                     interventions=[], worktree_root=self.wtroot,
+                     seats_by_capability=SEATS, validator=no_validation,
+                     transport=transport)
+        self.assertEqual("executed", out["continuation_status"])
+        self.assertEqual("completed", out["execution_status"])
+        # The real wake: same session, exactly the approved grants in canonical order.
+        self.assertEqual(1, len(wakes))
+        self.assertEqual(SESSION, wakes[0].session_ref)
+        self.assertEqual(("Bash", "Write"), wakes[0].approved_permissions)
+        self.assertEqual(("Bash", "Write"), tuple(out["approved_permissions"]))
+        # Same work item, seat and workspace — reused, not re-created.
+        self.assertEqual("backend-1", out["seat_id"])
+        self.assertTrue(out["workspace_reused"])
+        self.assertEqual(outcome["workspace_path"], out["workspace_path"])
+        # Receipt lineage preserved, and the tail ran on the resumed result.
+        receipt = store.read_execution_receipt(out["invocation_id"])
+        self.assertEqual(outcome["invocation_id"],
+                         receipt["continuation_of_invocation_id"])
+        self.assertNotEqual("not-attempted", out["validation_status"])
+        # The resumed executor still saw Product work only.
+        for token in CONTROL_PLANE_TOKENS:
+            self.assertNotIn(token.lower(), wakes[0].prompt.lower())
+
+    def test_an_already_executed_continuation_is_not_run_twice(self):
+        make_task()
+        outcome, _ = self._run()
+        self._approve(outcome)
+        wakes = []
+
+        def transport(wake):
+            wakes.append(wake)
+            return "resumed once"
+
+        first = resume("KAN-900", state_store=store, jira_client=Jira(),
+                       workspace_allocator=self._allocator(),
+                       workspace_concluder=self._concluder(), interventions=[],
+                       worktree_root=self.wtroot, seats_by_capability=SEATS,
+                       validator=no_validation, transport=transport)
+        self.assertEqual("executed", first["continuation_status"])
+        second = resume("KAN-900", state_store=store, jira_client=Jira(),
+                        workspace_allocator=self._allocator(),
+                        workspace_concluder=self._concluder(), interventions=[],
+                        worktree_root=self.wtroot, seats_by_capability=SEATS,
+                        validator=no_validation, transport=transport)
+        self.assertEqual("already-executed", second["continuation_status"])
+        self.assertEqual(1, len(wakes), "the provider must not be re-woken")
+        # The terminal result is recovered from its own receipt, unchanged.
+        self.assertEqual("completed", second["execution_status"])
+        self.assertEqual(first["summary"], second["summary"])
+        self.assertEqual(first["invocation_id"], second["invocation_id"])
+
+    def test_resume_refuses_without_a_prepared_continuation(self):
+        make_task()
+        out = resume("KAN-900", state_store=store, jira_client=Jira(),
+                     workspace_allocator=self._allocator(),
+                     workspace_concluder=self._concluder(), interventions=[],
+                     worktree_root=self.wtroot, seats_by_capability=SEATS,
+                     validator=no_validation)
+        self.assertEqual("no-prepared-continuation", out["blocker"])
+
+    def test_resume_refuses_in_maintenance_mode(self):
+        make_task()
+        mode = store.read("operating_mode", "current")
+        store.set_operating_mode("SYSTEM_MAINTENANCE", "ceo", "fixture",
+                                 expected_revision=mode["revision"])
+        out = resume("KAN-900", state_store=store, jira_client=Jira())
+        self.assertEqual("system-maintenance-active", out["blocker"])
+
+    def _allocator(self):
+        def allocator(item, seat_id, workspace):
+            return realize_workspace(item, seat_id,
+                                     dict(workspace, repository_root=self.repo),
+                                     root=self.wtroot)
+        return allocator
+
+    def _concluder(self):
+        def concluder(item, seat_id, result, task_record, realized, integration=None):
+            return conclude_workspace(item, seat_id, result, task_record, realized,
+                                      root=self.wtroot, integration=integration)
+        return concluder
+
+
+class ReceiptRoundTripTests(unittest.TestCase):
+    def test_a_terminal_result_survives_its_own_receipt(self):
+        original = ExecutionResult(
+            invocation_id="inv-1", status=ExecutionStatus.COMPLETED,
+            summary="done", provider_id="claude-code",
+            changed_files=(ChangedFileClaim("a.dart", "modified"),),
+            tests=(TestClaim("flutter test", TestStatus.PASSED, exit_code=0),),
+            continuation_ref=SESSION)
+        self.assertEqual(
+            original, execution_result_from_payload(normalized_result_payload(original)))
+
+    def test_a_needs_input_result_survives_with_its_escalation(self):
+        original = ExecutionResult(
+            invocation_id="inv-2", status=ExecutionStatus.NEEDS_INPUT,
+            summary="blocked", provider_id="claude-code",
+            escalation=EscalationRequirement(DENIAL_REASON, "CEO"),
+            continuation_ref=SESSION)
+        self.assertEqual(
+            original, execution_result_from_payload(normalized_result_payload(original)))
 
 
 class RealSystemsUntouchedTests(PreparationTestCase):

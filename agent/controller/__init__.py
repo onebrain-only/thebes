@@ -247,32 +247,14 @@ def execute(work_item_id, brief=None, *, authorization=None, state_store=store,
                 work_item_id, seat_id, captured.get("invocation_id"),
                 realized, auth["reference"], state_store)
 
-        # Validation is part of orchestration, not something the executor
-        # decides about itself. It runs before integration because the verdict
-        # it produces is exactly what the integration gate requires.
-        if run_tail and execution.status.value == "completed":
-            result.update(_validate_after_execution(
-                work_item_id, state_store, jira_client, execution, realized,
-                validation_providers if validation_providers is not None else registry,
-                interventions, seats_by_capability, validator))
-
         integration_evidence = None
-        if run_tail and result.get("validation_status") == validation_policy.VALIDATION_PASSED:
-            tail = integrate(
-                work_item_id, state_store=state_store, jira_client=jira_client,
-                workspace_allocator=workspace_allocator,
-                workspace_concluder=workspace_concluder,
-                interventions=interventions, worktree_root=worktree_root,
-                integration_branch=integration_branch,
-                conclude_workspace_after=False, record_refusals=False)
-            integration_evidence = tail.get("integration_evidence")
-            result.update({key: tail[key] for key in (
-                "integration_status", "attributed_files", "product_commit",
-                "integrated_as", "integration_branch", "previous_head",
-                "conflict_paths", "remediation_required", "receipt_status",
-                "completion_status", "completion_blocker",
-                "jira_transition_performed", "lifecycle", "ownership_status",
-                "open_leases") if key in tail})
+        if run_tail and execution.status.value == "completed":
+            integration_evidence = _run_completion_tail(
+                result, work_item_id, execution, realized, state_store, jira_client,
+                validation_providers if validation_providers is not None else registry,
+                interventions, seats_by_capability, validator,
+                workspace_allocator, workspace_concluder, worktree_root,
+                integration_branch)
 
         # Lifecycle decides the workspace's fate, not the end of this function.
         result.update(workspace_concluder(
@@ -427,6 +409,155 @@ def integrate(work_item_id, *, state_store=store, jira_client=jira,
         result.update(workspace_concluder(work_item_id, seat_id, None, task,
                                           realized, integration=evidence))
     return result
+
+
+def _run_completion_tail(result, work_item_id, execution, realized, state_store,
+                         jira_client, providers, interventions, seats_by_capability,
+                         validator, workspace_allocator, workspace_concluder,
+                         worktree_root, integration_branch):
+    """Validation, integration and lifecycle completion, in canonical order.
+
+    Shared by the first wake and by an approved continuation: a resumed
+    execution that completes the Product work is finished work, and it earns the
+    same tail. Both gate themselves, so a route that has not passed simply
+    changes nothing.
+    """
+    result.update(_validate_after_execution(
+        work_item_id, state_store, jira_client, execution, realized, providers,
+        interventions, seats_by_capability, validator))
+    if result.get("validation_status") != validation_policy.VALIDATION_PASSED:
+        return None
+    tail = integrate(
+        work_item_id, state_store=state_store, jira_client=jira_client,
+        workspace_allocator=workspace_allocator,
+        workspace_concluder=workspace_concluder,
+        interventions=interventions, worktree_root=worktree_root,
+        integration_branch=integration_branch,
+        conclude_workspace_after=False, record_refusals=False)
+    result.update({key: tail[key] for key in (
+        "integration_status", "attributed_files", "product_commit",
+        "integrated_as", "integration_branch", "previous_head",
+        "conflict_paths", "remediation_required", "receipt_status",
+        "completion_status", "completion_blocker",
+        "jira_transition_performed", "lifecycle", "ownership_status",
+        "open_leases") if key in tail})
+    return tail.get("integration_evidence")
+
+
+def resume(work_item_id, *, state_store=store, jira_client=jira, providers=None,
+           workspace_allocator=realize_workspace,
+           workspace_concluder=conclude_workspace, validator=run_validation,
+           interventions=None, worktree_root=None, integration_branch=None,
+           seats_by_capability=None, continuation_driver=None, transport=None):
+    """Resume one approved continuation, then run the same completion tail.
+
+    `execute_approved_claude_continuation` resumes the provider session and
+    records its receipt; it deliberately owns nothing beyond that. Without this
+    entry the resumed work stopped there — finished Product work with no
+    validation, no integration and no lifecycle completion. This is that gap
+    closed, reusing the ordering `execute` already has rather than a second one.
+    """
+    from agent.execution.claude import ClaudeCliTransport, ClaudeProvider
+    from agent.execution.wake import (
+        build_prepared_continuation_request, execute_approved_claude_continuation,
+    )
+    driver = continuation_driver or execute_approved_claude_continuation
+    result = _result_shell(work_item_id)
+    result["operating_mode"] = state_store.current_operating_mode()
+    if result["operating_mode"] != "PRODUCT_EXECUTION":
+        result["blocker"] = "system-maintenance-active"
+        return result
+    try:
+        task = state_store.read("task", work_item_id)
+        if task is None:
+            result["blocker"] = "work-item-not-found"
+            return result
+        seat_id = (task.get("ownership") or {}).get("seat_id")
+        result.update({"seat_id": seat_id,
+                       "capability": (task.get("execution_profile") or {}).get(
+                           "required_capability")})
+        original = _continuable_invocation(work_item_id, seat_id, state_store)
+        if original is None:
+            result["blocker"] = "no-prepared-continuation"
+            return result
+        preparation = state_store.read_execution_continuation_preparation(original)
+        result["continuation_prepared"] = preparation["execution_continuation_id"]
+
+        # Idempotent, and the order matters: a completed continuation is a
+        # terminal outcome for its whole grant set, so composing the approvals
+        # is itself refused afterwards. The already-executed case is therefore
+        # detected FIRST, and the tail resumes from durable evidence rather than
+        # re-waking the provider over finished Product work.
+        already = _existing_continuation_receipt(original, state_store)
+        if already is not None:
+            from agent.execution.receipt import execution_result_from_payload
+            execution = execution_result_from_payload(already["normalized_result"])
+            result["continuation_status"] = "already-executed"
+        else:
+            approvals = state_store.compose_execution_approvals(original)
+            permissions = tuple(record["permission"] for record in approvals)
+            result["approved_permissions"] = list(permissions)
+            provider = ClaudeProvider(transport or ClaudeCliTransport(),
+                                      session_ref=preparation["claude_session_id"],
+                                      approved_permissions=permissions)
+            execution = driver(
+                tuple(record["execution_approval_id"] for record in approvals),
+                lambda task_record, lease, approval, prior:
+                    build_prepared_continuation_request(preparation, task_record, lease),
+                provider, state_store=state_store)
+            result["continuation_status"] = "executed"
+        result.update(_execution_result(execution))
+        result["invocation_id"] = execution.invocation_id
+        result["result_receipt_status"] = "received"
+
+        realized = workspace_allocator(work_item_id, seat_id, {
+            "repository_root": preparation["repository_root"],
+            "working_directory": None, "worktree_path": None,
+            "expected_revision": None, "mutation_mode": "repository_edit"})
+        result.update({"workspace_status": "allocated",
+                       "workspace_path": realized["path"],
+                       "workspace_branch": realized["branch"],
+                       "workspace_reused": realized["reused"],
+                       "expected_revision": realized["expected_revision"]})
+        integration_evidence = None
+        if execution.status.value == "completed":
+            integration_evidence = _run_completion_tail(
+                result, work_item_id, execution, realized, state_store, jira_client,
+                tuple(providers) if providers is not None else available_provider_registry(),
+                interventions, seats_by_capability, validator,
+                workspace_allocator, workspace_concluder, worktree_root,
+                integration_branch)
+        elif execution.status.value == "needs_input":
+            result["continuation_prepared"] = _prepare_continuation(
+                work_item_id, seat_id, execution.invocation_id, realized,
+                preparation["authorization_ref"], state_store)
+        result.update(workspace_concluder(
+            work_item_id, seat_id, execution,
+            state_store.read("task", work_item_id) or task, realized,
+            integration=integration_evidence))
+        return result
+    except (WorkspaceUnavailable, store.StateError, jira.JiraError, ValueError) as exc:
+        result["blocker"] = str(exc)
+        return result
+
+
+def _existing_continuation_receipt(original_invocation_id, state_store):
+    """The terminal receipt of a continuation already driven for this lineage."""
+    return next((receipt for receipt in state_store.read_all("execution_receipt")
+                 if receipt.get("continuation_of_invocation_id") == original_invocation_id
+                 and receipt.get("status") != "needs_input"), None)
+
+
+def _continuable_invocation(work_item_id, seat_id, state_store):
+    """The one prepared, still-open continuation for this work item."""
+    candidates = [
+        record for record in state_store.read_all("execution_continuation_preparation")
+        if record.get("work_item_id") == work_item_id
+        and record.get("seat_id") == seat_id]
+    if not candidates:
+        return None
+    newest = sorted(candidates, key=lambda record: record.get("created_at") or "")[-1]
+    return newest["original_invocation_id"]
 
 
 def _prepare_continuation(work_item_id, seat_id, invocation_id, realized,
@@ -720,6 +851,8 @@ def _result_shell(work_item_id):
         "ownership_status": None,
         "open_leases": None,
         "continuation_prepared": None,
+        "approved_permissions": [],
+        "continuation_status": "not-attempted",
         "ceo_input_required": False,
         "governance_input": None,
         "operating_mode": None,
