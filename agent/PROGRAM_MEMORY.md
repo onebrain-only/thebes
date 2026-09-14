@@ -77,6 +77,19 @@ reasoning effort are transport-enforced, while Role, context, surfaces, environm
 and return constraints are an explicit deterministic executor brief. Controller-authorized
 overrides still pass through selection, with no retry, fallback or workflow authority.
 
+**DECISION/INVARIANT — the executor brief is Product-only.** There is exactly one executor
+brief builder, `agent/execution/brief.py`, and both providers render the same text from the
+immutable request. It reads a closed allowlist of Product fields, so control-plane request
+fields — invocation id, seat, claim, execution lease, operating mode and revision, model and
+effort intent — have no rendering path at all. Before any provider is selected, the same module
+firewalls the request: its instruction surface may not instruct the executor to continue,
+resume or launch itself, choose a provider, open or close a lease, claim or release work,
+bootstrap the controller, create or resume a session, or drive Jira lifecycle, and no
+executor-visible field may name a Thebes internal identifier. A Product constraint stated as a
+prohibition stays legal; naming the mechanism does not. **The executor never orchestrates its
+own execution** — KAN-186 leaked `execute_approved_claude_continuation` into an executor prompt
+through exactly that gap. Evidence: `agent/execution/tests/test_executor_brief_boundary.py`.
+
 **FUTURE TARGET.** Provider invocation becomes an adapter boundary owned by Thebes. The
 controller should not embed Claude Code, Codex or any future provider as architectural
 identity. See `ROADMAP.md` “Executor/provider target.”

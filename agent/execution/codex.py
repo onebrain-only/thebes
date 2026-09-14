@@ -2,8 +2,8 @@
 
 The local runtime exposes ``codex exec`` as a repository-callable transport.
 This adapter prepares its exact workspace, sandbox, model and reasoning inputs,
-and a deterministic executor brief containing every core-owned constraint that
-the CLI cannot enforce itself. It then normalizes the outcome into
+and renders the one canonical Product executor brief through
+``agent.execution.brief``. It then normalizes the outcome into
 ``ExecutionResult``. It has no workflow authority and does not select, retry,
 or fall back between providers.
 """
@@ -30,6 +30,7 @@ from agent.execution.provider import (
     TestClaim,
     TestStatus,
 )
+from agent.execution.brief import render_executor_brief
 from agent.state import roster
 
 
@@ -124,7 +125,7 @@ def capabilities():
         constraints=(
             "transport is the local codex exec CLI",
             "working directory, sandbox, timeout, model, and reasoning effort are transport-enforced from the ExecutionRequest",
-            "Role, context, surfaces, environment, validation, and return constraints are executor instructions in the rendered brief",
+            "Role, context, surfaces, environment, validation, and return constraints are executor instructions in the one canonical Product brief",
             "no browser automation, computer control, or resumable-session capability is declared",
             "transport evidence is normalized without workflow side effects",
         ),
@@ -183,130 +184,12 @@ def prepare_codex_invocation(request, session_ref=None, registry_path=SEATS_JSON
     effort = request.reasoning_effort.value
     return CodexInvocation(
         request=request,
-        prompt=render_codex_brief(request, model, effort),
+        prompt=render_executor_brief(request),
         model=model,
         reasoning_effort=effort,
         sandbox=sandbox,
         session_ref=session_ref,
     )
-
-
-def render_codex_brief(request, resolved_model, resolved_effort):
-    """Render one deterministic Codex brief without changing core constraints.
-
-    The CLI can mechanically constrain cwd, sandbox, timeout, model, and
-    reasoning effort. It has no path-level allowlist or environment-target
-    control, so those facts remain explicit executor instructions rather than
-    claimed transport enforcement.
-    """
-    workspace = request.workspace
-    environment = request.reported_environment
-    target = request.primary_target
-    lines = (
-        "# Thebes Authorized Execution Brief",
-        "",
-        "## Identity",
-        "- Work item ID: %s" % request.work_item_id,
-        "- Seat ID: %s" % request.seat_id,
-        "- Required capability: %s" % request.required_capability,
-        "- Execution kind: %s" % request.execution_kind.value,
-        "",
-        "## Objective",
-        request.objective,
-        "",
-        "## Role and ordered context",
-        "- Role contract reference: %s" % request.role_contract_ref,
-        "- Context references (ordered):",
-        *_numbered(request.context_refs),
-        "",
-        "## Workspace — transport-enforced",
-        "- Repository root: %s" % workspace.repository_root,
-        "- Working directory: %s" % workspace.working_directory,
-        "- Worktree: %s" % _value(workspace.worktree_path),
-        "- Expected revision: %s" % _value(workspace.expected_revision),
-        "- Mutation mode: %s" % workspace.mutation_mode.value,
-        "",
-        "## Allowed surfaces — executor instruction",
-        "- Codex sandbox limits repository write mode, not individual paths.",
-        *_listed(request.allowed_surfaces),
-        "",
-        "## Prohibited actions — executor instruction",
-        *_listed(request.prohibited_actions),
-        "",
-        "## Operating constraints",
-        "- Operating mode: %s" % request.operating_mode,
-        "- Model intent: %s" % request.model_intent.value,
-        "- Resolved Codex model: %s" % resolved_model,
-        "- Reasoning effort: %s" % resolved_effort,
-        "- Required execution features: %s" % _features(request),
-        "- Timeout seconds: %s" % request.timeout_seconds,
-        "",
-        "## Environment and validation — executor instruction",
-        "- Reported environment: %s" % _reported_environment(environment),
-        "- Primary execution target: %s" % _execution_target(target),
-        "- The reported environment and primary target are authoritative.",
-        "- Do not substitute another environment for convenience.",
-        "- Comparative environments cannot replace primary validation.",
-        "- Browser-under-test is not the browser-automation environment.",
-        "- Validation targets (ordered):",
-        *_validation_targets(request.validation_targets),
-        "",
-        "## Return contract — executor instruction",
-        "- Return to: %s" % request.return_contract.return_to,
-        "- Required evidence:",
-        *_listed(request.return_contract.required_evidence),
-        "- Required sections:",
-        *_listed(request.return_contract.required_sections),
-        "",
-        "## Lease and claim references",
-        "- Claim reference: %s" % _value(request.claim_ref),
-        "- Execution lease ID: %s" % _value(request.execution_lease_id),
-    )
-    return "\n".join(lines) + "\n"
-
-
-def _value(value):
-    return value if value is not None else "none"
-
-
-def _listed(values):
-    return tuple("- %s" % value for value in values) or ("- none",)
-
-
-def _numbered(values):
-    return tuple("  %d. %s" % (index, value) for index, value in enumerate(values, 1)) or (
-        "  none",
-    )
-
-
-def _features(request):
-    return ", ".join(sorted(feature.value for feature in request.required_execution_features))
-
-
-def _reported_environment(environment):
-    return "locality=%s; runtime=%s; platform=%s; ref=%s" % (
-        environment.locality, _value(environment.runtime), _value(environment.platform),
-        _value(environment.environment_ref),
-    )
-
-
-def _execution_target(target):
-    return ("locality=%s; runtime=%s; platform=%s; ref=%s; browser_automation=%s; "
-            "launch_method=%s; launch_command=%s; source=%s") % (
-                target.locality, _value(target.runtime), _value(target.platform),
-                _value(target.environment_ref), str(target.browser_automation).lower(),
-                _value(target.launch_method), _value(target.launch_command), target.source,
-            )
-
-
-def _validation_targets(targets):
-    return tuple(
-        "  %d. id=%s; kind=%s; required=%s; platform=%s; surface=%s" % (
-            index, target.target_id, target.kind, str(target.required).lower(),
-            _value(target.platform), _value(target.surface),
-        )
-        for index, target in enumerate(targets, 1)
-    ) or ("  none",)
 
 
 class CodexCliTransport:

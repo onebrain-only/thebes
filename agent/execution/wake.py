@@ -1,8 +1,20 @@
-"""Core-owned ordering around one already-authorized Product execution wake."""
+"""Core-owned ordering around one already-authorized Product execution wake.
+
+Ordering is Thebes authority: permission gate, lease, request, control-plane
+firewall, provider selection, execution, receipt, lease closure. The firewall
+(``agent.execution.brief.assert_product_scoped``) runs on every prepared request
+before any provider is chosen, so a request carrying self-orchestration never
+reaches an executor whichever provider would have run it.
+"""
 
 from dataclasses import replace
 import hashlib
 
+from agent.execution.brief import (
+    CONTROL_PLANE_TOKENS as _CONTROL_PLANE_TOKENS,
+    ExecutorBriefViolation,
+    assert_product_scoped,
+)
 from agent.execution.provider import (
     ExecutionFeature, ExecutionKind, ExecutionRequest, ExecutionTarget, ModelIntent,
     MutationMode, ReasoningEffort, ReportedEnvironment, ReturnContract, ValidationTarget,
@@ -15,13 +27,6 @@ from agent.execution.selection import select_provider
 
 class WakeOrderError(ValueError):
     pass
-
-
-_CONTROL_PLANE_TOKENS = (
-    "execute_approved_claude_continuation", "build_prepared_continuation_request",
-    "prepare_replacement_execution", "retire_execution_session", "ClaudeCliTransport",
-    "ClaudeProvider(", "claude --resume", "claude -p", "agent.execution.wake",
-)
 
 
 def assert_executor_permission_is_not_control_plane(permission, allowed_operation=None):
@@ -47,9 +52,9 @@ def build_prepared_continuation_request(preparation, task, lease):
         work_item_id=preparation["work_item_id"], seat_id=preparation["seat_id"],
         required_capability=preparation["required_capability"],
         execution_kind=ExecutionKind.IMPLEMENTATION,
-        objective=("Continue the same preserved work item from canonical durable state and only "
-                   "declared surfaces. Do not run Thebes/controller bootstrap code, launch Claude, "
-                   "or invoke execute_approved_claude_continuation."),
+        objective=("Continue the same preserved work item, working only inside the declared "
+                   "surfaces below. Implement the Product work, run the Product tests, and "
+                   "return the evidence."),
         role_contract_ref="agent/roles/%s.md" % preparation["required_capability"],
         context_refs=("CLAUDE.md", "agent/CONTRACT.md"),
         workspace=Workspace(preparation["repository_root"], preparation["working_directory"],
@@ -57,7 +62,7 @@ def build_prepared_continuation_request(preparation, task, lease):
                             preparation["expected_revision"]),
         allowed_surfaces=tuple(task.get("surfaces") or ()),
         prohibited_actions=("select another Jira task", "change provider", "bypass permissions",
-                            "execute_approved_claude_continuation", "build_prepared_continuation_request",
+                            "resume or replace your own execution session",
                             "launch another Claude session", "launch another executor"),
         operating_mode="PRODUCT_EXECUTION", operating_mode_revision=lease["mode_revision"],
         claim_ref=(task.get("ownership") or {}).get("claim_ref"),
@@ -118,6 +123,7 @@ def execute_product_wake(work_item_id, seat_id, reason_ref, request_factory, pro
 
 
 def _validate_request_order(request, task, lease, work_item_id, seat_id):
+    """Bind the request to Thebes authority, then firewall it before dispatch."""
     ownership = task.get("ownership") or {}
     expected = {
         "work_item_id": work_item_id,
@@ -132,6 +138,10 @@ def _validate_request_order(request, task, lease, work_item_id, seat_id):
             raise WakeOrderError(
                 "prepared request %s must preserve %r" % (field, value)
             )
+    try:
+        assert_product_scoped(request)
+    except ExecutorBriefViolation as exc:
+        raise WakeOrderError(str(exc))
 
 
 def _continuation_invocation_id(approval_ids):

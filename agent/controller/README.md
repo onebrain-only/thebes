@@ -62,6 +62,17 @@ free, exact-capability seat is eligible. Historical `executor_evidence` never
 pins a future claim. The controller brief becomes the immutable request objective
 without a second prompt format.
 
+`objective` is Product work only. Thebes renders the executor's prompt from the
+immutable request through the one canonical builder in `agent/execution/brief.py`,
+so a controller never writes the prompt itself and never adds a second prompt
+format. Control-plane internals — invocation id, seat, claim, execution lease,
+operating mode and revision, model/effort intent — have no rendering path into
+that prompt. A brief whose objective, context, surfaces, validation or return
+contract instructs the executor to continue, resume or launch itself, choose a
+provider, open or close a lease, claim or release work, or drive Jira lifecycle
+is refused before any provider is selected, and the command returns that refusal
+as its blocker.
+
 Product authorization remains a roadmap governance fact and Product execution
 remains gated by the runtime operating mode. In the current maintenance state,
 the command returns a structured non-execution result before Jira, state writes,

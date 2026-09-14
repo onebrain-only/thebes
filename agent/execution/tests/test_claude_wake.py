@@ -21,6 +21,7 @@ from agent.execution.claude import (  # noqa: E402
     prepare_claude_continuation_wake,
     prepare_claude_wake,
 )
+from agent.execution.brief import render_executor_brief  # noqa: E402
 from agent.execution.provider import (  # noqa: E402
     ExecutionFeature,
     ExecutionKind,
@@ -127,11 +128,13 @@ class ClaudeWakeCharacterizationTests(unittest.TestCase):
         wake = prepare_claude_wake(original, session_ref="existing-session")
         self.assertEqual("Agent", wake.native_tool)
         self.assertEqual("backend-1", wake.subagent_type)
+        expected_brief = render_executor_brief(original)
         self.assertEqual((
             ("subagent_type", "backend-1"),
-            ("prompt", original.objective),
+            ("prompt", expected_brief),
         ), wake.native_arguments)
-        self.assertEqual(original.objective, wake.prompt)
+        self.assertEqual(expected_brief, wake.prompt)
+        self.assertIn(original.objective, wake.prompt)
         self.assertEqual(original.role_contract_ref, wake.role_contract_ref)
         self.assertEqual(original.context_refs, wake.context_refs)
         self.assertEqual(original.workspace, wake.workspace)
@@ -278,8 +281,8 @@ class ClaudeCliTransportTests(unittest.TestCase):
         self.assertEqual("Bash,mcp__claude_ai_Supabase__apply_migration",
                          command[command.index("--allowedTools") + 1])
         self.assertEqual("--", command[-2])
-        self.assertEqual(request().objective, command[-1])
-        self.assertEqual(request().objective, wake.prompt)
+        self.assertEqual(render_executor_brief(request()), command[-1])
+        self.assertEqual(render_executor_brief(request()), wake.prompt)
 
     def test_authorized_replacement_can_allocate_its_native_session_handle(self):
         provider = ClaudeProvider(
@@ -293,7 +296,7 @@ class ClaudeCliTransportTests(unittest.TestCase):
         command = ClaudeCliTransport().command(wake)
         self.assertNotIn("--session-id", command)
         self.assertNotIn("--resume", command)
-        self.assertEqual(request().objective, wake.prompt)
+        self.assertEqual(render_executor_brief(request()), wake.prompt)
 
     def test_composed_exact_grants_are_finite_and_reject_unapproved_third_tool(self):
         grants = ("Bash(python3 -c 'resume()')", "mcp__example__write")

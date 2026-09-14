@@ -13,6 +13,8 @@ sys.path.insert(0, ROOT)
 
 from agent.controller import execute  # noqa: E402
 from agent.controller.allocation import SeatAllocationError, select_claim_seat  # noqa: E402
+from agent.execution.brief import CONTROL_PLANE_TOKENS  # noqa: E402
+from agent.execution.claude import ClaudeProvider  # noqa: E402
 from agent.execution.codex import CodexProvider, CodexUnavailable  # noqa: E402
 
 
@@ -265,6 +267,57 @@ class ControllerEntryTests(unittest.TestCase):
         self.assertEqual("backend-1", outcome["seat_id"])
         self.assertEqual(["mode", "observe", "claim", "continuation", "lease-open",
                           "receipt", "lease-close"], state.events)
+
+
+class ExecutorBriefBoundaryTests(unittest.TestCase):
+    """Controller -> preparation -> sanitized brief -> provider -> receipt."""
+
+    def test_controller_dispatch_hands_the_provider_a_product_only_brief(self):
+        state, jira, wakes = State(), Jira(), []
+        provider = ClaudeProvider(lambda wake: wakes.append(wake) or "fixture complete")
+        outcome = execute("KAN-900", brief(), authorization=Authorization(), state_store=state,
+                          jira_client=jira, seat_registry=Registry(), providers=(provider,))
+        self.assertEqual("completed", outcome["execution_status"])
+        self.assertEqual("received", outcome["result_receipt_status"])
+        self.assertEqual("closed", outcome["lease_closure_status"])
+        self.assertEqual(1, len(wakes))
+        prompt = wakes[0].prompt
+        self.assertIn(brief()["objective"], prompt)
+        self.assertIn("supabase/migrations/kan900.sql", prompt)
+        self.assertIn("- Work item ID: KAN-900", prompt)
+        self.assertIn("- Required capability: backend", prompt)
+        for token in CONTROL_PLANE_TOKENS:
+            self.assertNotIn(token.lower(), prompt.lower())
+        for withheld in (outcome["invocation_id"], "lease-900", "PRODUCT_EXECUTION",
+                         "CEO fixture authorization KAN-900"):
+            self.assertNotIn(withheld, prompt)
+        # Thebes kept every control-plane binding outside the executor's prompt.
+        self.assertEqual("lease-900", wakes[0].execution_lease_id)
+        self.assertEqual("backend-1", wakes[0].subagent_type)
+        self.assertEqual("claimed", outcome["claim_status"])
+
+    def test_a_self_orchestrating_controller_brief_never_reaches_a_provider(self):
+        leaking = (
+            "Implement KAN-900 and then launch another Claude session for the follow-up.",
+            "Implement KAN-900, then call execute_approved_claude_continuation.",
+            "Implement KAN-900 and select another provider if this one stalls.",
+            "Implement KAN-900 after you open an execution lease for it.",
+            "Implement KAN-900, then transition the Jira ticket to QA-Test.",
+        )
+        for objective in leaking:
+            with self.subTest(objective=objective):
+                state, wakes = State(), []
+                provider = ClaudeProvider(lambda wake: wakes.append(wake) or "must not run")
+                outcome = execute("KAN-900", brief(objective=objective),
+                                  authorization=Authorization(), state_store=state,
+                                  jira_client=Jira(), seat_registry=Registry(),
+                                  providers=(provider,))
+                self.assertIn("control-plane instruction", outcome["blocker"])
+                self.assertEqual("not-started", outcome["execution_status"])
+                self.assertEqual("not-started", outcome["result_receipt_status"])
+                self.assertEqual([], wakes)
+                self.assertNotIn("receipt", state.events)
+                self.assertEqual("lease-close", state.events[-1])
 
 
 if __name__ == "__main__":

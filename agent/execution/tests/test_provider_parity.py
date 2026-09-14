@@ -12,6 +12,7 @@ TESTS = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
 sys.path.insert(0, TESTS)
 
+from agent.execution.brief import render_executor_brief  # noqa: E402
 from agent.execution.claude import ClaudeProvider  # noqa: E402
 from agent.execution.codex import CodexProvider  # noqa: E402
 from agent.execution.provider import (  # noqa: E402
@@ -57,8 +58,10 @@ class ProviderParityTests(unittest.TestCase):
         self.assertEqual(original.validation_targets, claude_wake.validation_targets)
         self.assertEqual(original.validation_targets,
                          codex_invocation.request.validation_targets)
-        self.assertEqual(original.objective, claude_wake.prompt)
-        self.assertIn(original.objective, codex_invocation.prompt)
+        # One canonical builder: both providers receive the identical brief.
+        self.assertEqual(render_executor_brief(original), claude_wake.prompt)
+        self.assertEqual(claude_wake.prompt, codex_invocation.prompt)
+        self.assertIn(original.objective, claude_wake.prompt)
         self.assertEqual(ExecutionStatus.COMPLETED, claude_result.status)
         self.assertEqual(ExecutionStatus.COMPLETED, codex_result.status)
 

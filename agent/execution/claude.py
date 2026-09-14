@@ -2,9 +2,13 @@
 
 The repository does not own a callable Claude transport. The native ``Agent``
 tool remains a controller capability. This module validates one already-built
-``ExecutionRequest``, resolves current Claude binding defaults, and hands an
+``ExecutionRequest``, resolves current Claude binding defaults, renders the one
+canonical Product executor brief through ``agent.execution.brief``, and hands an
 immutable wake description to an injected controller transport exactly once,
 then normalizes only supported transport evidence into ``ExecutionResult``.
+
+The prompt an executor receives is Product work only: control-plane mechanics
+stay with Thebes and have no rendering path into this prompt.
 """
 
 from dataclasses import dataclass, replace
@@ -34,6 +38,7 @@ from agent.execution.provider import (
     ValidationTarget,
     Workspace,
 )
+from agent.execution.brief import render_executor_brief
 from agent.state import roster
 
 
@@ -218,15 +223,17 @@ def prepare_claude_wake(request, session_ref=None, registry_path=SEATS_JSON,
             % ", ".join(sorted(feature.value for feature in missing_features))
         )
 
-    # The already-written brief is passed byte-for-byte as the native prompt.
-    # The native Agent tool resolves model/effort from the generated definition;
-    # neutral intent fields do not override those binding defaults in this slice.
-    arguments = (("subagent_type", request.seat_id), ("prompt", request.objective))
+    # The prompt is the one canonical Product brief, rendered by
+    # ``agent.execution.brief`` from this request and nothing else. The native
+    # Agent tool resolves model/effort from the generated definition; neutral
+    # intent fields do not override those binding defaults in this slice.
+    prompt = render_executor_brief(request)
+    arguments = (("subagent_type", request.seat_id), ("prompt", prompt))
     return ClaudeWake(
         native_tool="Agent",
         native_arguments=arguments,
         subagent_type=request.seat_id,
-        prompt=request.objective,
+        prompt=prompt,
         workspace=request.workspace,
         model=binding["model"],
         effort=binding["effort"],
@@ -268,10 +275,11 @@ def prepare_claude_continuation_wake(request, session_ref, approved_permissions,
                                agents_dir=agents_dir)
     return replace(
         wake,
-        prompt=("CEO explicitly approved these exact native permission(s): %s. "
+        prompt=("%s\n## Newly available capability\n"
+                "These tool capabilities are now available to you for this work item: %s.\n"
                 "Continue the existing task and only the preserved work item; do not start a new task, "
-                "replay history, or change scope."
-                % ", ".join(permissions)),
+                "replay history, or change scope.\n"
+                % (wake.prompt, ", ".join(permissions))),
         approved_permissions=permissions,
     )
 

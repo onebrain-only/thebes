@@ -15,6 +15,7 @@ TESTS = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
 sys.path.insert(0, TESTS)
 
+from agent.execution.brief import render_executor_brief  # noqa: E402
 from agent.execution.codex import (  # noqa: E402
     CODEX_MODEL_MAP,
     CodexAuthenticationFailure,
@@ -28,7 +29,6 @@ from agent.execution.codex import (  # noqa: E402
     CodexUnsupportedModel,
     capabilities,
     prepare_codex_invocation,
-    render_codex_brief,
 )
 from agent.execution.provider import (  # noqa: E402
     ExecutionFeature,
@@ -86,11 +86,9 @@ class CodexProviderTests(unittest.TestCase):
         original = request()
         before = dataclasses.asdict(original)
         invocation = prepare_codex_invocation(original)
-        self.assertEqual(invocation.prompt,
-                         render_codex_brief(original, invocation.model,
-                                            invocation.reasoning_effort))
+        self.assertEqual(invocation.prompt, render_executor_brief(original))
         for required in (
-            original.work_item_id, original.seat_id, original.required_capability,
+            original.work_item_id, original.required_capability,
             original.execution_kind.value, original.objective,
             original.role_contract_ref, *original.context_refs,
             original.workspace.repository_root, original.workspace.working_directory,
@@ -102,9 +100,16 @@ class CodexProviderTests(unittest.TestCase):
             original.return_contract.return_to,
             *original.return_contract.required_evidence,
             *original.return_contract.required_sections,
-            original.claim_ref, original.execution_lease_id,
         ):
             self.assertIn(required, invocation.prompt)
+        # Control-plane identity is Thebes-owned and is not executor context.
+        for withheld in (original.invocation_id, original.claim_ref,
+                         original.execution_lease_id, original.operating_mode,
+                         invocation.model):
+            self.assertNotIn(withheld, invocation.prompt)
+        for label in ("Seat ID", "Claim reference", "Execution lease", "Operating mode",
+                      "Model intent", "Reasoning effort", "Resolved"):
+            self.assertNotIn(label, invocation.prompt)
         self.assertLess(invocation.prompt.index(original.context_refs[0]),
                         invocation.prompt.index(original.context_refs[1]))
         self.assertLess(invocation.prompt.index(original.context_refs[1]),
