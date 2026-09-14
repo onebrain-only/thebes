@@ -286,8 +286,8 @@ def prepare_claude_authorized_wake(request, session_id, approved_permissions,
     retained and no historical Claude session is resumed.
     """
     permissions = _exact_permissions(approved_permissions)
-    if not isinstance(session_id, str) or not session_id.strip():
-        raise ClaudeWakeError("authorized Claude execution requires one new session id")
+    if session_id is not None and (not isinstance(session_id, str) or not session_id.strip()):
+        raise ClaudeWakeError("authorized Claude execution session id must be non-empty text")
     wake = prepare_claude_wake(
         request, registry_path=registry_path, bindings_dir=bindings_dir,
         agents_dir=agents_dir,
@@ -576,6 +576,7 @@ class ClaudeProvider:
 
     def __init__(self, transport: Callable[[ClaudeWake], Any], session_ref=None,
                  session_id=None, approved_permission=None, approved_permissions=None,
+                 authorized_execution=False,
                  registry_path=SEATS_JSON, bindings_dir=BINDINGS_DIR,
                  agents_dir=AGENTS_DIR):
         if not callable(transport):
@@ -585,12 +586,17 @@ class ClaudeProvider:
         self._transport = transport
         self._session_ref = session_ref
         self._session_id = session_id
+        self._authorized_execution = authorized_execution
         if session_ref is not None and session_id is not None:
             raise ClaudeWakeError("ClaudeProvider cannot resume and create a session together")
         if approved_permission is not None and approved_permissions is not None:
             raise ClaudeWakeError("use approved_permission or approved_permissions, not both")
         supplied = approved_permissions if approved_permissions is not None else approved_permission
         self._approved_permissions = None if supplied is None else _exact_permissions(supplied)
+        if authorized_execution and self._approved_permissions is None:
+            raise ClaudeWakeError("authorized Claude execution requires exact permission(s)")
+        if authorized_execution and session_ref is not None:
+            raise ClaudeWakeError("authorized Claude execution cannot resume a session")
         self._registry_path = registry_path
         self._bindings_dir = bindings_dir
         self._agents_dir = agents_dir
@@ -612,7 +618,7 @@ class ClaudeProvider:
                     registry_path=self._registry_path, bindings_dir=self._bindings_dir,
                     agents_dir=self._agents_dir,
                 )
-            elif self._session_id is None:
+            elif not self._authorized_execution:
                 wake = prepare_claude_continuation_wake(
                     request, self._session_ref, self._approved_permissions,
                     registry_path=self._registry_path, bindings_dir=self._bindings_dir,

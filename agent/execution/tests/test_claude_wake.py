@@ -264,6 +264,7 @@ class ClaudeCliTransportTests(unittest.TestCase):
             RecordingTransport("replacement complete"),
             session_id="23389001-2e1b-4791-aeac-2050254c1c4d",
             approved_permissions=("Bash", "mcp__claude_ai_Supabase__apply_migration"),
+            authorized_execution=True,
         )
         result = provider.execute(request())
         self.assertEqual(ExecutionStatus.COMPLETED, result.status)
@@ -276,6 +277,20 @@ class ClaudeCliTransportTests(unittest.TestCase):
         self.assertIn("--allowedTools", command)
         self.assertEqual("Bash,mcp__claude_ai_Supabase__apply_migration",
                          command[command.index("--allowedTools") + 1])
+        self.assertEqual(request().objective, wake.prompt)
+
+    def test_authorized_replacement_can_allocate_its_native_session_handle(self):
+        provider = ClaudeProvider(
+            RecordingTransport("replacement complete"),
+            approved_permissions=("Bash", "mcp__claude_ai_Supabase__apply_migration"),
+            authorized_execution=True,
+        )
+        result = provider.execute(request())
+        self.assertEqual(ExecutionStatus.COMPLETED, result.status)
+        wake = provider._transport.wakes[0]
+        command = ClaudeCliTransport().command(wake)
+        self.assertNotIn("--session-id", command)
+        self.assertNotIn("--resume", command)
         self.assertEqual(request().objective, wake.prompt)
 
     def test_composed_exact_grants_are_finite_and_reject_unapproved_third_tool(self):
