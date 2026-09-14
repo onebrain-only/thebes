@@ -7,6 +7,8 @@ import sys
 from . import ControllerInputError, execute, load_brief
 from .sprint_plan import plan_current_sprint
 from .backlog_plan import plan_backlog
+from agent.execution.authority import discover_execution_authority
+from agent.state import store
 
 
 def main(argv=None):
@@ -18,15 +20,19 @@ def main(argv=None):
                      help="JSON bounded execution brief prepared by the controller")
     sub.add_parser("plan-sprint", help="read-only plan for the current canonical sprint")
     sub.add_parser("plan-backlog", help="read-only plan for the canonical Jira Product backlog")
+    manifest = sub.add_parser("authority-manifest", help="read-only execution authority discovery")
+    manifest.add_argument("work_item_id")
     args = parser.parse_args(argv)
     try:
         outcome = (plan_current_sprint() if args.command == "plan-sprint" else plan_backlog()
                    if args.command == "plan-backlog"
+                   else discover_execution_authority(args.work_item_id, store)
+                   if args.command == "authority-manifest"
                    else execute(args.work_item_id, load_brief(args.brief_file)))
     except ControllerInputError as exc:
         outcome = {"work_item_id": args.work_item_id, "blocker": str(exc)}
     print(json.dumps(outcome, indent=2, sort_keys=True))
-    return 0 if args.command in ("plan-sprint", "plan-backlog") or outcome.get("execution_status") == "completed" else 1
+    return 0 if args.command in ("plan-sprint", "plan-backlog", "authority-manifest") or outcome.get("execution_status") == "completed" else 1
 
 
 if __name__ == "__main__":

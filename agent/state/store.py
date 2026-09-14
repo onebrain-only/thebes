@@ -57,6 +57,12 @@ KINDS = {
     # It is deliberately not a general permission or provider configuration.
     "execution_approval": ("execution-approvals", "approval"),
     "execution_continuation_preparation": ("execution-continuations", "continuation"),
+    # A retirement is immutable evidence that a provider session is historical
+    # only.  It never deletes the receipt/session it names.
+    "execution_session_retirement": ("execution-session-retirements", "session-retirement"),
+    # One replacement is permitted for a retired execution lineage.  It is not
+    # a new task or a second claim.
+    "execution_replacement": ("execution-replacements", "replacement"),
 }
 
 
@@ -2185,6 +2191,18 @@ def record_execution_approval(original_invocation_id, work_item_id, seat_id,
                                or not allowed_operation.strip()
                                or "*" in allowed_operation)):
         raise StateError("execution approval cannot be wildcarded")
+    # The controller can never grant its own bootstrap back to a Product
+    # executor.  This is deliberately a write-time guard as well as the wake
+    # guard: malformed historical evidence remains readable, but new recursive
+    # grants cannot be persisted.
+    if permission == "Bash" and allowed_operation:
+        control_tokens = ("execute_approved_claude_continuation",
+                          "build_prepared_continuation_request",
+                          "prepare_replacement_execution", "retire_execution_session",
+                          "claudeclitransport", "claudeprovider(", "claude --resume",
+                          "claude -p", "agent.execution.wake")
+        if any(token in allowed_operation.lower() for token in control_tokens):
+            raise StateError("execution approval cannot grant Product executor control-plane continuation")
     original = read_execution_receipt(original_invocation_id)
     if original is None or original.get("status") != "needs_input":
         raise StateError("execution approval needs an original needs_input receipt")
@@ -2244,6 +2262,14 @@ def compose_execution_approvals(original_invocation_id, approval_ids=None):
     original = read_execution_receipt(original_invocation_id)
     if original is None or original.get("status") != "needs_input":
         raise StateError("approval composition needs an original needs_input receipt")
+    # A completed/failed continuation is a terminal outcome for every grant in
+    # this lineage.  A later needs-input boundary is deliberately not terminal:
+    # it is the same preserved provider session asking for its next exact grant.
+    terminal = [rec for rec in read_all("execution_receipt")
+                if rec.get("continuation_of_invocation_id") == original_invocation_id
+                and rec.get("status") != "needs_input"]
+    if terminal:
+        raise StateError("approval composition expired after terminal continuation outcome")
     approvals = sorted(
         (rec for rec in read_all("execution_approval")
          if rec.get("original_invocation_id") == original_invocation_id),
@@ -2333,6 +2359,84 @@ def read_execution_continuation_preparation(original_invocation_id):
     if not original_invocation_id:
         raise StateError("original invocation id is required")
     return read("execution_continuation_preparation", _continuation_id(original_invocation_id))
+
+
+def _session_retirement_id(original_invocation_id):
+    return "session-retirement-" + hashlib.sha256(original_invocation_id.encode("utf-8")).hexdigest()
+
+
+def retire_execution_session(original_invocation_id, reason, retired_by="ceo"):
+    """Retire one unsafe provider session without altering its historical receipt."""
+    original = read_execution_receipt(original_invocation_id)
+    if original is None or original.get("provider_id") != "claude-code":
+        raise StateError("session retirement needs a Claude execution receipt")
+    if not isinstance(reason, str) or not reason.strip() or retired_by != "ceo":
+        raise StateError("session retirement needs a CEO reason")
+    session = (original.get("normalized_result") or {}).get("continuation_ref")
+    if not isinstance(session, str) or not session:
+        raise StateError("session retirement needs the original Claude session")
+    rid = _session_retirement_id(original_invocation_id)
+    rec = {"execution_session_retirement_id": rid,
+           "original_invocation_id": original_invocation_id,
+           "work_item_id": original["work_item_id"], "seat_id": original["seat_id"],
+           "provider_id": "claude-code", "claude_session_id": session,
+           "reason": reason, "retired_by": retired_by}
+    with _Lock("execution-domain"):
+        with record_lock("execution_session_retirement", rid):
+            existing = read("execution_session_retirement", rid)
+            if existing is not None:
+                if any(existing.get(key) != value for key, value in rec.items()):
+                    raise StateError("conflicting session retirement")
+                return existing
+            rec.update(schema_version=SCHEMA_VERSION, revision=1, created_at=now(), updated_at=now())
+            _validate_one("execution_session_retirement", rec)
+            _atomic_write(path_for("execution_session_retirement", rid), rec)
+            return rec
+
+
+def read_execution_session_retirement(original_invocation_id):
+    return read("execution_session_retirement", _session_retirement_id(original_invocation_id))
+
+
+def prepare_replacement_execution(original_invocation_id, replacement_session_id,
+                                  authorization_ref, authorization_scope, prepared_by="ceo"):
+    """Create exactly one linked replacement for a retired provider session.
+
+    This is intentionally preparation only: it acquires no lease, invokes no
+    provider, and replays no Product action.
+    """
+    original = read_execution_receipt(original_invocation_id)
+    retired = read_execution_session_retirement(original_invocation_id)
+    if original is None or retired is None:
+        raise StateError("replacement needs a retired historical execution")
+    required = (replacement_session_id, authorization_ref, authorization_scope)
+    if any(not isinstance(value, str) or not value.strip() for value in required) or prepared_by != "ceo":
+        raise StateError("replacement needs CEO authorization and one session")
+    if replacement_session_id == retired["claude_session_id"]:
+        raise StateError("replacement must use a new Claude session")
+    rid = "replacement-" + hashlib.sha256(original_invocation_id.encode("utf-8")).hexdigest()
+    rec = {"execution_replacement_id": rid, "original_invocation_id": original_invocation_id,
+           "retirement_id": retired["execution_session_retirement_id"],
+           "work_item_id": original["work_item_id"], "seat_id": original["seat_id"],
+           "provider_id": "claude-code", "replacement_session_id": replacement_session_id,
+           "authorization_ref": authorization_ref, "authorization_scope": authorization_scope,
+           "prepared_by": prepared_by, "replay_product_actions": False}
+    with _Lock("execution-domain"):
+        with record_lock("execution_replacement", rid):
+            existing = read("execution_replacement", rid)
+            if existing is not None:
+                if any(existing.get(key) != value for key, value in rec.items()):
+                    raise StateError("exactly one replacement execution is permitted")
+                return existing
+            rec.update(schema_version=SCHEMA_VERSION, revision=1, created_at=now(), updated_at=now())
+            _validate_one("execution_replacement", rec)
+            _atomic_write(path_for("execution_replacement", rid), rec)
+            return rec
+
+
+def read_execution_replacement(original_invocation_id):
+    rid = "replacement-" + hashlib.sha256(original_invocation_id.encode("utf-8")).hexdigest()
+    return read("execution_replacement", rid)
 
 
 def claim(work_item_id, seat_id, claim_ref, expected_revision, capability_of_seat=None,

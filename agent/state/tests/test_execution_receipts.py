@@ -203,6 +203,66 @@ class DurableReceiptRecoveryTests(unittest.TestCase):
             store.record_execution_approval(
                 original, "KAN-999", "frontend-1", "claude-session-1", "Bash", "ceo", "no")
 
+    def test_retired_session_has_one_linked_replacement_without_replay(self):
+        invocation = "controller-retire-session"
+        result = {
+            "invocation_id": invocation, "status": "needs_input", "summary": "blocked",
+            "provider_id": "claude-code", "continuation_ref": "claude-session-old",
+            "escalation": {"reason": "native permission: Bash"}, "evidence": [],
+            "changed_files": [], "tests": [], "failure": None, "resolved_model_ref": None,
+            "resolved_effort_ref": None, "duration_seconds": None, "raw_artifact_ref": None,
+        }
+        store.record_execution_receipt(invocation, "KAN-198", "frontend-1",
+                                       self.lease["execution_lease_id"], result)
+        retired = store.retire_execution_session(invocation, "recursive control-plane Bash")
+        replacement = store.prepare_replacement_execution(
+            invocation, "claude-session-new", "CEO bounded replacement", "same lineage")
+        self.assertEqual(invocation, replacement["original_invocation_id"])
+        self.assertEqual(retired["execution_session_retirement_id"], replacement["retirement_id"])
+        self.assertFalse(replacement["replay_product_actions"])
+        self.assertEqual(retired, store.read_execution_session_retirement(invocation))
+        with self.assertRaisesRegex(store.StateError, "exactly one replacement"):
+            store.prepare_replacement_execution(invocation, "claude-session-other",
+                                                "CEO bounded replacement", "same lineage")
+
+    def test_exact_grants_expire_after_non_input_continuation_outcome(self):
+        original = "controller-expiring-grant"
+        blocked = {"invocation_id": original, "status": "needs_input", "summary": "blocked",
+                   "provider_id": "claude-code", "continuation_ref": "claude-session-1",
+                   "escalation": {"reason": "native permission: mcp__example__write"},
+                   "evidence": [], "changed_files": [], "tests": [], "failure": None,
+                   "resolved_model_ref": None, "resolved_effort_ref": None,
+                   "duration_seconds": None, "raw_artifact_ref": None}
+        store.record_execution_receipt(original, "KAN-198", "frontend-1",
+                                       self.lease["execution_lease_id"], blocked)
+        grant = store.record_execution_approval(original, "KAN-198", "frontend-1",
+                                                "claude-session-1", "mcp__example__write", "ceo", "once")
+        later = store.create("execution_lease", {"work_item_id": "KAN-198", "seat_id": "frontend-1",
+                                                    "mode_revision": 12, "reason_ref": "continuation",
+                                                    "closed_at": None, "closed_by": None})
+        done = dict(blocked, invocation_id="continuation-terminal", status="completed",
+                    escalation=None)
+        store.record_execution_receipt("continuation-terminal", "KAN-198", "frontend-1",
+                                       later["execution_lease_id"], done,
+                                       continuation_of=original,
+                                       approval_id=grant["execution_approval_id"])
+        with self.assertRaisesRegex(store.StateError, "expired"):
+            store.compose_execution_approvals(original, [grant["execution_approval_id"]])
+
+    def test_new_bash_grant_cannot_persist_controller_bootstrap(self):
+        invocation = "controller-recursive-grant"
+        blocked = {"invocation_id": invocation, "status": "needs_input", "summary": "blocked",
+                   "provider_id": "claude-code", "continuation_ref": "claude-session-1",
+                   "escalation": {"reason": "native permission: Bash"}, "evidence": [],
+                   "changed_files": [], "tests": [], "failure": None, "resolved_model_ref": None,
+                   "resolved_effort_ref": None, "duration_seconds": None, "raw_artifact_ref": None}
+        store.record_execution_receipt(invocation, "KAN-198", "frontend-1",
+                                       self.lease["execution_lease_id"], blocked)
+        with self.assertRaisesRegex(store.StateError, "control-plane"):
+            store.record_execution_approval(
+                invocation, "KAN-198", "frontend-1", "claude-session-1", "Bash", "ceo", "never",
+                allowed_operation="python3 -c 'execute_approved_claude_continuation()'")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

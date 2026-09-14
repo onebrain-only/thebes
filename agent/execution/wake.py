@@ -17,6 +17,27 @@ class WakeOrderError(ValueError):
     pass
 
 
+_CONTROL_PLANE_TOKENS = (
+    "execute_approved_claude_continuation", "build_prepared_continuation_request",
+    "prepare_replacement_execution", "retire_execution_session", "ClaudeCliTransport",
+    "ClaudeProvider(", "claude --resume", "claude -p", "agent.execution.wake",
+)
+
+
+def assert_executor_permission_is_not_control_plane(permission, allowed_operation=None):
+    """Refuse a Product-executor native grant that bootstraps orchestration.
+
+    Claude's native permission model has tool-level Bash granularity.  This
+    guard does not pretend command-level containment exists; it prevents the
+    controller from placing controller launch code inside that tool's grant.
+    """
+    if permission != "Bash":
+        return
+    operation = (allowed_operation or "").lower()
+    if any(token.lower() in operation for token in _CONTROL_PLANE_TOKENS):
+        raise WakeOrderError("Product executor Bash may not invoke control-plane continuation")
+
+
 def build_prepared_continuation_request(preparation, task, lease):
     """Build the minimal new context expressly authorized for a historical resume."""
     if not preparation or preparation.get("historical_request_persisted") is not False:
@@ -140,6 +161,9 @@ def execute_approved_claude_continuation(approval_ids, request_factory, provider
     approvals = state_store.compose_execution_approvals(
         first_approval["original_invocation_id"], requested_ids)
     approval = approvals[0]
+    for rec in approvals:
+        assert_executor_permission_is_not_control_plane(
+            rec["permission"], rec.get("allowed_operation"))
     original = state_store.read_execution_receipt(approval["original_invocation_id"])
     preparation = state_store.read_execution_continuation_preparation(
         approval["original_invocation_id"])
@@ -147,6 +171,9 @@ def execute_approved_claude_continuation(approval_ids, request_factory, provider
         raise WakeOrderError("continuation original receipt is not awaiting input")
     if preparation is None:
         raise WakeOrderError("continuation preparation does not exist")
+    retirement_reader = getattr(state_store, "read_execution_session_retirement", None)
+    if retirement_reader is not None and retirement_reader(approval["original_invocation_id"]) is not None:
+        raise WakeOrderError("historical Claude session is retired; prepare one replacement instead")
     if original.get("provider_id") != "claude-code" or any(
             rec.get("provider_id") != "claude-code" for rec in approvals):
         raise WakeOrderError("continuation provider must remain Claude Code")

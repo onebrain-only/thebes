@@ -1215,6 +1215,25 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
         if "*" in str(rec.get("permission") or ""):
             errs.append("%s: continuation preparation cannot be wildcarded" % where)
 
+    elif kind == "execution_session_retirement":
+        _req(rec, ["execution_session_retirement_id", "original_invocation_id", "work_item_id",
+                   "seat_id", "provider_id", "claude_session_id", "reason", "retired_by"], errs, where)
+        if not str(rec.get("execution_session_retirement_id") or "").startswith("session-retirement-"):
+            errs.append("%s: session retirement id must start with session-retirement-" % where)
+        if rec.get("provider_id") != "claude-code" or rec.get("retired_by") != "ceo":
+            errs.append("%s: session retirement must be CEO-authorized Claude evidence" % where)
+
+    elif kind == "execution_replacement":
+        _req(rec, ["execution_replacement_id", "original_invocation_id", "retirement_id", "work_item_id",
+                   "seat_id", "provider_id", "replacement_session_id", "authorization_ref",
+                   "authorization_scope", "prepared_by", "replay_product_actions"], errs, where)
+        if not str(rec.get("execution_replacement_id") or "").startswith("replacement-"):
+            errs.append("%s: replacement id must start with replacement-" % where)
+        if rec.get("provider_id") != "claude-code" or rec.get("prepared_by") != "ceo":
+            errs.append("%s: replacement must retain CEO-authorized Claude lineage" % where)
+        if rec.get("replay_product_actions") is not False:
+            errs.append("%s: replacement must prohibit Product replay" % where)
+
     elif kind == "policy":
         _req(rec, ["policy_id", "policy_kind", "scope", "activated_by", "reason_ref"],
              errs, where)
@@ -1405,7 +1424,9 @@ def check(runtime=None):
              "coverage": "coverage", "correction": "corrections",
              "operating_mode": "operating-mode", "execution_lease": "execution-leases",
              "execution_receipt": "execution-receipts", "execution_approval": "execution-approvals",
-             "execution_continuation_preparation": "execution-continuations"}
+             "execution_continuation_preparation": "execution-continuations",
+             "execution_session_retirement": "execution-session-retirements",
+             "execution_replacement": "execution-replacements"}
     seen_ids = {}
     edges = []
     active_iv = []
@@ -1434,7 +1455,9 @@ def check(runtime=None):
                    "execution_lease": "execution_lease_id",
                    "execution_receipt": "execution_receipt_id",
                    "execution_approval": "execution_approval_id",
-                   "execution_continuation_preparation": "execution_continuation_id"}[kind]
+                   "execution_continuation_preparation": "execution_continuation_id",
+                   "execution_session_retirement": "execution_session_retirement_id",
+                   "execution_replacement": "execution_replacement_id"}[kind]
             rid = rec.get(idf)
             if rid != fn[:-5]:
                 errs.append("%s: filename does not match %s %r" % (p, idf, rid))
