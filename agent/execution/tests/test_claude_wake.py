@@ -277,6 +277,8 @@ class ClaudeCliTransportTests(unittest.TestCase):
         self.assertIn("--allowedTools", command)
         self.assertEqual("Bash,mcp__claude_ai_Supabase__apply_migration",
                          command[command.index("--allowedTools") + 1])
+        self.assertEqual("--", command[-2])
+        self.assertEqual(request().objective, command[-1])
         self.assertEqual(request().objective, wake.prompt)
 
     def test_authorized_replacement_can_allocate_its_native_session_handle(self):
@@ -299,7 +301,8 @@ class ClaudeCliTransportTests(unittest.TestCase):
         command = ClaudeCliTransport().command(wake)
         position = command.index("--allowedTools")
         self.assertEqual(",".join(grants), command[position + 1])
-        self.assertEqual(wake.prompt, command[position + 2])
+        self.assertEqual("--", command[position + 2])
+        self.assertEqual(wake.prompt, command[position + 3])
         self.assertEqual(grants, wake.approved_permissions)
         self.assertNotIn("mcp__example__third", command)
         with self.assertRaisesRegex(ClaudeWakeError, "exact permission"):

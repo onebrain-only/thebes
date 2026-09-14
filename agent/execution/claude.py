@@ -329,6 +329,10 @@ class ClaudeCliTransport:
             # one comma-separated argument prevents the final prompt from
             # being swallowed as another allowed tool.
             command += ("--allowedTools", ",".join(wake.approved_permissions))
+        # Current Claude CLI parses --allowedTools as variadic.  The separator
+        # keeps the immutable Product prompt from being consumed as a tool name.
+        if wake.approved_permissions:
+            command += ("--",)
         return command + (wake.prompt,)
 
     def __call__(self, wake):
