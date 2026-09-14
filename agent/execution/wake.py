@@ -1,6 +1,7 @@
 """Core-owned ordering around one already-authorized Product execution wake."""
 
 from dataclasses import replace
+import hashlib
 
 from agent.execution.provider import (
     ExecutionFeature, ExecutionKind, ExecutionRequest, ExecutionTarget, ModelIntent,
@@ -109,7 +110,14 @@ def _validate_request_order(request, task, lease, work_item_id, seat_id):
             )
 
 
-def execute_approved_claude_continuation(approval_id, request_factory, provider,
+def _continuation_invocation_id(approval_ids):
+    if len(approval_ids) == 1:
+        return "continuation-" + approval_ids[0]
+    digest = hashlib.sha256("\0".join(approval_ids).encode("utf-8")).hexdigest()
+    return "continuation-approval-set-" + digest
+
+
+def execute_approved_claude_continuation(approval_ids, request_factory, provider,
                                          *, state_store=None,
                                          closed_by="orchestrator"):
     """Resume exactly one Claude session after one immutable CEO approval.
@@ -120,9 +128,15 @@ def execute_approved_claude_continuation(approval_id, request_factory, provider,
     """
     if state_store is None:
         from agent.state import store as state_store
-    approval = state_store.read_execution_approval(approval_id)
-    if approval is None:
+    requested_ids = (approval_ids,) if isinstance(approval_ids, str) else tuple(approval_ids)
+    if not requested_ids:
         raise WakeOrderError("continuation approval does not exist")
+    first_approval = state_store.read_execution_approval(requested_ids[0])
+    if first_approval is None:
+        raise WakeOrderError("continuation approval does not exist")
+    approvals = state_store.compose_execution_approvals(
+        first_approval["original_invocation_id"], requested_ids)
+    approval = approvals[0]
     original = state_store.read_execution_receipt(approval["original_invocation_id"])
     preparation = state_store.read_execution_continuation_preparation(
         approval["original_invocation_id"])
@@ -130,15 +144,25 @@ def execute_approved_claude_continuation(approval_id, request_factory, provider,
         raise WakeOrderError("continuation original receipt is not awaiting input")
     if preparation is None:
         raise WakeOrderError("continuation preparation does not exist")
-    if original.get("provider_id") != "claude-code" or approval.get("provider_id") != "claude-code":
+    if original.get("provider_id") != "claude-code" or any(
+            rec.get("provider_id") != "claude-code" for rec in approvals):
         raise WakeOrderError("continuation provider must remain Claude Code")
     if provider.capabilities().provider_id != "claude-code":
         raise WakeOrderError("continuation provider switch is refused")
-    invocation_id = "continuation-" + approval_id
+    permissions = tuple(
+        rec["permission"] if rec.get("allowed_operation") is None
+        else "%s(%s)" % (rec["permission"], rec["allowed_operation"])
+        for rec in approvals
+    )
+    if tuple(getattr(provider, "approved_permissions", ())) != permissions:
+        raise WakeOrderError("continuation provider permissions do not match exact grants")
+    invocation_id = _continuation_invocation_id(tuple(rec["execution_approval_id"] for rec in approvals))
     if state_store.read_execution_receipt(invocation_id) is not None:
         raise WakeOrderError("continuation was already executed")
     task = state_store.assert_execution_permitted(approval["work_item_id"], approval["seat_id"])
-    lease = state_store.open_execution_lease(approval["work_item_id"], approval["seat_id"], approval_id)
+    lease = state_store.open_execution_lease(
+        approval["work_item_id"], approval["seat_id"],
+        _continuation_invocation_id(tuple(rec["execution_approval_id"] for rec in approvals)))
     try:
         request = request_factory(task, lease, approval, original)
         request = replace(request, invocation_id=invocation_id,
@@ -153,7 +177,9 @@ def execute_approved_claude_continuation(approval_id, request_factory, provider,
             lease["execution_lease_id"], normalized_result_payload(result),
             provider_selection={"primary_provider_id": "claude-code",
                                 "selected_provider_id": "claude-code"},
-            continuation_of=approval["original_invocation_id"], approval_id=approval_id,
+            continuation_of=approval["original_invocation_id"],
+            approval_id=approval["execution_approval_id"],
+            approval_ids=tuple(rec["execution_approval_id"] for rec in approvals),
         )
         return result
     finally:

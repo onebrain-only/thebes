@@ -152,6 +152,57 @@ class DurableReceiptRecoveryTests(unittest.TestCase):
                 invocation, "KAN-198", "frontend-1", "claude-session-1",
                 "mcp__claude_ai_Supabase__*", "ceo", "one native tool call")
 
+    def test_exact_grants_compose_without_subset_or_boundary_drift(self):
+        original = "controller-composed-boundary"
+        blocked = {
+            "invocation_id": original, "status": "needs_input", "summary": "blocked",
+            "provider_id": "claude-code", "continuation_ref": "claude-session-1",
+            "escalation": {"reason": "native permission: mcp__example__write"},
+            "evidence": [], "changed_files": [], "tests": [], "failure": None,
+            "resolved_model_ref": None, "resolved_effort_ref": None,
+            "duration_seconds": None, "raw_artifact_ref": None,
+        }
+        store.record_execution_receipt(
+            original, "KAN-198", "frontend-1", self.lease["execution_lease_id"], blocked,
+            provider_selection={"primary_provider_id": "claude-code", "selected_provider_id": "claude-code"})
+        first = store.record_execution_approval(
+            original, "KAN-198", "frontend-1", "claude-session-1", "mcp__example__write",
+            "ceo", "exact write")
+        second_lease = store.create("execution_lease", {
+            "work_item_id": "KAN-198", "seat_id": "frontend-1", "mode_revision": 12,
+            "reason_ref": "continuation", "closed_at": None, "closed_by": None,
+        })
+        bash_boundary = dict(blocked, invocation_id="continuation-first",
+                             escalation={"reason": "native permission: Bash"})
+        store.record_execution_receipt(
+            "continuation-first", "KAN-198", "frontend-1", second_lease["execution_lease_id"],
+            bash_boundary, provider_selection={"primary_provider_id": "claude-code", "selected_provider_id": "claude-code"},
+            continuation_of=original, approval_id=first["execution_approval_id"],
+            approval_ids=[first["execution_approval_id"]])
+        second = store.record_execution_approval(
+            original, "KAN-198", "frontend-1", "claude-session-1", "Bash", "ceo",
+            "exact local continuation command", allowed_operation="python3 -c 'resume_kan186()'")
+        before_composition = {
+            kind: store.read_all(kind)
+            for kind in ("task", "execution_approval", "execution_receipt", "execution_lease")
+        }
+        composed = store.compose_execution_approvals(
+            original, [first["execution_approval_id"], second["execution_approval_id"]])
+        self.assertEqual(before_composition, {
+            kind: store.read_all(kind)
+            for kind in ("task", "execution_approval", "execution_receipt", "execution_lease")
+        })
+        self.assertEqual(["Bash", "mcp__example__write"], [row["permission"] for row in composed])
+        self.assertEqual("mcp__example__write", first["permission"])
+        with self.assertRaisesRegex(store.StateError, "every exact grant once"):
+            store.compose_execution_approvals(original, [first["execution_approval_id"]])
+        with self.assertRaisesRegex(store.StateError, "does not match"):
+            store.record_execution_approval(
+                original, "KAN-198", "frontend-1", "wrong-session", "Bash", "ceo", "no")
+        with self.assertRaisesRegex(store.StateError, "does not match"):
+            store.record_execution_approval(
+                original, "KAN-999", "frontend-1", "claude-session-1", "Bash", "ceo", "no")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

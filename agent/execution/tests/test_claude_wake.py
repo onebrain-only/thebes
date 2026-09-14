@@ -250,8 +250,20 @@ class ClaudeCliTransportTests(unittest.TestCase):
         self.assertIn("dontAsk", command)
         self.assertNotIn("bypassPermissions", command)
         self.assertIn("Continue the existing task", wake.prompt)
-        with self.assertRaisesRegex(ClaudeWakeError, "exact session and permission"):
+        with self.assertRaisesRegex(ClaudeWakeError, "exact permission"):
             prepare_claude_continuation_wake(request(), "claude-session-9", "*")
+
+    def test_composed_exact_grants_are_finite_and_reject_unapproved_third_tool(self):
+        grants = ("Bash(python3 -c 'resume()')", "mcp__example__write")
+        wake = prepare_claude_continuation_wake(request(), "claude-session-9", grants)
+        command = ClaudeCliTransport().command(wake)
+        position = command.index("--allowedTools")
+        self.assertEqual(grants, command[position + 1:position + 3])
+        self.assertEqual(grants, wake.approved_permissions)
+        self.assertNotIn("mcp__example__third", command)
+        with self.assertRaisesRegex(ClaudeWakeError, "exact permission"):
+            prepare_claude_continuation_wake(
+                request(), "claude-session-9", grants + ("mcp__example__*",))
 
 
 def prepare_request_for_cli():

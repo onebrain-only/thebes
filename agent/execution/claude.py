@@ -112,7 +112,7 @@ class ClaudeWake:
     return_contract: ReturnContract
     timeout_seconds: int
     session_ref: Optional[str] = None
-    approved_permission: Optional[str] = None
+    approved_permissions: Tuple[str, ...] = ()
 
 
 def _binding_fields(path):
@@ -241,14 +241,24 @@ def prepare_claude_wake(request, session_ref=None, registry_path=SEATS_JSON,
     )
 
 
-def prepare_claude_continuation_wake(request, session_ref, approved_permission,
+def _exact_permissions(approved_permissions):
+    if isinstance(approved_permissions, str):
+        approved_permissions = (approved_permissions,)
+    if (not isinstance(approved_permissions, (tuple, list)) or not approved_permissions
+            or len(set(approved_permissions)) != len(approved_permissions)
+            or any(not isinstance(item, str) or not item.strip() or "*" in item
+                   for item in approved_permissions)):
+        raise ClaudeWakeError("Claude continuation requires exact permission(s)")
+    return tuple(approved_permissions)
+
+
+def prepare_claude_continuation_wake(request, session_ref, approved_permissions,
                                      registry_path=SEATS_JSON,
                                      bindings_dir=BINDINGS_DIR, agents_dir=AGENTS_DIR):
     """Prepare one same-session resume after an exact, durable CEO approval."""
-    if (not isinstance(session_ref, str) or not session_ref.strip()
-            or not isinstance(approved_permission, str) or not approved_permission.strip()
-            or "*" in approved_permission):
+    if not isinstance(session_ref, str) or not session_ref.strip():
         raise ClaudeWakeError("Claude continuation requires one exact session and permission")
+    permissions = _exact_permissions(approved_permissions)
     wake = prepare_claude_wake(request, session_ref=session_ref,
                                registry_path=registry_path, bindings_dir=bindings_dir,
                                agents_dir=agents_dir)
@@ -256,8 +266,8 @@ def prepare_claude_continuation_wake(request, session_ref, approved_permission,
         wake,
         prompt=("CEO explicitly approved this exact native permission: %s. "
                 "Continue the existing task; do not start a new task or change scope."
-                % approved_permission),
-        approved_permission=approved_permission,
+                % ", ".join(permissions)),
+        approved_permissions=permissions,
     )
 
 
@@ -286,8 +296,8 @@ class ClaudeCliTransport:
         )
         if wake.session_ref:
             command += ("--resume", wake.session_ref)
-        if wake.approved_permission:
-            command += ("--allowedTools", wake.approved_permission)
+        if wake.approved_permissions:
+            command += ("--allowedTools",) + wake.approved_permissions
         return command + (wake.prompt,)
 
     def __call__(self, wake):
@@ -526,7 +536,7 @@ class ClaudeProvider:
     """Two-operation provider seam using a controller-supplied native transport."""
 
     def __init__(self, transport: Callable[[ClaudeWake], Any], session_ref=None,
-                 approved_permission=None,
+                 approved_permission=None, approved_permissions=None,
                  registry_path=SEATS_JSON, bindings_dir=BINDINGS_DIR,
                  agents_dir=AGENTS_DIR):
         if not callable(transport):
@@ -535,7 +545,10 @@ class ClaudeProvider:
             )
         self._transport = transport
         self._session_ref = session_ref
-        self._approved_permission = approved_permission
+        if approved_permission is not None and approved_permissions is not None:
+            raise ClaudeWakeError("use approved_permission or approved_permissions, not both")
+        supplied = approved_permissions if approved_permissions is not None else approved_permission
+        self._approved_permissions = None if supplied is None else _exact_permissions(supplied)
         self._registry_path = registry_path
         self._bindings_dir = bindings_dir
         self._agents_dir = agents_dir
@@ -543,10 +556,15 @@ class ClaudeProvider:
     def capabilities(self):
         return capabilities()
 
+    @property
+    def approved_permissions(self):
+        """Exact continuation permissions, exposed only for core parity checking."""
+        return self._approved_permissions or ()
+
     def execute(self, request):
         """Invoke once and normalize without retry, fallback, or workflow mutation."""
         try:
-            if self._approved_permission is None:
+            if self._approved_permissions is None:
                 wake = prepare_claude_wake(
                     request, session_ref=self._session_ref,
                     registry_path=self._registry_path, bindings_dir=self._bindings_dir,
@@ -554,7 +572,7 @@ class ClaudeProvider:
                 )
             else:
                 wake = prepare_claude_continuation_wake(
-                    request, self._session_ref, self._approved_permission,
+                    request, self._session_ref, self._approved_permissions,
                     registry_path=self._registry_path, bindings_dir=self._bindings_dir,
                     agents_dir=self._agents_dir,
                 )

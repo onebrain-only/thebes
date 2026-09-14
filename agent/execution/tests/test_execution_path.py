@@ -224,6 +224,11 @@ class ExecutionPathIntegrationTests(unittest.TestCase):
             def read_execution_approval(self, approval_id):
                 return approval if approval_id == approval["execution_approval_id"] else None
 
+            def compose_execution_approvals(self, original_invocation_id, approval_ids=None):
+                if original_invocation_id != "original-1" or tuple(approval_ids) != ("approval-1",):
+                    raise AssertionError("continuation composition identity changed")
+                return (approval,)
+
             def read_execution_receipt(self, invocation_id):
                 if invocation_id == "original-1":
                     return original
@@ -235,11 +240,11 @@ class ExecutionPathIntegrationTests(unittest.TestCase):
             def record_execution_receipt(self, invocation_id, work_item_id, seat_id,
                                          execution_lease_id, normalized_result,
                                          provider_selection=None, continuation_of=None,
-                                         approval_id=None):
+                                         approval_id=None, approval_ids=None):
                 self.events.append("receipt")
                 self.receipts[invocation_id] = {
                     "normalized_result": normalized_result, "continuation_of": continuation_of,
-                    "approval_id": approval_id,
+                    "approval_id": approval_id, "approval_ids": approval_ids,
                 }
 
         events, state = [], ContinuationStore([])
@@ -255,6 +260,7 @@ class ExecutionPathIntegrationTests(unittest.TestCase):
         persisted = state.receipts["continuation-approval-1"]
         self.assertEqual("original-1", persisted["continuation_of"])
         self.assertEqual("approval-1", persisted["approval_id"])
+        self.assertEqual(("approval-1",), persisted["approval_ids"])
         self.assertEqual("original-1", original.get("invocation_id", "original-1"))
         with self.assertRaisesRegex(WakeOrderError, "already executed"):
             execute_approved_claude_continuation(
@@ -265,6 +271,64 @@ class ExecutionPathIntegrationTests(unittest.TestCase):
             execute_approved_claude_continuation(
                 "approval-1", lambda task, lease, approval, original: request(), codex,
                 state_store=ContinuationStore([]))
+
+    def test_composed_continuation_wakes_once_with_all_and_only_exact_grants(self):
+        approvals = (
+            {"execution_approval_id": "approval-bash", "original_invocation_id": "original-2",
+             "work_item_id": "KAN-900", "seat_id": "backend-1", "provider_id": "claude-code",
+             "claude_session_id": "session-2", "permission": "Bash",
+             "allowed_operation": "python3 -c 'resume()'"},
+            {"execution_approval_id": "approval-write", "original_invocation_id": "original-2",
+             "work_item_id": "KAN-900", "seat_id": "backend-1", "provider_id": "claude-code",
+             "claude_session_id": "session-2", "permission": "mcp__example__write",
+             "allowed_operation": None},
+        )
+        original = {"status": "needs_input", "provider_id": "claude-code"}
+        preparation = {"execution_continuation_id": "continuation-2", "work_item_id": "KAN-900",
+                       "seat_id": "backend-1", "required_capability": "backend",
+                       "validation_route": "peer", "repository_root": "/repo",
+                       "working_directory": "/repo", "worktree_path": "/repo",
+                       "expected_revision": "abc", "historical_request_persisted": False}
+
+        class CompositionStore(FakeStore):
+            def __init__(self):
+                super().__init__([])
+                self.receipts = {}
+
+            def read_execution_approval(self, approval_id):
+                return next((row for row in approvals if row["execution_approval_id"] == approval_id), None)
+
+            def compose_execution_approvals(self, original_invocation_id, approval_ids):
+                if original_invocation_id != "original-2" or set(approval_ids) != {
+                        "approval-bash", "approval-write"}:
+                    raise AssertionError("approval subset or foreign grant accepted")
+                return approvals
+
+            def read_execution_receipt(self, invocation_id):
+                return original if invocation_id == "original-2" else self.receipts.get(invocation_id)
+
+            def read_execution_continuation_preparation(self, invocation_id):
+                return preparation if invocation_id == "original-2" else None
+
+            def record_execution_receipt(self, invocation_id, *args, **kwargs):
+                self.receipts[invocation_id] = {"approval_ids": kwargs["approval_ids"]}
+
+        state = CompositionStore()
+        transport = RecordingTransport({"status": "completed", "summary": "continued"})
+        provider = ClaudeProvider(transport, session_ref="session-2", approved_permissions=(
+            "Bash(python3 -c 'resume()')", "mcp__example__write"))
+        execute_approved_claude_continuation(
+            ("approval-bash", "approval-write"),
+            lambda task, lease, approval, original: build_prepared_continuation_request(
+                preparation, task, lease), provider, state_store=state)
+        self.assertEqual(("Bash(python3 -c 'resume()')", "mcp__example__write"),
+                         transport.wakes[0].approved_permissions)
+        self.assertEqual(("approval-bash", "approval-write"),
+                         next(iter(state.receipts.values()))["approval_ids"])
+        with self.assertRaisesRegex(WakeOrderError, "already executed"):
+            execute_approved_claude_continuation(
+                ("approval-bash", "approval-write"),
+                lambda task, lease, approval, original: request(), provider, state_store=state)
 
 
 if __name__ == "__main__":

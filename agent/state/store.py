@@ -2100,7 +2100,7 @@ def _receipt_id(invocation_id):
 def record_execution_receipt(invocation_id, work_item_id, seat_id,
                              execution_lease_id, normalized_result,
                              provider_selection=None, continuation_of=None,
-                             approval_id=None):
+                             approval_id=None, approval_ids=None):
     """Persist one normalized terminal result before its lease is closed.
 
     The operation is idempotent only for byte-identical evidence from the same
@@ -2117,6 +2117,12 @@ def record_execution_receipt(invocation_id, work_item_id, seat_id,
     if provider_selection is not None and not isinstance(provider_selection, dict):
         raise StateError("provider_selection must be a JSON object")
     rid = _receipt_id(invocation_id)
+    if approval_ids is not None:
+        if (not isinstance(approval_ids, (tuple, list)) or not approval_ids
+                or any(not isinstance(item, str) or not item.startswith("approval-")
+                       for item in approval_ids)):
+            raise StateError("continuation receipt approval_ids must be non-empty approval ids")
+        approval_ids = list(approval_ids)
     rec = {"execution_receipt_id": rid, "invocation_id": invocation_id,
            "work_item_id": work_item_id, "seat_id": seat_id,
            "execution_lease_id": execution_lease_id,
@@ -2125,7 +2131,7 @@ def record_execution_receipt(invocation_id, work_item_id, seat_id,
            "normalized_result": normalized_result,
            "provider_selection": provider_selection,
            "continuation_of_invocation_id": continuation_of,
-           "approval_id": approval_id}
+           "approval_id": approval_id, "approval_ids": approval_ids}
     with _Lock("execution-domain"):
         lease = read("execution_lease", execution_lease_id)
         if lease is None:
@@ -2156,14 +2162,17 @@ def read_execution_receipt(invocation_id):
     return read("execution_receipt", _receipt_id(invocation_id))
 
 
-def _approval_id(invocation_id, permission):
-    digest = hashlib.sha256((invocation_id + "\0" + permission).encode("utf-8")).hexdigest()
+def _approval_id(invocation_id, permission, allowed_operation=None):
+    identity = invocation_id + "\0" + permission
+    if allowed_operation is not None:
+        identity += "\0" + allowed_operation
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()
     return "approval-" + digest
 
 
 def record_execution_approval(original_invocation_id, work_item_id, seat_id,
                               claude_session_id, permission, approving_authority,
-                              approval_scope):
+                              approval_scope, allowed_operation=None):
     """Persist one CEO approval for the exact denied Claude tool, immutably."""
     required = (original_invocation_id, work_item_id, seat_id, claude_session_id,
                 permission, approving_authority, approval_scope)
@@ -2171,25 +2180,39 @@ def record_execution_approval(original_invocation_id, work_item_id, seat_id,
         raise StateError("execution approval fields must be non-empty strings")
     if approving_authority != "ceo":
         raise StateError("execution approval requires ceo authority")
-    if "*" in permission:
+    if "*" in permission or (allowed_operation is not None and
+                              (not isinstance(allowed_operation, str)
+                               or not allowed_operation.strip()
+                               or "*" in allowed_operation)):
         raise StateError("execution approval cannot be wildcarded")
     original = read_execution_receipt(original_invocation_id)
     if original is None or original.get("status") != "needs_input":
         raise StateError("execution approval needs an original needs_input receipt")
-    result = original.get("normalized_result") or {}
     if (original.get("work_item_id"), original.get("seat_id")) != (work_item_id, seat_id):
         raise StateError("execution approval does not match original execution identity")
     if original.get("provider_id") != "claude-code":
         raise StateError("execution approval is only valid for Claude Code")
-    if result.get("continuation_ref") != claude_session_id:
-        raise StateError("execution approval Claude session does not match original receipt")
-    escalation = result.get("escalation") or {}
-    if permission not in str(escalation.get("reason") or ""):
+    boundaries = [original] + [
+        receipt for receipt in read_all("execution_receipt")
+        if receipt.get("continuation_of_invocation_id") == original_invocation_id
+    ]
+    matches_boundary = False
+    for boundary in boundaries:
+        result = boundary.get("normalized_result") or {}
+        escalation = result.get("escalation") or {}
+        if (boundary.get("work_item_id"), boundary.get("seat_id"),
+                boundary.get("provider_id"), result.get("continuation_ref")) == (
+                    work_item_id, seat_id, "claude-code", claude_session_id) and \
+                permission in str(escalation.get("reason") or ""):
+            matches_boundary = True
+            break
+    if not matches_boundary:
         raise StateError("execution approval permission does not match original boundary")
-    rid = _approval_id(original_invocation_id, permission)
+    rid = _approval_id(original_invocation_id, permission, allowed_operation)
     rec = {"execution_approval_id": rid, "original_invocation_id": original_invocation_id,
            "work_item_id": work_item_id, "seat_id": seat_id, "provider_id": "claude-code",
            "claude_session_id": claude_session_id, "permission": permission,
+           "allowed_operation": allowed_operation,
            "approving_authority": approving_authority, "approval_scope": approval_scope}
     with _Lock("execution-domain"):
         with record_lock("execution_approval", rid):
@@ -2208,6 +2231,42 @@ def read_execution_approval(approval_id):
     if not approval_id:
         raise StateError("execution approval id is required")
     return read("execution_approval", approval_id)
+
+
+def compose_execution_approvals(original_invocation_id, approval_ids=None):
+    """Return every independently approved exact grant for one Claude resume.
+
+    A continuation never selects a convenient subset: when a second native boundary
+    has been approved, the next wake receives the complete immutable set.  This is
+    intentionally read-only; composing approvals cannot wake a provider or change a
+    claim, lifecycle, workspace, or Product state.
+    """
+    original = read_execution_receipt(original_invocation_id)
+    if original is None or original.get("status") != "needs_input":
+        raise StateError("approval composition needs an original needs_input receipt")
+    approvals = sorted(
+        (rec for rec in read_all("execution_approval")
+         if rec.get("original_invocation_id") == original_invocation_id),
+        key=lambda rec: (rec["permission"], rec.get("allowed_operation") or "",
+                         rec["execution_approval_id"]),
+    )
+    if not approvals:
+        raise StateError("approval composition needs at least one exact grant")
+    all_ids = tuple(rec["execution_approval_id"] for rec in approvals)
+    requested = all_ids if approval_ids is None else tuple(approval_ids)
+    if (not requested or len(set(requested)) != len(requested)
+            or set(requested) != set(all_ids)):
+        raise StateError("approval composition must use every exact grant once")
+    expected = (original.get("work_item_id"), original.get("seat_id"), "claude-code")
+    session = None
+    for rec in approvals:
+        if (rec.get("work_item_id"), rec.get("seat_id"), rec.get("provider_id")) != expected:
+            raise StateError("approval composition has a mismatched work item, seat, or provider")
+        if session is None:
+            session = rec.get("claude_session_id")
+        elif rec.get("claude_session_id") != session:
+            raise StateError("approval composition has a mismatched Claude session")
+    return tuple(approvals)
 
 
 def _continuation_id(invocation_id):

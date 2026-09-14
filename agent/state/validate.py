@@ -1169,6 +1169,12 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
                 errs.append("%s: continuation original invocation is required" % where)
             if not isinstance(approval_id, str) or not approval_id.startswith("approval-"):
                 errs.append("%s: continuation receipt needs an approval id" % where)
+            approval_ids = rec.get("approval_ids")
+            if approval_ids is not None and (not isinstance(approval_ids, list) or not approval_ids
+                                             or any(not isinstance(item, str)
+                                                    or not item.startswith("approval-")
+                                                    for item in approval_ids)):
+                errs.append("%s: continuation receipt approval_ids must be exact approval ids" % where)
 
     elif kind == "execution_approval":
         _req(rec, ["execution_approval_id", "original_invocation_id", "work_item_id", "seat_id",
@@ -1186,6 +1192,9 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
             errs.append("%s: execution approval requires ceo authority" % where)
         if "*" in str(rec.get("permission") or ""):
             errs.append("%s: execution approval cannot be wildcarded" % where)
+        operation = rec.get("allowed_operation")
+        if operation is not None and (not isinstance(operation, str) or not operation or "*" in operation):
+            errs.append("%s: execution approval operation must be exact when present" % where)
 
     elif kind == "execution_continuation_preparation":
         _req(rec, ["execution_continuation_id", "original_invocation_id", "original_receipt_id",
