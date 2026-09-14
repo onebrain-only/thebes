@@ -33,6 +33,11 @@ from agent.controller.intent import (
     assert_manual_brief_cannot_override_canonical,
     resolve_execution_intent,
 )
+from agent.controller.workspace import (
+    WorkspaceUnavailable,
+    conclude_workspace,
+    realize_workspace,
+)
 
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -115,7 +120,9 @@ def available_provider_registry():
 
 def execute(work_item_id, brief=None, *, authorization=None, state_store=store,
             jira_client=jira, seat_registry=roster, providers=None,
-            intent_resolver=resolve_execution_intent):
+            intent_resolver=resolve_execution_intent,
+            workspace_allocator=realize_workspace,
+            workspace_concluder=conclude_workspace):
     """Submit exactly one already-selected work item through the existing wake.
 
     ``brief`` is optional and exceptional. With it omitted, Thebes derives the
@@ -181,6 +188,18 @@ def execute(work_item_id, brief=None, *, authorization=None, state_store=store,
                 capability_of_seat=capability, jira_status_id=issue["status_id"],
             )
             result["claim_status"] = "claimed"
+
+        # The workspace becomes real here: after ownership exists, before any
+        # lease, request or provider. A provider is never pointed at a directory
+        # that has not been allocated and proven to be this seat's own.
+        realized = workspace_allocator(work_item_id, seat_id, brief["workspace"])
+        brief = dict(brief, workspace=realized["workspace"])
+        result.update({"workspace_status": "allocated",
+                       "workspace_path": realized["path"],
+                       "workspace_branch": realized["branch"],
+                       "workspace_reused": realized["reused"],
+                       "expected_revision": realized["expected_revision"]})
+
         registry = tuple(providers) if providers is not None else available_provider_registry()
         captured = {}
 
@@ -189,6 +208,7 @@ def execute(work_item_id, brief=None, *, authorization=None, state_store=store,
             captured["invocation_id"] = request.invocation_id
             captured["lease_id"] = lease["execution_lease_id"]
             captured["lease_revision"] = lease["revision"]
+            captured["task"] = authoritative_task
             return request
 
         execution = execute_product_wake(
@@ -199,6 +219,17 @@ def execute(work_item_id, brief=None, *, authorization=None, state_store=store,
         result["invocation_id"] = captured.get("invocation_id")
         result["result_receipt_status"] = "received"
         result["lease_closure_status"] = _lease_status(state_store, captured)
+        # Lifecycle decides the workspace's fate, not the end of this function.
+        result.update(workspace_concluder(
+            work_item_id, seat_id, execution,
+            captured.get("task") or observed, realized))
+        return result
+    except WorkspaceUnavailable as exc:
+        # Isolation failed. That is a bounded orchestration failure; it is never
+        # a reason to execute against the canonical Product checkout.
+        result.update({"blocker": str(exc), "workspace_status": exc.reason,
+                       "workspace_blocker": exc.as_blocker(work_item_id,
+                                                           result.get("seat_id"))})
         return result
     except ExecutionIntentUnresolved as exc:
         result.update({"blocker": str(exc), "needs_input": exc.detail,
@@ -340,6 +371,14 @@ def _result_shell(work_item_id):
         "authorization_status": "not-checked",
         "brief_source": "not-resolved",
         "derived_from": None,
+        "workspace_status": "not-allocated",
+        "workspace_path": None,
+        "workspace_branch": None,
+        "workspace_reused": False,
+        "workspace_reason": None,
+        "workspace_branch_kept": None,
+        "workspace_blocker": None,
+        "expected_revision": None,
         "ceo_input_required": False,
         "governance_input": None,
         "operating_mode": None,

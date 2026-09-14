@@ -25,6 +25,7 @@ from agent.controller.intent import (  # noqa: E402
     resolve_execution_intent,
     split_description,
 )
+from agent.controller.tests.test_entry import Workspace  # noqa: E402
 from agent.execution.brief import CONTROL_PLANE_TOKENS  # noqa: E402
 from agent.execution.claude import ClaudeProvider  # noqa: E402
 from agent.state import policy  # noqa: E402
@@ -373,13 +374,19 @@ class ControllerCommandTests(unittest.TestCase):
     """The CEO supplies only the work-item key."""
 
     def _run(self, record=None, issue_record=None, brief=None, transport=None):
-        state, jira_double = State(record), Jira(issue_record)
+        # A workspace double: this suite proves derivation, and real worktree
+        # allocation is proved against a synthetic repository in
+        # `test_workspace_allocation.py`. Nothing here may touch the real
+        # Product checkout.
+        state, jira_double, workspace = State(record), Jira(issue_record), Workspace()
         wakes = []
         provider = ClaudeProvider(transport or (lambda wake: wakes.append(wake)
                                                 or "fixture complete"))
         outcome = execute("KAN-900", brief, authorization=Authorization(),
                           state_store=state, jira_client=jira_double,
-                          seat_registry=Registry(), providers=(provider,))
+                          seat_registry=Registry(), providers=(provider,),
+                          workspace_allocator=workspace.allocate,
+                          workspace_concluder=workspace.conclude)
         return outcome, state, jira_double, wakes
 
     def test_execute_needs_no_brief_file_and_completes_the_whole_flow(self):

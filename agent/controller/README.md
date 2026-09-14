@@ -37,6 +37,45 @@ bounded governance input — `objective-not-derivable`,
 `CEO_INPUT_REQUIRED` or `DERIVABLE`, never a guess. Safety characteristics are
 read from typed state only; alarming Jira prose changes nothing.
 
+## The workspace becomes real before dispatch
+
+`agent/controller/workspace.py` turns the derived workspace into an allocated,
+verified worktree. It adds no second workspace manager: allocation, the
+protected-branch refusal, the occupied-path refusal and the dirty-tree refusal
+all remain `agent/state/worktrees.py`.
+
+Order: authorization → task → seat → Jira observe → intent derivation → **claim →
+allocate → verify identity → bind revision** → lease → ExecutionRequest →
+executor-brief firewall → provider selection → provider. A provider is never
+pointed at a directory that has not been allocated and proven to be this seat's
+own, so an allocation refusal means zero provider invocations.
+
+After allocation the identity is checked rather than assumed — path ownership
+(`owner_of`), branch name, worktree registration, and that this is not the
+canonical checkout — and `expected_revision` is bound to what `git rev-parse
+HEAD` actually reports in the new tree. A failed isolation is a bounded
+orchestration blocker (`workspace-allocation-refused`,
+`workspace-branch-mismatch`, `workspace-identity-mismatch`,
+`workspace-repository-unavailable`, …). It is never a reason to execute against
+the canonical Product checkout.
+
+Release follows the Product lifecycle, not this function's scope. Preservation is
+the default:
+
+| Outcome | Workspace |
+|---|---|
+| `needs_input` | preserved — the continuation uses this tree |
+| `execution_failed` | preserved — the evidence is in it |
+| pending SELF/PEER/QA validation | preserved — the reviewer is not finished with it |
+| `provider_failed`, freshly allocated, clean | released — nothing of the Product changed |
+| `provider_failed`, reused or dirty | preserved |
+| canonical lifecycle `done`, clean | released |
+| anything holding uncommitted Product work | preserved, always |
+
+A release keeps the branch. `worktrees.release` refuses a dirty tree, and that
+refusal is reported as a preserved workspace rather than turned into an error or
+a deletion.
+
 ## Exceptional brief shape
 
 `--brief-file` survives for debugging and for work whose canonical facts are

@@ -92,6 +92,19 @@ fact canonical state does not hold stops as a named governance input classified
 an exceptional debug path: it fills gaps, never overrules a canonical safety fact, and never
 bypasses the firewall. Evidence: `agent/controller/tests/test_canonical_intent.py`.
 
+**CURRENT FACT — Thebes allocates the Product workspace; the executor never does.** The
+execution path allocates the isolated worktree after the claim and before the lease, request and
+provider, through the canonical `agent/state/worktrees.py` and no second manager. The identity
+of what comes back is verified rather than assumed (path ownership, branch name, registration,
+not the canonical checkout), and `expected_revision` is bound to `git rev-parse HEAD` in the new
+tree rather than invented. A failed isolation is a bounded orchestration blocker and never a
+reason to execute against the canonical Product checkout; an allocation refusal means zero
+provider invocations. Workspace lifetime follows the Product lifecycle, not function scope:
+`needs_input` and pending validation preserve the tree for the continuation or the reviewer, a
+provider failure before any Product mutation releases a freshly allocated clean tree, a
+canonically `done` item releases a clean tree keeping its branch, and a tree holding uncommitted
+Product work is never deleted. Evidence: `agent/controller/tests/test_workspace_allocation.py`.
+
 **DECISION/INVARIANT — the executor brief is Product-only.** There is exactly one executor
 brief builder, `agent/execution/brief.py`, and both providers render the same text from the
 immutable request. It reads a closed allowlist of Product fields, so control-plane request

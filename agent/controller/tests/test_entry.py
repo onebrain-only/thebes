@@ -136,11 +136,49 @@ def brief(**changes):
     return value
 
 
+class Workspace:
+    """Stands in for real worktree allocation.
+
+    These tests exercise seat, claim, provider and receipt semantics; the real
+    allocation is proved end to end against a synthetic git repository in
+    `test_workspace_allocation.py`.
+    """
+
+    def __init__(self, decision=None):
+        self.allocations = []
+        self.conclusions = []
+        self.decision = decision or {"workspace_status": "preserved",
+                                     "workspace_reason": "fixture",
+                                     "workspace_branch_kept": True}
+
+    def allocate(self, work_item_id, seat_id, workspace):
+        self.allocations.append((work_item_id, seat_id))
+        path = "/fixture/worktrees/%s/%s" % (seat_id, work_item_id)
+        return {"workspace": dict(workspace, working_directory=path,
+                                  worktree_path=path, expected_revision="fixturesha"),
+                "branch": "exec/%s/%s" % (seat_id, work_item_id), "base": "Canary",
+                "base_commit": "fixturesha", "reused": False,
+                "expected_revision": "fixturesha", "path": path,
+                "repository_root": workspace["repository_root"]}
+
+    def conclude(self, work_item_id, seat_id, result, task, realized):
+        self.conclusions.append((work_item_id, seat_id))
+        return dict(self.decision, workspace_path=realized["path"])
+
+
+def run(work_item_id="KAN-900", brief_value=None, **kwargs):
+    """Call the controller with a workspace double unless one is supplied."""
+    kwargs.setdefault("workspace_allocator", Workspace().allocate)
+    if "workspace_concluder" not in kwargs:
+        kwargs["workspace_concluder"] = Workspace().conclude
+    return execute(work_item_id, brief_value, **kwargs)
+
+
 class ControllerEntryTests(unittest.TestCase):
     def test_unauthorized_fails_before_state_jira_or_provider(self):
         state, jira, calls = State(), Jira(), []
         provider = CodexProvider(lambda invocation: calls.append(invocation))
-        outcome = execute("KAN-900", brief(), authorization=Authorization(False),
+        outcome = run("KAN-900", brief(), authorization=Authorization(False),
                           state_store=state, jira_client=jira, seat_registry=Registry(),
                           providers=(provider,))
         self.assertEqual("product-execution-not-authorized", outcome["authorization_status"])
@@ -152,7 +190,7 @@ class ControllerEntryTests(unittest.TestCase):
     def test_authorized_uses_claim_wake_receipt_and_closes_exact_lease(self):
         state, jira, calls = State(), Jira(), []
         provider = CodexProvider(lambda invocation: calls.append(invocation) or "completed fixture")
-        outcome = execute("KAN-900", brief(), authorization=Authorization(), state_store=state,
+        outcome = run("KAN-900", brief(), authorization=Authorization(), state_store=state,
                           jira_client=jira, seat_registry=Registry(), providers=(provider,))
         self.assertEqual(["mode", "observe", "claim", "continuation", "lease-open", "receipt", "lease-close"],
                          state.events)
@@ -176,7 +214,7 @@ class ControllerEntryTests(unittest.TestCase):
         state, calls = State(), []
         state.task["ownership"] = {"seat_id": "backend-2", "claim_ref": "CEO prior grant"}
         provider = CodexProvider(lambda invocation: calls.append(invocation) or "continued fixture")
-        outcome = execute("KAN-900", brief(), authorization=Authorization(), state_store=state,
+        outcome = run("KAN-900", brief(), authorization=Authorization(), state_store=state,
                           jira_client=Jira(), seat_registry=Registry(), providers=(provider,))
         self.assertNotIn("claim", state.events)
         self.assertEqual(["mode", "observe", "continuation", "lease-open", "receipt", "lease-close"],
@@ -188,7 +226,7 @@ class ControllerEntryTests(unittest.TestCase):
     def test_available_claude_transport_is_reported_without_selecting_it_by_test_override(self):
         state = State()
         provider = CodexProvider(lambda invocation: "completed fixture")
-        outcome = execute("KAN-900", brief(), authorization=Authorization(), state_store=state,
+        outcome = run("KAN-900", brief(), authorization=Authorization(), state_store=state,
                           jira_client=Jira(), seat_registry=Registry(), providers=(provider,))
         self.assertEqual("available-via-local-claude-cli",
                          outcome["claude_transport_from_codex"])
@@ -203,7 +241,7 @@ class ControllerEntryTests(unittest.TestCase):
         })
         fallback = CodexProvider(lambda invocation: fallback_calls.append(invocation) or "must not run",
                                  model_map={})
-        outcome = execute("KAN-900", brief(), authorization=Authorization(), state_store=state,
+        outcome = run("KAN-900", brief(), authorization=Authorization(), state_store=state,
                           jira_client=Jira(), seat_registry=Registry(), providers=(primary,))
         self.assertEqual(1, len(primary_calls))
         self.assertEqual([], fallback_calls)
@@ -219,7 +257,7 @@ class ControllerEntryTests(unittest.TestCase):
             calls.append(invocation)
             raise CodexUnavailable("Codex executor unavailable")
 
-        outcome = execute("KAN-900", brief(), authorization=Authorization(), state_store=state,
+        outcome = run("KAN-900", brief(), authorization=Authorization(), state_store=state,
                           jira_client=Jira(), seat_registry=Registry(),
                           providers=(CodexProvider(unavailable),))
         self.assertEqual(1, len(calls))
@@ -262,7 +300,7 @@ class ControllerEntryTests(unittest.TestCase):
         busy["work_item_id"], busy["ownership"] = "KAN-901", {"seat_id": "backend-1"}
         self.assertEqual("backend-2", select_claim_seat(task, Registry().read(), (task, busy)))
         state = State()
-        outcome = execute("KAN-900", brief(), authorization=Authorization(), state_store=state,
+        outcome = run("KAN-900", brief(), authorization=Authorization(), state_store=state,
                           jira_client=Jira(), seat_registry=Registry(), providers=())
         self.assertEqual("backend-1", outcome["seat_id"])
         self.assertEqual(["mode", "observe", "claim", "continuation", "lease-open",
@@ -275,7 +313,7 @@ class ExecutorBriefBoundaryTests(unittest.TestCase):
     def test_controller_dispatch_hands_the_provider_a_product_only_brief(self):
         state, jira, wakes = State(), Jira(), []
         provider = ClaudeProvider(lambda wake: wakes.append(wake) or "fixture complete")
-        outcome = execute("KAN-900", brief(), authorization=Authorization(), state_store=state,
+        outcome = run("KAN-900", brief(), authorization=Authorization(), state_store=state,
                           jira_client=jira, seat_registry=Registry(), providers=(provider,))
         self.assertEqual("completed", outcome["execution_status"])
         self.assertEqual("received", outcome["result_receipt_status"])
@@ -308,7 +346,7 @@ class ExecutorBriefBoundaryTests(unittest.TestCase):
             with self.subTest(objective=objective):
                 state, wakes = State(), []
                 provider = ClaudeProvider(lambda wake: wakes.append(wake) or "must not run")
-                outcome = execute("KAN-900", brief(objective=objective),
+                outcome = run("KAN-900", brief(objective=objective),
                                   authorization=Authorization(), state_store=state,
                                   jira_client=Jira(), seat_registry=Registry(),
                                   providers=(provider,))
