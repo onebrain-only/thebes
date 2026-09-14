@@ -3,15 +3,49 @@
 Phase 2 exposes one bounded controller command:
 
 ```sh
-python -m agent.controller execute KAN-XXX --brief-file /path/to/brief.json
+python -m agent.controller execute KAN-XXX
 ```
 
-The Codex controller prepares the JSON brief after it has read the selected
-ticket and canonical context. The command accepts only one work item. It does
-not select backlog work, change authorization or mode, choose a provider, or
-accept claim/lease/lifecycle overrides.
+The command accepts only one work item. It does not select backlog work, change
+authorization or mode, choose a provider, or accept claim/lease/lifecycle
+overrides.
 
-## Brief shape
+## The routine path derives its own brief
+
+No human authors an execution brief for existing Jira work.
+`agent/controller/intent.py` resolves one work item into the ExecutionRequest
+inputs from the sources that already own them:
+
+| Input | Canonical source |
+|---|---|
+| `objective` | Jira summary + description + acceptance criteria, bounded |
+| `required_capability` | `execution_profile.required_capability` |
+| `allowed_surfaces` | `task.surfaces` (null = unassessed = refused) |
+| `return_contract.return_to` | `policy.validation_route_for_profile` — never recomputed here |
+| `validation_targets` | `operational_context.validation_plan`, else the canonical route |
+| `reported_environment` / `primary_target` | `operational_context` — the recorded authority |
+| `execution_kind` / `mutation_mode` | `operational_context.intent` |
+| `workspace` | project registry `repository` + `worktrees.worktree_path` |
+| model intent, effort, timeout, evidence/sections | Thebes-owned controller defaults |
+
+Derivation runs **before the claim**: work Thebes cannot brief is work it must
+not take ownership of. A fact canonical state does not hold produces a named,
+bounded governance input — `objective-not-derivable`,
+`environment-authority-missing`, `environment-authority-unresolved`,
+`validation-route-unresolved`, `surfaces-unassessed`,
+`required-capability-unresolved`, `workspace-unresolved` — each classified
+`CEO_INPUT_REQUIRED` or `DERIVABLE`, never a guess. Safety characteristics are
+read from typed state only; alarming Jira prose changes nothing.
+
+## Exceptional brief shape
+
+`--brief-file` survives for debugging and for work whose canonical facts are
+genuinely absent. It is not the normal path, it still travels the same request
+and the same executor-brief firewall, and it may not contradict a canonical
+safety fact that state actually produced — `return_contract.return_to`,
+`validation_targets`, `reported_environment`, `primary_target` and
+`workspace.repository_root` are compared, and a contradiction is refused before
+the claim.
 
 ```json
 {
@@ -62,7 +96,7 @@ free, exact-capability seat is eligible. Historical `executor_evidence` never
 pins a future claim. The controller brief becomes the immutable request objective
 without a second prompt format.
 
-`objective` is Product work only. Thebes renders the executor's prompt from the
+`objective` is Product work only, derived or supplied. Thebes renders the executor's prompt from the
 immutable request through the one canonical builder in `agent/execution/brief.py`,
 so a controller never writes the prompt itself and never adds a second prompt
 format. Control-plane internals — invocation id, seat, claim, execution lease,

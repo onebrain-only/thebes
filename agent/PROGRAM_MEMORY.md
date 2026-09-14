@@ -77,6 +77,21 @@ reasoning effort are transport-enforced, while Role, context, surfaces, environm
 and return constraints are an explicit deterministic executor brief. Controller-authorized
 overrides still pass through selection, with no retry, fallback or workflow authority.
 
+**CURRENT FACT — the routine execution brief is derived, not authored.** `python -m
+agent.controller execute KAN-XXX` takes only the work-item key.
+`agent/controller/intent.py` resolves it from the sources that already own each fact: Jira for
+the Product definition (summary, description, acceptance criteria, bounded — never dumped),
+Persistent State for capability, surfaces, characteristics, the canonical validation route and
+the `operational_context` environment authority, and the Product/Project registry for the
+repository. It creates no second task store and no second prompt builder; its output feeds the
+existing `ExecutionRequest` and the one canonical executor brief. It asserts no characteristic
+and derives no route — a Jira description that *says* "security" changes nothing, because only
+typed canonical state feeds `policy.validation_route`. Derivation runs before the claim, so a
+fact canonical state does not hold stops as a named governance input classified
+`CEO_INPUT_REQUIRED` or `DERIVABLE` rather than as an invented default. `--brief-file` remains
+an exceptional debug path: it fills gaps, never overrules a canonical safety fact, and never
+bypasses the firewall. Evidence: `agent/controller/tests/test_canonical_intent.py`.
+
 **DECISION/INVARIANT — the executor brief is Product-only.** There is exactly one executor
 brief builder, `agent/execution/brief.py`, and both providers render the same text from the
 immutable request. It reads a closed allowlist of Product fields, so control-plane request

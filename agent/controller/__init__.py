@@ -1,9 +1,16 @@
 """Temporary Phase-2 controller entry point.
 
-This module is intentionally composition glue, not a Listener.  A controller
-supplies one bounded execution brief; Thebes supplies the authorization gate,
-runtime checks, claim, immutable request, provider selection, receipt, and
-lease lifecycle through the existing modules.
+This module is intentionally composition glue, not a Listener.  The routine path
+takes only a work-item key: ``agent.controller.intent`` derives the bounded
+execution brief from canonical sources (Jira for the Product definition,
+Persistent State for capability, surfaces, route and environment authority, the
+registry for the repository), and Thebes supplies the authorization gate, runtime
+checks, claim, immutable request, provider selection, receipt and lease lifecycle
+through the existing modules.
+
+A hand-authored brief remains available for exceptional and debug use only. It
+fills gaps; it never overrules a canonical safety fact, and it never bypasses the
+executor-brief firewall, because it still travels the same request path.
 """
 
 import json
@@ -21,6 +28,11 @@ from agent.execution.wake import execute_product_wake
 from agent.integrations import jira
 from agent.state import roster, store
 from agent.controller.allocation import SeatAllocationError, select_claim_seat
+from agent.controller.intent import (
+    ExecutionIntentUnresolved,
+    assert_manual_brief_cannot_override_canonical,
+    resolve_execution_intent,
+)
 
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -101,12 +113,15 @@ def available_provider_registry():
     return (ClaudeProvider(ClaudeCliTransport()), CodexProvider(CodexCliTransport()))
 
 
-def execute(work_item_id, brief, *, authorization=None, state_store=store,
-            jira_client=jira, seat_registry=roster, providers=None):
+def execute(work_item_id, brief=None, *, authorization=None, state_store=store,
+            jira_client=jira, seat_registry=roster, providers=None,
+            intent_resolver=resolve_execution_intent):
     """Submit exactly one already-selected work item through the existing wake.
 
-    This interface never accepts mode, authorization, capability, lifecycle,
-    claim, lease, allowed-surface, or provider-selection overrides.
+    ``brief`` is optional and exceptional. With it omitted, Thebes derives the
+    execution brief from canonical state. This interface never accepts mode,
+    authorization, capability, lifecycle, claim, lease, allowed-surface, or
+    provider-selection overrides.
     """
     result = _result_shell(work_item_id)
     result["operating_mode"] = state_store.current_operating_mode()
@@ -135,6 +150,26 @@ def execute(work_item_id, brief, *, authorization=None, state_store=store,
             work_item_id, task["revision"], issue["status_id"]
         )
         result["readiness_status"] = "jira-observed"
+
+        # Derivation happens before the claim: work Thebes cannot brief is work
+        # it must not take ownership of.
+        try:
+            derived = intent_resolver(work_item_id, observed, issue, seat_id, state_store)
+        except ExecutionIntentUnresolved as exc:
+            if brief is None:
+                result.update({"blocker": str(exc), "brief_source": "unresolved",
+                               "needs_input": exc.detail,
+                               "ceo_input_required": exc.classification == "CEO_INPUT_REQUIRED",
+                               "governance_input": exc.as_governance_input(work_item_id)})
+                return result
+            derived = None
+        if brief is None:
+            brief = derived
+            result["brief_source"] = "canonical-state"
+        else:
+            assert_manual_brief_cannot_override_canonical(brief, derived)
+            result["brief_source"] = "supplied-brief"
+        result["derived_from"] = (derived or {}).get("derived_from")
         if already_owned:
             # A continuation preserves the canonical owner.  Re-claiming would
             # either fail as already-owned or silently turn a resume into a new
@@ -164,6 +199,11 @@ def execute(work_item_id, brief, *, authorization=None, state_store=store,
         result["invocation_id"] = captured.get("invocation_id")
         result["result_receipt_status"] = "received"
         result["lease_closure_status"] = _lease_status(state_store, captured)
+        return result
+    except ExecutionIntentUnresolved as exc:
+        result.update({"blocker": str(exc), "needs_input": exc.detail,
+                       "ceo_input_required": exc.classification == "CEO_INPUT_REQUIRED",
+                       "governance_input": exc.as_governance_input(work_item_id)})
         return result
     except (ControllerInputError, store.StateError, jira.JiraError, ValueError) as exc:
         result["blocker"] = str(exc)
@@ -298,6 +338,10 @@ def _result_shell(work_item_id):
     return {
         "work_item_id": work_item_id,
         "authorization_status": "not-checked",
+        "brief_source": "not-resolved",
+        "derived_from": None,
+        "ceo_input_required": False,
+        "governance_input": None,
         "operating_mode": None,
         "capability": None,
         "seat_id": None,
