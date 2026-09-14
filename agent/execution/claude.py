@@ -112,6 +112,7 @@ class ClaudeWake:
     return_contract: ReturnContract
     timeout_seconds: int
     session_ref: Optional[str] = None
+    session_id: Optional[str] = None
     approved_permissions: Tuple[str, ...] = ()
 
 
@@ -275,6 +276,25 @@ def prepare_claude_continuation_wake(request, session_ref, approved_permissions,
     )
 
 
+def prepare_claude_authorized_wake(request, session_id, approved_permissions,
+                                   registry_path=SEATS_JSON,
+                                   bindings_dir=BINDINGS_DIR, agents_dir=AGENTS_DIR):
+    """Prepare one new, foreground Claude session with exact CEO-granted tools.
+
+    This is intentionally distinct from a continuation: the caller supplies a
+    fresh native session id, so the original immutable Product objective is
+    retained and no historical Claude session is resumed.
+    """
+    permissions = _exact_permissions(approved_permissions)
+    if not isinstance(session_id, str) or not session_id.strip():
+        raise ClaudeWakeError("authorized Claude execution requires one new session id")
+    wake = prepare_claude_wake(
+        request, registry_path=registry_path, bindings_dir=bindings_dir,
+        agents_dir=agents_dir,
+    )
+    return replace(wake, session_id=session_id, approved_permissions=permissions)
+
+
 class ClaudeCliTransport:
     """Direct local transport for the installed Claude Code CLI.
 
@@ -298,8 +318,12 @@ class ClaudeCliTransport:
             "--model", wake.model,
             "--effort", wake.effort,
         )
+        if wake.session_ref and wake.session_id:
+            raise ClaudeWakeError("Claude wake cannot resume and create a session together")
         if wake.session_ref:
             command += ("--resume", wake.session_ref)
+        if wake.session_id:
+            command += ("--session-id", wake.session_id)
         if wake.approved_permissions:
             # Claude CLI parses this option as a variadic list.  Keeping it as
             # one comma-separated argument prevents the final prompt from
@@ -551,7 +575,7 @@ class ClaudeProvider:
     """Two-operation provider seam using a controller-supplied native transport."""
 
     def __init__(self, transport: Callable[[ClaudeWake], Any], session_ref=None,
-                 approved_permission=None, approved_permissions=None,
+                 session_id=None, approved_permission=None, approved_permissions=None,
                  registry_path=SEATS_JSON, bindings_dir=BINDINGS_DIR,
                  agents_dir=AGENTS_DIR):
         if not callable(transport):
@@ -560,6 +584,9 @@ class ClaudeProvider:
             )
         self._transport = transport
         self._session_ref = session_ref
+        self._session_id = session_id
+        if session_ref is not None and session_id is not None:
+            raise ClaudeWakeError("ClaudeProvider cannot resume and create a session together")
         if approved_permission is not None and approved_permissions is not None:
             raise ClaudeWakeError("use approved_permission or approved_permissions, not both")
         supplied = approved_permissions if approved_permissions is not None else approved_permission
@@ -585,9 +612,15 @@ class ClaudeProvider:
                     registry_path=self._registry_path, bindings_dir=self._bindings_dir,
                     agents_dir=self._agents_dir,
                 )
-            else:
+            elif self._session_id is None:
                 wake = prepare_claude_continuation_wake(
                     request, self._session_ref, self._approved_permissions,
+                    registry_path=self._registry_path, bindings_dir=self._bindings_dir,
+                    agents_dir=self._agents_dir,
+                )
+            else:
+                wake = prepare_claude_authorized_wake(
+                    request, self._session_id, self._approved_permissions,
                     registry_path=self._registry_path, bindings_dir=self._bindings_dir,
                     agents_dir=self._agents_dir,
                 )

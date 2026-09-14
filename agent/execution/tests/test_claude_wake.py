@@ -259,6 +259,25 @@ class ClaudeCliTransportTests(unittest.TestCase):
         with self.assertRaisesRegex(ClaudeWakeError, "exact permission"):
             prepare_claude_continuation_wake(request(), "claude-session-9", "*")
 
+    def test_authorized_replacement_creates_the_exact_new_session_foreground(self):
+        provider = ClaudeProvider(
+            RecordingTransport("replacement complete"),
+            session_id="23389001-2e1b-4791-aeac-2050254c1c4d",
+            approved_permissions=("Bash", "mcp__claude_ai_Supabase__apply_migration"),
+        )
+        result = provider.execute(request())
+        self.assertEqual(ExecutionStatus.COMPLETED, result.status)
+        wake = provider._transport.wakes[0]
+        command = ClaudeCliTransport().command(wake)
+        self.assertIn("--session-id", command)
+        self.assertEqual("23389001-2e1b-4791-aeac-2050254c1c4d",
+                         command[command.index("--session-id") + 1])
+        self.assertNotIn("--resume", command)
+        self.assertIn("--allowedTools", command)
+        self.assertEqual("Bash,mcp__claude_ai_Supabase__apply_migration",
+                         command[command.index("--allowedTools") + 1])
+        self.assertEqual(request().objective, wake.prompt)
+
     def test_composed_exact_grants_are_finite_and_reject_unapproved_third_tool(self):
         grants = ("Bash(python3 -c 'resume()')", "mcp__example__write")
         wake = prepare_claude_continuation_wake(request(), "claude-session-9", grants)
