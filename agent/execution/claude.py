@@ -149,6 +149,7 @@ def capabilities():
             "subagent_type is the exact neutral Seat id",
             "binding model and effort remain authoritative",
             "transport evidence is normalized without workflow side effects",
+            "Product execution is foreground-only; observable async execution is unsupported",
         ),
     )
 
@@ -158,6 +159,8 @@ def prepare_claude_wake(request, session_ref=None, registry_path=SEATS_JSON,
     """Validate and preserve one request without invoking external transport."""
     if not isinstance(request, ExecutionRequest):
         raise ClaudeWakeError("Claude wake requires the provider-neutral ExecutionRequest")
+    if not any("launch another" in action.lower() for action in request.prohibited_actions):
+        raise ClaudeWakeError("Claude Product request must prohibit executor delegation")
 
     neutral = roster.read(registry_path)
     if request.seat_id not in neutral:

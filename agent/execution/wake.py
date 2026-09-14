@@ -58,7 +58,7 @@ def build_prepared_continuation_request(preparation, task, lease):
         allowed_surfaces=tuple(task.get("surfaces") or ()),
         prohibited_actions=("select another Jira task", "change provider", "bypass permissions",
                             "execute_approved_claude_continuation", "build_prepared_continuation_request",
-                            "launch another Claude session"),
+                            "launch another Claude session", "launch another executor"),
         operating_mode="PRODUCT_EXECUTION", operating_mode_revision=lease["mode_revision"],
         claim_ref=(task.get("ownership") or {}).get("claim_ref"),
         execution_lease_id=lease["execution_lease_id"],

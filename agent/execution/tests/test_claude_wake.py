@@ -17,6 +17,7 @@ from agent.execution.claude import (  # noqa: E402
     ClaudeProvider,
     ClaudeCliTransport,
     ClaudeWakeError,
+    capabilities,
     prepare_claude_continuation_wake,
     prepare_claude_wake,
 )
@@ -104,6 +105,11 @@ def request(**changes):
 
 
 class ClaudeWakeCharacterizationTests(unittest.TestCase):
+    def test_product_execution_capability_is_truthfully_foreground_only(self):
+        constraints = capabilities().constraints
+        self.assertIn("Product execution is foreground-only; observable async execution is unsupported",
+                      constraints)
+
     def test_controller_instruction_routes_every_wake_through_selection_and_seam(self):
         path = os.path.join(ROOT, "agent", "skills", "route-to-seat", "SKILL.md")
         with open(path, encoding="utf-8") as fh:
