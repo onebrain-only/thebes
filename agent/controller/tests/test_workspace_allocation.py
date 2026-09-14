@@ -21,6 +21,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
 sys.path.insert(0, ROOT)
 
 from agent.controller import execute  # noqa: E402
+from agent.controller.tests.test_entry import no_validation  # noqa: E402
 from agent.controller.workspace import (  # noqa: E402
     PRESERVE,
     RELEASE,
@@ -304,7 +305,7 @@ class ControllerWorkspaceFlowTests(WorkspaceTestCase):
                           providers=(ClaudeProvider(record_wake),),
                           workspace_allocator=allocator,
                           workspace_concluder=concluder,
-                          interventions=[], worktree_root=self.wtroot)
+                          interventions=[], worktree_root=self.wtroot, validator=no_validation)
         return outcome, state, jira_double, wakes
 
     def test_execute_allocates_before_dispatch_and_the_cwd_exists(self):
@@ -317,9 +318,8 @@ class ControllerWorkspaceFlowTests(WorkspaceTestCase):
         self.assertEqual("exec/backend-1/KAN-900", outcome["workspace_branch"])
         self.assertEqual(head, wake.workspace.expected_revision)
         self.assertEqual(head, outcome["expected_revision"])
-        # The trailing "mode" is the automatic integration tail gating itself.
         self.assertEqual(["mode", "observe", "claim", "continuation", "lease-open",
-                          "receipt", "lease-close", "mode"], state.events)
+                          "receipt", "lease-close"], state.events)
         self.assertEqual([], jira_double.writes)
 
     def test_the_request_carries_the_isolated_tree_not_the_canonical_checkout(self):

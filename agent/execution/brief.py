@@ -56,6 +56,7 @@ CONTROL_PLANE_FIELDS = (
     "operating_mode_revision",
     "model_intent",
     "reasoning_effort",
+    "review_context_ref",
 )
 
 # Thebes internal names. These are mechanism, not English: an executor-visible

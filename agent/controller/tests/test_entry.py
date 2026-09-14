@@ -186,9 +186,24 @@ class Workspace:
         return dict(self.decision, workspace_path=realized["path"])
 
 
+def no_validation(*args, **kwargs):
+    """Validation double for suites that are not about validation.
+
+    The real canonical route is proved against a real store in
+    `test_validation_dispatch.py`; here it refuses by name so the flow stops
+    exactly where an unvalidated item should stop.
+    """
+    from agent.controller.validation import (
+        VALIDATION_ROUTE_UNRESOLVED, ValidationRefused,
+    )
+    raise ValidationRefused(VALIDATION_ROUTE_UNRESOLVED,
+                            "validation is doubled out in this suite")
+
+
 def run(work_item_id="KAN-900", brief_value=None, **kwargs):
     """Call the controller with a workspace double unless one is supplied."""
     kwargs.setdefault("interventions", [])
+    kwargs.setdefault("validator", no_validation)
     kwargs.setdefault("workspace_allocator", Workspace().allocate)
     if "workspace_concluder" not in kwargs:
         kwargs["workspace_concluder"] = Workspace().conclude
@@ -213,10 +228,10 @@ class ControllerEntryTests(unittest.TestCase):
         provider = CodexProvider(lambda invocation: calls.append(invocation) or "completed fixture")
         outcome = run("KAN-900", brief(), authorization=Authorization(), state_store=state,
                           jira_client=jira, seat_registry=Registry(), providers=(provider,))
-        # The trailing "mode" is the automatic integration tail asking whether
-        # Product execution is permitted before it gates itself.
+        # No trailing "mode": the validation gate refuses before the
+        # integration tail is ever reached.
         self.assertEqual(["mode", "observe", "claim", "continuation", "lease-open",
-                          "receipt", "lease-close", "mode"], state.events)
+                          "receipt", "lease-close"], state.events)
         self.assertEqual(["KAN-900"], jira.calls)
         self.assertEqual(1, len(calls))
         self.assertEqual("backend", outcome["capability"])
@@ -241,7 +256,7 @@ class ControllerEntryTests(unittest.TestCase):
                           jira_client=Jira(), seat_registry=Registry(), providers=(provider,))
         self.assertNotIn("claim", state.events)
         self.assertEqual(["mode", "observe", "continuation", "lease-open", "receipt",
-                          "lease-close", "mode"],
+                          "lease-close"],
                          state.events)
         self.assertEqual("backend-2", outcome["seat_id"])
         self.assertEqual("preserved", outcome["claim_status"])

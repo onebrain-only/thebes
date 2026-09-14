@@ -201,6 +201,10 @@ class ExecutionRequest:
     required_execution_features: FrozenSet[ExecutionFeature]
     timeout_seconds: int
     return_contract: ReturnContract
+    # A validation act's authority is the open review context, not an ownership
+    # claim: a reviewer legitimately does not own the work it reviews, and `qa`
+    # never owns anything at all.
+    review_context_ref: Optional[str] = None
 
     def __post_init__(self):
         for name in ("context_refs", "allowed_surfaces", "prohibited_actions",
@@ -227,7 +231,16 @@ class ExecutionRequest:
         if self.timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
         if self.operating_mode == "PRODUCT_EXECUTION":
-            if not self.claim_ref or not self.execution_lease_id:
+            if self.execution_kind in (ExecutionKind.VALIDATION, ExecutionKind.REVIEW):
+                # Validation is not Product execution and is deliberately gated
+                # differently. Its authority is the recorded review context, and
+                # it may not write: a reviewer that could edit the work it is
+                # judging is not a reviewer.
+                if self.workspace.mutation_mode is not MutationMode.READ_ONLY:
+                    raise ValueError("a Product validation request is read-only")
+                if not self.review_context_ref:
+                    raise ValueError("Product validation requires an open review context")
+            elif not self.claim_ref or not self.execution_lease_id:
                 raise ValueError("Product execution requires an existing claim and execution lease")
         for path in self.allowed_surfaces:
             if not path or path.startswith("/") or ".." in path.split("/") or "\\" in path:

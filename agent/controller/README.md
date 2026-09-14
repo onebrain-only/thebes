@@ -131,6 +131,43 @@ the integrated sha, the branch, the previous head, the route and its result, the
 attributed files, and whether remediation is required. Persistent State holds
 the orchestration evidence; git remains the authority on the code.
 
+## Validation is dispatched, not waited for
+
+`execute KAN-XXX` now runs the canonical validation route itself, between the
+Product execution and the integration tail. No human records a SELF, QA or PEER
+verdict for routine work.
+
+`agent/controller/validation.py` adds ordering and dispatch only. The route comes
+from `policy.validation_route_for_profile`, the owner from
+`policy.resolve_owner_or_wait` through `store.open_review_context`, the verdict
+from `store.record_review_result`, and each FAIL from its own canonical handler.
+
+Order, and why: **release ownership** (the only act that creates executor
+evidence, which SELF's owner *is* and which PEER eligibility *excludes*) →
+**transition** into the route's review status (a review context may only open on
+an item canonically in review) → **open the context** (policy resolves the owner;
+a PEER with no eligible peer waits with a null owner rather than being
+downgraded) → **dispatch** the reviewer read-only → **record** the verdict.
+
+A validation request is a first-class `ExecutionRequest` of kind `validation`. It
+travels the same brief builder and the same firewall, and the request contract
+refuses it unless it is read-only and carries an open review context — a reviewer
+that could edit the work it judges is not a reviewer. It opens no claim and no
+lease, because `execute_product_wake`'s ownership gate is about Product
+execution and a reviewer is deliberately not the owner.
+
+**A provider that returned `completed` has not passed anything.** The verdict is
+an explicit evidence claim of kind `verdict` whose reference is `pass` or `fail`;
+anything else is `validation-result-malformed` and is surfaced, never guessed. A
+failed or unavailable validator is `validation-dispatch-failed` — the validation
+act failing is not the Product failing review.
+
+| FAIL | Canonical handler | Effect |
+|---|---|---|
+| PEER | `store.peer_fail_transfer` | reviewer becomes the evidenced executor, route becomes SELF, cycle +1, `previous_owner` recorded. No second PEER loop. |
+| SELF | `store.self_fail_reentry` | execution returns to the exact same seat, ownership re-established |
+| QA | none — `qa` never executes | the work returns to its executor; ownership is re-established by the ordinary claim |
+
 ## Lifecycle completion is the tail, not a third command
 
 `execute KAN-XXX` runs integration and lifecycle completion itself. Both gate

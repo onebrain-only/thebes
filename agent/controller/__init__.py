@@ -38,6 +38,8 @@ from agent.controller.integration import (
     integrate_validated_work,
 )
 from agent.controller import completion as completion_policy
+from agent.controller import validation as validation_policy
+from agent.controller.validation import ValidationRefused, run_validation
 from agent.controller import integration as integration_policy
 from agent.controller.completion import CompletionRefused, complete_lifecycle
 from agent.controller.workspace import (
@@ -131,7 +133,8 @@ def execute(work_item_id, brief=None, *, authorization=None, state_store=store,
             workspace_allocator=realize_workspace,
             workspace_concluder=conclude_workspace,
             run_tail=True, interventions=None, worktree_root=None,
-            integration_branch=None):
+            integration_branch=None, validation_providers=None,
+            seats_by_capability=None, validator=run_validation):
     """Submit exactly one already-selected work item through the existing wake.
 
     ``brief`` is optional and exceptional. With it omitted, Thebes derives the
@@ -234,8 +237,17 @@ def execute(work_item_id, brief=None, *, authorization=None, state_store=store,
         # whose validation route has not yet passed simply refuses here and
         # changes nothing — which is the ordinary case, because a review happens
         # after the wake that produced the work.
-        integration_evidence = None
+        # Validation is part of orchestration, not something the executor
+        # decides about itself. It runs before integration because the verdict
+        # it produces is exactly what the integration gate requires.
         if run_tail and execution.status.value == "completed":
+            result.update(_validate_after_execution(
+                work_item_id, state_store, jira_client, execution, realized,
+                validation_providers if validation_providers is not None else registry,
+                interventions, seats_by_capability, validator))
+
+        integration_evidence = None
+        if run_tail and result.get("validation_status") == validation_policy.VALIDATION_PASSED:
             tail = integrate(
                 work_item_id, state_store=state_store, jira_client=jira_client,
                 workspace_allocator=workspace_allocator,
@@ -334,8 +346,7 @@ def integrate(work_item_id, *, state_store=store, jira_client=jira,
         if task is None:
             result["blocker"] = "work-item-not-found"
             return result
-        ownership = task.get("ownership") or {}
-        seat_id = ownership.get("seat_id")
+        seat_id = _integration_seat(task, state_store)
         if not seat_id:
             result["blocker"] = "not-owned"
             return result
@@ -408,6 +419,44 @@ def integrate(work_item_id, *, state_store=store, jira_client=jira,
     return result
 
 
+def _validate_after_execution(work_item_id, state_store, jira_client, execution,
+                              realized, providers, interventions,
+                              seats_by_capability, validator):
+    """Run the canonical validation route. A refusal is named, never a guess."""
+    outcome = {"validation_status": "not-attempted", "validation_blocker": None}
+    task = state_store.read("task", work_item_id)
+    if task is None:
+        return dict(outcome, validation_status="work-item-not-found")
+    review = task.get("review_context") or {}
+    if review.get("review_result") == "pass":
+        # Already validated in an earlier pass of this flow. Not a second review.
+        return {"validation_status": validation_policy.VALIDATION_PASSED,
+                "validation_route": review.get("review_type"),
+                "reviewer": review.get("review_owner"),
+                "review_cycle": review.get("review_cycle"),
+                "verdict": "pass", "validation_blocker": None}
+    try:
+        evidence = validator(work_item_id, task, execution, realized, state_store,
+                             jira_client, providers,
+                             seats_by_capability=seats_by_capability,
+                             receipt_ref="execution receipt for %s" % work_item_id)
+    except ValidationRefused as exc:
+        return dict(outcome, validation_status=exc.outcome,
+                    validation_blocker=str(exc))
+    except (store.StateError, jira.JiraError, ValueError) as exc:
+        return dict(outcome,
+                    validation_status=validation_policy.VALIDATION_DISPATCH_FAILED,
+                    validation_blocker=str(exc))
+    return {"validation_status": evidence["outcome"],
+            "validation_route": evidence.get("validation_route"),
+            "reviewer": evidence.get("reviewer"),
+            "review_cycle": evidence.get("review_cycle"),
+            "verdict": evidence.get("verdict"),
+            "validation_blocker": None,
+            "remediation_owner": evidence.get("remediation_owner"),
+            "remediation_route": evidence.get("remediation_route")}
+
+
 def _complete_after_integration(work_item_id, state_store, jira_client, receipt,
                                 interventions, completer):
     """Run the lifecycle tail against the task as it now stands."""
@@ -432,6 +481,25 @@ def _complete_after_integration(work_item_id, state_store, jira_client, receipt,
             "lifecycle": evidence["lifecycle"],
             "ownership_status": evidence["ownership_status"],
             "open_leases": evidence["open_leases"]}
+
+
+def _integration_seat(task, state_store):
+    """Whose worktree holds this work.
+
+    Ownership while the item is still owned; once validation has released it,
+    the evidenced executor — which is the same seat, and after a PEER FAIL
+    transfer is correctly the reviewer who took the work over. Two distinct
+    evidenced seats is conflicting evidence and integration refuses rather than
+    picking one.
+    """
+    owner = (task.get("ownership") or {}).get("seat_id")
+    if owner:
+        return owner
+    try:
+        evidenced = state_store.evidenced_executors(task)
+    except Exception:                                     # noqa: BLE001
+        return None
+    return evidenced[0] if len(evidenced) == 1 else None
 
 
 def _refusal_evidence(task, seat_id, work_item_id, workspace_path, integration_branch):
@@ -600,6 +668,14 @@ def _result_shell(work_item_id):
         # The automatic tail: integration and lifecycle completion. Both gate
         # themselves, so "not-attempted" is the ordinary answer for an execution
         # whose review has not happened yet.
+        "validation_status": "not-attempted",
+        "validation_route": None,
+        "reviewer": None,
+        "review_cycle": None,
+        "verdict": None,
+        "validation_blocker": None,
+        "remediation_owner": None,
+        "remediation_route": None,
         "integration_status": "not-attempted",
         "attributed_files": [],
         "product_commit": None,

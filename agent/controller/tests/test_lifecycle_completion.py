@@ -28,6 +28,7 @@ from agent.controller.workspace import conclude_workspace, realize_workspace  # 
 from agent.controller.tests.test_canonical_intent import (  # noqa: E402
     Authorization, Registry, issue,
 )
+from agent.controller.tests.test_entry import no_validation  # noqa: E402
 from agent.controller.tests.test_integration_flow import (  # noqa: E402
     IntegrationStore, SURFACES, validated_task,
 )
@@ -379,7 +380,8 @@ class EndToEndFlowTests(unittest.TestCase):
                           providers=(ClaudeProvider(transport),),
                           workspace_allocator=allocator,
                           workspace_concluder=concluder,
-                          interventions=[], worktree_root=self.wtroot)
+                          interventions=[], worktree_root=self.wtroot,
+                          validator=no_validation)
 
         # Execution
         self.assertEqual("canonical-state", outcome["brief_source"])
@@ -420,7 +422,8 @@ class EndToEndFlowTests(unittest.TestCase):
                           providers=(ClaudeProvider(transport),),
                           workspace_allocator=allocator,
                           workspace_concluder=concluder,
-                          interventions=[], worktree_root=self.wtroot)
+                          interventions=[], worktree_root=self.wtroot,
+                          validator=no_validation)
 
         # The Product work remains truthful: it integrated, and that stands.
         self.assertEqual("integrated", outcome["integration_status"])
@@ -446,10 +449,14 @@ class EndToEndFlowTests(unittest.TestCase):
                           providers=(ClaudeProvider(transport),),
                           workspace_allocator=allocator,
                           workspace_concluder=concluder,
-                          interventions=[], worktree_root=self.wtroot)
+                          interventions=[], worktree_root=self.wtroot,
+                          validator=no_validation)
 
         self.assertEqual("completed", outcome["execution_status"])
-        self.assertEqual("validation-not-passed", outcome["integration_status"])
+        # Validation refused, so integration was never even attempted — the
+        # gate now sits one step earlier than it used to.
+        self.assertEqual("validation-route-unresolved", outcome["validation_status"])
+        self.assertEqual("not-attempted", outcome["integration_status"])
         self.assertEqual("not-attempted", outcome["completion_status"])
         self.assertEqual([], jira.transitions)
         self.assertIsNotNone(store.task["ownership"])
@@ -469,7 +476,8 @@ class EndToEndFlowTests(unittest.TestCase):
                 jira_client=jira, seat_registry=Registry(),
                 providers=(ClaudeProvider(transport),),
                 workspace_allocator=allocator, workspace_concluder=concluder,
-                interventions=[], worktree_root=self.wtroot)
+                interventions=[], worktree_root=self.wtroot,
+                validator=no_validation)
         self.assertEqual(1, len(jira.transitions))
 
         # Running the recovery command again must not fire a second transition.

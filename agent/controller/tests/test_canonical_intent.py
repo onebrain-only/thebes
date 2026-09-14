@@ -25,7 +25,7 @@ from agent.controller.intent import (  # noqa: E402
     resolve_execution_intent,
     split_description,
 )
-from agent.controller.tests.test_entry import Workspace  # noqa: E402
+from agent.controller.tests.test_entry import Workspace, no_validation  # noqa: E402
 from agent.execution.brief import CONTROL_PLANE_TOKENS  # noqa: E402
 from agent.execution.claude import ClaudeProvider  # noqa: E402
 from agent.state import policy  # noqa: E402
@@ -414,7 +414,7 @@ class ControllerCommandTests(unittest.TestCase):
                           seat_registry=Registry(), providers=(provider,),
                           workspace_allocator=workspace.allocate,
                           workspace_concluder=workspace.conclude,
-                          interventions=[])
+                          interventions=[], validator=no_validation)
         return outcome, state, jira_double, wakes
 
     def test_execute_needs_no_brief_file_and_completes_the_whole_flow(self):
@@ -427,9 +427,8 @@ class ControllerCommandTests(unittest.TestCase):
         self.assertEqual("completed", outcome["execution_status"])
         self.assertEqual("received", outcome["result_receipt_status"])
         self.assertEqual("closed", outcome["lease_closure_status"])
-        # The trailing "mode" is the automatic integration tail gating itself.
         self.assertEqual(["mode", "observe", "claim", "continuation", "lease-open",
-                          "receipt", "lease-close", "mode"], state.events)
+                          "receipt", "lease-close"], state.events)
         self.assertEqual(["KAN-900"], jira_double.reads)
         self.assertEqual([], jira_double.writes)
         self.assertEqual({"objective": "jira", "required_capability": "execution_profile",

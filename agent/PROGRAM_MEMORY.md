@@ -134,6 +134,22 @@ from the fact that a transition was accepted**; a transition that lands elsewher
 releases only after confirmed Done and survives every failure, and a Jira failure is never a
 reason to re-run a provider. Evidence: `agent/controller/tests/test_lifecycle_completion.py`.
 
+**CURRENT FACT — validation is dispatched by the flow, not recorded by a human.** `execute
+KAN-XXX` runs the canonical route between execution and integration.
+`agent/controller/validation.py` adds ordering and dispatch only: the route is
+`policy.validation_route_for_profile`, the owner is `policy.resolve_owner_or_wait` through
+`store.open_review_context`, the verdict is `store.record_review_result`, and each FAIL keeps its
+own handler. Ownership is released first because `store.release` is the only act that creates
+executor evidence — which SELF's owner *is* and which PEER eligibility *excludes* — and Jira moves
+before the context because a review context opens only on an item canonically in review. A
+validation request is an `ExecutionRequest` of kind `validation` through the same brief and
+firewall; the contract refuses it unless it is read-only and carries an open review context, and
+it opens no claim and no lease because a reviewer is deliberately not the owner. **A provider
+that returned `completed` has passed nothing**: the verdict is an explicit `verdict` evidence
+claim, and its absence or contradiction is surfaced rather than guessed. A PEER route with no
+eligible peer waits rather than downgrading. Evidence:
+`agent/controller/tests/test_validation_dispatch.py`.
+
 **DECISION/INVARIANT — the executor brief is Product-only.** There is exactly one executor
 brief builder, `agent/execution/brief.py`, and both providers render the same text from the
 immutable request. It reads a closed allowlist of Product fields, so control-plane request
