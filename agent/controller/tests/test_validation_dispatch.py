@@ -304,6 +304,38 @@ class VerdictReadingTests(ValidationTestCase):
                     evidence=(EvidenceClaim("verdict", verdict, "because"),))
                 self.assertEqual(verdict, verdict_from(result))
 
+    def test_a_declared_verdict_in_the_result_text_is_read(self):
+        # The only provider transport carries text, not evidence claims, so a
+        # verdict expressed the way the brief asks must be readable.
+        for text, expected in (("## VERDICT\n\n**pass** — everything reproduces",
+                                PASS),
+                               ("## VERDICT\nfail\n\nthe checks did not hold", FAIL),
+                               ("VERDICT: PASS", PASS)):
+            with self.subTest(text=text[:20]):
+                result = ExecutionResult(
+                    invocation_id="inv-1", status=ExecutionStatus.COMPLETED,
+                    summary=text, provider_id="claude-code")
+                self.assertEqual(expected, verdict_from(result))
+
+    def test_a_hedged_or_absent_declaration_is_no_verdict(self):
+        for text in ("the verdict is unclear, maybe pass or maybe fail",
+                     "I think this probably passes", "no judgement here",
+                     "## VERDICT\n\nI cannot say either way"):
+            with self.subTest(text=text[:24]):
+                result = ExecutionResult(
+                    invocation_id="inv-1", status=ExecutionStatus.COMPLETED,
+                    summary=text, provider_id="claude-code")
+                with self.assertRaises(ValidationRefused) as caught:
+                    verdict_from(result)
+                self.assertEqual(VALIDATION_RESULT_MALFORMED, caught.exception.outcome)
+
+    def test_a_structured_claim_still_wins_over_the_text(self):
+        result = ExecutionResult(
+            invocation_id="inv-1", status=ExecutionStatus.COMPLETED,
+            summary="## VERDICT\n\npass", provider_id="claude-code",
+            evidence=(EvidenceClaim("verdict", FAIL, "the structured claim"),))
+        self.assertEqual(FAIL, verdict_from(result))
+
     def test_a_contradictory_verdict_is_refused_not_guessed(self):
         result = ExecutionResult(
             invocation_id="inv-1", status=ExecutionStatus.COMPLETED,

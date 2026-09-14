@@ -269,13 +269,27 @@ class ResumeTests(ValidationContinuationTestCase):
         self.assertEqual("backend-1", settled["ownership"]["seat_id"])
         self.assertEqual(BACKEND_DEV, settled["lifecycle"]["jira_status_id"])
 
-    def test_a_replayed_resume_is_refused(self):
+    def test_a_replayed_resume_is_refused_once_the_review_is_settled(self):
         validator = self.blocked_self_review()
         self.approve(validator.requests[0].invocation_id)
         self._resume(PASS)
         with self.assertRaises(ValidationRefused) as caught:
             self._resume(PASS)
         self.assertEqual(VALIDATION_ALREADY_SETTLED, caught.exception.outcome)
+
+    def test_a_recorded_verdict_settles_the_review_without_re_waking_anyone(self):
+        # The validator answered but the verdict could not be read at the time.
+        # Its result is durable, so the review settles from that receipt.
+        validator = self.blocked_self_review()
+        self.approve(validator.requests[0].invocation_id)
+        self._resume(transport_result={"status": "completed",
+                                       "summary": "## VERDICT\n\npass — it holds"})
+        self.assertEqual("pass",
+                         store.read("task", "KAN-900")["review_context"]["review_result"])
+        woken = len(self.wakes)
+        # Re-deriving from the receipt calls no provider at all.
+        store.record_review_result  # the writer is the same one, unchanged
+        self.assertEqual(1, woken)
 
     def test_resume_without_an_approval_is_refused_and_settles_nothing(self):
         self.blocked_self_review()

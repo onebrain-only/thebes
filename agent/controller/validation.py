@@ -42,6 +42,7 @@ it. It opens no claim and no lease, and it cannot write: the request contract
 refuses a validation request that is not read-only.
 """
 
+import re
 import uuid
 
 from agent.execution.brief import render_executor_brief  # noqa: F401  (firewall)
@@ -70,6 +71,14 @@ VALIDATION_RESULT_MALFORMED = "validation-result-malformed"
 VALIDATION_ALREADY_SETTLED = "validation-already-settled"
 
 VERDICT_EVIDENCE_KIND = "verdict"
+# The Claude CLI transport carries result TEXT and cannot emit structured
+# evidence claims, so a verdict expressed only as an evidence claim is
+# unsatisfiable over the one provider that exists. The declaration below is the
+# transport-compatible equivalent: the marker, then the verdict word with
+# nothing but markup between them. Prose before the word does not match, so a
+# hedged answer is refused rather than read generously.
+_VERDICT_DECLARATION = re.compile(
+    r"\bVERDICT\b[\s:*_#>.\-]*\b(pass|fail)\b", re.IGNORECASE)
 DEFAULT_TIMEOUT_SECONDS = 900
 REQUIRED_EVIDENCE = ("verdict", "checks performed", "evidence for the verdict")
 REQUIRED_SECTIONS = ("VERDICT", "EVIDENCE")
@@ -226,9 +235,11 @@ def validation_objective(work_item_id, task, issue, execution, receipt_ref):
         "- Re-run the Product tests that cover this change and report what happened.",
         "- Report defects you find; do not fix them.",
         "", "## Your verdict",
-        "Return exactly one verdict, pass or fail, as evidence of kind "
-        "'%s' whose reference is the word pass or the word fail, with the "
-        "evidence that supports it." % VERDICT_EVIDENCE_KIND,
+        "Open your reply with a VERDICT section whose very first word is pass or "
+        "fail, like this and nothing else before it:",
+        "", "## VERDICT", "pass", "",
+        "Then give the evidence that supports it. Exactly one verdict: a hedged "
+        "or absent one is read as no verdict at all.",
         "", "Review reference: %s cycle %s; executor evidence: %s."
         % (review.get("review_type"), review.get("review_cycle"), receipt_ref),
         "Review only this work item. Report what you find and stop.",
@@ -334,15 +345,19 @@ def verdict_from(result):
     verdicts = {item.reference.strip().lower()
                 for item in (result.evidence or ())
                 if item.kind == VERDICT_EVIDENCE_KIND}
+    if not verdicts:
+        # No structured claim: read the declaration the brief asks for instead.
+        verdicts = {match.group(1).lower()
+                    for match in _VERDICT_DECLARATION.finditer(result.summary or "")}
     if verdicts == {PASS}:
         return PASS
     if verdicts == {FAIL}:
         return FAIL
     raise ValidationRefused(
         VALIDATION_RESULT_MALFORMED,
-        "the validator returned no single %r verdict (%s); a verdict is claimed "
+        "the validator declared no single verdict (%s); a verdict is claimed "
         "explicitly or it does not exist"
-        % (VERDICT_EVIDENCE_KIND, ", ".join(sorted(verdicts)) or "none"))
+        % (", ".join(sorted(verdicts)) or "none"))
 
 
 # ------------------------------------------------------------- the verdict
@@ -420,10 +435,10 @@ def build_prepared_validation_request(preparation, task, issue):
         objective=("Continue the same validation of %s you already began, on the "
                    "same Product evidence. Finish the checks you were making and "
                    "return your verdict; do not restart the review or widen it.\n\n"
-                   "Return exactly one verdict, pass or fail, as evidence of kind "
-                   "'%s' whose reference is the word pass or the word fail, with "
-                   "the evidence that supports it."
-                   % (preparation["work_item_id"], VERDICT_EVIDENCE_KIND)),
+                   "Open your reply with a VERDICT section whose very first word "
+                   "is pass or fail, then the evidence that supports it. Exactly "
+                   "one verdict: a hedged or absent one is read as no verdict."
+                   % preparation["work_item_id"]),
         role_contract_ref="agent/roles/%s.md" % capability,
         context_refs=("CLAUDE.md",),
         workspace=workspace,
@@ -477,9 +492,11 @@ def resume_validation(work_item_id, state_store, jira_client, transport=None,
                   if r.get("continuation_of_invocation_id") == original
                   and r.get("status") != "needs_input"), None)
     if prior is not None:
-        raise ValidationRefused(VALIDATION_ALREADY_SETTLED,
-                                "validation continuation %s already returned a "
-                                "terminal result" % original)
+        # The validator already answered. Its verdict is durable evidence, so
+        # the review settles from that receipt rather than re-waking a reviewer
+        # over a judgement it has already made.
+        return _settle_from_receipt(work_item_id, task, review, preparation, prior,
+                                    state_store, jira_client)
     approvals = state_store.compose_execution_approvals(original)
     permissions = tuple(record["permission"] for record in approvals)
     provider = ClaudeProvider(transport or ClaudeCliTransport(),
@@ -502,6 +519,36 @@ def resume_validation(work_item_id, state_store, jira_client, transport=None,
                     approval_ids=tuple(r["execution_approval_id"] for r in approvals))}
     verdict = verdict_from(result)
     evidence["verdict"] = verdict
+    evidence_ref = "%s verdict %s by %s: %s" % (
+        review.get("review_type"), verdict, reviewer, (result.summary or "")[:200])
+    settled = record_verdict(work_item_id, task, state_store, reviewer, verdict,
+                             evidence_ref)
+    evidence["task"] = settled
+    if verdict == PASS:
+        evidence["outcome"] = VALIDATION_PASSED
+        return evidence
+    evidence["outcome"] = VALIDATION_FAILED
+    evidence.update(remediate(work_item_id, settled, state_store, jira_client,
+                              review.get("review_type"), reviewer, evidence_ref))
+    return evidence
+
+
+def _settle_from_receipt(work_item_id, task, review, preparation, receipt,
+                         state_store, jira_client):
+    """Take the verdict a recorded validation result already carries."""
+    from agent.execution.receipt import execution_result_from_payload
+    result = execution_result_from_payload(receipt["normalized_result"])
+    reviewer = preparation["seat_id"]
+    verdict = verdict_from(result)
+    evidence = {"validation_route": review.get("review_type"), "reviewer": reviewer,
+                "review_cycle": review.get("review_cycle") or 1,
+                "review_context_ref": preparation["review_context_ref"],
+                "approved_permissions": [],
+                "validation_invocation_id": receipt["invocation_id"],
+                "validation_provider": receipt.get("provider_id"),
+                "validation_summary": result.summary,
+                "validation_receipt": receipt["execution_receipt_id"],
+                "validation_source": "recorded-receipt", "verdict": verdict}
     evidence_ref = "%s verdict %s by %s: %s" % (
         review.get("review_type"), verdict, reviewer, (result.summary or "")[:200])
     settled = record_verdict(work_item_id, task, state_store, reviewer, verdict,
