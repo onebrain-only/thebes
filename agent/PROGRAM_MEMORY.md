@@ -1,6 +1,6 @@
 # Thebes durable program memory
 
-Current as of 2026-09-12.
+Current as of 2026-09-14.
 
 ## Purpose and classification
 
@@ -278,6 +278,16 @@ controller-native external Agent-tool transport remain provider-specific. Claude
 normalization use the neutral `ExecutionResult`; Codex's local CLI adapter and deterministic
 provider selector exist. Provider abstraction is complete; a repository-callable Claude transport,
 automatic retry and automatic fallback do not exist.
+
+**CURRENT FACT — Phase 2 is CLOSED (2026-09-14).** Its objective — prove Thebes can operate
+real Product work safely and correctly — is accepted. KAN-183 is the proof: one CEO-supplied
+work-item key carried to authoritative Jira Done by the flow, with no human authoring the brief,
+creating the worktree, recording the verdict, committing, integrating, moving Jira or releasing
+ownership. The closure record, its 24 evidence rows and the explicitly deferred items are in
+`agent/ROADMAP.md` "Phase 2 closure". **Closure is not a claim of autonomous backlog execution:**
+Thebes runs one CEO-authorized ticket at a time, native provider permissions are denied by
+default and granted per invocation, and production mutation remains a separate authority Phase 2
+never exercised. No Product execution is currently authorized and no phase is current.
 
 **FUTURE TARGET.** Listener → controller integration → Thebes Core → measured knowledge
 scaling is the approved direction, not current implementation. RAG is deferred until
