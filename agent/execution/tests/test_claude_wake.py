@@ -258,7 +258,8 @@ class ClaudeCliTransportTests(unittest.TestCase):
         wake = prepare_claude_continuation_wake(request(), "claude-session-9", grants)
         command = ClaudeCliTransport().command(wake)
         position = command.index("--allowedTools")
-        self.assertEqual(grants, command[position + 1:position + 3])
+        self.assertEqual(",".join(grants), command[position + 1])
+        self.assertEqual(wake.prompt, command[position + 2])
         self.assertEqual(grants, wake.approved_permissions)
         self.assertNotIn("mcp__example__third", command)
         with self.assertRaisesRegex(ClaudeWakeError, "exact permission"):

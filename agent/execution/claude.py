@@ -298,7 +298,10 @@ class ClaudeCliTransport:
         if wake.session_ref:
             command += ("--resume", wake.session_ref)
         if wake.approved_permissions:
-            command += ("--allowedTools",) + wake.approved_permissions
+            # Claude CLI parses this option as a variadic list.  Keeping it as
+            # one comma-separated argument prevents the final prompt from
+            # being swallowed as another allowed tool.
+            command += ("--allowedTools", ",".join(wake.approved_permissions))
         return command + (wake.prompt,)
 
     def __call__(self, wake):
