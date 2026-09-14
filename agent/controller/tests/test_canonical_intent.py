@@ -121,6 +121,8 @@ class State:
     def __init__(self, record=None):
         self.events = []
         self.integration_receipts = []
+        self.receipts = []
+        self.continuation_preparations = []
         self.task = record or task()
         self.lease = None
         self.receipt = None
@@ -183,10 +185,31 @@ class State:
     def record_execution_receipt(self, invocation_id, work_item_id, seat_id,
                                  execution_lease_id, normalized_result,
                                  provider_selection=None):
+        # Same shape the real store writes, so readers of it behave the same.
         self.events.append("receipt")
-        self.receipt = {"invocation_id": invocation_id,
+        self.receipt = {"execution_receipt_id": "receipt-" + invocation_id,
+                        "invocation_id": invocation_id,
+                        "work_item_id": work_item_id, "seat_id": seat_id,
+                        "execution_lease_id": execution_lease_id,
+                        "provider_id": normalized_result.get("provider_id"),
+                        "status": normalized_result.get("status"),
                         "normalized_result": normalized_result,
                         "provider_selection": provider_selection}
+        self.receipts.append(self.receipt)
+        return self.receipt
+
+    def read_execution_receipt(self, invocation_id):
+        return next((r for r in self.receipts
+                     if r["invocation_id"] == invocation_id), None)
+
+    def record_execution_continuation_preparation(self, **fields):
+        record = dict(fields, execution_continuation_id="continuation-fixture")
+        self.continuation_preparations.append(record)
+        return record
+
+    def read_execution_continuation_preparation(self, original_invocation_id):
+        return next((p for p in self.continuation_preparations
+                     if p.get("original_invocation_id") == original_invocation_id), None)
 
     def record_integration_receipt(self, work_item_id, seat_id, outcome, evidence):
         record = {"work_item_id": work_item_id, "seat_id": seat_id,

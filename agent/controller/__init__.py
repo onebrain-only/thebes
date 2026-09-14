@@ -38,6 +38,7 @@ from agent.controller.integration import (
     integrate_validated_work,
 )
 from agent.controller import completion as completion_policy
+from agent.controller import continuation as continuation_policy
 from agent.controller import validation as validation_policy
 from agent.controller.validation import ValidationRefused, run_validation
 from agent.controller import integration as integration_policy
@@ -237,6 +238,15 @@ def execute(work_item_id, brief=None, *, authorization=None, state_store=store,
         # whose validation route has not yet passed simply refuses here and
         # changes nothing — which is the ordinary case, because a review happens
         # after the wake that produced the work.
+        # A needs-input result is durably recorded by now and its workspace is
+        # about to be preserved. Deriving the continuation context here is what
+        # makes an approved resume possible at all; without it the receipt is a
+        # dead end. It grants nothing — the approval is a separate CEO act.
+        if run_tail and execution.status.value == "needs_input":
+            result["continuation_prepared"] = _prepare_continuation(
+                work_item_id, seat_id, captured.get("invocation_id"),
+                realized, auth["reference"], state_store)
+
         # Validation is part of orchestration, not something the executor
         # decides about itself. It runs before integration because the verdict
         # it produces is exactly what the integration gate requires.
@@ -417,6 +427,24 @@ def integrate(work_item_id, *, state_store=store, jira_client=jira,
         result.update(workspace_concluder(work_item_id, seat_id, None, task,
                                           realized, integration=evidence))
     return result
+
+
+def _prepare_continuation(work_item_id, seat_id, invocation_id, realized,
+                          authorization_ref, state_store):
+    """Derive the resume context from the needs-input receipt just written."""
+    if not invocation_id:
+        return None
+    try:
+        receipt = state_store.read_execution_receipt(invocation_id)
+        prepared = continuation_policy.prepare(
+            work_item_id, seat_id, receipt, realized, authorization_ref, state_store)
+    except (store.StateError, ValueError, KeyError) as exc:
+        # A preparation that cannot be derived is reported, never invented: the
+        # execution evidence itself is already durable and unaffected.
+        return "refused: %s" % exc
+    if prepared is None:
+        return "not-continuable"
+    return prepared["execution_continuation_id"]
 
 
 def _validate_after_execution(work_item_id, state_store, jira_client, execution,
@@ -691,6 +719,7 @@ def _result_shell(work_item_id):
         "lifecycle": None,
         "ownership_status": None,
         "open_leases": None,
+        "continuation_prepared": None,
         "ceo_input_required": False,
         "governance_input": None,
         "operating_mode": None,
