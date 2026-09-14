@@ -256,16 +256,17 @@ def prepare_claude_continuation_wake(request, session_ref, approved_permissions,
                                      registry_path=SEATS_JSON,
                                      bindings_dir=BINDINGS_DIR, agents_dir=AGENTS_DIR):
     """Prepare one same-session resume after an exact, durable CEO approval."""
-    if not isinstance(session_ref, str) or not session_ref.strip():
-        raise ClaudeWakeError("Claude continuation requires one exact session and permission")
     permissions = _exact_permissions(approved_permissions)
+    if session_ref is not None and (not isinstance(session_ref, str) or not session_ref.strip()):
+        raise ClaudeWakeError("Claude continuation requires one exact session and permission")
     wake = prepare_claude_wake(request, session_ref=session_ref,
                                registry_path=registry_path, bindings_dir=bindings_dir,
                                agents_dir=agents_dir)
     return replace(
         wake,
-        prompt=("CEO explicitly approved this exact native permission: %s. "
-                "Continue the existing task; do not start a new task or change scope."
+        prompt=("CEO explicitly approved these exact native permission(s): %s. "
+                "Continue the existing task and only the preserved work item; do not start a new task, "
+                "replay history, or change scope."
                 % ", ".join(permissions)),
         approved_permissions=permissions,
     )
