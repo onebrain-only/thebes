@@ -2164,6 +2164,38 @@ def close_execution_lease(execution_lease_id, expected_revision, closed_by):
             return rec
 
 
+def review_context_ref(work_item_id, review_context):
+    """The canonical reference for one open review context."""
+    review = review_context or {}
+    return "review:%s:%s:%s" % (work_item_id, review.get("review_type"),
+                                review.get("review_cycle") or 1)
+
+
+def assert_review_authority(work_item_id, seat_id, ref):
+    """A validation invocation's authority is its review context, not a claim.
+
+    A reviewer legitimately does not own the work it reviews — that is the whole
+    point of review, and `qa` never owns anything — so a validation receipt is
+    authorized by the exact open review context naming this seat as its owner,
+    exactly as a validation ExecutionRequest is. Everything else about the
+    record is unchanged.
+    """
+    task = read("task", work_item_id)
+    if task is None:
+        raise StateError("task %s does not exist" % work_item_id)
+    review = task.get("review_context")
+    if not isinstance(review, dict):
+        raise StateError("no-review-context: %s has no open review" % work_item_id)
+    if review.get("review_owner") != seat_id:
+        raise StateError("not-review-owner: %s is reviewed by %s, not %s"
+                         % (work_item_id, review.get("review_owner"), seat_id))
+    expected = review_context_ref(work_item_id, review)
+    if ref != expected:
+        raise StateError("stale-review-context: %s is on %r, caller named %r"
+                         % (work_item_id, expected, ref))
+    return review
+
+
 def _receipt_id(invocation_id):
     """Stable natural identity without placing arbitrary invocation text in a path."""
     digest = hashlib.sha256(invocation_id.encode("utf-8")).hexdigest()
@@ -2173,7 +2205,8 @@ def _receipt_id(invocation_id):
 def record_execution_receipt(invocation_id, work_item_id, seat_id,
                              execution_lease_id, normalized_result,
                              provider_selection=None, continuation_of=None,
-                             approval_id=None, approval_ids=None):
+                             approval_id=None, approval_ids=None,
+                             review_context_ref=None):
     """Persist one normalized terminal result before its lease is closed.
 
     The operation is idempotent only for byte-identical evidence from the same
@@ -2204,13 +2237,22 @@ def record_execution_receipt(invocation_id, work_item_id, seat_id,
            "normalized_result": normalized_result,
            "provider_selection": provider_selection,
            "continuation_of_invocation_id": continuation_of,
-           "approval_id": approval_id, "approval_ids": approval_ids}
+           "approval_id": approval_id, "approval_ids": approval_ids,
+           "review_context_ref": review_context_ref}
+    if (execution_lease_id is None) == (review_context_ref is None):
+        raise StateError("an execution receipt is authorized by exactly one of an "
+                         "execution lease or an open review context")
     with _Lock("execution-domain"):
-        lease = read("execution_lease", execution_lease_id)
-        if lease is None:
-            raise StateError("execution receipt needs an existing execution lease")
-        if (lease.get("work_item_id"), lease.get("seat_id")) != (work_item_id, seat_id):
-            raise StateError("execution receipt does not match its execution lease")
+        if review_context_ref is not None:
+            # A validation invocation holds no claim and opens no lease; its
+            # authority is the review context that named this reviewer.
+            assert_review_authority(work_item_id, seat_id, review_context_ref)
+        else:
+            lease = read("execution_lease", execution_lease_id)
+            if lease is None:
+                raise StateError("execution receipt needs an existing execution lease")
+            if (lease.get("work_item_id"), lease.get("seat_id")) != (work_item_id, seat_id):
+                raise StateError("execution receipt does not match its execution lease")
         with record_lock("execution_receipt", rid):
             existing = read("execution_receipt", rid)
             if existing is not None:
@@ -2427,7 +2469,8 @@ def _continuation_id(invocation_id):
 def record_execution_continuation_preparation(
         original_invocation_id, work_item_id, seat_id, claude_session_id, permission,
         repository_root, working_directory, worktree_path, branch, expected_revision,
-        authorization_ref, authorization_scope, prepared_by="ceo"):
+        authorization_ref, authorization_scope, prepared_by="ceo",
+        review_context_ref=None):
     """Record CEO-supplied continuation context without amending historical evidence."""
     required = (original_invocation_id, work_item_id, seat_id, claude_session_id, permission,
                 repository_root, working_directory, branch, expected_revision,
@@ -2440,7 +2483,12 @@ def record_execution_continuation_preparation(
     task = read("task", work_item_id)
     if original is None or original.get("status") != "needs_input":
         raise StateError("continuation preparation needs original needs_input receipt")
-    if task is None or (task.get("ownership") or {}).get("seat_id") != seat_id:
+    if review_context_ref is not None:
+        # A validation continuation resumes a reviewer, which never held the
+        # claim. Its authority is the same open review context the invocation
+        # ran under, so a stale or foreign one is refused here.
+        assert_review_authority(work_item_id, seat_id, review_context_ref)
+    elif task is None or (task.get("ownership") or {}).get("seat_id") != seat_id:
         raise StateError("continuation preparation needs the original active claim")
     result = original.get("normalized_result") or {}
     if (original.get("work_item_id"), original.get("seat_id"), original.get("provider_id")) != (
@@ -2463,7 +2511,7 @@ def record_execution_continuation_preparation(
         "repository_root": repository_root, "working_directory": working_directory,
         "worktree_path": worktree_path, "branch": branch, "expected_revision": expected_revision,
         "authorization_ref": authorization_ref, "authorization_scope": authorization_scope,
-        "prepared_by": prepared_by,
+        "prepared_by": prepared_by, "review_context_ref": review_context_ref,
         "preparation_purpose": "resume existing execution after permission gate",
         "historical_request_persisted": False,
     }

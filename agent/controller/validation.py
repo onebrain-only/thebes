@@ -347,6 +347,195 @@ def verdict_from(result):
 
 # ------------------------------------------------------------- the verdict
 
+def _record_validation_receipt(request, result, review_ref, selection, state_store,
+                               continuation_of=None, approval_ids=None):
+    """Durable evidence of one validation act. Never a verdict by itself."""
+    try:
+        record = state_store.record_execution_receipt(
+            request.invocation_id, request.work_item_id, request.seat_id, None,
+            normalized_result_payload(result),
+            provider_selection=selection.receipt_evidence(),
+            continuation_of=continuation_of,
+            approval_id=(approval_ids[0] if approval_ids else None),
+            approval_ids=list(approval_ids) if approval_ids else None,
+            review_context_ref=review_ref)
+    except Exception as exc:                              # noqa: BLE001
+        return "refused: %s" % exc
+    return record["execution_receipt_id"]
+
+
+def _prepare_validation_continuation(request, result, review_ref, realized,
+                                     state_store):
+    """Make an approved validator resume possible, on the same review context."""
+    from agent.controller.continuation import denied_permissions
+    receipt = {"status": "needs_input", "provider_id": result.provider_id,
+               "invocation_id": request.invocation_id,
+               "normalized_result": normalized_result_payload(result)}
+    permissions = denied_permissions(receipt)
+    if not permissions or not result.continuation_ref:
+        return "not-continuable"
+    try:
+        record = state_store.record_execution_continuation_preparation(
+            original_invocation_id=request.invocation_id,
+            work_item_id=request.work_item_id, seat_id=request.seat_id,
+            claude_session_id=result.continuation_ref, permission=permissions[0],
+            repository_root=realized["repository_root"],
+            working_directory=request.workspace.working_directory,
+            worktree_path=realized["path"], branch=realized["branch"],
+            expected_revision=realized["expected_revision"],
+            authorization_ref=review_ref,
+            authorization_scope=(
+                "resume the same validation invocation on the same review context "
+                "after the native permission boundary: %s" % ", ".join(permissions)),
+            review_context_ref=review_ref)
+    except Exception as exc:                              # noqa: BLE001
+        return "refused: %s" % exc
+    return record["execution_continuation_id"]
+
+
+def build_prepared_validation_request(preparation, task, issue):
+    """The same validation act, resumed. Same review context, same workspace.
+
+    Deliberately short: the provider session is resumed, so the validator still
+    holds everything it already read. Replaying the original brief would invite
+    it to start the review over.
+    """
+    review = task.get("review_context") or {}
+    reviewer = preparation["seat_id"]
+    capability = _reviewer_capability(reviewer, task)
+    workspace = Workspace(
+        repository_root=preparation["repository_root"],
+        working_directory=preparation["working_directory"],
+        mutation_mode=MutationMode.READ_ONLY,
+        worktree_path=preparation["worktree_path"],
+        expected_revision=preparation["expected_revision"])
+    context = task.get("operational_context") or {}
+    reported = context.get("reported_environment") or {"locality": "unknown"}
+    target = context.get("primary_target") or {"locality": "unknown"}
+    return ExecutionRequest(
+        invocation_id="validation-continuation-" + preparation["execution_continuation_id"][-24:],
+        work_item_id=preparation["work_item_id"], seat_id=reviewer,
+        required_capability=capability,
+        execution_kind=ExecutionKind.VALIDATION,
+        objective=("Continue the same validation of %s you already began, on the "
+                   "same Product evidence. Finish the checks you were making and "
+                   "return your verdict; do not restart the review or widen it.\n\n"
+                   "Return exactly one verdict, pass or fail, as evidence of kind "
+                   "'%s' whose reference is the word pass or the word fail, with "
+                   "the evidence that supports it."
+                   % (preparation["work_item_id"], VERDICT_EVIDENCE_KIND)),
+        role_contract_ref="agent/roles/%s.md" % capability,
+        context_refs=("CLAUDE.md",),
+        workspace=workspace,
+        allowed_surfaces=tuple(task.get("surfaces") or ()),
+        prohibited_actions=VALIDATOR_PROHIBITIONS,
+        operating_mode="PRODUCT_EXECUTION", operating_mode_revision=0,
+        claim_ref=None, execution_lease_id=None,
+        review_context_ref=preparation["review_context_ref"],
+        reported_environment=ReportedEnvironment(
+            reported.get("locality", "unknown"), reported.get("runtime"),
+            reported.get("platform"), reported.get("environment_ref")),
+        primary_target=ExecutionTarget(
+            target.get("locality", "unknown"), target.get("runtime"),
+            target.get("platform"), target.get("environment_ref"),
+            bool(target.get("browser_automation", False)),
+            target.get("launch_method"), target.get("launch_command"),
+            target.get("source", "reported_environment")),
+        validation_targets=(ValidationTarget(review.get("review_type") or "review",
+                                             "review", True),),
+        model_intent=ModelIntent.BALANCED, reasoning_effort=ReasoningEffort.HIGH,
+        required_execution_features=frozenset({ExecutionFeature.REPOSITORY_READ,
+                                               ExecutionFeature.SHELL}),
+        timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
+        return_contract=ReturnContract(review.get("review_type") or "review",
+                                       REQUIRED_EVIDENCE, REQUIRED_SECTIONS))
+
+
+def resume_validation(work_item_id, state_store, jira_client, transport=None,
+                      interventions=None):
+    """Resume an approved validator, take its verdict, and settle the review.
+
+    Reuses the Product-execution continuation mechanism wholesale: the same
+    approval records, the same exact-grant composition with its replay and
+    terminal protection, the same provider/session binding, and the same
+    receipt lineage. What differs is only the authority — a review context
+    rather than a claim and lease — because a reviewer holds neither.
+    """
+    from agent.execution.claude import ClaudeCliTransport, ClaudeProvider
+    task = state_store.read("task", work_item_id)
+    review = (task or {}).get("review_context") or {}
+    if review.get("review_result") != "pending":
+        raise ValidationRefused(VALIDATION_ALREADY_SETTLED,
+                                "%s has no pending review to resume" % work_item_id)
+    preparation = _pending_validation_preparation(work_item_id, review, state_store)
+    if preparation is None:
+        raise ValidationRefused(VALIDATION_CONTEXT_REFUSED,
+                                "%s has no prepared validation continuation"
+                                % work_item_id)
+    original = preparation["original_invocation_id"]
+    prior = next((r for r in state_store.read_all("execution_receipt")
+                  if r.get("continuation_of_invocation_id") == original
+                  and r.get("status") != "needs_input"), None)
+    if prior is not None:
+        raise ValidationRefused(VALIDATION_ALREADY_SETTLED,
+                                "validation continuation %s already returned a "
+                                "terminal result" % original)
+    approvals = state_store.compose_execution_approvals(original)
+    permissions = tuple(record["permission"] for record in approvals)
+    provider = ClaudeProvider(transport or ClaudeCliTransport(),
+                              session_ref=preparation["claude_session_id"],
+                              approved_permissions=permissions)
+    request = build_prepared_validation_request(preparation, task,
+                                                jira_client.get_issue(work_item_id))
+    result = receive_execution_result(provider.execute(request))
+    reviewer = preparation["seat_id"]
+    review_ref = preparation["review_context_ref"]
+    evidence = {"validation_route": review.get("review_type"), "reviewer": reviewer,
+                "review_cycle": review.get("review_cycle") or 1,
+                "review_context_ref": review_ref, "approved_permissions": list(permissions),
+                "validation_invocation_id": request.invocation_id,
+                "validation_provider": result.provider_id,
+                "validation_summary": result.summary,
+                "validation_receipt": _record_validation_receipt(
+                    request, result, review_ref, _ResumedSelection(), state_store,
+                    continuation_of=original,
+                    approval_ids=tuple(r["execution_approval_id"] for r in approvals))}
+    verdict = verdict_from(result)
+    evidence["verdict"] = verdict
+    evidence_ref = "%s verdict %s by %s: %s" % (
+        review.get("review_type"), verdict, reviewer, (result.summary or "")[:200])
+    settled = record_verdict(work_item_id, task, state_store, reviewer, verdict,
+                             evidence_ref)
+    evidence["task"] = settled
+    if verdict == PASS:
+        evidence["outcome"] = VALIDATION_PASSED
+        return evidence
+    evidence["outcome"] = VALIDATION_FAILED
+    evidence.update(remediate(work_item_id, settled, state_store, jira_client,
+                              review.get("review_type"), reviewer, evidence_ref))
+    return evidence
+
+
+class _ResumedSelection:
+    """The provider was fixed by the approval, not chosen again."""
+
+    def receipt_evidence(self):
+        return {"primary_provider_id": "claude-code", "selected_provider_id": "claude-code"}
+
+
+def _pending_validation_preparation(work_item_id, review, state_store):
+    """The preparation for the review cycle currently open, and no other."""
+    ref = "review:%s:%s:%s" % (work_item_id, review.get("review_type"),
+                               review.get("review_cycle") or 1)
+    matches = [record for record
+               in state_store.read_all("execution_continuation_preparation")
+               if record.get("work_item_id") == work_item_id
+               and record.get("review_context_ref") == ref]
+    if not matches:
+        return None
+    return sorted(matches, key=lambda record: record.get("created_at") or "")[-1]
+
+
 def record_verdict(work_item_id, task, state_store, reviewer, verdict, evidence_ref):
     """Through the canonical writer, which only the recorded owner may reach."""
     try:
@@ -420,10 +609,20 @@ def run_validation(work_item_id, task, execution, realized, state_store,
     request = build_validation_request(work_item_id, opened, issue, execution,
                                        realized, reviewer, review_ref, release_ref)
     result, selection = dispatch(request, providers, provider_override)
+    payload = normalized_result_payload(result)
     evidence.update({"validation_invocation_id": request.invocation_id,
                      "validation_provider": result.provider_id,
                      "validation_summary": result.summary,
-                     "validation_result_payload": normalized_result_payload(result)})
+                     "validation_result_payload": payload})
+    # The validation invocation gets a receipt of its own, authorized by the
+    # review context rather than a lease. Without it nothing could bind an
+    # approval or a continuation to a validator that stopped at a native
+    # permission boundary — which is exactly what happened on KAN-183.
+    evidence["validation_receipt"] = _record_validation_receipt(
+        request, result, review_ref, selection, state_store)
+    if result.status is ExecutionStatus.NEEDS_INPUT:
+        evidence["validation_continuation_prepared"] = _prepare_validation_continuation(
+            request, result, review_ref, realized, state_store)
 
     verdict = verdict_from(result)
     evidence["verdict"] = verdict

@@ -548,6 +548,62 @@ def _existing_continuation_receipt(original_invocation_id, state_store):
                  and receipt.get("status") != "needs_input"), None)
 
 
+def resume_validation(work_item_id, *, state_store=store, jira_client=jira,
+                      workspace_allocator=realize_workspace,
+                      workspace_concluder=conclude_workspace, interventions=None,
+                      worktree_root=None, integration_branch=None, transport=None):
+    """Resume an approved validator, then run the rest of the lifecycle.
+
+    The verdict a resumed validator returns is the same verdict any validator
+    returns, so it earns the same tail: integration and lifecycle completion,
+    both gating themselves on canonical truth.
+    """
+    result = _result_shell(work_item_id)
+    result["operating_mode"] = state_store.current_operating_mode()
+    if result["operating_mode"] != "PRODUCT_EXECUTION":
+        result["blocker"] = "system-maintenance-active"
+        return result
+    try:
+        evidence = validation_policy.resume_validation(
+            work_item_id, state_store, jira_client, transport=transport,
+            interventions=interventions)
+    except ValidationRefused as exc:
+        result.update({"validation_status": exc.outcome, "validation_blocker": str(exc)})
+        return result
+    except (store.StateError, jira.JiraError, ValueError) as exc:
+        result.update({"validation_status": validation_policy.VALIDATION_DISPATCH_FAILED,
+                       "validation_blocker": str(exc)})
+        return result
+
+    result.update({"validation_status": evidence["outcome"],
+                   "validation_route": evidence.get("validation_route"),
+                   "reviewer": evidence.get("reviewer"),
+                   "review_cycle": evidence.get("review_cycle"),
+                   "verdict": evidence.get("verdict"),
+                   "approved_permissions": list(evidence.get("approved_permissions") or []),
+                   "remediation_owner": evidence.get("remediation_owner"),
+                   "remediation_route": evidence.get("remediation_route")})
+    task = state_store.read("task", work_item_id)
+    seat_id = _integration_seat(task, state_store)
+    result["seat_id"] = seat_id
+    if evidence["outcome"] != validation_policy.VALIDATION_PASSED:
+        return result
+    tail = integrate(work_item_id, state_store=state_store, jira_client=jira_client,
+                     workspace_allocator=workspace_allocator,
+                     workspace_concluder=workspace_concluder,
+                     interventions=interventions, worktree_root=worktree_root,
+                     integration_branch=integration_branch,
+                     conclude_workspace_after=True, record_refusals=True)
+    result.update({key: tail[key] for key in (
+        "integration_status", "attributed_files", "product_commit", "integrated_as",
+        "integration_branch", "previous_head", "conflict_paths",
+        "remediation_required", "receipt_status", "completion_status",
+        "completion_blocker", "jira_transition_performed", "lifecycle",
+        "ownership_status", "open_leases", "workspace_status", "workspace_reason",
+        "workspace_path") if key in tail})
+    return result
+
+
 def _continuable_invocation(work_item_id, seat_id, state_store):
     """The one prepared, still-open continuation for this work item."""
     candidates = [

@@ -1141,7 +1141,7 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
 
     elif kind == "execution_receipt":
         _req(rec, ["execution_receipt_id", "invocation_id", "work_item_id", "seat_id",
-                   "execution_lease_id", "status", "normalized_result"], errs, where)
+                   "status", "normalized_result"], errs, where)
         if not str(rec.get("execution_receipt_id") or "").startswith("receipt-"):
             errs.append("%s: execution_receipt_id must start with receipt-" % where)
         if not isinstance(rec.get("invocation_id"), str) or not rec["invocation_id"]:
@@ -1151,8 +1151,19 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
         if rec.get("seat_id") not in seatset:
             errs.append("%s: execution receipt seat %r is not declared"
                         % (where, rec.get("seat_id")))
-        if not str(rec.get("execution_lease_id") or "").startswith("lease-"):
+        # A receipt is authorized by exactly one of a lease (Product execution)
+        # or an open review context (a validation invocation, whose reviewer
+        # deliberately holds no claim and opens no lease).
+        lease_id = rec.get("execution_lease_id")
+        review_ref = rec.get("review_context_ref")
+        if (lease_id is None) == (review_ref is None):
+            errs.append("%s: receipt is authorized by exactly one of an execution "
+                        "lease or a review context" % where)
+        elif lease_id is not None and not str(lease_id).startswith("lease-"):
             errs.append("%s: receipt needs an execution lease" % where)
+        elif review_ref is not None and not str(review_ref).startswith("review:"):
+            errs.append("%s: receipt review context reference must start with review:"
+                        % where)
         if rec.get("status") not in {"completed", "needs_input", "execution_failed", "provider_failed"}:
             errs.append("%s: receipt status is not terminal" % where)
         result = rec.get("normalized_result")
@@ -1251,6 +1262,10 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
             errs.append("%s: preparation must not rewrite historical request truth" % where)
         if "*" in str(rec.get("permission") or ""):
             errs.append("%s: continuation preparation cannot be wildcarded" % where)
+        prep_review = rec.get("review_context_ref")
+        if prep_review is not None and not str(prep_review).startswith("review:"):
+            errs.append("%s: continuation preparation review reference must start "
+                        "with review:" % where)
 
     elif kind == "execution_session_retirement":
         _req(rec, ["execution_session_retirement_id", "original_invocation_id", "work_item_id",
