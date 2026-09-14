@@ -26,15 +26,18 @@ def build_prepared_continuation_request(preparation, task, lease):
         work_item_id=preparation["work_item_id"], seat_id=preparation["seat_id"],
         required_capability=preparation["required_capability"],
         execution_kind=ExecutionKind.IMPLEMENTATION,
-        objective=("Resume the existing Claude execution after its approved native permission "
-                   "gate. Continue only the original work item and declared surfaces."),
+        objective=("Continue the same preserved work item from canonical durable state and only "
+                   "declared surfaces. Do not run Thebes/controller bootstrap code, launch Claude, "
+                   "or invoke execute_approved_claude_continuation."),
         role_contract_ref="agent/roles/%s.md" % preparation["required_capability"],
         context_refs=("CLAUDE.md", "agent/CONTRACT.md"),
         workspace=Workspace(preparation["repository_root"], preparation["working_directory"],
                             MutationMode.REPOSITORY_EDIT, preparation["worktree_path"],
                             preparation["expected_revision"]),
         allowed_surfaces=tuple(task.get("surfaces") or ()),
-        prohibited_actions=("select another Jira task", "change provider", "bypass permissions"),
+        prohibited_actions=("select another Jira task", "change provider", "bypass permissions",
+                            "execute_approved_claude_continuation", "build_prepared_continuation_request",
+                            "launch another Claude session"),
         operating_mode="PRODUCT_EXECUTION", operating_mode_revision=lease["mode_revision"],
         claim_ref=(task.get("ownership") or {}).get("claim_ref"),
         execution_lease_id=lease["execution_lease_id"],
@@ -119,7 +122,7 @@ def _continuation_invocation_id(approval_ids):
 
 def execute_approved_claude_continuation(approval_ids, request_factory, provider,
                                          *, state_store=None,
-                                         closed_by="orchestrator"):
+                                         closed_by="orchestrator", replacement_session=False):
     """Resume exactly one Claude session after one immutable CEO approval.
 
     This is deliberately not provider selection or a new claim.  The original
@@ -157,6 +160,8 @@ def execute_approved_claude_continuation(approval_ids, request_factory, provider
     if tuple(getattr(provider, "approved_permissions", ())) != permissions:
         raise WakeOrderError("continuation provider permissions do not match exact grants")
     invocation_id = _continuation_invocation_id(tuple(rec["execution_approval_id"] for rec in approvals))
+    if replacement_session:
+        invocation_id = "replacement-" + invocation_id
     if state_store.read_execution_receipt(invocation_id) is not None:
         raise WakeOrderError("continuation was already executed")
     task = state_store.assert_execution_permitted(approval["work_item_id"], approval["seat_id"])
