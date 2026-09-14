@@ -105,6 +105,21 @@ provider failure before any Product mutation releases a freshly allocated clean 
 canonically `done` item releases a clean tree keeping its branch, and a tree holding uncommitted
 Product work is never deleted. Evidence: `agent/controller/tests/test_workspace_allocation.py`.
 
+**CURRENT FACT — validated Product work lands without a human running git.**
+`python -m agent.controller integrate KAN-XXX` attributes, commits and integrates one work
+item's isolated branch onto Canary, through the existing `agent/state/worktrees.py` and no second
+git subsystem or integration queue. The gate is the canonical validation route: integration
+consumes `queue.completion_reasons` (minus `already-done`) rather than inventing a second
+validation model, so a completed provider result, a Jira status and a seat's assertion all remain
+incapable of landing code. Attribution runs before anything is staged and refuses a change the
+task never declared, leaving it in place. A conflict aborts cleanly, leaves the branch where it
+was, and is classified as Product remediation with the worktree preserved — never as a provider
+or PEER failure, and never as permission to force or reset. Integration is verified by asking git
+afterwards, not by a zero exit code. A durable `integration_receipt` records the Product commit,
+the integrated sha, the branch, the previous head, the route and verdict, the attributed files
+and whether remediation is required; Git remains the authority on the code. Evidence:
+`agent/controller/tests/test_integration_flow.py`.
+
 **DECISION/INVARIANT — the executor brief is Product-only.** There is exactly one executor
 brief builder, `agent/execution/brief.py`, and both providers render the same text from the
 immutable request. It reads a closed allowlist of Product fields, so control-plane request

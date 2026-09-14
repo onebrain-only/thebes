@@ -76,6 +76,61 @@ A release keeps the branch. `worktrees.release` refuses a dirty tree, and that
 refusal is reported as a preserved workspace rather than turned into an error or
 a deletion.
 
+## Landing validated work
+
+```sh
+python -m agent.controller integrate KAN-XXX
+```
+
+A separate act from `execute`, because validation happens after an execution
+returns — often in another session — so integration cannot be the tail of the
+wake that produced the work.
+
+`agent/controller/integration.py` adds no git: `worktrees.assert_attribution`,
+`worktrees.commit` (explicit pathspec, never `-A`) and `worktrees.integrate`
+(the cross-process integration lock, stale-target refusal, `-x` cherry-pick,
+exact conflict report) are used unchanged. What it adds is the gate and the
+ordering.
+
+**The gate is the canonical validation route and nothing else.**
+`validation_reasons` is `queue.completion_reasons` with exactly one reason
+dropped — `already-done`, because an item the Orchestrator has already moved
+still needs its code to land. A completed provider result, a Jira status and a
+seat's say-so all remain incapable of opening it.
+
+Order: validated → attributed → commit → serialized integration → verified
+against git → evidence recorded → workspace concluded.
+
+Attribution runs before anything is staged: the changed files must be a subset
+of the surfaces the task declared. An undeclared change is refused and left in
+place, never restored or reset. A clean tree does not end the story either — if
+an earlier attempt committed and failed to land, that commit is retried rather
+than reported as change-free.
+
+Outcomes, each its own fact and none of them a provider or PEER failure:
+
+| Outcome | Meaning |
+|---|---|
+| `integrated` | landed on the integration branch and verified against git |
+| `already-present` | the commit is already there; not landed twice |
+| `no-product-commit-required` | legitimately changed nothing; no empty commit |
+| `attribution-failed` | changed files the task never declared |
+| `commit-failed` | the commit itself could not be made |
+| `integration-conflict` | does not apply cleanly; Product remediation, workspace preserved |
+| `integration-failed` | integration could not be verified afterwards |
+| `validation-not-passed` | the route has not passed; nothing was staged |
+
+Verification asks git rather than trusting an exit code: the landed commit is an
+ancestor of the branch, the previous head still is too (unrelated work was not
+discarded), and the expected files are present. A conflict aborts the
+cherry-pick, leaves the branch exactly where it was, and preserves the worktree
+as the remediation surface. `main` is never an integration target.
+
+Evidence lands in a durable `integration_receipt` record: the Product commit,
+the integrated sha, the branch, the previous head, the route and its result, the
+attributed files, and whether remediation is required. Persistent State holds
+the orchestration evidence; git remains the authority on the code.
+
 ## Exceptional brief shape
 
 `--brief-file` survives for debugging and for work whose canonical facts are

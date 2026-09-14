@@ -33,6 +33,11 @@ from agent.controller.intent import (
     assert_manual_brief_cannot_override_canonical,
     resolve_execution_intent,
 )
+from agent.controller.integration import (
+    IntegrationRefused,
+    integrate_validated_work,
+)
+from agent.controller import integration as integration_policy
 from agent.controller.workspace import (
     WorkspaceUnavailable,
     conclude_workspace,
@@ -239,6 +244,137 @@ def execute(work_item_id, brief=None, *, authorization=None, state_store=store,
     except (ControllerInputError, store.StateError, jira.JiraError, ValueError) as exc:
         result["blocker"] = str(exc)
         return result
+
+
+def _integration_shell(work_item_id):
+    return {
+        "work_item_id": work_item_id,
+        "operating_mode": None,
+        "seat_id": None,
+        "integration_status": "not-started",
+        "validation_route": None,
+        "validation_result": None,
+        "attributed_files": [],
+        "product_commit": None,
+        "integrated_as": None,
+        "integration_branch": None,
+        "previous_head": None,
+        "conflict_paths": [],
+        "remediation_required": False,
+        "receipt_status": "not-recorded",
+        "workspace_status": "not-allocated",
+        "workspace_path": None,
+        "workspace_reason": None,
+        "blocker": None,
+    }
+
+
+def integrate(work_item_id, *, state_store=store, jira_client=jira,
+              workspace_allocator=realize_workspace,
+              workspace_concluder=conclude_workspace,
+              integrator=integrate_validated_work, interventions=None,
+              integration_branch=None, gates=None, worktree_root=None):
+    """Land one work item's validated Product work on the integration branch.
+
+    Deliberately a separate act from `execute`: validation happens after an
+    execution returns, often in another session, so integration cannot be the
+    tail of the wake that produced the work.
+
+    The gate is the canonical validation route and nothing else. Roadmap
+    execution authorization is not re-checked here: it names the ticket selected
+    for EXECUTION, and refusing to land KAN-A's passed review because the
+    roadmap has since moved to KAN-B would strand finished work. What may not be
+    skipped is the review verdict, and that is exactly what is checked.
+    """
+    result = _integration_shell(work_item_id)
+    result["operating_mode"] = state_store.current_operating_mode()
+    if result["operating_mode"] != "PRODUCT_EXECUTION":
+        result["blocker"] = "system-maintenance-active"
+        return result
+    try:
+        task = state_store.read("task", work_item_id)
+        if task is None:
+            result["blocker"] = "work-item-not-found"
+            return result
+        ownership = task.get("ownership") or {}
+        seat_id = ownership.get("seat_id")
+        if not seat_id:
+            result["blocker"] = "not-owned"
+            return result
+        result["seat_id"] = seat_id
+        profile = task.get("execution_profile") or {}
+        review = task.get("review_context") or {}
+        result.update({"validation_route": profile.get("validation_route"),
+                       "validation_result": review.get("review_result")})
+
+        # The gate runs before the workspace is touched: work that may not be
+        # integrated should not even have its tree re-verified for the purpose.
+        integration_policy.assert_validated(task, interventions)
+
+        realized = workspace_allocator(work_item_id, seat_id,
+                                       _integration_workspace(task, seat_id, state_store))
+        result.update({"workspace_status": "allocated",
+                       "workspace_path": realized["path"]})
+        issue = jira_client.get_issue(work_item_id)
+        evidence = integrator(work_item_id, seat_id, task, issue, realized,
+                              root=worktree_root,
+                              integration_branch=integration_branch,
+                              interventions=interventions, gates=gates)
+        outcome = evidence["outcome"]
+    except IntegrationRefused as exc:
+        # A refusal is evidence: file it with whatever the attempt established.
+        evidence = dict(_refusal_evidence(task, seat_id, work_item_id,
+                                          result.get("workspace_path"),
+                                          integration_branch),
+                        detail=exc.detail, conflict_paths=list(exc.conflict_paths))
+        outcome = exc.outcome
+        result["blocker"] = str(exc)
+    except (store.StateError, jira.JiraError, WorkspaceUnavailable, ValueError) as exc:
+        result["blocker"] = str(exc)
+        return result
+
+    result.update({"integration_status": outcome,
+                   "attributed_files": list(evidence.get("attributed_files") or []),
+                   "product_commit": evidence.get("product_commit"),
+                   "integrated_as": evidence.get("integrated_as"),
+                   "integration_branch": evidence.get("integration_branch"),
+                   "previous_head": evidence.get("previous_head"),
+                   "conflict_paths": list(evidence.get("conflict_paths") or []),
+                   "remediation_required": outcome in integration_policy.REMEDIATION_OUTCOMES})
+    try:
+        integration_policy.record(state_store, work_item_id, seat_id, outcome, evidence)
+        result["receipt_status"] = "recorded"
+    except store.StateError as exc:
+        result["receipt_status"] = "refused: %s" % exc
+    if result["workspace_status"] == "allocated":
+        result.update(workspace_concluder(work_item_id, seat_id, None, task,
+                                          realized, integration=evidence))
+    return result
+
+
+def _refusal_evidence(task, seat_id, work_item_id, workspace_path, integration_branch):
+    from agent.state import worktrees
+    profile = task.get("execution_profile") or {}
+    review = task.get("review_context") or {}
+    return {"worktree_path": workspace_path,
+            "source_branch": worktrees.branch_name(seat_id, work_item_id),
+            "integration_branch": integration_branch or worktrees.INTEGRATION_BRANCH,
+            "validation_route": profile.get("validation_route"),
+            "validation_result": review.get("review_result"),
+            "attributed_files": []}
+
+
+def _integration_workspace(task, seat_id, state_store):
+    """Name the same isolated workspace this work item already has.
+
+    Allocation is idempotent and derives the path from (seat, work item), so
+    this re-verifies and reuses the executor's tree rather than making a new one.
+    """
+    from agent.controller.intent import ROOT as INTENT_ROOT, read_project_repository
+    repository = read_project_repository(task.get("product_id"), task.get("project_id"))
+    return {"repository_root": os.path.join(INTENT_ROOT, repository),
+            "working_directory": None, "worktree_path": None,
+            "expected_revision": None, "mutation_mode": "repository_edit"}
 
 
 def _resolve_seat(task, seat_registry, state_store):

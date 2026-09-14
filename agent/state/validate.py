@@ -100,6 +100,15 @@ EVENT_BANNED_FIELDS = {
 # layer author facts, and a corrected event whose content had been rewritten would
 # be indistinguishable from one that was always right.
 CORRECTION_KINDS = {"invalidate"}
+
+# Mirrors store.INTEGRATION_OUTCOMES; kept here so the validator has no import
+# cycle back into the writer it validates.
+INTEGRATION_OUTCOMES = {
+    "integrated", "already-present", "no-product-commit-required",
+    "attribution-failed", "commit-failed", "integration-conflict",
+    "integration-failed", "validation-not-passed",
+}
+PROTECTED_INTEGRATION_BRANCHES = {"main", "master", "origin/main", "origin/master"}
 # Correcting advisory history is a governance act, not an execution act. An executor
 # that could invalidate its own telemetry could edit the record of its own reviews.
 CORRECTION_AUTHORITIES = {"ceo"}
@@ -1175,6 +1184,34 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
                                                     or not item.startswith("approval-")
                                                     for item in approval_ids)):
                 errs.append("%s: continuation receipt approval_ids must be exact approval ids" % where)
+
+    elif kind == "integration_receipt":
+        _req(rec, ["integration_receipt_id", "work_item_id", "seat_id", "outcome"],
+             errs, where)
+        if not str(rec.get("integration_receipt_id") or "").startswith("integration-"):
+            errs.append("%s: integration_receipt_id must start with integration-" % where)
+        if not JIRA_KEY.match(str(rec.get("work_item_id") or "")):
+            errs.append("%s: integration receipt needs a Jira work_item_id" % where)
+        if rec.get("seat_id") not in seatset:
+            errs.append("%s: integration receipt seat %r is not declared"
+                        % (where, rec.get("seat_id")))
+        if rec.get("outcome") not in INTEGRATION_OUTCOMES:
+            errs.append("%s: unknown integration outcome %r" % (where, rec.get("outcome")))
+        for field in ("attributed_files", "conflict_paths"):
+            if not isinstance(rec.get(field), list):
+                errs.append("%s: %s must be a list" % (where, field))
+        if rec.get("outcome") == "integrated":
+            for field in ("product_commit", "integrated_as", "integration_branch",
+                          "previous_head"):
+                if not rec.get(field):
+                    errs.append("%s: an integrated receipt records %s" % (where, field))
+            # Integration is only ever offered to the integration branch; a
+            # protected branch appearing here would mean the guard was bypassed.
+            if rec.get("integration_branch") in PROTECTED_INTEGRATION_BRANCHES:
+                errs.append("%s: integration branch %r is protected"
+                            % (where, rec.get("integration_branch")))
+        if rec.get("outcome") == "integration-conflict" and not rec.get("remediation_required"):
+            errs.append("%s: an integration conflict requires remediation" % where)
 
     elif kind == "execution_approval":
         _req(rec, ["execution_approval_id", "original_invocation_id", "work_item_id", "seat_id",

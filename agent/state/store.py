@@ -63,7 +63,20 @@ KINDS = {
     # One replacement is permitted for a retired execution lineage.  It is not
     # a new task or a second claim.
     "execution_replacement": ("execution-replacements", "replacement"),
+    # Immutable evidence that validated Product work was attributed, committed
+    # and offered to the integration branch, and what git said happened. It
+    # records the orchestration act; git remains the authority on the code.
+    "integration_receipt": ("integration-receipts", "integration"),
 }
+
+
+# The complete integration vocabulary. A git failure is not a provider failure
+# and not a Product-implementation failure; each stays its own fact.
+INTEGRATION_OUTCOMES = frozenset({
+    "integrated", "already-present", "no-product-commit-required",
+    "attribution-failed", "commit-failed", "integration-conflict",
+    "integration-failed", "validation-not-passed",
+})
 
 
 class StateError(Exception):
@@ -2159,6 +2172,64 @@ def record_execution_receipt(invocation_id, work_item_id, seat_id,
             _validate_one("execution_receipt", rec)
             _atomic_write(path_for("execution_receipt", rid), rec)
             return rec
+
+
+def _integration_id(work_item_id, product_commit, outcome):
+    digest = hashlib.sha256(
+        "\0".join((work_item_id, product_commit or "none", outcome)).encode("utf-8")
+    ).hexdigest()[:16]
+    return "integration-%s" % digest
+
+
+def record_integration_receipt(work_item_id, seat_id, outcome, evidence):
+    """Persist what integration did, including what it refused to do.
+
+    Idempotent for byte-identical evidence; a second, different result for the
+    same (work item, commit, outcome) is refused rather than overwriting the
+    first record. A refusal is evidence too: an attribution failure or an
+    integration conflict is exactly the state somebody later needs to read.
+    """
+    if not isinstance(evidence, dict):
+        raise StateError("integration evidence must be a JSON object")
+    if outcome not in INTEGRATION_OUTCOMES:
+        raise StateError("unknown integration outcome %r" % outcome)
+    rid = _integration_id(work_item_id, evidence.get("product_commit"), outcome)
+    rec = {"integration_receipt_id": rid, "work_item_id": work_item_id,
+           "seat_id": seat_id, "outcome": outcome,
+           "product_commit": evidence.get("product_commit"),
+           "integrated_as": evidence.get("integrated_as"),
+           "integration_branch": evidence.get("integration_branch"),
+           "previous_head": evidence.get("previous_head"),
+           "source_branch": evidence.get("source_branch"),
+           "worktree_path": evidence.get("worktree_path"),
+           "validation_route": evidence.get("validation_route"),
+           "validation_result": evidence.get("validation_result"),
+           "attributed_files": list(evidence.get("attributed_files") or []),
+           "conflict_paths": list(evidence.get("conflict_paths") or []),
+           "remediation_required": bool(evidence.get("remediation_required")),
+           "detail": evidence.get("detail")}
+    with record_lock("integration_receipt", rid):
+        existing = read("integration_receipt", rid)
+        if existing is not None:
+            comparable = {k: v for k, v in rec.items()
+                          if k not in ("schema_version", "revision",
+                                       "created_at", "updated_at")}
+            if {k: existing.get(k) for k in comparable} != comparable:
+                raise StateError("conflicting integration receipt %s" % rid)
+            return existing
+        rec["schema_version"] = SCHEMA_VERSION
+        rec["revision"] = 1
+        rec["created_at"] = now()
+        rec["updated_at"] = rec["created_at"]
+        _validate_one("integration_receipt", rec)
+        _atomic_write(path_for("integration_receipt", rid), rec)
+        return rec
+
+
+def read_integration_receipts(work_item_id=None):
+    """Every integration act, or only those for one work item."""
+    return [r for r in read_all("integration_receipt")
+            if work_item_id is None or r.get("work_item_id") == work_item_id]
 
 
 def read_execution_receipt(invocation_id):

@@ -150,15 +150,30 @@ def assert_isolated_identity(work_item_id, seat_id, allocation, repository, root
     return True
 
 
-def release_decision(result, task, realized):
+def release_decision(result, task, realized, integration=None):
     """Workspace lifetime follows the Product lifecycle, not this function's scope.
 
     Preservation is the default and needs no justification. Release is the
     exception and must name the canonical fact that permits it.
+
+    ``integration`` is the outcome of the integration act when one has run. Work
+    that has actually landed on the integration branch no longer needs its tree;
+    work that conflicted needs it more than ever, because that tree is where the
+    remediation happens.
     """
     status = getattr(getattr(result, "status", None), "value", None)
     lifecycle = ((task or {}).get("lifecycle") or {}).get("canonical")
     route = ((task or {}).get("execution_profile") or {}).get("validation_route")
+
+    if integration is not None:
+        outcome = integration.get("outcome")
+        if outcome in ("integrated", "already-present", "no-product-commit-required"):
+            if not _is_clean(realized["path"]):
+                return PRESERVE, "workspace-holds-uncommitted-product-work"
+            return RELEASE, "integrated-%s" % outcome
+        # Conflict, attribution failure, commit failure: the tree is the
+        # remediation surface. Deleting it would delete the evidence and the work.
+        return PRESERVE, "integration-%s-needs-product-remediation" % outcome
 
     if status == "needs_input":
         return PRESERVE, "needs-input-continuation-uses-this-workspace"
@@ -183,9 +198,9 @@ def release_decision(result, task, realized):
 
 
 def conclude_workspace(work_item_id, seat_id, result, task, realized, repo=None,
-                       root=None):
+                       root=None, integration=None):
     """Apply the lifecycle decision. A refused release is a fact, not a failure."""
-    decision, reason = release_decision(result, task, realized)
+    decision, reason = release_decision(result, task, realized, integration)
     # The branch is durable identity and is never reported away here: a released
     # worktree keeps its branch, and a preserved one still is that branch.
     if decision == PRESERVE:
