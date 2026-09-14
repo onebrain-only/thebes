@@ -602,6 +602,7 @@ class FullFlowTests(ValidationTestCase):
         after = store.read("task", "KAN-900")
         # peer_fail_transfer's exact canonical effect, verbatim.
         self.assertEqual(["backend-2"], store.evidenced_executors(after))
+        self.assertEqual("backend-2", after["ownership"]["seat_id"])
         self.assertEqual("self", after["review_context"]["review_type"])
         self.assertEqual("backend-2", after["review_context"]["review_owner"])
         self.assertEqual("backend-1", after["review_context"]["previous_owner"])
@@ -611,18 +612,14 @@ class FullFlowTests(ValidationTestCase):
         self.assertNotEqual(DONE, after["lifecycle"]["jira_status_id"])
         self.assertEqual(self.main_before, sh(self.repo, "rev-parse", "main"))
 
-    def test_peer_fail_does_not_re_establish_ownership_for_the_reviewer(self):
-        # A truthful characterisation, not an aspiration: `peer_fail_transfer`
-        # moves evidence and the review context but writes no ownership, and an
-        # item in Development is not claimable. Remediation therefore still
-        # needs an ownership act the canonical model does not currently provide.
-        import queue as state_queue
+    def test_peer_fail_hands_ownership_to_the_reviewer(self):
+        # The transfer is complete: the reviewer is the evidenced executor AND
+        # the owner, so remediation needs no fresh claim.
         make_task()
         self._execute(verdict=FAIL)
         after = store.read("task", "KAN-900")
-        self.assertIsNone(after["ownership"])
-        self.assertIn("not-ready", state_queue.unclaimable_reasons(after,
-                                                                   interventions=[]))
+        self.assertEqual("backend-2", after["ownership"]["seat_id"])
+        self.assertEqual(["backend-2"], store.evidenced_executors(after))
 
     def test_a_reviewer_that_owns_its_transferred_work_self_validates_to_done(self):
         # The state a PEER FAIL transfer leads to, once ownership is with the

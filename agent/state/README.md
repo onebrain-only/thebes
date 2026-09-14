@@ -180,6 +180,18 @@ evidence of which route is active and state is reconciled to it. Three outcomes:
 | Jira **stricter** | **WARN, repairable** — `store.reconcile_review_from_jira()` adopts it. This is the state a successful Jira transition plus a failed local write leaves behind, and it must stay repairable |
 | Jira **weaker than the policy floor** | **ERROR.** Transitions here are global and unconditional, so anyone can drag `Peer-review`→`Self-review`. The repair is to move the issue back in Jira, never to lower the route |
 
+**PEER FAIL transfers OWNERSHIP as well as evidence, in the same write.** The reviewer
+becomes the owner, the evidenced executor, and the SELF reviewer of its own fix, in one CAS'd
+mutation. This is a transfer of execution authority the failure already authorised, not a fresh
+claim, so it deliberately does not go through queue claimability — the work goes to the one seat
+the review context already records, not to whoever is free. The transfer requires a RECORDED
+`fail`, the exact recorded `review_owner`, a seat that actually holds the task's capability, and
+a seat not already owning other work; every refusal leaves the record byte-identical. A replay
+is refused by construction, because a completed transfer leaves `review_type` on `self`.
+*(Until 2026-09-14 every field moved except ownership, which left the reviewer unable to continue
+and required a human to intervene — the exact "ownership left behind" state the operation's own
+docstring names as the thing to avoid.)*
+
 **One authorised exception below the floor:** after a PEER-fail transfer the reviewer
 SELF-reviews its own fix, so a peer-floor item legitimately sits in `Self-review`.
 `previous_owner` — set atomically by `peer_fail_transfer()` and by nothing else — is what

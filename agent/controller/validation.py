@@ -156,7 +156,17 @@ def _transition_id(status_id):
 
 
 def open_context(work_item_id, task, state_store, seats_by_capability, route):
-    """Open the canonical review context; policy resolves its owner."""
+    """Open the canonical review context; policy resolves its owner.
+
+    A PEER FAIL transfer already opens the reviewer's SELF review as part of its
+    one atomic write, so an existing PENDING context with a resolved owner is
+    that review — not a second one to create. `open_review_context` would
+    refuse it as `review-already-open`, which is correct for it and wrong here.
+    """
+    existing = task.get("review_context")
+    if (isinstance(existing, dict) and existing.get("review_result") == "pending"
+            and existing.get("review_owner")):
+        return task
     evidenced_reviewer = None
     if route == policy.PEER:
         executors = state_store.evidenced_executors(task)
@@ -353,9 +363,12 @@ def remediate(work_item_id, task, state_store, jira_client, route, reviewer,
     capability = profile.get("required_capability")
     if route == policy.PEER:
         # Execution authority moves to the reviewer, whose fix is SELF-reviewed.
-        # There is no second PEER loop: the route itself becomes SELF.
-        task = state_store.peer_fail_transfer(work_item_id, task["revision"],
-                                              reviewer, evidence_ref)
+        # There is no second PEER loop: the route itself becomes SELF. The cycle
+        # is pinned so a replayed transfer cannot advance it twice.
+        review = task.get("review_context") or {}
+        task = state_store.peer_fail_transfer(
+            work_item_id, task["revision"], reviewer, evidence_ref,
+            expected_cycle=review.get("review_cycle"))
         next_owner, next_route = reviewer, policy.SELF
     elif route == policy.SELF:
         task = state_store.self_fail_reentry(work_item_id, task["revision"],

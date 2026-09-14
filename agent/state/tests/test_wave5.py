@@ -274,8 +274,11 @@ raises("reconcile REFUSES a weaker Jira status (Self-review on schema work)",
 raises("reconcile refuses a non-review status",
        lambda: store.reconcile_review_from_jira("KAN-990", r5["revision"], "10043"),
        "not one of the three review statuses")
-# PEER FAIL -> reviewer becomes executor, SELF-reviews, SAME execution status
-r6 = store.peer_fail_transfer("KAN-990", r5["revision"], "frontend-6",
+# PEER FAIL -> reviewer becomes executor, SELF-reviews, SAME execution status.
+# The verdict is recorded first: the transfer follows a RECORDED failure.
+r5b = store.record_review_result("KAN-990", r5["revision"], "frontend-6", "fail",
+                                 "peer-review-fail:KAN-990:cycle-1")
+r6 = store.peer_fail_transfer("KAN-990", r5b["revision"], "frontend-6",
                               "peer-review-transfer:KAN-990:cycle-1")
 ok("PEER FAIL: evidence REPLACED by reviewer",
    len(r6["executor_evidence"]) == 1 and r6["executor_evidence"][0]["seat_id"] == "frontend-6")

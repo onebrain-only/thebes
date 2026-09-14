@@ -150,6 +150,17 @@ claim, and its absence or contradiction is surfaced rather than guessed. A PEER 
 eligible peer waits rather than downgrading. Evidence:
 `agent/controller/tests/test_validation_dispatch.py`.
 
+**CURRENT FACT — PEER FAIL hands over ownership, so remediation needs no human.**
+`store.peer_fail_transfer` now writes ownership in the same atomic mutation as the evidence
+replacement, the SELF route, the cycle and `previous_owner`. It is a transfer of already-
+authorised execution authority, not a claim, and deliberately bypasses queue claimability: the
+work goes to the seat the review context records. It requires a recorded `fail`, the exact review
+owner, a seat holding the task's capability and not already owning other work; every refusal
+leaves the record byte-identical, and a replay is refused because a completed transfer leaves the
+route on `self`. The reviewer then executes its fix, SELF-validates, integrates and completes
+through the ordinary flow, with no second PEER loop. Evidence:
+`agent/controller/tests/test_peer_fail_handoff.py`.
+
 **DECISION/INVARIANT — the executor brief is Product-only.** There is exactly one executor
 brief builder, `agent/execution/brief.py`, and both providers render the same text from the
 immutable request. It reads a closed allowlist of Product fields, so control-plane request

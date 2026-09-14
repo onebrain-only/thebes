@@ -1279,12 +1279,24 @@ def self_fail_reentry(work_item_id, expected_revision, seat_id, reentry_ref):
         return merged
 
 
-def peer_fail_transfer(work_item_id, expected_revision, reviewer, evidence_ref):
+def peer_fail_transfer(work_item_id, expected_revision, reviewer, evidence_ref,
+                       expected_cycle=None):
     """PEER FAIL: the reviewer becomes the executor and self-reviews its own fix.
 
     Every field moves in ONE CAS'd write, because a half-applied transfer is exactly
     the state that would let someone reach an easier route: evidence replaced but
     review_type still peer, or review_type flipped with ownership left behind.
+
+    OWNERSHIP MOVES HERE, AND THAT IS THE WHOLE POINT
+    Until 2026-09-14 this wrote every field of the transfer EXCEPT ownership, which
+    left the doctrine unreachable: the reviewer became the evidenced executor on a
+    SELF route with `ownership` null, on an item sitting in Development that
+    `claim` refuses as `not-ready`. Nothing could then continue the remediation and
+    a human had to intervene — the exact "ownership left behind" state the paragraph
+    above names as the thing to avoid. This is a TRANSFER of execution authority the
+    PEER failure already authorised, not a fresh claim, so it deliberately does not
+    go through queue claimability: the work is not being handed to whoever is free,
+    it is being handed to the one seat the review context already records.
 
     executor_evidence is REPLACED, not appended. A list with two entries means
     CONFLICTING evidence and routing must refuse; here the workflow has explicitly
@@ -1294,10 +1306,22 @@ def peer_fail_transfer(work_item_id, expected_revision, reviewer, evidence_ref):
     The work returns to the SAME Development column: the reviewer shares the task's
     capability by construction, so required_capability does not change and neither
     does the column.
+
+    REPLAY IS REFUSED BY CONSTRUCTION. A completed transfer leaves `review_type` on
+    `self`, so a second call fails the PEER-route check rather than advancing the
+    cycle twice or re-taking ownership from whoever holds it now.
     """
+    import validate as _validate                        # noqa: E402
     if expected_revision is None:
         raise StateError("expected_revision is required; there is no force update")
-    with record_lock("task", work_item_id):
+    if not evidence_ref:
+        raise StateError("evidence_ref is required — a transfer of execution "
+                         "authority names the failure that caused it")
+    # Ownership is written here, so the same lock ordering `claim` uses applies:
+    # the execution domain first, then the record. Without it the seat-exclusivity
+    # check below could race a concurrent claim elsewhere.
+    with _Lock("execution-domain"):
+      with record_lock("task", work_item_id):
         cur = read("task", work_item_id)
         if cur is None:
             raise StateError("task %s does not exist" % work_item_id)
@@ -1310,8 +1334,36 @@ def peer_fail_transfer(work_item_id, expected_revision, reviewer, evidence_ref):
             raise StateError("peer_fail_transfer applies to the PEER route only")
         if rc.get("review_owner") != reviewer:
             raise StateError("only the recorded review owner may fail and take over")
+        # A transfer follows a RECORDED failure. Without this a reviewer could take
+        # the work over without ever having failed it.
+        if rc.get("review_result") != "fail":
+            raise StateError("review-not-failed: %s is %r; the transfer follows a "
+                             "recorded PEER FAIL and is not a way to take over a "
+                             "pending or passing review"
+                             % (work_item_id, rc.get("review_result")))
+        cycle = int(rc.get("review_cycle") or 1)
+        if expected_cycle is not None and int(expected_cycle) != cycle:
+            raise StateError("stale-review-cycle: %s is on cycle %d, caller expected %s"
+                             % (work_item_id, cycle, expected_cycle))
+        capability = (cur.get("execution_profile") or {}).get("required_capability")
+        if reviewer not in _validate.seats_by_capability().get(capability, ()):
+            # PEER FAIL hands over EXECUTION, so the reviewer must be able to execute
+            # this capability. This is re-checked here and not merely trusted from
+            # the review context, because that context may predate a roster change.
+            raise StateError("wrong-capability: %s is not a declared %s seat and may "
+                             "not take over execution of %s"
+                             % (reviewer, capability, work_item_id))
+        held = [t for t in read_all("task")
+                if t.get("work_item_id") != work_item_id
+                and (t.get("ownership") or {}).get("seat_id") == reviewer]
+        if held:
+            raise StateError("seat-already-owns: %s already owns %s and cannot also "
+                             "take over %s" % (reviewer, held[0]["work_item_id"],
+                                               work_item_id))
         prev = [e.get("seat_id") for e in (cur.get("executor_evidence") or [])]
         merged = dict(cur)
+        merged["ownership"] = {"seat_id": reviewer, "claimed_at": now(),
+                               "claim_ref": evidence_ref}
         merged["executor_evidence"] = [{"seat_id": reviewer,
                                         "evidence_ref": evidence_ref,
                                         "evidenced_at": now()}]
@@ -1319,12 +1371,14 @@ def peer_fail_transfer(work_item_id, expected_revision, reviewer, evidence_ref):
             "review_type": "self",
             "review_owner": reviewer,
             "review_result": "pending",
-            "review_cycle": int(rc.get("review_cycle") or 1) + 1,
+            "review_cycle": cycle + 1,
             "started_at": now(),
             "previous_owner": prev[0] if len(prev) == 1 else None,
         }
         merged["revision"] = cur["revision"] + 1
         merged["updated_at"] = now()
+        # Nothing has been written yet: every refusal above leaves the record
+        # byte-identical, and this single atomic replace is the only mutation.
         _validate_one("task", merged)
         _atomic_write(path_for("task", work_item_id), merged)
         return merged

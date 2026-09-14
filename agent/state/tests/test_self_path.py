@@ -282,7 +282,11 @@ section("QA and PEER non-regression")
 t = mk("KAN-930", route="peer", evidence=("frontend-1",), sid="10045",
        ch={"schema_change": True})
 o = store.open_review_context("KAN-930", t["revision"], evidenced_reviewer="frontend-2")
-tr = store.peer_fail_transfer("KAN-930", o["revision"], "frontend-2", "ref:transfer")
+# The transfer follows a RECORDED failure: taking the work over without having
+# failed it is refused, so the verdict comes first.
+fv = store.record_review_result("KAN-930", o["revision"], "frontend-2", "fail",
+                                "ref:peer-fail")
+tr = store.peer_fail_transfer("KAN-930", fv["revision"], "frontend-2", "ref:transfer")
 ok("15. PEER FAIL still transfers execution to the reviewer",
    [e["seat_id"] for e in tr["executor_evidence"]] == ["frontend-2"])
 ok("    PEER FAIL still flips the route to SELF for the reviewer's own fix",
