@@ -335,6 +335,14 @@ def _normalize_cli_output(raw):
     summary = payload.get("result")
     if not isinstance(summary, str) or not summary.strip():
         summary = "Claude CLI returned no result text"
+    # The local CLI can acknowledge dispatch with a human-facing background
+    # task id while providing no provider-readable completion handle.  That is
+    # neither completion nor a controllable async execution: fail closed until
+    # the provider exposes a poll/cancel-capable handle contract.
+    if "running in the background (task `" in summary:
+        raise ClaudeExecutorProcessFailure(
+            "Claude CLI acknowledged an unobservable background task; no terminal result exists"
+        )
     session_id = payload.get("session_id")
     continuation = session_id if isinstance(session_id, str) and session_id else None
     artifact = "claude-session:%s" % session_id if continuation else None
