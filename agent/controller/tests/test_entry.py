@@ -170,6 +170,19 @@ class ControllerEntryTests(unittest.TestCase):
         self.assertEqual("controller", calls[0].request.return_contract.return_to)
         self.assertEqual(("supabase/migrations/kan900.sql",), calls[0].request.allowed_surfaces)
 
+    def test_authorized_continuation_preserves_existing_owner_without_reclaiming(self):
+        state, calls = State(), []
+        state.task["ownership"] = {"seat_id": "backend-2", "claim_ref": "CEO prior grant"}
+        provider = CodexProvider(lambda invocation: calls.append(invocation) or "continued fixture")
+        outcome = execute("KAN-900", brief(), authorization=Authorization(), state_store=state,
+                          jira_client=Jira(), seat_registry=Registry(), providers=(provider,))
+        self.assertNotIn("claim", state.events)
+        self.assertEqual(["mode", "observe", "continuation", "lease-open", "receipt", "lease-close"],
+                         state.events)
+        self.assertEqual("backend-2", outcome["seat_id"])
+        self.assertEqual("preserved", outcome["claim_status"])
+        self.assertEqual("CEO prior grant", calls[0].request.claim_ref)
+
     def test_available_claude_transport_is_reported_without_selecting_it_by_test_override(self):
         state = State()
         provider = CodexProvider(lambda invocation: "completed fixture")

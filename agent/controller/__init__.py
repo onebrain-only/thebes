@@ -126,7 +126,7 @@ def execute(work_item_id, brief, *, authorization=None, state_store=store,
         if task is None:
             result["blocker"] = "work-item-not-found"
             return result
-        seat_id, capability = _resolve_seat(task, seat_registry, state_store)
+        seat_id, capability, already_owned = _resolve_seat(task, seat_registry, state_store)
         result.update({"capability": capability, "seat_id": seat_id,
                        "seat_resolution_status": "capability-verified"})
 
@@ -135,11 +135,17 @@ def execute(work_item_id, brief, *, authorization=None, state_store=store,
             work_item_id, task["revision"], issue["status_id"]
         )
         result["readiness_status"] = "jira-observed"
-        claimed = state_store.claim(
-            work_item_id, seat_id, auth["reference"], observed["revision"],
-            capability_of_seat=capability, jira_status_id=issue["status_id"],
-        )
-        result["claim_status"] = "claimed"
+        if already_owned:
+            # A continuation preserves the canonical owner.  Re-claiming would
+            # either fail as already-owned or silently turn a resume into a new
+            # allocation decision.
+            result["claim_status"] = "preserved"
+        else:
+            state_store.claim(
+                work_item_id, seat_id, auth["reference"], observed["revision"],
+                capability_of_seat=capability, jira_status_id=issue["status_id"],
+            )
+            result["claim_status"] = "claimed"
         registry = tuple(providers) if providers is not None else available_provider_registry()
         captured = {}
 
@@ -169,11 +175,20 @@ def _resolve_seat(task, seat_registry, state_store):
     if not capability:
         raise ControllerInputError("work item has no required capability")
     seats = seat_registry.read()
+    ownership = task.get("ownership") or {}
+    existing_owner = ownership.get("seat_id")
+    if existing_owner:
+        entry = seats.get(existing_owner)
+        if not isinstance(entry, dict) or entry.get("capability") != capability:
+            raise ControllerInputError(
+                "current owner %s is not an active %s seat" % (existing_owner, capability)
+            )
+        return existing_owner, capability, True
     try:
         seat_id = select_claim_seat(task, seats, state_store.read_all("task"))
     except SeatAllocationError as exc:
         raise ControllerInputError(str(exc))
-    return seat_id, capability
+    return seat_id, capability, False
 
 
 def _build_request(task, seat_id, brief, lease):
