@@ -50,6 +50,7 @@ class Jira:
 class State:
     def __init__(self):
         self.events = []
+        self.integration_receipts = []
         self.task = {
             "work_item_id": "KAN-900", "revision": 1, "record_type": "executable",
             "ownership": None, "surfaces": ["supabase/migrations/kan900.sql"],
@@ -112,6 +113,24 @@ class State:
                         "normalized_result": normalized_result,
                         "provider_selection": provider_selection}
 
+    def record_integration_receipt(self, work_item_id, seat_id, outcome, evidence):
+        record = {"work_item_id": work_item_id, "seat_id": seat_id,
+                  "outcome": outcome, "created_at": "2026-09-14T00:00:00Z", **evidence}
+        self.integration_receipts.append(record)
+        return record
+
+    def read_integration_receipts(self, work_item_id=None):
+        return [r for r in self.integration_receipts
+                if work_item_id is None or r.get("work_item_id") == work_item_id]
+
+    def release(self, work_item_id, seat_id, expected_revision, release_ref,
+                authority=None):
+        self.events.append("release")
+        self.task["ownership"] = None
+        self.task["revision"] += 1
+        return copy.deepcopy(self.task)
+
+
 
 def brief(**changes):
     value = {
@@ -161,13 +180,15 @@ class Workspace:
                 "expected_revision": "fixturesha", "path": path,
                 "repository_root": workspace["repository_root"]}
 
-    def conclude(self, work_item_id, seat_id, result, task, realized):
-        self.conclusions.append((work_item_id, seat_id))
+    def conclude(self, work_item_id, seat_id, result, task, realized,
+                 integration=None):
+        self.conclusions.append((work_item_id, seat_id, integration))
         return dict(self.decision, workspace_path=realized["path"])
 
 
 def run(work_item_id="KAN-900", brief_value=None, **kwargs):
     """Call the controller with a workspace double unless one is supplied."""
+    kwargs.setdefault("interventions", [])
     kwargs.setdefault("workspace_allocator", Workspace().allocate)
     if "workspace_concluder" not in kwargs:
         kwargs["workspace_concluder"] = Workspace().conclude
@@ -192,8 +213,10 @@ class ControllerEntryTests(unittest.TestCase):
         provider = CodexProvider(lambda invocation: calls.append(invocation) or "completed fixture")
         outcome = run("KAN-900", brief(), authorization=Authorization(), state_store=state,
                           jira_client=jira, seat_registry=Registry(), providers=(provider,))
-        self.assertEqual(["mode", "observe", "claim", "continuation", "lease-open", "receipt", "lease-close"],
-                         state.events)
+        # The trailing "mode" is the automatic integration tail asking whether
+        # Product execution is permitted before it gates itself.
+        self.assertEqual(["mode", "observe", "claim", "continuation", "lease-open",
+                          "receipt", "lease-close", "mode"], state.events)
         self.assertEqual(["KAN-900"], jira.calls)
         self.assertEqual(1, len(calls))
         self.assertEqual("backend", outcome["capability"])
@@ -217,7 +240,8 @@ class ControllerEntryTests(unittest.TestCase):
         outcome = run("KAN-900", brief(), authorization=Authorization(), state_store=state,
                           jira_client=Jira(), seat_registry=Registry(), providers=(provider,))
         self.assertNotIn("claim", state.events)
-        self.assertEqual(["mode", "observe", "continuation", "lease-open", "receipt", "lease-close"],
+        self.assertEqual(["mode", "observe", "continuation", "lease-open", "receipt",
+                          "lease-close", "mode"],
                          state.events)
         self.assertEqual("backend-2", outcome["seat_id"])
         self.assertEqual("preserved", outcome["claim_status"])

@@ -131,6 +131,55 @@ the integrated sha, the branch, the previous head, the route and its result, the
 attributed files, and whether remediation is required. Persistent State holds
 the orchestration evidence; git remains the authority on the code.
 
+## Lifecycle completion is the tail, not a third command
+
+`execute KAN-XXX` runs integration and lifecycle completion itself. Both gate
+themselves on canonical truth, so an execution whose review has not happened yet
+simply reports `validation-not-passed` and changes nothing — the ordinary case.
+`integrate KAN-XXX` remains for recovery and idempotent reconciliation; it runs
+the same tail.
+
+`agent/controller/completion.py` adds no lifecycle machinery.
+`board.assert_transition_target` refuses a legacy or unknown destination,
+`board.transition_for` names the exact transition, `jira.transition_issue`
+performs it, `store.observe_lifecycle` records what Jira then says, and
+`store.release` gives up ownership.
+
+Order: evidence → gate → assert legal target → transition → **authoritative
+re-read** → observe into Persistent State → release ownership → report open
+leases → finalize workspace.
+
+**The integration receipt is evidence, never authority.** It is checked against
+the work item and owner it claims, its outcome, its integration branch and its
+recorded shas; a foreign, failed, conflicted, protected-branch or malformed
+receipt proves nothing and the gate refuses before any Jira call.
+
+**The completion gate is `queue.completion_reasons`**, consumed whole. A
+provider status does not complete work and neither does the existence of a
+commit. The single exception is `already-done`, which is the idempotent case:
+if Jira already says Done, no second transition is fired.
+
+**Persistent State is written from the re-read, never from the fact that a
+transition was accepted.** If Jira lands somewhere other than Done, that is
+`jira-state-diverged-after-transition`: no local Done is recorded and ownership
+is preserved.
+
+Outcomes, none of which is a provider, Product or PEER failure:
+
+| Outcome | Meaning |
+|---|---|
+| `completed` | transitioned, confirmed, reconciled, ownership released |
+| `already-done` | Jira was already Done; zero writes, still reconciled |
+| `lifecycle-not-completable` | canonical policy refuses; nothing was touched |
+| `integration-evidence-invalid` | no usable integration receipt |
+| `jira-transition-failed` | the transition did not happen; ownership preserved |
+| `jira-state-diverged-after-transition` | Jira disagrees; no false Done |
+| `ownership-release-failed` | Done is real, the release is not |
+| `finalization-incomplete` | state could not be reconciled to Done |
+
+Ownership survives every failure above, and a Jira failure is never a reason to
+re-run a provider.
+
 ## Exceptional brief shape
 
 `--brief-file` survives for debugging and for work whose canonical facts are

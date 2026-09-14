@@ -120,6 +120,20 @@ the integrated sha, the branch, the previous head, the route and verdict, the at
 and whether remediation is required; Git remains the authority on the code. Evidence:
 `agent/controller/tests/test_integration_flow.py`.
 
+**CURRENT FACT — a validated, integrated work item completes its own lifecycle.** `execute
+KAN-XXX` runs integration and lifecycle completion as its tail; both gate themselves, so an
+execution whose review has not happened yet changes nothing, and `integrate KAN-XXX` remains only
+for recovery. `agent/controller/completion.py` adds no lifecycle machinery: `board`, `jira`,
+`store.observe_lifecycle` and `store.release` are used unchanged. The integration receipt is
+evidence, never authority — it is validated against the work item, owner, outcome, branch and
+shas it claims, and a foreign, failed or malformed one refuses before any Jira call. The gate is
+`queue.completion_reasons` consumed whole, with `already-done` treated as the idempotent case
+rather than a refusal. **Persistent State is written from an authoritative RE-READ of Jira, never
+from the fact that a transition was accepted**; a transition that lands elsewhere is
+`jira-state-diverged-after-transition` with no local Done and ownership preserved. Ownership
+releases only after confirmed Done and survives every failure, and a Jira failure is never a
+reason to re-run a provider. Evidence: `agent/controller/tests/test_lifecycle_completion.py`.
+
 **DECISION/INVARIANT — the executor brief is Product-only.** There is exactly one executor
 brief builder, `agent/execution/brief.py`, and both providers render the same text from the
 immutable request. It reads a closed allowlist of Product fields, so control-plane request

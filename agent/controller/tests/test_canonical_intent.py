@@ -120,6 +120,7 @@ class State:
 
     def __init__(self, record=None):
         self.events = []
+        self.integration_receipts = []
         self.task = record or task()
         self.lease = None
         self.receipt = None
@@ -144,9 +145,17 @@ class State:
         return []
 
     def observe_lifecycle(self, work_item_id, revision, status_id):
+        # Faithful to store.observe_lifecycle: the canonical state and column are
+        # DERIVED from the board, never taken from the caller's word.
+        from agent.state import board
         self.events.append("observe")
         self.task["revision"] += 1
-        self.task["lifecycle"] = {"jira_status_id": status_id, "canonical": "development"}
+        self.task["lifecycle"] = {
+            "jira_status_id": str(status_id),
+            "jira_status_name": board.name_for(status_id),
+            "jira_column": board.column_for(status_id),
+            "canonical": board.canonical_for(status_id),
+            "source": "jira", "observed_at": "2026-09-14T00:00:00Z"}
         return copy.deepcopy(self.task)
 
     def claim(self, work_item_id, seat_id, claim_ref, revision, **kwargs):
@@ -178,6 +187,24 @@ class State:
         self.receipt = {"invocation_id": invocation_id,
                         "normalized_result": normalized_result,
                         "provider_selection": provider_selection}
+
+    def record_integration_receipt(self, work_item_id, seat_id, outcome, evidence):
+        record = {"work_item_id": work_item_id, "seat_id": seat_id,
+                  "outcome": outcome, "created_at": "2026-09-14T00:00:00Z", **evidence}
+        self.integration_receipts.append(record)
+        return record
+
+    def read_integration_receipts(self, work_item_id=None):
+        return [r for r in self.integration_receipts
+                if work_item_id is None or r.get("work_item_id") == work_item_id]
+
+    def release(self, work_item_id, seat_id, expected_revision, release_ref,
+                authority=None):
+        self.events.append("release")
+        self.task["ownership"] = None
+        self.task["revision"] += 1
+        return copy.deepcopy(self.task)
+
 
 
 def resolve(record=None, issue_record=None, seat_id="backend-1"):
@@ -386,7 +413,8 @@ class ControllerCommandTests(unittest.TestCase):
                           state_store=state, jira_client=jira_double,
                           seat_registry=Registry(), providers=(provider,),
                           workspace_allocator=workspace.allocate,
-                          workspace_concluder=workspace.conclude)
+                          workspace_concluder=workspace.conclude,
+                          interventions=[])
         return outcome, state, jira_double, wakes
 
     def test_execute_needs_no_brief_file_and_completes_the_whole_flow(self):
@@ -399,8 +427,9 @@ class ControllerCommandTests(unittest.TestCase):
         self.assertEqual("completed", outcome["execution_status"])
         self.assertEqual("received", outcome["result_receipt_status"])
         self.assertEqual("closed", outcome["lease_closure_status"])
+        # The trailing "mode" is the automatic integration tail gating itself.
         self.assertEqual(["mode", "observe", "claim", "continuation", "lease-open",
-                          "receipt", "lease-close"], state.events)
+                          "receipt", "lease-close", "mode"], state.events)
         self.assertEqual(["KAN-900"], jira_double.reads)
         self.assertEqual([], jira_double.writes)
         self.assertEqual({"objective": "jira", "required_capability": "execution_profile",

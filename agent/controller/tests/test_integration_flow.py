@@ -536,7 +536,7 @@ class ControllerIntegrateCommandTests(IntegrationTestCase):
                          state.integration_receipts[0]["outcome"])
         self.assertEqual("released", outcome["workspace_status"])
 
-    def test_no_jira_write_happens_anywhere_in_the_command(self):
+    def test_the_integration_phase_itself_makes_no_jira_write(self):
         jira_double = Jira()
         state = IntegrationStore()
 
@@ -547,7 +547,11 @@ class ControllerIntegrateCommandTests(IntegrationTestCase):
             self.executor_edits(realized)
             return realized
 
+        # `complete=False`: the lifecycle tail is proved separately in
+        # test_lifecycle_completion.py; integration alone reads Jira and never
+        # writes it.
         controller_integrate("KAN-900", state_store=state, jira_client=jira_double,
+                             complete=False,
                              worktree_root=self.wtroot, workspace_allocator=allocator,
                              workspace_concluder=lambda *a, **k: {
                                  "workspace_status": "preserved",

@@ -37,7 +37,9 @@ from agent.controller.integration import (
     IntegrationRefused,
     integrate_validated_work,
 )
+from agent.controller import completion as completion_policy
 from agent.controller import integration as integration_policy
+from agent.controller.completion import CompletionRefused, complete_lifecycle
 from agent.controller.workspace import (
     WorkspaceUnavailable,
     conclude_workspace,
@@ -127,7 +129,9 @@ def execute(work_item_id, brief=None, *, authorization=None, state_store=store,
             jira_client=jira, seat_registry=roster, providers=None,
             intent_resolver=resolve_execution_intent,
             workspace_allocator=realize_workspace,
-            workspace_concluder=conclude_workspace):
+            workspace_concluder=conclude_workspace,
+            run_tail=True, interventions=None, worktree_root=None,
+            integration_branch=None):
     """Submit exactly one already-selected work item through the existing wake.
 
     ``brief`` is optional and exceptional. With it omitted, Thebes derives the
@@ -224,10 +228,35 @@ def execute(work_item_id, brief=None, *, authorization=None, state_store=store,
         result["invocation_id"] = captured.get("invocation_id")
         result["result_receipt_status"] = "received"
         result["lease_closure_status"] = _lease_status(state_store, captured)
+
+        # The tail: integration and lifecycle completion are not separate human
+        # commands. Both gate themselves on canonical truth, so an execution
+        # whose validation route has not yet passed simply refuses here and
+        # changes nothing — which is the ordinary case, because a review happens
+        # after the wake that produced the work.
+        integration_evidence = None
+        if run_tail and execution.status.value == "completed":
+            tail = integrate(
+                work_item_id, state_store=state_store, jira_client=jira_client,
+                workspace_allocator=workspace_allocator,
+                workspace_concluder=workspace_concluder,
+                interventions=interventions, worktree_root=worktree_root,
+                integration_branch=integration_branch,
+                conclude_workspace_after=False, record_refusals=False)
+            integration_evidence = tail.get("integration_evidence")
+            result.update({key: tail[key] for key in (
+                "integration_status", "attributed_files", "product_commit",
+                "integrated_as", "integration_branch", "previous_head",
+                "conflict_paths", "remediation_required", "receipt_status",
+                "completion_status", "completion_blocker",
+                "jira_transition_performed", "lifecycle", "ownership_status",
+                "open_leases") if key in tail})
+
         # Lifecycle decides the workspace's fate, not the end of this function.
         result.update(workspace_concluder(
             work_item_id, seat_id, execution,
-            captured.get("task") or observed, realized))
+            state_store.read("task", work_item_id) or captured.get("task") or observed,
+            realized, integration=integration_evidence))
         return result
     except WorkspaceUnavailable as exc:
         # Isolation failed. That is a bounded orchestration failure; it is never
@@ -261,7 +290,14 @@ def _integration_shell(work_item_id):
         "previous_head": None,
         "conflict_paths": [],
         "remediation_required": False,
+        "integration_evidence": None,
         "receipt_status": "not-recorded",
+        "completion_status": "not-attempted",
+        "jira_transition_performed": False,
+        "lifecycle": None,
+        "ownership_status": None,
+        "open_leases": None,
+        "completion_blocker": None,
         "workspace_status": "not-allocated",
         "workspace_path": None,
         "workspace_reason": None,
@@ -273,7 +309,9 @@ def integrate(work_item_id, *, state_store=store, jira_client=jira,
               workspace_allocator=realize_workspace,
               workspace_concluder=conclude_workspace,
               integrator=integrate_validated_work, interventions=None,
-              integration_branch=None, gates=None, worktree_root=None):
+              integration_branch=None, gates=None, worktree_root=None,
+              complete=True, completer=complete_lifecycle,
+              conclude_workspace_after=True, record_refusals=True):
     """Land one work item's validated Product work on the integration branch.
 
     Deliberately a separate act from `execute`: validation happens after an
@@ -341,15 +379,59 @@ def integrate(work_item_id, *, state_store=store, jira_client=jira,
                    "previous_head": evidence.get("previous_head"),
                    "conflict_paths": list(evidence.get("conflict_paths") or []),
                    "remediation_required": outcome in integration_policy.REMEDIATION_OUTCOMES})
-    try:
-        integration_policy.record(state_store, work_item_id, seat_id, outcome, evidence)
-        result["receipt_status"] = "recorded"
-    except store.StateError as exc:
-        result["receipt_status"] = "refused: %s" % exc
-    if result["workspace_status"] == "allocated":
+    # A refusal a human asked for is evidence worth keeping. The automatic tail
+    # of an execution asks on every run, and filing a receipt each time that a
+    # review has simply not happened yet would bury the real ones.
+    if outcome in integration_policy.TERMINAL_SUCCESS or record_refusals:
+        try:
+            receipt = integration_policy.record(state_store, work_item_id, seat_id,
+                                                outcome, evidence)
+            result["receipt_status"] = "recorded"
+        except store.StateError as exc:
+            receipt = None
+            result["receipt_status"] = "refused: %s" % exc
+    else:
+        receipt = None
+        result["receipt_status"] = "not-recorded"
+
+    # Completion is the tail of integration, not a second human command. It
+    # gates itself, so an integration that did not finish simply does not
+    # complete anything.
+    if complete and outcome in integration_policy.TERMINAL_SUCCESS:
+        result.update(_complete_after_integration(
+            work_item_id, state_store, jira_client, receipt, interventions,
+            completer))
+    result["integration_evidence"] = evidence
+    if conclude_workspace_after and result["workspace_status"] == "allocated":
         result.update(workspace_concluder(work_item_id, seat_id, None, task,
                                           realized, integration=evidence))
     return result
+
+
+def _complete_after_integration(work_item_id, state_store, jira_client, receipt,
+                                interventions, completer):
+    """Run the lifecycle tail against the task as it now stands."""
+    outcome = {"completion_status": "not-attempted", "completion_blocker": None}
+    task = state_store.read("task", work_item_id)
+    if task is None:
+        return dict(outcome, completion_status="work-item-not-found")
+    receipts = ([receipt] if receipt is not None
+                else state_store.read_integration_receipts(work_item_id))
+    try:
+        evidence = completer(work_item_id, task, receipts, state_store, jira_client,
+                             interventions=interventions)
+    except CompletionRefused as exc:
+        return dict(outcome, completion_status=exc.outcome,
+                    completion_blocker=str(exc))
+    except (store.StateError, jira.JiraError, ValueError) as exc:
+        return dict(outcome, completion_status=completion_policy.FINALIZATION_INCOMPLETE,
+                    completion_blocker=str(exc))
+    return {"completion_status": evidence["outcome"],
+            "completion_blocker": None,
+            "jira_transition_performed": evidence["jira_transition_performed"],
+            "lifecycle": evidence["lifecycle"],
+            "ownership_status": evidence["ownership_status"],
+            "open_leases": evidence["open_leases"]}
 
 
 def _refusal_evidence(task, seat_id, work_item_id, workspace_path, integration_branch):
@@ -515,6 +597,24 @@ def _result_shell(work_item_id):
         "workspace_branch_kept": None,
         "workspace_blocker": None,
         "expected_revision": None,
+        # The automatic tail: integration and lifecycle completion. Both gate
+        # themselves, so "not-attempted" is the ordinary answer for an execution
+        # whose review has not happened yet.
+        "integration_status": "not-attempted",
+        "attributed_files": [],
+        "product_commit": None,
+        "integrated_as": None,
+        "integration_branch": None,
+        "previous_head": None,
+        "conflict_paths": [],
+        "remediation_required": False,
+        "receipt_status": "not-recorded",
+        "completion_status": "not-attempted",
+        "completion_blocker": None,
+        "jira_transition_performed": False,
+        "lifecycle": None,
+        "ownership_status": None,
+        "open_leases": None,
         "ceo_input_required": False,
         "governance_input": None,
         "operating_mode": None,

@@ -286,9 +286,11 @@ class ControllerWorkspaceFlowTests(WorkspaceTestCase):
                                      dict(workspace, repository_root=self.repo),
                                      root=self.wtroot, base=base)
 
-        def concluder(work_item_id, seat_id, result, observed, realized):
+        def concluder(work_item_id, seat_id, result, observed, realized,
+                      integration=None):
             return conclude_workspace(work_item_id, seat_id, result, observed,
-                                      realized, root=self.wtroot)
+                                      realized, root=self.wtroot,
+                                      integration=integration)
 
         def record_wake(wake):
             # The provider's working directory must exist AT INVOCATION TIME.
@@ -301,7 +303,8 @@ class ControllerWorkspaceFlowTests(WorkspaceTestCase):
                           seat_registry=Registry(),
                           providers=(ClaudeProvider(record_wake),),
                           workspace_allocator=allocator,
-                          workspace_concluder=concluder)
+                          workspace_concluder=concluder,
+                          interventions=[], worktree_root=self.wtroot)
         return outcome, state, jira_double, wakes
 
     def test_execute_allocates_before_dispatch_and_the_cwd_exists(self):
@@ -314,8 +317,9 @@ class ControllerWorkspaceFlowTests(WorkspaceTestCase):
         self.assertEqual("exec/backend-1/KAN-900", outcome["workspace_branch"])
         self.assertEqual(head, wake.workspace.expected_revision)
         self.assertEqual(head, outcome["expected_revision"])
+        # The trailing "mode" is the automatic integration tail gating itself.
         self.assertEqual(["mode", "observe", "claim", "continuation", "lease-open",
-                          "receipt", "lease-close"], state.events)
+                          "receipt", "lease-close", "mode"], state.events)
         self.assertEqual([], jira_double.writes)
 
     def test_the_request_carries_the_isolated_tree_not_the_canonical_checkout(self):
@@ -395,14 +399,17 @@ class ControllerWorkspaceFlowTests(WorkspaceTestCase):
                                      dict(workspace, repository_root=self.repo),
                                      root=self.wtroot)
 
-        def concluder(work_item_id, seat_id, result, observed, realized):
+        def concluder(work_item_id, seat_id, result, observed, realized,
+                      integration=None):
             return conclude_workspace(work_item_id, seat_id, result, observed,
-                                      realized, root=self.wtroot)
+                                      realized, root=self.wtroot,
+                                      integration=integration)
 
         outcome = execute("KAN-900", None, authorization=Authorization(),
                           state_store=state, jira_client=Jira(),
                           seat_registry=Registry(), providers=(Unavailable(),),
-                          workspace_allocator=allocator, workspace_concluder=concluder)
+                          workspace_allocator=allocator, workspace_concluder=concluder,
+                          interventions=[], worktree_root=self.wtroot)
         self.assertEqual("provider_failed", outcome["execution_status"])
         self.assertEqual("released", outcome["workspace_status"])
         self.assertFalse(os.path.isdir(outcome["workspace_path"]))
