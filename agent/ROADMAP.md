@@ -150,6 +150,18 @@ Normal Product authorization reference: **none**.
 Existing Product ownership and lifecycle remain in Persistent State/Jira and are not
 copied here.
 
+**Current authorization — KAN-186 final completion only.** The CEO explicitly authorized
+the already-owned `backend-2` continuation through the existing foreground-only Claude Code
+provider. Scope is limited to the existing Part-A migration at project
+`wtncuzcskpigqpmnxwws`, authoritative catalogue readback, Product acceptance, backend-2 SELF,
+a distinct eligible backend PEER review (and its bounded canonical remediation if needed),
+safe Canary integration, and KAN-186's normal Jira completion lifecycle. This does not
+authorize another ticket, Part B, a compensating migration, provider fallback, or a bypass of
+provider-native permissions. Authorization reference: CEO chat message, 2026-09-14,
+"KAN-186 — FINAL PRODUCT EXECUTION AND COMPLETION".
+Selected ticket: KAN-186
+PRODUCT_EXECUTION_AUTHORIZED: YES
+
 ## Next bounded decision
 
 After this documentation slice is reviewed and accepted, the remaining maintenance
