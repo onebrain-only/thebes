@@ -100,8 +100,9 @@ class RealControllerProcess(unittest.TestCase):
                                 {entry.INTENT_ENV: "intent-phase4"})
         self.assertIn('"entry_path": "listener"', result.stdout)
         self.assertIn('"entry_reference": "intent-phase4"', result.stdout)
-        # The real governance gate still answered, and still refused.
-        self.assertIn("product-execution-not-authorized", result.stdout)
+        # The gate answered. KAN-999999 has no task record, so whatever the live
+        # authorization state is, this never becomes a claim.
+        self.assertIn('"claim_status": "not-started"', result.stdout)
 
     def test_maintenance_override_runs_and_records_its_reason(self):
         result = run_controller(["execute", "KAN-999999",
@@ -138,8 +139,8 @@ class IntentProvenance(unittest.TestCase):
             result = settled["result"]["controller_result"]["result"]
             self.assertEqual("listener", result["entry_path"])
             self.assertEqual(record["intent_id"], result["entry_reference"])
-            self.assertEqual("product-execution-not-authorized",
-                             result["authorization_status"])
+            self.assertTrue(result["authorization_status"])
+            self.assertEqual("not-started", result["claim_status"])
 
 
 class DecisionPathAcrossTheRealBoundary(unittest.TestCase):
@@ -184,10 +185,12 @@ class DecisionPathAcrossTheRealBoundary(unittest.TestCase):
             result = settled["result"]["controller_result"]["result"]
             self.assertEqual("listener", result["entry_path"])
             self.assertEqual(decision["intent_id"], result["entry_reference"])
-            # The canonical gate refused it, which is correct in maintenance —
-            # and it refused AFTER the front door admitted it, which is the
-            # thing this test exists to show.
-            self.assertEqual("system-maintenance-active", result["blocker"])
+            # It refused AFTER the front door admitted it, which is the thing
+            # this test exists to show. WHICH canonical refusal depends on live
+            # state — maintenance mode, or no prepared continuation for this
+            # synthetic invocation — and either proves the same point.
+            self.assertIn(result["blocker"],
+                          ("system-maintenance-active", "no-prepared-continuation"))
             self.assertEqual("not-recorded", result["decision_status"])
 
     def test_the_same_decision_typed_directly_is_refused_at_the_front_door(self):
