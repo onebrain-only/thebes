@@ -193,3 +193,32 @@ whatever is convenient at 2am; a refusal with a message pointing at the right do
 it with a stated, reasoned override, or the next person under pressure will route around it in a
 way nobody records.
 **Applied decision:** D-020, D-021.
+
+## L-017 — Two durable records of the same thing will disagree, and nobody will notice
+
+**Classification:** LESSON
+**Observation:** Phase 3 gave the Listener its own delivery states and Phase 4 kept them.
+Separately, Persistent State always knew whether a claim existed, a lease was open and a receipt
+landed. Both were correct, both were durable, and nothing compared them — so an intent could read
+`COMPLETED` while canonical state showed no receipt for the invocation the answer named, and no
+caller had any way to find out. It was not a bug in either record. It was the absence of anyone
+whose job was to ask whether they agreed.
+**Lesson:** Duplicating state for a legitimate reason — here, transport durability — is fine, and
+often necessary. What is not optional is naming which one is authority and building the thing
+that reconciles them. Two sources with no reconciler is not redundancy; it is a disagreement
+waiting for the worst possible moment.
+**Applied decision:** D-022.
+
+## L-018 — A test written against the architecture finds what inspection does not
+
+**Classification:** LESSON
+**Observation:** Phase 5's conformance suite was written to assert §37–§40 rather than to cover
+functions, and it immediately surfaced two defects that reading the code had not: `agent.core`
+could ride into an executor brief — the exact L-015 failure, one phase later, in code written
+the same hour — and the subsystem map named a class and two prose fragments as though they were
+importable modules. Both were invisible to inspection because both looked right.
+**Lesson:** Test the claims the architecture makes, not only the behaviour of its parts. "Every
+module this map names imports", "Core's own source contains no claim or lease call", "the brief
+has no field for company history" are assertions a reader nods along to and a test actually
+checks.
+**Evidence:** `agent/core/tests/test_core_contract.py`; the defects are named in `6ae7dc9`.

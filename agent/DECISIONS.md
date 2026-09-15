@@ -280,3 +280,41 @@ a mistake is genuinely useful; a guard mistaken for a security control is danger
 **Consequences:** Loopback-only remains the actual mitigation. Real caller authentication is
 still required before any non-local exposure and remains deferred, unchanged by Phase 4. Every
 document describing the gate states its limit in the same breath as its behaviour.
+
+## D-022 — The intent lifecycle is derived from canonical truth, never stored beside it
+
+**Status:** ACTIVE
+**Decision:** There is one external vocabulary for a submitted intent's state, and
+`agent/core/lifecycle.py` computes it read-only from the Listener's delivery record and
+Persistent State. Core stores no status of its own. Where delivery evidence and canonical state
+disagree, canonical state wins and the disagreement is named in the answer rather than resolved
+silently.
+**Why:** Phase 4 left an intent with two state machines that could disagree indefinitely with no
+caller able to tell. Adding a third — a Core status — would have made it worse. A derived answer
+cannot drift from its sources, and a reconciler that quietly picks a winner is how a fourth
+source of truth is born.
+**Consequences:** The transport record is authority for whether a message ARRIVED and for
+nothing else; Persistent State remains authority for the work, Jira for Product lifecycle, Git
+for code. `COMPLETED` means the Controller ANSWERED — a governance refusal is a completed
+delivery carrying a refusal — and conflating it with success is the misreading the vocabulary
+exists to prevent. The Phase-3/4 delivery record stays served alongside the derived answer as
+the audit trail; making it unreadable to look tidier would destroy evidence.
+**Evidence:** `agent/core/lifecycle.py`, `agent/core/tests/`, Phase 5 closure in
+`agent/ROADMAP.md`.
+
+## D-023 — An unobserved outcome is reported with evidence, never guessed
+
+**Status:** ACTIVE
+**Decision:** An intent whose dispatch was interrupted resolves to `INDETERMINATE`, which is
+deliberately neither terminal nor a failure, and it is never re-dispatched. The answer carries
+the claim, the open leases, the execution receipts and the work item's lifecycle from Persistent
+State.
+**Why:** Phase 3 established that a Product execution nobody can prove did not happen must not be
+repeated on a hunch (L-014), and that remains right. But refusing to guess is not the same as
+refusing to help: Phase 4's answer named the problem and left the person settling it to go and
+find the facts themselves. Handing over the canonical evidence adds information without adding
+permission.
+**Consequences:** `INDETERMINATE` must never be collapsed into `UNDELIVERED`, which would assert
+that nothing ran — the one thing that cannot be established. Automatic reconciliation of
+interrupted dispatches remains deliberately absent; deciding is a human act performed against
+the evidence the answer now carries.

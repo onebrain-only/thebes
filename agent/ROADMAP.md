@@ -6,12 +6,20 @@ Canonical checkout: `~/Desktop/Thebes-Canonical`. Do not create another clone.
 ## Current position
 
 **CURRENT FACT — MODE: `SYSTEM_MAINTENANCE`**
-**CURRENT FACT — CURRENT PHASE: Phase 4 CLOSED 2026-09-15. No phase is current. Phase 5 has NOT started and requires a separate CEO decision.**
+**CURRENT FACT — CURRENT PHASE: Phase 5 CLOSED 2026-09-15. No phase is current. Phase 6 has NOT started and requires a separate CEO decision.**
 **CURRENT FACT — PRODUCT_ACCEPTANCE_STATUS: KAN-183 COMPLETE — the first real single-task run driven end to end by Thebes**
 **CURRENT FACT — PRODUCT_EXECUTION_AUTHORIZED: NO — KAN-183's bounded authorization was consumed on completion 2026-09-14, and Phase 3 created none**
 
-Post-Wave-8 Operational Hardening is closed. Phase 4 closed on 2026-09-15 against the criteria
-in `agent/MASTER_ROADMAP.md` §34 and the CEO's Phase-4 brief; the closure record and its
+Post-Wave-8 Operational Hardening is closed. Phase 5 closed on 2026-09-15 against the criteria
+in `agent/MASTER_ROADMAP.md` §40; the closure record and its evidence are in "Phase 5 closure"
+below. **Thebes Core exists** as `agent/core` — the addressable composition of the
+responsibilities §37 names, hosted by the long-running intake process — and it owns one
+canonical answer to what happened to a submitted intent. Like Phases 3 and 4, Phase 5 is Thebes
+infrastructure only: it selected no Product work, created no Product authorization, and left
+Jira, Supabase, the Product repository and Persistent State byte-identical.
+
+Phase 4 closed on 2026-09-15 against the criteria in `agent/MASTER_ROADMAP.md` §34 and the
+CEO's Phase-4 brief; the closure record and its
 evidence are in "Phase 4 closure" below. **The operational front door is now
 `python3 -m agent.listener submit <WORK-ITEM>`** — the Controller's orchestrating commands are
 launched by the Listener and refuse a direct operational invocation. Like Phase 3, Phase 4 is
@@ -73,7 +81,7 @@ may start; **FUTURE TARGET** means architecture direction, not implemented capab
 | Phase 2 — Tangible Operating Interface / Product Proof | **CLOSED 2026-09-14** | Objective: prove Thebes can operate real Product work safely and correctly. Accepted on the evidence in "Phase 2 closure" below — KAN-183 carried a real work item from a CEO-supplied key to authoritative Jira Done through the flow, plus KAN-186's real PEER proof and the deterministic full-flow suites. One live dependency observation is deferred and non-blocking. Closure is not a claim of autonomous backlog execution, and no normal Product execution is authorized. |
 | Phase 3 — Separate Listener | **CLOSED 2026-09-15** | Objective: separate intake from execution orchestration, so a CEO instruction enters Thebes without anyone invoking the Controller by hand. Accepted on the evidence in "Phase 3 closure" below — a separately running loopback Listener with a durable, idempotent intent boundary that dispatches to the existing Controller in its own process and carries a correlated CEO decision back into the existing approval/continuation machinery. Closure is not a claim of remote access, authentication, or autonomous intake: transport is loopback-only and unauthenticated by design, and the Controller's authorization gate is unchanged. |
 | Phase 4 — Codex → Listener integration | **CLOSED 2026-09-15** | Objective: make the Listener the normal external operational intake boundary, so a controller conversation expresses intent rather than invoking the Controller. Accepted on the evidence in "Phase 4 closure" below — the front door moved and is enforced rather than documented, the executor firewall learned that the Listener exists, and the Controller's authority is unchanged. Closure is not a claim of authentication, remote access, or natural-language intake: transport stays loopback-only and the intent contract is unchanged from Phase 3. |
-| Phase 5 — Thebes Core | FUTURE TARGET | Evolve ingress into a core that owns orchestration, routing, context assembly, provider selection, lifecycle coordination, recovery and emergency handling behind stable interfaces. Exit criteria remain to be designed. |
+| Phase 5 — Listener evolves into Thebes Core | **CLOSED 2026-09-15** | Objective (§36): clean separation between Conversation, Canonical Company and Execution intelligence. Accepted on the evidence in "Phase 5 closure" below — `agent/core` is the addressable composition of every responsibility §37 names, the Listener is its intake subsystem, and one derived lifecycle replaces the two records that could previously disagree. Closure is not a claim of a rewritten orchestration engine, of learning gaining influence, or of autonomous operation: Core reimplemented nothing, learning stayed inert, and every run is still one CEO-authorized work item. |
 | Phase 6 — Knowledge scaling / RAG | FUTURE TARGET, DEFERRED | Add retrieval only when measured governance/history scale makes direct canonical reads a bottleneck. RAG is not authority and must preserve source provenance. No current evidence justifies implementing it now. |
 
 The broader Phase 2–6 sequence is preserved in the historical target specification
@@ -702,17 +710,159 @@ authorization gate refuses it exactly as it always did.
 
 ### Next
 
-Phase 5 (Listener evolves into Thebes Core) remains FUTURE TARGET and has **not** started.
-Beginning it requires a separate CEO decision.
+Superseded 2026-09-15: Phase 5 was authorized by the CEO's Phase-5 brief and is now CLOSED.
+See "Phase 5 closure" below.
+
+## Phase 5 closure
+
+**DECISION — Phase 5 (Listener evolves into Thebes Core) is CLOSED and ACCEPTED, recorded
+2026-09-15.**
+
+Phase 5's objective, from `MASTER_ROADMAP.md` §36, was a clean separation between Conversation
+Intelligence, Canonical Company Intelligence and Execution Intelligence, with §37 drawing the
+middle one as a single box called Thebes Core.
+
+It is accepted on the evidence below. **Three things closure explicitly does not claim**, each
+because the opposite would be easy to assert and false: the orchestration engine was not
+rewritten and no second one exists; learning gained no influence over any decision; and Thebes
+did not become autonomous — every run is still one CEO-authorized work item, refused by the same
+gate as before.
+
+### Architecture
+
+```text
+CEO
+ ↓  natural language
+Conversation Intelligence     the controller conversation (Codex). Outside this
+ ↓  canonical intent envelope repository. Interprets intent; derives no
+                              execution detail; holds no state.
+THEBES CORE                   agent/core — composition, hosted by the
+ ├── Intake                   long-running intake process
+ ├── Persistent State
+ ├── Company Rules            each responsibility maps to the module that
+ ├── Product State            already owns it; `core.SUBSYSTEMS` is that map
+ ├── Work Lifecycle           in code, and a test imports every entry
+ ├── Capability Model
+ ├── Authorization
+ ├── Dependencies
+ ├── Context Assembly
+ ├── Validation
+ ├── Learning                 (inert; not consulted when answering)
+ ├── Provider Selection
+ └── Execution
+ ↓  per-intent subprocess, argv array
+Execution Intelligence        provider adapter → executor. Product work only.
+```
+
+### The defect Phase 5 closed
+
+After Phase 4 an intent had **two durable state machines**. The Listener's transport record said
+`RECEIVED` / `DISPATCHING` / `COMPLETED`; Persistent State separately knew whether a claim
+existed, whether a lease was open, whether a receipt landed and where the work item's lifecycle
+stood. Nothing reconciled them, they could disagree indefinitely, and no caller could tell.
+"One canonical intent lifecycle" is exactly that reconciliation — see D-022, and L-017 for why
+two records with no reconciler is not redundancy.
+
+### Evidence
+
+Verified against the repository, running processes, Persistent State and the suites at closure.
+
+| # | §40 criterion | Evidence |
+| --- | --- | --- |
+| 1 | one durable Thebes Core | `agent/core` — `SUBSYSTEMS` maps all 13 §37 responsibilities to modules, and `test_core_contract` imports every one. Live: the real runtime answered on `127.0.0.1:8789`, survived SIGKILL twice, and recovered |
+| 2 | conversation-independent company state | Asserted against executable source with docstrings stripped: Core reads no transcript, conversation, chat history, session or message source. `resolve` takes no session, caller identity or conversation handle |
+| 3 | minimum-context executor briefing | §38's six items asserted field-by-field against `PRODUCT_BRIEF_FIELDS`, plus fifteen things with no rendering path at all. Structural, not habitual: an absent field cannot be rendered |
+| 4 | stable provider-neutral execution | `agent/execution` unchanged except the firewall's surface list; 21 controller/execution suites pass |
+| 5 | stable intake | Phase 3/4 suites pass unchanged; live duplicate returned the same `intent_id`, `duplicate: true`, one dispatch |
+| 6 | stable lifecycle | One external vocabulary, derived; every transport state maps into it; canonical state wins and disagreement is named |
+| 7 | durable learning inputs | `telemetry → retrospective → candidate → explicit ceo/cto decision` persists in Persistent State; asserted to have no write path into work or governance |
+| 8 | no dependence on chat memory | Follows from 2 and 7; the answer is reproducible from disk alone |
+
+**Live proof, on the real runtime.** A Codex-style intent (`--source codex-controller`) went
+`submit KAN-183 --wait` → Core → Controller subprocess (`entry_path: listener`) → durable answer:
+`lifecycle_state: COMPLETED`, `reconciliation: agrees`, and — new in Phase 5 — the canonical
+state behind it: KAN-183 `done`, unowned, zero open leases, four historical execution receipts.
+KAN-191 likewise, independently. Duplicate collapsed. Direct `agent.controller execute` still
+refused `direct-controller-entry-retired`. Five injection attempts refused
+(`unknown-intent-type`, `invalid-field`, and `unknown-field` for `seat_id`, `lifecycle` and
+`provider`). A `DECISION_RESPONSE` was correlation-checked and refused
+`decision-target-not-waiting`. Six executor-brief probes — including `from agent.core import
+lifecycle` — were all blocked.
+
+**The ambiguous dispatch, proven live.** An intent left `DISPATCHING` and unsettled was recovered
+by the real Core on restart: `INDETERMINATE`, **not terminal**, `unobserved-execution`,
+`dispatch_attempts: 1`, pending queue 0 — never re-dispatched — and carrying KAN-183's lifecycle,
+ownership, open leases and receipts so the person settling it is handed the facts instead of
+being sent to look. *Method stated precisely:* five attempts to catch a natural mid-dispatch
+crash by racing SIGKILL all landed after the answer, because the Controller refuses at the
+authorization gate in under 40ms. The durable condition was therefore induced directly in the
+real transport store; the recovery, the derivation and the answer are the real runtime's.
+
+**Zero mutation, measured.** `agent/state/runtime` hashed
+`704e371b53a7898f8eeb00f2b1478798463a187250d5bcf0d0c6983487cd8249` over 328 files before and
+after — the same hash Phases 3 and 4 closed on. Mode stayed `SYSTEM_MAINTENANCE`, open leases 0,
+KAN-183 `done`, KAN-191 `ready` owned by `backend-3`, Product checkout `05e38fb` clean. No Jira
+call and no Supabase call was made by Phase 5 at any point.
+
+### The per-intent subprocess: kept, deliberately
+
+Phase 3 introduced `Listener → subprocess → agent.controller` to prove process separation, and
+Phase 5 had to decide whether that is final architecture or temporary glue. **It is kept**, and
+the reasoning matters more than the verdict:
+
+- **Crash containment.** Core is long-running and hosts intake. An orchestration that dies must
+  not take the front door down with it. Collapsing the boundary would make "one durable Core"
+  less durable, not more.
+- **It implements the Phase-4 front door.** Caller classification is done by the OS handing the
+  child an environment marker. Removing the boundary would mean re-inventing that inside one
+  process.
+- **It stopped being glue.** Phase 5's reduction was the *state duplication*, not the process.
+  Core now owns the invocation model and reconciles its outcome against canonical truth, which
+  is what §37 asked for.
+
+What is honestly recorded: the subprocess boundary is *why* an interrupted dispatch is
+unobservable in the first place. That cost was weighed and accepted, and D-023 is the mitigation.
+
+### What closure does not claim
+
+Core did not absorb the Controller and did not reimplement any subsystem — `test_core_contract`
+asserts Core's own source contains no claim, lease, provider-selection, Jira-transition, receipt
+or state-write call. Learning remains inert and is deliberately not consulted when answering
+(§39). Transport is still loopback-only and still unauthenticated. And Thebes still does not
+select its own work.
+
+### Deferred — explicitly non-blocking
+
+**DEFERRED_HARDENING**
+- *Caller authentication.* Unchanged across Phases 3–5; still required before any non-loopback
+  exposure.
+- *Live authority-loop proof.* Still deterministic-only, for the reason given since Phase 3:
+  proving it live needs authorized Product work that stops at a native permission boundary, and
+  such work is not manufactured to demonstrate transport.
+- *Automatic reconciliation of an interrupted dispatch.* Deliberately absent (D-023). Core now
+  supplies the evidence; deciding remains a human act.
+- *A naturally-occurring interrupted dispatch has still not been observed.* The window is under
+  40ms while Product execution is unauthorized. To be collected opportunistically from a real
+  authorized run, where the window is a provider wake rather than a gate refusal.
+
+**OBSERVATION — pre-existing, not repaired**
+- `authority-manifest` on a nonexistent work item still raises an unhandled `ValueError`.
+  Unrelated to Phase 5 and explicitly out of scope.
+
+### Next
+
+Phase 6 (Knowledge scaling / RAG) remains FUTURE TARGET and DEFERRED, and has **not** started.
+`agent/DECISIONS.md` D-015 stands: retrieval waits until canonical direct reads become a
+measured bottleneck. Beginning it requires a separate CEO decision.
 
 ## Next bounded decision
 
-Phase 4 is closed and no phase is current. The next decision is the CEO's alone: whether to
-begin Phase 5 (the Listener evolving into a core that owns orchestration, routing, context
-assembly, provider selection, lifecycle coordination and recovery behind stable interfaces), to
-authorize another bounded Product ticket under the acceptance protocol above, or to take one of
-the deferred items from any closure. This roadmap does not choose between them and authorizes
-none of them.
+Phase 5 is closed and no phase is current. Every phase through 5 is now closed. The next
+decision is the CEO's alone: whether to authorize Product execution under the acceptance
+protocol above — which is what the program has been built to do and has not yet been released to
+do routinely — whether to take one of the deferred items from any closure, or whether to open
+Phase 6 against D-015's measured-need test. This roadmap does not choose between them and
+authorizes none of them.
 
 ## Phase and mode exit rules
 

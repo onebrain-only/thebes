@@ -1663,7 +1663,7 @@ Post-Wave-8 Operational Hardening               CLOSED
 PHASE 2 — Product Proof                         CLOSED 2026-09-14
 PHASE 3 — Separate Listener                     CLOSED 2026-09-15
 PHASE 4 — Codex → Listener                      CLOSED 2026-09-15
-PHASE 5 — Listener → Thebes Core                FUTURE
+PHASE 5 — Listener → Thebes Core                CLOSED 2026-09-15
 PHASE 6 — Knowledge Scale / RAG                 FUTURE
 ```
 

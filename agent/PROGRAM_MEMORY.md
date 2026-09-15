@@ -49,6 +49,7 @@ future behavior must be recoverable from canonical repository/runtime sources.
 | Program position and authorization | `agent/ROADMAP.md` | Does not duplicate live Product ownership/lifecycle. |
 | Durable rationale and empirical lessons | `agent/DECISIONS.md`, `agent/LEARN.md` | Not a session journal or ticket database. |
 | What arrived at the Listener, whether it was dispatched, and what the Controller answered | Listener inbox/outbox under `agent/listener/runtime/` | **Communication evidence, authority for nothing.** Never consulted for lifecycle, ownership, dependencies, validation or authorization; a canonical source always wins. See `agent/DECISIONS.md` D-018. |
+| The external answer to "what happened to this intent" | `agent/core/lifecycle.py` | **Derived, never stored.** Read-only over the transport record and Persistent State; canonical state wins every disagreement and the disagreement is named. Core is authority for nothing itself. See `agent/DECISIONS.md` D-022. |
 
 When sources disagree, follow their domain ownership. Jira wins lifecycle conflicts;
 Persistent State wins execution ownership; governance defines rules; `ROADMAP.md` owns
@@ -303,6 +304,17 @@ ownership. The closure record, its 24 evidence rows and the explicitly deferred 
 Thebes runs one CEO-authorized ticket at a time, native provider permissions are denied by
 default and granted per invocation, and production mutation remains a separate authority Phase 2
 never exercised. No Product execution is currently authorized and no phase is current.
+
+**CURRENT FACT — Phase 5 is CLOSED (2026-09-15).** Thebes Core exists as `agent/core` — the
+addressable composition of every responsibility `MASTER_ROADMAP.md` §37 names, hosted by the
+long-running Listener process, which is now Core's intake subsystem rather than a separate
+conceptual product. **Core is composition, not a rewrite:** it added no second orchestration
+engine and reimplemented nothing, and a test imports every module its subsystem map names.
+What it added is the one thing that did not exist — a single canonical answer to "what happened
+to this intent", derived from Persistent State and reconciled against the delivery record.
+Where the two disagree, canonical state wins and the disagreement is reported. The closure
+record is in `agent/ROADMAP.md` "Phase 5 closure"; the rules are `agent/DECISIONS.md` D-022 and
+D-023; the architecture is `agent/core/README.md`.
 
 **CURRENT FACT — Phase 4 is CLOSED (2026-09-15).** The Codex/CEO operational path is
 `Codex → Listener → Controller`. The Listener gained no authority in the move: it still owns
