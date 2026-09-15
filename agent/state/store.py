@@ -67,6 +67,12 @@ KINDS = {
     # and offered to the integration branch, and what git said happened. It
     # records the orchestration act; git remains the authority on the code.
     "integration_receipt": ("integration-receipts", "integration"),
+    # A CEO grant of bounded Product execution. It is EVIDENCE OF A HUMAN ACT,
+    # not a thing Thebes may decide it has: `approving_authority` must be `ceo`
+    # and a reference to the actual grant is required. Selection stays with the
+    # canonical planner; this record only says how many admissible items that
+    # planner may carry to completion.
+    "product_authorization": ("product-authorizations", "authz"),
 }
 
 
@@ -2610,6 +2616,156 @@ def prepare_replacement_execution(original_invocation_id, replacement_session_id
 def read_execution_replacement(original_invocation_id):
     rid = "replacement-" + hashlib.sha256(original_invocation_id.encode("utf-8")).hexdigest()
     return read("execution_replacement", rid)
+
+
+BOUNDED_PRODUCT_BATCH = "BOUNDED_PRODUCT_BATCH"
+AUTHORIZATION_KINDS = (BOUNDED_PRODUCT_BATCH,)
+AUTHORIZATION_STATUSES = ("active", "exhausted", "revoked", "suspended")
+CANONICAL_PLANNER = "canonical-thebes-planner"
+
+
+def record_product_authorization(authorization_ref, maximum_completed_items,
+                                 scope, approving_authority="ceo",
+                                 authorization_kind=BOUNDED_PRODUCT_BATCH,
+                                 selection_authority=CANONICAL_PLANNER):
+    """Persist one CEO grant of bounded Product execution.
+
+    This does NOT weaken D-003. D-003 forbids a controller INFERRING permission
+    from queue availability, green tests or a finished ticket. Here permission is
+    an explicit human act and only its representation is new: the CEO decides the
+    envelope and its size, the canonical planner decides which admissible item
+    fills it, and those stay two different things.
+
+    Like every other authority record here, `approving_authority` must be `ceo`
+    and this is contractual rather than cryptographic — `validate.py` says so of
+    the whole store. What the guard does buy is that no code path can create one
+    while claiming to be anything else, and that every grant names the human act
+    it came from.
+    """
+    if authorization_kind not in AUTHORIZATION_KINDS:
+        raise StateError("unknown product authorization kind %r" % authorization_kind)
+    if approving_authority != "ceo":
+        raise StateError("product authorization requires ceo authority")
+    if selection_authority != CANONICAL_PLANNER:
+        raise StateError("product authorization selection authority must be the "
+                         "canonical planner")
+    if not isinstance(authorization_ref, str) or not authorization_ref.strip():
+        raise StateError("product authorization requires a reference to the CEO grant")
+    if not isinstance(scope, str) or not scope.strip():
+        raise StateError("product authorization requires a scope")
+    if not isinstance(maximum_completed_items, int) or maximum_completed_items < 1:
+        raise StateError("product authorization maximum must be a positive integer")
+    with _Lock("product-authorization"):
+        for record in read_all("product_authorization"):
+            if record.get("status") == "active":
+                raise StateError("an active product authorization already exists: %s"
+                                 % record["product_authorization_id"])
+        rid = new_id("product_authorization")
+        rec = {"product_authorization_id": rid,
+               "authorization_kind": authorization_kind,
+               "approving_authority": approving_authority,
+               "authorization_ref": authorization_ref.strip(),
+               "selection_authority": selection_authority,
+               "maximum_completed_items": maximum_completed_items,
+               # A LIST, not a counter. Duplicate consumption becomes structurally
+               # impossible rather than something a check has to remember, and the
+               # record stays auditable after the grant is spent.
+               "completed_items": [],
+               "scope": scope.strip(),
+               "status": "active",
+               "revoked_at": None, "revoked_by": None, "revocation_ref": None,
+               "schema_version": SCHEMA_VERSION, "revision": 1,
+               "created_at": now(), "updated_at": now()}
+        _validate_one("product_authorization", rec)
+        _atomic_write(path_for("product_authorization", rid), rec)
+        return rec
+
+
+def read_product_authorization(authorization_id):
+    if not authorization_id:
+        raise StateError("product authorization id is required")
+    return read("product_authorization", authorization_id)
+
+
+def active_product_authorization():
+    """The one active bounded grant, or None. Never more than one by construction."""
+    active = [record for record in read_all("product_authorization")
+              if record.get("status") == "active"]
+    return active[0] if len(active) == 1 else None
+
+
+def authorization_remaining(record):
+    if not record or record.get("status") != "active":
+        return 0
+    return max(0, record["maximum_completed_items"] - len(record.get("completed_items") or []))
+
+
+def consume_product_authorization(authorization_id, work_item_id, expected_revision,
+                                  evidence_ref, completed_at=None):
+    """Record that one work item reached canonical completion under this grant.
+
+    Called ONLY from the canonical completion path, and only for a canonically
+    successful completion. Starting work consumes nothing: a refusal, a failure,
+    a block or an interruption must leave the quota exactly where it was, because
+    a grant that shrinks on attempts is a grant that silently expires while the
+    work it was for never happened.
+
+    Idempotent by identity — an item already recorded is returned unchanged
+    rather than counted twice — so a retried or re-entered completion tail
+    cannot spend the same allowance again.
+    """
+    if not work_item_id:
+        raise StateError("product authorization consumption requires a work item")
+    if not isinstance(evidence_ref, str) or not evidence_ref.strip():
+        raise StateError("product authorization consumption requires evidence")
+    with _Lock("product-authorization"):
+        with record_lock("product_authorization", authorization_id):
+            rec = read("product_authorization", authorization_id)
+            if rec is None:
+                raise StateError("no such product authorization")
+            if rec["revision"] != expected_revision:
+                raise StateError("product authorization changed under us")
+            if rec["status"] != "active":
+                raise StateError("product authorization is %s" % rec["status"])
+            completed = list(rec.get("completed_items") or [])
+            if any(item["work_item_id"] == work_item_id for item in completed):
+                return rec                     # already counted; never twice
+            if len(completed) >= rec["maximum_completed_items"]:
+                raise StateError("product authorization quota is exhausted")
+            completed.append({"work_item_id": work_item_id,
+                              "completed_at": completed_at or now(),
+                              "evidence_ref": evidence_ref.strip()})
+            rec = dict(rec, completed_items=completed, revision=rec["revision"] + 1,
+                       updated_at=now())
+            if len(completed) >= rec["maximum_completed_items"]:
+                rec["status"] = "exhausted"
+            _validate_one("product_authorization", rec)
+            _atomic_write(path_for("product_authorization", authorization_id), rec)
+            return rec
+
+
+def revoke_product_authorization(authorization_id, expected_revision, revoked_by,
+                                 revocation_ref, status="revoked"):
+    """End a grant early. Only the CEO may revoke; suspension is for safety."""
+    if status not in ("revoked", "suspended"):
+        raise StateError("a product authorization ends as revoked or suspended")
+    if status == "revoked" and revoked_by != "ceo":
+        raise StateError("only the CEO may revoke a product authorization")
+    if not isinstance(revocation_ref, str) or not revocation_ref.strip():
+        raise StateError("ending a product authorization requires a reason reference")
+    with _Lock("product-authorization"):
+        with record_lock("product_authorization", authorization_id):
+            rec = read("product_authorization", authorization_id)
+            if rec is None:
+                raise StateError("no such product authorization")
+            if rec["revision"] != expected_revision:
+                raise StateError("product authorization changed under us")
+            rec = dict(rec, status=status, revoked_at=now(), revoked_by=revoked_by,
+                       revocation_ref=revocation_ref.strip(),
+                       revision=rec["revision"] + 1, updated_at=now())
+            _validate_one("product_authorization", rec)
+            _atomic_write(path_for("product_authorization", authorization_id), rec)
+            return rec
 
 
 def claim(work_item_id, seat_id, claim_ref, expected_revision, capability_of_seat=None,

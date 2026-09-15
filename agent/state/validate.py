@@ -57,6 +57,12 @@ JIRA_KEY = re.compile(r"^[A-Z][A-Z0-9]+-\d+$")
 
 CANONICAL_STATES = set(board.CANONICAL_STATES)
 
+# Bounded CEO Product grants. Mirrors agent/state/store.py; kept here because
+# validate.py must not import store (store imports validate).
+AUTHORIZATION_KINDS = ("BOUNDED_PRODUCT_BATCH",)
+AUTHORIZATION_STATUSES = ("active", "exhausted", "revoked", "suspended")
+CANONICAL_PLANNER = "canonical-thebes-planner"
+
 # ---- Wave 6 orchestration ---------------------------------------------------
 #
 # Interventions are INDEPENDENT records, not a field on a task. A task-level object
@@ -1196,6 +1202,56 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
                                                     for item in approval_ids)):
                 errs.append("%s: continuation receipt approval_ids must be exact approval ids" % where)
 
+    elif kind == "product_authorization":
+        _req(rec, ["product_authorization_id", "authorization_kind",
+                   "approving_authority", "authorization_ref", "selection_authority",
+                   "maximum_completed_items", "scope", "status"], errs, where)
+        if not str(rec.get("product_authorization_id") or "").startswith("authz-"):
+            errs.append("%s: product_authorization_id must start with authz-" % where)
+        if rec.get("authorization_kind") not in AUTHORIZATION_KINDS:
+            errs.append("%s: unknown authorization kind %r"
+                        % (where, rec.get("authorization_kind")))
+        # The whole point of the record: a grant that does not name a human act
+        # is not a grant. Thebes must never be able to author one for itself.
+        if rec.get("approving_authority") != "ceo":
+            errs.append("%s: a product authorization is a CEO act, not %r"
+                        % (where, rec.get("approving_authority")))
+        if rec.get("selection_authority") != CANONICAL_PLANNER:
+            errs.append("%s: selection authority must be the canonical planner" % where)
+        if not str(rec.get("authorization_ref") or "").strip():
+            errs.append("%s: a product authorization must reference the CEO grant" % where)
+        if rec.get("status") not in AUTHORIZATION_STATUSES:
+            errs.append("%s: unknown authorization status %r" % (where, rec.get("status")))
+        maximum = rec.get("maximum_completed_items")
+        if not isinstance(maximum, int) or maximum < 1:
+            errs.append("%s: maximum_completed_items must be a positive integer" % where)
+        completed = rec.get("completed_items")
+        if not isinstance(completed, list):
+            errs.append("%s: completed_items must be a list" % where)
+        else:
+            seen = set()
+            for item in completed:
+                if not isinstance(item, dict) or not item.get("work_item_id"):
+                    errs.append("%s: a completed item records its work_item_id" % where)
+                    continue
+                key = item["work_item_id"]
+                if not JIRA_KEY.match(str(key)):
+                    errs.append("%s: completed item %r is not a Jira key" % (where, key))
+                if key in seen:
+                    errs.append("%s: %s counted twice against one authorization"
+                                % (where, key))
+                seen.add(key)
+                if not str(item.get("evidence_ref") or "").strip():
+                    errs.append("%s: completed item %s records no evidence" % (where, key))
+            if isinstance(maximum, int) and len(completed) > maximum:
+                errs.append("%s: %d completed items exceed the authorized maximum %d"
+                            % (where, len(completed), maximum))
+            if (isinstance(maximum, int) and rec.get("status") == "active"
+                    and len(completed) >= maximum):
+                errs.append("%s: an authorization at its maximum is not active" % where)
+        if rec.get("status") in ("revoked", "suspended") and not rec.get("revocation_ref"):
+            errs.append("%s: ending an authorization records why" % where)
+
     elif kind == "integration_receipt":
         _req(rec, ["integration_receipt_id", "work_item_id", "seat_id", "outcome"],
              errs, where)
@@ -1478,7 +1534,8 @@ def check(runtime=None):
              "execution_receipt": "execution-receipts", "execution_approval": "execution-approvals",
              "execution_continuation_preparation": "execution-continuations",
              "execution_session_retirement": "execution-session-retirements",
-             "execution_replacement": "execution-replacements"}
+             "execution_replacement": "execution-replacements",
+             "product_authorization": "product-authorizations"}
     seen_ids = {}
     edges = []
     active_iv = []
@@ -1509,7 +1566,8 @@ def check(runtime=None):
                    "execution_approval": "execution_approval_id",
                    "execution_continuation_preparation": "execution_continuation_id",
                    "execution_session_retirement": "execution_session_retirement_id",
-                   "execution_replacement": "execution_replacement_id"}[kind]
+                   "execution_replacement": "execution_replacement_id",
+                   "product_authorization": "product_authorization_id"}[kind]
             rid = rec.get(idf)
             if rid != fn[:-5]:
                 errs.append("%s: filename does not match %s %r" % (p, idf, rid))

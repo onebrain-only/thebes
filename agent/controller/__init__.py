@@ -92,6 +92,95 @@ class RoadmapAuthorization:
         return {"authorized": True, "reason": "authorized", "reference": reference}
 
 
+class ProductAuthorization:
+    """Exact-ticket authorization first, then a bounded CEO standing grant.
+
+    Two sources, deliberately kept apart, because the whole risk here is one
+    actor doing both halves:
+
+      AUTHORITY comes from the CEO — either the roadmap's exact-ticket record,
+      or a durable `product_authorization` the CEO granted. Thebes can create
+      neither; `store.record_product_authorization` refuses any authority but
+      `ceo`, and the roadmap is a governance document.
+
+      SELECTION comes from canonical planning. Under a standing grant the caller
+      supplies no key, so this class will not authorize a work item until the
+      canonical admission rules have independently proven it admissible. That
+      proof is `queue.unclaimable_reasons` — the same predicates the claim gate
+      uses — passed in as a prover rather than trusted from the caller.
+
+    That is why this does not weaken D-003. D-003 forbids INFERRING permission
+    from queue availability; here the queue decides only WHICH admissible item
+    fills an envelope a human already sized. With no grant on record, an empty
+    queue authorizes exactly nothing.
+    """
+
+    def __init__(self, roadmap=None, state_store=store, admissibility=None):
+        self.roadmap = roadmap or RoadmapAuthorization()
+        self.state_store = state_store
+        self.admissibility = admissibility
+
+    def for_work_item(self, work_item_id):
+        exact = self.roadmap.for_work_item(work_item_id)
+        if exact["authorized"]:
+            return exact
+        reader = getattr(self.state_store, "active_product_authorization", None)
+        if reader is None:
+            return exact              # a store with no standing-grant support
+        try:
+            grant = reader()
+        except store.StateError as exc:
+            return dict(exact, reason="authorization-record-unavailable: %s" % exc)
+        if grant is None:
+            return exact                      # no standing grant: the exact answer stands
+        if self.state_store.authorization_remaining(grant) <= 0:
+            return {"authorized": False, "reason": "bounded-authorization-exhausted",
+                    "reference": grant["authorization_ref"],
+                    "authorization_id": grant["product_authorization_id"]}
+        if self.admissibility is None:
+            # Refuse rather than assume. A standing grant without a way to prove
+            # admissibility is exactly the shape that would let selection and
+            # authorization collapse into one act.
+            return {"authorized": False,
+                    "reason": "bounded-authorization-requires-admissibility-proof",
+                    "reference": grant["authorization_ref"],
+                    "authorization_id": grant["product_authorization_id"]}
+        reasons = self.admissibility(work_item_id)
+        if reasons:
+            return {"authorized": False,
+                    "reason": "bounded-authorization-selection-not-admissible: %s"
+                              % ", ".join(reasons),
+                    "reference": grant["authorization_ref"],
+                    "authorization_id": grant["product_authorization_id"]}
+        return {"authorized": True, "reason": "bounded-authorization",
+                "reference": grant["authorization_ref"],
+                "authorization_id": grant["product_authorization_id"],
+                "authorization_remaining": self.state_store.authorization_remaining(grant)}
+
+
+def canonical_admissibility(state_store=store, jira_client=jira):
+    """Prove admissibility with the canonical predicates and nothing else."""
+    def prove(work_item_id):
+        from agent.state import queue
+        task = state_store.read("task", work_item_id)
+        if task is None:
+            return ["work-item-not-found"]
+        try:
+            issue = jira_client.get_issue(work_item_id)
+        except jira.JiraError as exc:
+            return ["jira-unavailable: %s" % exc]
+        facts = {"status_id": issue["status_id"],
+                 "has_due_date": bool(issue.get("due_date")),
+                 "has_acceptance_criteria": bool(issue.get("description"))}
+        return list(queue.unclaimable_reasons(
+            task, all_tasks=state_store.read_all("task"),
+            edges=[e for e in state_store.read_all("dependency") if not e.get("retired_at")],
+            interventions=state_store.active_interventions(),
+            jira=facts, jira_status_id=issue["status_id"],
+            include_execution_gate=False))
+    return prove
+
+
 def _last_value(text, prefix):
     values = []
     for line in text.splitlines():
@@ -145,7 +234,9 @@ def execute(work_item_id, brief=None, *, authorization=None, state_store=store,
     """
     result = _result_shell(work_item_id)
     result["operating_mode"] = state_store.current_operating_mode()
-    authorization = authorization or RoadmapAuthorization()
+    authorization = authorization or ProductAuthorization(
+        state_store=state_store,
+        admissibility=canonical_admissibility(state_store, jira_client))
     auth = authorization.for_work_item(work_item_id)
     result.update({"authorization_status": auth["reason"],
                    "authorization_reference": auth.get("reference")})
@@ -747,12 +838,55 @@ def _complete_after_integration(work_item_id, state_store, jira_client, receipt,
     except (store.StateError, jira.JiraError, ValueError) as exc:
         return dict(outcome, completion_status=completion_policy.FINALIZATION_INCOMPLETE,
                     completion_blocker=str(exc))
-    return {"completion_status": evidence["outcome"],
-            "completion_blocker": None,
-            "jira_transition_performed": evidence["jira_transition_performed"],
-            "lifecycle": evidence["lifecycle"],
-            "ownership_status": evidence["ownership_status"],
-            "open_leases": evidence["open_leases"]}
+    outcome = {"completion_status": evidence["outcome"],
+               "completion_blocker": None,
+               "jira_transition_performed": evidence["jira_transition_performed"],
+               "lifecycle": evidence["lifecycle"],
+               "ownership_status": evidence["ownership_status"],
+               "open_leases": evidence["open_leases"]}
+    outcome.update(_consume_authorization(work_item_id, evidence, state_store))
+    return outcome
+
+
+def _consume_authorization(work_item_id, evidence, state_store):
+    """Spend one allowance of a standing grant, and only for a real completion.
+
+    The single place this happens, and it happens HERE rather than at dispatch on
+    purpose: an attempt is not a completion. A refusal, a failure, a block or an
+    interrupted run must leave the quota exactly where it was, or a grant quietly
+    expires against work that never landed.
+
+    Consumption is keyed on the work item, so a re-entered or retried completion
+    tail returns the same record instead of counting twice.
+    """
+    if evidence["outcome"] not in completion_policy.TERMINAL_SUCCESS:
+        return {}
+    if evidence.get("lifecycle") != "done":
+        return {}
+    # A store that does not implement standing grants simply has none. This is
+    # not defensive padding: the exact-ticket path predates this feature and must
+    # keep working against a store that never heard of it.
+    reader = getattr(state_store, "active_product_authorization", None)
+    if reader is None:
+        return {}
+    try:
+        grant = reader()
+        if grant is None:
+            return {}
+        before = state_store.authorization_remaining(grant)
+        updated = state_store.consume_product_authorization(
+            grant["product_authorization_id"], work_item_id, grant["revision"],
+            evidence_ref="lifecycle %s, jira transition %s" % (
+                evidence["outcome"], evidence["jira_transition_performed"]))
+        return {"authorization_id": updated["product_authorization_id"],
+                "authorization_remaining_before": before,
+                "authorization_remaining_after":
+                    state_store.authorization_remaining(updated),
+                "authorization_status": updated["status"]}
+    except store.StateError as exc:
+        # A quota that cannot be spent never turns a real completion into a
+        # failure — the Product work IS done and Jira says so. It is reported.
+        return {"authorization_consumption_blocker": str(exc)}
 
 
 def _integration_seat(task, state_store):
