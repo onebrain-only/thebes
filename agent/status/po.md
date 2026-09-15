@@ -5076,3 +5076,84 @@ section) and that the rework-budget gap is po's to size by analogy to precedent 
 2-sitting ticket carried a 1-working-day ceiling gap). I used that analogy rather than
 inventing a wider buffer. If the PEER reviewer fails the gate, the ticket returns to `Back-end`
 for rework and this ceiling will need re-derivation at that point, not extension in place.
+
+---
+
+## 2026-09-15 — KAN-184 operational_context recorded (CEO standing environment authority)
+
+ACT: canonical PO act recording environment authority the CEO already granted (not granting it)
+for KAN-184, per CEO decision "STANDING ENVIRONMENT AUTHORITY FOR CURRENT PRODUCT PILOT"
+(2026-09-15).
+
+ALL_FOUR_CONDITIONS_HOLD: YES
+
+1. Selected through canonical planning — YES. KAN-184 is parented under epic KAN-127
+   (audit-findings), moved to `Ready` (jira_status_id 10008) with all five Ready facts present:
+   project_id=app, required_capability=backend, acceptance criteria (6 ACs), work_effort=2
+   (recorded by po from pf-remainder's Preflight, 2026-09-11), due_date=2026-09-21. Surfaces and
+   logical_surfaces recorded by po from worker evidence, same pattern as KAN-181/182/183.
+2. Covered by active bounded authorization — YES. `authz-5323c2c9-4ac0-4a0a-914b-c4aaefa47ce3`:
+   status=active, maximum_completed_items=3, completed_items=[] (0 used). Scope covers "real
+   Product backlog work that satisfies every canonical admission rule" and does not exclude
+   KAN-184 — it is not destructive/irreversible, does not bypass SELF/QA/PEER, dependencies,
+   contention, readiness or ownership, is not protected-main, Phase 6, or RAG.
+3. Ticket evidence identifies wtncuzcskpigqpmnxwws as the real target — YES, quoted below.
+4. Judged, qualified — see below.
+
+CONDITION_3_EVIDENCE (verbatim from KAN-184's Jira description): "## Found by\n\nbackend-3's
+triage, relayed by team-lead, live against wtncuzcskpigqpmnxwws." Every AC that requires
+characterization (AC1, AC3, AC5) opens with "Characterize live" / "Confirm live" against that
+same system — the finding and its verification both name the production project directly, not
+by inference.
+
+CONDITION_4_JUDGEMENT: Mixed — not all six ACs are read-only.
+- AC1 ("Characterize live: what table(s)... row counts... is anon/authenticated EXECUTE
+  currently granted... attacker capability"), AC3 (same shape for
+  `rpc_create_sport_profile`), and AC5 ("Confirm live that `reputation_recompute` only
+  recomputes... read the function body") are genuinely read-only inspection — table/grant/row
+  reads and a function-body read, nothing mutates.
+- AC2 ("Fix per the characterization... derive the identity from `auth.uid()` internally, or
+  gate appropriately"), AC4 ("Fix per the characterization — an ownership check..."), and AC6
+  ("this finding may close with containment only (revoke anon/authenticated EXECUTE...)") each
+  require a mutation — function body changes and a privilege REVOKE — and are OUTSIDE the
+  READ-ONLY CHARACTERIZATION/INSPECTION ONLY envelope the CEO grant sets. Per the task
+  instruction, this does not block recording operational_context: the fix is authored and
+  committed under canonical workflow, and the actual production apply for AC2/AC4/AC6 stops at
+  the CEO-only mutation boundary. Recorded explicitly in both `environment_ref` and
+  `evidence_ref` so the boundary is visible to whichever backend seat and PEER reviewer meet it.
+
+INTENT chosen: `implementation` (matches KAN-183's precedent — this is triage-derived backend
+fix work with a live characterization step, not a bug reproduction, not a validation-only task,
+not an unexplained observed condition).
+
+REPORTED_ENVIRONMENT written: `{environment_ref: "Supabase production project
+wtncuzcskpigqpmnxwws (READ-ONLY characterization only; AC2/AC4/AC6 fixes are mutation and stop
+at the CEO-only production apply boundary)", locality: "deployed", platform: "postgrest",
+runtime: "supabase-postgres"}`.
+
+PRIMARY_TARGET derived by the store: identical shape, `source: "reported_environment"`,
+`browser_automation: false` (store-derived, not authored).
+
+EVIDENCE_REF written (300 chars, store enforces a 300-char cap on this field — the fuller
+CEO-grant text with every excluded-action line is in this status entry and in the task brief
+that authorized this act, not repeatable inline in the record itself): `CEO DECISION 2026-09-15
+"STANDING ENVIRONMENT AUTHORITY": Supabase PRODUCTION wtncuzcskpigqpmnxwws, READ-ONLY
+CHARACTERIZATION/INSPECTION; "production apply remains a separate CEO-only mutation boundary."
+KAN-184 found live against this project; AC1/3/5 read-only, AC2/4/6 fixes stop at CEO boundary.`
+
+WRITTEN: YES. `agent/state/store.py::set_operational_context(work_item_id="KAN-184",
+expected_revision=9, intent="implementation", reported_environment=..., author="po",
+evidence_ref=...)`. Only `operational_context` changed; `revision` advanced 9 → 10 as expected
+for a single field-group write. No Jira transition, no ticket edit, no other work item touched,
+no claim taken, no due_date change (KAN-184's due_date was already `2026-09-21`, set by
+capacity on 2026-09-11 — untouched here). Re-read `agent/state/runtime/tasks/KAN-184.json`
+immediately after: `revision: 10`, `operational_context.intent: "implementation"`,
+`operational_context.provenance.by: "po"`, `operational_context.provenance.evidence_ref` matches
+what was written verbatim.
+
+ANY_CONCERN: AC2, AC4 and AC6 cannot be closed inside this authority. Whoever claims KAN-184
+next (`backend`, PEER route) needs to know the characterization steps (AC1/3/5) are covered by
+this grant but the fixes themselves are not — the migration/function changes get authored and
+committed as code, and applying them to the live production project is a separate CEO-only step
+this record does not and cannot grant. Flagging it here rather than leaving it implicit in the
+environment_ref alone.
