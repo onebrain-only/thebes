@@ -247,6 +247,40 @@ the applicable authorization and workflow.
 not choose its reviewer. The three routes are SELF, QA and PEER. Exact mechanics belong to
 `agent/WORKFLOWS.md` §3.
 
+**CURRENT FACT — the deterministic QA layer (2026-09-15).** Before any reviewer is
+dispatched, `agent/qa/gate.py` routes, runs and classifies the deterministic test layers
+for the change, inside the named review cycle and in the realized worktree. Routing is one
+function (`agent/qa/routing.py`) over the task's surfaces, characteristics and primary
+target — lowest-cost sufficient; docs-only selects nothing; TestSprite, k6 and BrowserStack
+are unreachable from paths and need an explicit flag. Results fold into the canonical
+`TestClaim` / `EvidenceClaim` model and reach the reviewer as bounded text plus artifact
+references (`agent/qa/runtime/artifacts/`, gitignored) — never raw logs, never screenshots.
+The reviewer's effort follows the evidence: decisive (all pass / a product defect) →
+cost-efficient, low; nothing applicable → full. **The gate writes no verdict**;
+`store.record_review_result` still requires the exact recorded review owner.
+
+**DECISION/INVARIANT — four things a red run can mean.** `PRODUCT_DEFECT`,
+`TEST_DEFECT`, `TEST_INFRASTRUCTURE_FAILURE`, `EXTERNAL_QA_FAILURE`
+(`agent/qa/results.py`, signature tables, conservative default). An infrastructure
+failure refuses the validation act with `VALIDATION_INFRASTRUCTURE_FAILED`: no dispatch,
+no verdict, the review stays pending at the same cycle with its owner. It is not a Product
+failure and it spends nothing.
+
+**DECISION/INVARIANT — bounded retest.** `policy.MAX_REVIEW_CYCLES = 3`, enforced in
+`store.open_review_context`, the one writer that creates a cycle. The reopen that would
+create cycle 4 is refused with `retest-limit-reached`; the record is left byte-identical
+with its last FAIL on it. What it needs is a human decision — an intervention or the CEO —
+never an automatic retry and never a downgrade to an easier route.
+
+**CURRENT FACT — the layers are Product assets** in `Dabbler/dabbler-code/tests/`
+(`README.md` there is the contract): `tests/api` (Postman, anon, read-only),
+`tests/e2e` (Playwright, one sign-in per run), `tests/maestro` (Maestro on the Android
+emulator; proven), `tests/perf` (k6, intentional only), beside `test/`,
+`integration_test/` and `supabase/tests/<KAN>/`. Each is one command from the repository
+root, exit 0/1, exit 2 for a named infrastructure refusal. The `qa` seat is test
+orchestration: it interprets, classifies and routes; it does not drive, re-route, edit
+tests or retry past the bound.
+
 **DECISION/INVARIANT — PEER remediation.** A PEER reviewer must share the required
 capability because a failure transfers bounded remediation responsibility to that
 reviewer. The reviewer fixes the failed scope, SELF-reviews that remediation as the

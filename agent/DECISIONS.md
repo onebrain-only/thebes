@@ -368,3 +368,34 @@ of it was built.
 **Consequences:** Deferred hardening items stay deferred and remain listed rather than quietly
 dropped. Phase 6 remains deferred under D-015's measured-need test; nothing observed in live
 operation has justified it. The next act is Product.
+
+## D-027 — Deterministic tests run before the reviewer; retest is bounded; a red run has four meanings
+
+**Status:** ACTIVE (2026-09-15)
+**Decision:** Repetitive test execution moves out of LLM reasoning. One canonical router
+(`agent/qa/routing.py`) selects the lowest-cost sufficient deterministic layers for a change
+from facts the task already carries; `agent/qa/gate.py` runs them by command inside the named
+review cycle before any reviewer is dispatched; results reach the reviewer as bounded
+structured evidence with artifact references. Every red run is classified as exactly one of
+`PRODUCT_DEFECT`, `TEST_DEFECT`, `TEST_INFRASTRUCTURE_FAILURE`, `EXTERNAL_QA_FAILURE`. An
+infrastructure failure refuses the validation act without a verdict and without spending a
+cycle. A review may be reopened after FAIL at most `MAX_REVIEW_CYCLES = 3` times in total,
+enforced in the canonical writer. TestSprite, k6 and BrowserStack are named layers that no
+path selects: exploratory needs an explicit request on a user-visible change, performance an
+explicit scope, real devices a release candidate.
+**Why:** The evidence this milestone was pulled by (D-026's rule): the `qa` seat had burned
+whole days in open-ended Chrome sessions; KAN-206's reviewer had to be told by a human that a
+runtime check had been performed because nothing deterministic could say so; the retest loop
+had no ceiling at all (`test_self_fail` #24 looped to cycle 4 to prove cycles never reset —
+nothing stopped cycle 40); and the local `flutter test` toolchain fault looked exactly like a
+Product failure. A model that navigates to learn what a command reports is the most expensive
+possible way to obtain a bit, and it obtains it unreliably.
+**Consequences:** The `qa` seat is test orchestration — interpret, classify, route,
+accumulate regression — and no longer the primary functional gate; the layers are. No second
+orchestrator, no new agent: `agent.qa` selects no reviewer, opens no context, writes no
+verdict, and `record_review_result` still requires the recorded owner, so a green gate cannot
+pass a review by itself and a reviewer may still fail a green gate on an unmet criterion.
+Tests are Product assets under `Dabbler/dabbler-code/tests/` with a written contract
+(`tests/README.md`). Reaching the retest ceiling is a human decision, never a retry. CI is
+designed for and not yet wired; local execution is the proof. Secrets stay outside Git;
+Product mutation authority is unchanged and no test integration reaches around it.

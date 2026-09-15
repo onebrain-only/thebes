@@ -5,8 +5,8 @@ Canonical checkout: `~/Desktop/Thebes-Canonical`. Do not create another clone.
 
 ## Current position
 
-**CURRENT FACT — MODE: `SYSTEM_MAINTENANCE`**
-**CURRENT FACT — CURRENT PHASE: Phases 1–5 CLOSED. No phase is current. MAINTENANCE_BASELINE: STABLE. PRODUCT_DEVELOPMENT_READY: YES. Phase 6 DEFERRED; RAG NOT JUSTIFIED.**
+**CURRENT FACT — MODE: `PRODUCT_EXECUTION` (the store is authoritative: `store.current_operating_mode()`; this line was stale from 2026-09-12 until 2026-09-15). A bounded CEO standing grant `authz-8d4844a9-2c91-4dc4-b085-92b4bd7d88d8` is active with 2 of 10 items remaining (KAN-207, KAN-208); it is a Persistent State record, not a roadmap selection, so the `PRODUCT_EXECUTION_AUTHORIZED` line below stays NO.**
+**CURRENT FACT — CURRENT PHASE: Phases 1–5 CLOSED. No phase is current. MAINTENANCE_BASELINE: STABLE. PRODUCT_DEVELOPMENT_READY: YES. Phase 6 DEFERRED; RAG NOT JUSTIFIED. QA LAYER INTEGRATION (2026-09-15) CLOSED — see "Professional QA layer integration" below.**
 **CURRENT FACT — This is a maintenance FREEZE. Thebes infrastructure changes are now evidence-driven by real Product work only. Do not open another infrastructure milestone without one.**
 **CURRENT FACT — PRODUCT_ACCEPTANCE_STATUS: KAN-183 COMPLETE — the first real single-task run driven end to end by Thebes**
 **CURRENT FACT — PRODUCT_EXECUTION_AUTHORIZED: NO — KAN-183's bounded authorization was consumed on completion 2026-09-14, and Phase 3 created none**
@@ -961,3 +961,131 @@ machinery to honour either is built, proven and idle.
   reconcile; do not normalize toward Product execution.
 - Future phases may be refined by evidence, but may not be silently promoted to current
   fact or implementation.
+
+## Bounded authorization — KAN-206 continuation after PEER FAIL
+
+**CURRENT FACT — PRODUCT_EXECUTION_AUTHORIZED: NO — consumed by KAN-206's completion, 2026-09-15.**
+*(This read YES for one item, KAN-206, continuation only, between 16:30 and 16:42 on 2026-09-15.
+The marker is a whole-file substring test, so retiring this authorization means editing this exact
+line — appending a later NO elsewhere would leave the grant live.)*
+
+**Why this record exists.** KAN-206 was selected and executed under the CEO's bounded standing
+grant `authz-8d4844a9-2c91-4dc4-b085-92b4bd7d88d8`. `frontend-2` peer-reviewed it and returned
+FAIL on exactly one criterion: D-001's mandated runtime mitigation had not been performed.
+Ownership transferred to `frontend-2` under `peer_fail_transfer`, opening review cycle 2.
+
+The CEO then performed that mitigation personally on 2026-09-15 — `flutter run -d chrome` against
+commit `b0118a4` on `exec/frontend-1/KAN-206`, not against `Canary` — reporting a clean cold start
+with no observed problem. Recorded as Jira comment `11012` on KAN-206.
+
+**The blocker this record clears.** `ProductAuthorization.for_work_item` proves a bounded grant's
+authority through `canonical_admissibility`, which asks `queue.unclaimable_reasons` — the CLAIM
+question. That predicate emits `already-owned` for any item with an owner. `controller.execute`
+itself supports continuations (`if already_owned: claim_status = "preserved"`), so the body is
+willing and only the gate in front of it refuses. Consequence: **a bounded grant can start work it
+is structurally unable to finish.** Any PEER FAIL under a bounded grant strands its item.
+This is a Thebes defect, recorded below as maintenance, and is NOT fixed by this authorization.
+
+**Scope.** This authorizes continuation of KAN-206 ONLY, preserving `frontend-2`'s existing
+ownership — no new claim, no new due date, no reselection. It does not authorize KAN-207, KAN-208
+or any other ticket, does not alter the bounded grant's quota accounting, does not widen any
+authorization gate, and does not authorize merging to `main` (`P-030` stands).
+
+Authorization reference: CEO decision, 2026-09-15, KAN-206 continuation after PEER FAIL
+Selected ticket: KAN-206
+
+Acceptance result/evidence (protocol step 5): **DONE, 2026-09-15.** `frontend-2` completed review
+cycle 2 and recorded SELF **PASS** through `store.record_review_result`. Product commit `b389214`
+integrated onto `Canary` as `d9d161f` (previous head `15a685d`): 7 files, 973 deletions, confined
+to the declared surfaces. The barrel retains 14 export lines. Jira reached **Done (10007)**,
+confirmed by an authoritative re-read; Persistent State reconciled to canonical `done`; ownership
+released; zero leases remained open. `main` untouched. The bounded standing grant recorded KAN-206
+as its 8th consumed item, leaving 2 of 10 against KAN-207 and KAN-208.
+
+**This authorization is consumed and does not carry forward.** It did not fix the continuation gap
+recorded below, which remains open.
+
+## Maintenance item — bounded-authorization continuation gap
+
+**Recorded 2026-09-15, not yet fixed, by explicit CEO decision to authorize first and repair
+separately.**
+
+`agent/controller/__init__.py::ProductAuthorization.for_work_item` proves admissibility with
+`canonical_admissibility`, which asks the claim question (`queue.unclaimable_reasons`,
+`already-owned` at `agent/state/queue.py:266`) about an item the same grant already selected and
+that is legitimately mid-lifecycle. Roadmap authorization is unaffected, because it returns
+`authorized` before that gate is consulted — so the gap exists only on the bounded-grant path.
+
+The fix is a SYSTEM_MAINTENANCE act and requires its own CEO decision: widening an authorization
+gate is precisely the self-granting shape the CEO's standing instruction forbids
+("Do NOT allow Thebes to grant authority to itself"), so it is not folded into a Product run.
+
+## Professional QA layer integration — CLOSED 2026-09-15
+
+**CEO brief:** evolve the existing validation capability into a professional, token-efficient
+QA system; inspect first; smallest architecture adjustment; no second orchestrator; no new
+agent; Phases 1–5 stay closed. Ran in `SYSTEM_MAINTENANCE` (no leases open) and returned to
+`PRODUCT_EXECUTION` on closure. Decision record: `DECISIONS.md` D-027. Mechanics:
+`PROGRAM_MEMORY.md` "Validation and review model".
+
+**What was inspected before anything changed** (repository as source of truth): the SELF/QA/
+PEER route derivation (`policy.validation_route`), the validation runner
+(`controller/validation.py::run_validation`), the evidence model (`ExecutionResult` →
+`TestClaim`/`EvidenceClaim`), the three FAIL semantics and the review cycle (no ceiling
+existed), the Listener/Core path, the provider abstraction, the `qa` role (480 lines, manual
+driving as doctrine), the Product test structures (15 Dart test files; `flutter test` broken
+locally by a native-asset link fault; Playwright with a placeholder anon key; 12 Maestro flows
+targeting an app id that exists nowhere; per-ticket SQL probe packs; `scripts/qa.sh`), CI
+(`ci.yml`: analyze + test on Canary pushes and PRs), and local tools: node 24, Java 17/24,
+Maestro 2.10.0, Playwright 1.63 (npx), Postman CLI 1.56.3, k6 2.2.0; no TestSprite or
+BrowserStack credentials in the environment; a TestSprite MCP entry configured for this
+project but not loaded in the session.
+
+**What changed in Thebes** (`bddb03f`, `e0a235f`, plus this docs commit):
+- `agent/qa/` — routing (one deterministic function), layers (registry with trigger policy),
+  runner (commands, artifacts on disk, bounded tail, stops at first infrastructure failure,
+  never invokes an external layer), results (the four-way failure contract and the fold into
+  the canonical evidence model), retest (read-only explanation of the ceiling), gate (the one
+  seam). 56 tests.
+- `policy.MAX_REVIEW_CYCLES = 3` enforced in `store.open_review_context`; `test_self_fail` #24
+  amended to keep its "never reset" invariant within the ceiling and assert the refusal;
+  `test_retest_bound.py` (21 checks).
+- `run_validation` runs the gate after the context opens and before the reviewer is
+  dispatched; `VALIDATION_INFRASTRUCTURE_FAILED` refuses without a verdict; reviewer effort
+  follows the evidence. 7 controller tests. `core.SUBSYSTEMS["validation"]` names
+  `agent.qa.routing` and `agent.qa.gate`.
+- `agent/roles/qa.md` and its binding: the seat is test orchestration. Regenerated agent.
+- `run-tests.sh` runs all six packages.
+
+**What changed in the Product repository** (`a86ddf8`, `1859ef8`; nothing under `lib/`):
+`tests/e2e` signs in once per run and shares the session (three measured Flutter-web facts
+encoded); `tests/maestro` with a runner and one smoke flow — **proven: 1/1 Flow Passed in 14s
+on the `Dabbler_test` emulator**; the 12 legacy flows moved under `tests/maestro/legacy/`
+as non-runnable notes; `tests/api` Postman collection (success on an allowlisted view,
+authentication, health, RLS authorization) — **proven: 4/4 requests, 7/7 assertions** via
+newman, Postman CLI when a key is present; `tests/perf` k6 smoke with thresholds, intentional
+only, not run; `tests/README.md` as the test contract; `package.json` scripts.
+
+**Findings recorded on the way, none of them Product changes:** the REST OpenAPI root is
+`service_role`-only on this project (correct posture; the API success case reads an allowlisted
+view instead); `flutter test` is unrunnable on this machine for a toolchain reason and is the
+first entry in the infrastructure signature table; iOS simulators sit behind the unaccepted
+Xcode licence, so Maestro's local target is Android.
+
+**Deferred, truthfully:** TestSprite (configured, not reachable in-session; routing names it,
+nothing invokes it); BrowserStack (no credentials; release-stage integration point documented
+in `tests/maestro/README.md`); CI wiring (designed for — PR: fast targeted; Canary: broader
+deterministic; release: mobile/web/API + devices; performance milestone: k6 — and not
+rolled out; local execution is the proof); iOS device runs; the bounded-authorization
+continuation gap above, which this milestone did not touch.
+
+**Acceptance against the brief:** governance authoritative and unchanged; routing canonical
+and deterministic; not every task invokes QA (docs-only selects nothing) and no QA task
+invokes every tool; Maestro runs a representative flow; Playwright usable; API deterministic
+path reusable; TestSprite reachable-in-principle but never default; k6 intentional;
+BrowserStack release-stage; failures structured; Product defects route to `frontend`/
+`backend`; test defects and infrastructure failures cannot masquerade as Product defects;
+retest bounded; deterministic regression preferred over repeated exploration; expensive
+navigation no longer the default; secrets outside Git; Core/Listener/controller boundaries
+intact; QA integrations grant no execution authority; documentation describes local and
+future-CI operation.
