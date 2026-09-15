@@ -84,7 +84,7 @@ class Listener:
         deadline = time.time() + timeout
         while time.time() < deadline:
             status, body = request(self.port, "/intents/%s" % intent_id)
-            if status == 200 and body["intent"]["delivery_state"] in states:
+            if status == 200 and body["intent"]["lifecycle_state"] in states:
                 return body
             time.sleep(0.25)
         raise AssertionError("intent %s never reached %s" % (intent_id, states))
@@ -151,8 +151,12 @@ class SeparateProcess(unittest.TestCase):
 
     def test_intent_reaches_the_real_controller_and_the_answer_is_durable(self):
         _, accepted = submit(self.port, "KAN-999999", "real-1")
-        settled = self.listener.wait_for(accepted["intent_id"], {"COMPLETED", "FAILED"})
-        self.assertEqual("COMPLETED", settled["intent"]["delivery_state"])
+        settled = self.listener.wait_for(accepted["intent_id"],
+                                         {"COMPLETED", "UNDELIVERED"})
+        self.assertEqual("COMPLETED", settled["intent"]["lifecycle_state"])
+        # The delivery record it was derived from is still served, so the
+        # audit trail Phase 3 built did not become unreadable.
+        self.assertEqual("COMPLETED", settled["transport_record"]["delivery_state"])
         controller = settled["result"]["controller_result"]
         self.assertEqual("returned", controller["transport"])
         self.assertEqual("product-execution-not-authorized",
@@ -161,16 +165,17 @@ class SeparateProcess(unittest.TestCase):
 
     def test_the_answer_survives_killing_and_restarting_the_listener(self):
         _, accepted = submit(self.port, "KAN-999999", "restart-1")
-        self.listener.wait_for(accepted["intent_id"], {"COMPLETED", "FAILED"})
+        self.listener.wait_for(accepted["intent_id"], {"COMPLETED", "UNDELIVERED"})
         self.listener.kill()
         self.listener = Listener(self.runtime, self.port).start()
         status, body = request(self.port, "/intents/%s" % accepted["intent_id"])
         self.assertEqual(200, status)
-        self.assertEqual("COMPLETED", body["intent"]["delivery_state"])
+        self.assertEqual("COMPLETED", body["intent"]["lifecycle_state"])
         self.assertIsNotNone(body["result"]["controller_result"])
         # Nothing is re-dispatched by the restart: the attempt count is the
         # single dispatch that already happened.
-        self.assertEqual(1, body["intent"]["dispatch_attempts"])
+        self.assertEqual(1, body["intent"]["delivery"]["dispatch_attempts"])
+        self.assertEqual(1, body["transport_record"]["dispatch_attempts"])
 
     def test_malformed_and_unknown_intents_never_become_intents(self):
         for body, reason in (
