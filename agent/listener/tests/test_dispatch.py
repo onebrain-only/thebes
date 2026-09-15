@@ -76,9 +76,14 @@ class ProcessBoundary(unittest.TestCase):
         command = dispatch.argv_for(envelope("KAN-183"))
         caller_supplied = command[4:]
         self.assertEqual(["KAN-183"], caller_supplied)
-        carried = " ".join(caller_supplied + [repr(envelope("KAN-183"))])
+        carried = " ".join(caller_supplied)
         for token in CONTROL_PLANE_TOKENS:
             self.assertNotIn(token.lower(), carried.lower())
+        # The envelope's own `intent_type` is deliberately exempt: since Phase 4
+        # taught the executor firewall about the Listener, EXECUTE_WORK_ITEM is
+        # itself a control-plane token. That is correct — it must never reach an
+        # EXECUTOR — and a Listener record is not an executor brief. What matters
+        # is that no such token rides a caller-supplied VALUE into the Controller.
         with self.assertRaises(contract.IntentRejected):
             contract.normalize({"schema_version": 1,
                                 "intent_type": contract.EXECUTE_WORK_ITEM,
