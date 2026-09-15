@@ -20,6 +20,7 @@ import json
 import os
 import sys
 import urllib.error
+import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _harness import ok, raises, section, summary, repo_root      # noqa: E402
@@ -308,6 +309,36 @@ raises("a search response of the wrong type raises",
        lambda: jira.search_issues("project = KAN"), "not an object")
 
 raises("search refuses empty JQL", lambda: jira.search_issues(""), "required")
+
+# The defect that made the whole Product backlog unplannable: `normalize_issue`
+# reads `description`, `DEFAULT_FIELDS` does not contain it, and only `get_issue`
+# remembered to append it. A search therefore reported EVERY issue as having no
+# acceptance criteria — silently, because a missing field is indistinguishable
+# from an empty one. Both defaulting paths are one function now; these assert the
+# two agree, so they cannot drift apart again.
+ok("description is not in DEFAULT_FIELDS — a caller naming fields is not charged for it",
+   "description" not in jira.DEFAULT_FIELDS)
+
+rec = install(FakeResponse({"issues": [ISSUE], "nextPageToken": None}))
+jira.search_issues("project = KAN")
+ok("a DEFAULTING search asks Jira for description",
+   "description" in urllib.parse.unquote(rec.requests[0].full_url))
+
+rec = install(FakeResponse(ISSUE))
+jira.get_issue("KAN-1")
+ok("a DEFAULTING single read asks Jira for description",
+   "description" in urllib.parse.unquote(rec.requests[0].full_url))
+
+rec = install(FakeResponse({"issues": [ISSUE], "nextPageToken": None}))
+jira.search_issues("project = KAN", fields=["summary"])
+ok("a search naming its own fields is NOT silently given description",
+   "description" not in urllib.parse.unquote(rec.requests[0].full_url))
+
+rec = install(FakeResponse(ISSUE), FakeResponse({"issues": [ISSUE], "nextPageToken": None}))
+one = jira.get_issue("KAN-1")
+many = jira.search_issues("project = KAN")[0]
+ok("both default read paths return the same description for the same issue",
+   one["description"] == many["description"])
 
 
 # ---------------------------------------------------------------- read: transitions/comments

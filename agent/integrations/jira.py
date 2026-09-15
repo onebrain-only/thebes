@@ -387,13 +387,28 @@ DEFAULT_FIELDS = ("summary", "status", "duedate", "updated", "created",
 
 # --------------------------------------------------------------- read ops
 
+def _default_fields(fields):
+    """The field list for a read that did not name its own.
+
+    `description` is NOT in DEFAULT_FIELDS and is appended here instead, because
+    it is the expensive one and a caller naming its own fields should not be
+    charged for it. It must be appended on EVERY defaulting path: `normalize_issue`
+    reads `description`, so a path that forgets it does not fail — it silently
+    reports every issue as having none. That is exactly what happened to
+    `search_issues`, which carried a byte-identical copy of this logic without the
+    append and made the whole backlog look like it had no acceptance criteria.
+    One function now, so the two cannot drift again.
+    """
+    if fields is not None:
+        return list(fields)
+    return list(DEFAULT_FIELDS) + ["description"]
+
+
 def get_issue(issue_key, fields=None, raw=False):
     """Read one issue. Raises JiraNotFound rather than returning None."""
     if not issue_key:
         raise ValueError("issue_key is required")
-    flds = list(fields) if fields is not None else list(DEFAULT_FIELDS)
-    if fields is None:
-        flds.append("description")
+    flds = _default_fields(fields)
     data = _request("GET", "%s/issue/%s" % (API, urllib.parse.quote(str(issue_key))),
                     params={"fields": ",".join(flds)})
     return data if raw else normalize_issue(data)
@@ -408,7 +423,7 @@ def search_issues(jql, fields=None, limit=50, page_size=50, raw=False):
     """
     if not jql:
         raise ValueError("jql is required")
-    flds = list(fields) if fields is not None else list(DEFAULT_FIELDS)
+    flds = _default_fields(fields)
     out, token, guard = [], None, 0
     while len(out) < limit:
         guard += 1
