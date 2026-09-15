@@ -444,6 +444,63 @@ def _run_completion_tail(result, work_item_id, execution, realized, state_store,
     return tail.get("integration_evidence")
 
 
+def decide(work_item_id, original_invocation_id, permission, approval_scope,
+           allowed_operation=None, *, approving_authority="ceo", state_store=store,
+           resumer=None, **resume_kwargs):
+    """Record one exact CEO decision, then resume the workflow that asked for it.
+
+    This is the missing process-callable half of the Phase-2 authority loop.
+    `store.record_execution_approval` and `resume` both already existed, and both
+    were reachable only from inside a Python session that already held the
+    controller's imports — so a decision arriving over any boundary at all had
+    nowhere to land.
+
+    It creates no approval architecture. The seat and the provider session are
+    re-derived from the canonical continuation preparation rather than accepted
+    from the caller, so a caller cannot redirect a decision at another seat or
+    another session; the approval writer then re-verifies identity, session and
+    the exact permission boundary against the durable receipt and refuses
+    anything that does not match. Idempotence is the writer's, not this
+    function's: the approval id is content-addressed, so the same decision twice
+    is the same record, and `resume` detects an already-executed continuation
+    before composing grants.
+    """
+    result = _result_shell(work_item_id)
+    result.update({"operating_mode": state_store.current_operating_mode(),
+                   "decision_status": "not-recorded",
+                   "execution_approval_id": None})
+    if result["operating_mode"] != "PRODUCT_EXECUTION":
+        result["blocker"] = "system-maintenance-active"
+        return result
+    try:
+        preparation = state_store.read_execution_continuation_preparation(
+            original_invocation_id)
+        if preparation is None:
+            result["blocker"] = "no-prepared-continuation"
+            return result
+        if preparation.get("work_item_id") != work_item_id:
+            result["blocker"] = "decision-work-item-mismatch"
+            return result
+        approval = state_store.record_execution_approval(
+            original_invocation_id=original_invocation_id,
+            work_item_id=work_item_id,
+            seat_id=preparation["seat_id"],
+            claude_session_id=preparation["claude_session_id"],
+            permission=permission,
+            approving_authority=approving_authority,
+            approval_scope=approval_scope,
+            allowed_operation=allowed_operation)
+        result.update({"decision_status": "recorded",
+                       "execution_approval_id": approval["execution_approval_id"]})
+    except (store.StateError, ValueError) as exc:
+        result["blocker"] = str(exc)
+        return result
+    resumed = (resumer or resume)(work_item_id, state_store=state_store, **resume_kwargs)
+    resumed.update({"decision_status": result["decision_status"],
+                    "execution_approval_id": result["execution_approval_id"]})
+    return resumed
+
+
 def resume(work_item_id, *, state_store=store, jira_client=jira, providers=None,
            workspace_allocator=realize_workspace,
            workspace_concluder=conclude_workspace, validator=run_validation,
