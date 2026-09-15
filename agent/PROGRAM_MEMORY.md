@@ -305,6 +305,19 @@ Thebes runs one CEO-authorized ticket at a time, native provider permissions are
 default and granted per invocation, and production mutation remains a separate authority Phase 2
 never exercised. No Product execution is currently authorized and no phase is current.
 
+**CURRENT FACT — the infrastructure programme is CLOSED and the baseline is FROZEN
+(2026-09-15).** Phases 1–5 closed; `MAINTENANCE_BASELINE: STABLE`;
+`PRODUCT_DEVELOPMENT_READY: YES`; Phase 6 deferred and RAG not justified. **Thebes changes are
+now evidence-driven by real Product work only** — another infrastructure milestone needs a real
+Product need behind it, not a tidy-looking gap. Final operations hardening gave the Product
+executor a standing tool set (`Read`, `Bash`, `Edit`, `Write`, read-only `execute_sql`; with
+`apply_migration` and seven other production-mutating tools permanently excluded and re-checked
+at call time) and a deterministic `DEVELOPER_DIR`, because without them every ordinary tool call
+cost a full approval round-trip. The old-backlog pilot is stopped: its authorization is revoked
+with history preserved, and KAN-184 is parked unowned in Backlog with its migration draft kept
+as evidence. No Product work is authorized. The record is `agent/ROADMAP.md` "Final operations
+hardening".
+
 **CURRENT FACT — Phase 5 is CLOSED (2026-09-15).** Thebes Core exists as `agent/core` — the
 addressable composition of every responsibility `MASTER_ROADMAP.md` §37 names, hosted by the
 long-running Listener process, which is now Core's intake subsystem rather than a separate

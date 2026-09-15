@@ -6,9 +6,17 @@ Canonical checkout: `~/Desktop/Thebes-Canonical`. Do not create another clone.
 ## Current position
 
 **CURRENT FACT — MODE: `SYSTEM_MAINTENANCE`**
-**CURRENT FACT — CURRENT PHASE: Phase 5 CLOSED 2026-09-15. No phase is current. Phase 6 has NOT started and requires a separate CEO decision.**
+**CURRENT FACT — CURRENT PHASE: Phases 1–5 CLOSED. No phase is current. MAINTENANCE_BASELINE: STABLE. PRODUCT_DEVELOPMENT_READY: YES. Phase 6 DEFERRED; RAG NOT JUSTIFIED.**
+**CURRENT FACT — This is a maintenance FREEZE. Thebes infrastructure changes are now evidence-driven by real Product work only. Do not open another infrastructure milestone without one.**
 **CURRENT FACT — PRODUCT_ACCEPTANCE_STATUS: KAN-183 COMPLETE — the first real single-task run driven end to end by Thebes**
 **CURRENT FACT — PRODUCT_EXECUTION_AUTHORIZED: NO — KAN-183's bounded authorization was consumed on completion 2026-09-14, and Phase 3 created none**
+
+**Final operations hardening closed 2026-09-15**, and with it the infrastructure programme.
+The routine Product pilot that ran under `authz-5323c2c9-4ac0-4a0a-914b-c4aaefa47ce3` is
+**stopped**: the CEO changed Product direction, the authorization is REVOKED with its full
+history preserved, and KAN-184 is parked — unowned, returned to Jira Backlog, its migration
+draft and executor worktree kept as evidence rather than deleted. No Product work is
+authorized and none can start. See "Final operations hardening" below.
 
 Post-Wave-8 Operational Hardening is closed. Phase 5 closed on 2026-09-15 against the criteria
 in `agent/MASTER_ROADMAP.md` §40; the closure record and its evidence are in "Phase 5 closure"
@@ -855,14 +863,93 @@ Phase 6 (Knowledge scaling / RAG) remains FUTURE TARGET and DEFERRED, and has **
 `agent/DECISIONS.md` D-015 stands: retrieval waits until canonical direct reads become a
 measured bottleneck. Beginning it requires a separate CEO decision.
 
+## Final operations hardening — 2026-09-15
+
+**DECISION — the infrastructure programme is CLOSED and the baseline is FROZEN.**
+
+Phases 1–5 are closed. This milestone removed the last two pieces of executor-runtime friction
+that live Product operation exposed, stopped the old-backlog pilot, and left Thebes in a clean
+`READY_FOR_PRODUCT_DEVELOPMENT` state.
+
+### Program position
+
+```text
+PHASES_1_TO_5            CLOSED
+MAINTENANCE_BASELINE     STABLE
+PRODUCT_DEVELOPMENT_READY YES
+PHASE_6                  DEFERRED
+RAG                      NOT_JUSTIFIED
+```
+
+**From here, Thebes changes are evidence-driven by real Product work only.** Another
+infrastructure milestone needs a real Product need behind it, not a tidy-looking gap.
+
+### The pilot is stopped
+
+The CEO changed Product direction: existing Ready/backlog tickets are no longer assumed to
+represent current priorities.
+
+| | |
+| --- | --- |
+| Authorization `authz-5323c2c9…` | **REVOKED** by the CEO, 0 of 3 consumed. Full history preserved — the grant, its scope, its maximum and its empty completion list all remain readable. |
+| KAN-184 | Parked, **not completed**. Ownership released, Jira returned to Backlog (`To Do`, 10004) by `po` with a comment recording that this is deprioritization and that its three unguarded-write findings remain real and unresolved. |
+| KAN-184 evidence | **Preserved.** The 19KB migration draft and the `exec/backend-1/KAN-184` worktree are untouched. It was never applied, and it carries no timestamp prefix, which is what says so. |
+| Automatic execution | Impossible. No active grant, so every work item answers `product-execution-not-authorized`. |
+
+`KAN-191` and `KAN-130` remain Ready in Jira and are deliberately untouched — rewriting the
+historical backlog is explicitly not this milestone's job. Nothing can execute them.
+
+### What this milestone fixed
+
+**Standing executor tools.** The CLI runs `--permission-mode dontAsk`, so without a standing
+set every single tool call — every read, edit and shell command — was denied and became a
+separate Thebes approval plus a full resume invocation. KAN-184 burned four invocations on two
+catalogue reads, one `ls` and one file write. That protected nothing: each denial was approved
+anyway one round-trip later. `Read`, `Bash`, `Edit`, `Write` and `execute_sql` are now standing;
+`NEVER_STANDING` names `apply_migration` and seven other production-mutating tools, asserted at
+import and re-checked at call time. A CEO may still approve `apply_migration` for one
+invocation — that path is unchanged — but it can never become a default.
+
+**A working toolchain.** The pilot hit a machine whose full Xcode licence was unaccepted, which
+makes `/usr/bin/python3` fail and with it every tool an executor runs. Executor subprocesses now
+receive `DEVELOPER_DIR` pointing at the Command Line Tools. Process-scoped deliberately:
+accepting a licence on the CEO's behalf is not Thebes's to do.
+
+**An adjective gap in the executor firewall.** `select a different provider` walked straight
+through — the rule allowed a determiner but no adjective, so the natural phrasing was the one
+that passed. Found by probing the smoke proof, not by reading the regex.
+
+### Final flow smoke proof
+
+Non-mutating, on the real runtime.
+
+| Claim | Evidence |
+| --- | --- |
+| Listener/Core is the external path | `submit KAN-184 --wait` → `entry_path: listener`, canonical answer returned |
+| Direct external Controller is retired | `agent.controller execute` → `direct-controller-entry-retired`, exit 2 |
+| Governance still refuses | `product-execution-not-authorized`; `claim_status: not-started`, lease `not-opened` |
+| **Executor uses its tools without round-trips** | A real Claude CLI invocation read a file, ran `wc -l` and wrote a result in ONE invocation — `permission_denials: []`. Before this fix that prompt cost three approval cycles. |
+| Production mutation denied | `apply_migration` absent from the standing set; 8 tools guarded |
+| Executor cannot reach the control plane | 10/10 probes blocked, including the newly-closed provider phrasing |
+| Restart/reconciliation healthy | SIGKILL + restart → `COMPLETED`, `dispatch_attempts: 1`, `reconciliation: agrees` |
+| Claims/leases | 0 open, none leaked |
+
+Persistent State hashed `d7ab6a7a…5315` before and after the proof. Product checkout `05e38fb`,
+clean. No Jira mutation beyond KAN-184's authorized Backlog return; no Supabase call.
+
+### Next
+
+**Create the new Product roadmap and feature backlog.** The CEO intends new work focused on
+Product experience, features, user value and growth. Historical engineering tickets stay in
+Backlog until a real Product need pulls one back — and a well-specified old ticket is not, by
+itself, such a need.
+
 ## Next bounded decision
 
-Phase 5 is closed and no phase is current. Every phase through 5 is now closed. The next
-decision is the CEO's alone: whether to authorize Product execution under the acceptance
-protocol above — which is what the program has been built to do and has not yet been released to
-do routinely — whether to take one of the deferred items from any closure, or whether to open
-Phase 6 against D-015's measured-need test. This roadmap does not choose between them and
-authorizes none of them.
+The infrastructure programme is closed and the baseline is frozen. The next act is Product, not
+Thebes: define the new Product direction and the work that serves it. This roadmap authorizes no
+Product execution — a bounded or standing grant remains a separate CEO decision, and the
+machinery to honour either is built, proven and idle.
 
 ## Phase and mode exit rules
 

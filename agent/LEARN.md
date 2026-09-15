@@ -222,3 +222,31 @@ module this map names imports", "Core's own source contains no claim or lease ca
 has no field for company history" are assertions a reader nods along to and a test actually
 checks.
 **Evidence:** `agent/core/tests/test_core_contract.py`; the defects are named in `6ae7dc9`.
+
+## L-019 — A control that only delays the authorized path is not a control
+
+**Classification:** LESSON
+**Observation:** Running in don't-ask mode, every Product executor tool call — reads, edits,
+shell commands — was denied and turned into a separate Thebes approval plus a full resume
+invocation. KAN-184 spent four invocations on two catalogue reads, one `ls` and one file write.
+Every one of those denials was then approved. Nothing was prevented; the same work happened one
+round-trip later, at several minutes and one provider invocation each.
+**Lesson:** Before defending a gate, ask what it has ever refused. A gate that is always
+answered "yes" is not protecting a boundary — it is charging rent on the path that was already
+authorized, and its real effect is to make the safe route so expensive that people look for
+another one. Keep the gates that can say no (production mutation, still CEO-only every time)
+and remove the ones that cannot.
+**Applied decision:** D-024.
+
+## L-020 — The phrasing nobody tested is the one that gets used
+
+**Classification:** LESSON
+**Observation:** The executor firewall's provider-selection rule allowed a determiner but no
+adjective. `select a provider` was caught; `select a different provider` was not — and the
+second is how a person actually writes it. The rule had been read several times across three
+phases and looked correct each time. It was found by probing the final smoke proof with
+sentences rather than by reading the regex again.
+**Lesson:** A pattern is tested by the phrasings it was written against, which are the author's
+own. Probe a rule with the words someone would really use, especially the ones that add a
+harmless-looking modifier, and do it from outside the file that defines it. The same applies to
+every enumeration in this repository — L-015 was the surface list, this is the grammar.

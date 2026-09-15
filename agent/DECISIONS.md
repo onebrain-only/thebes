@@ -318,3 +318,53 @@ permission.
 that nothing ran — the one thing that cannot be established. Automatic reconciliation of
 interrupted dispatches remains deliberately absent; deciding is a human act performed against
 the evidence the answer now carries.
+
+## D-024 — The Product executor has a standing tool set; production mutation is never in it
+
+**Status:** ACTIVE
+**Decision:** Product executor sessions run with `Read`, `Bash`, `Edit`, `Write` and
+read-only `execute_sql` standing. `apply_migration` and the other production-mutating Supabase
+tools are permanently excluded, asserted at import and re-checked at call time. A CEO may still
+approve a production mutation for one invocation; it can never become a default.
+**Why:** The CLI runs in don't-ask mode, so without a standing set every ordinary tool call was
+denied and became a separate Thebes approval plus a full resume invocation. One work item spent
+four invocations on two catalogue reads, an `ls` and a file write. That was a tax, not a
+control: each denial was approved anyway one round-trip later, so it bought no safety and made
+routine operation impossible. Safety that only slows down the authorized path is not safety.
+**Consequences:** The read-only limit on `execute_sql` is enforced by the environment authority
+that grants it and by the brief the executor reads — not by hoping a tool name is harmless.
+Production mutation stays a separate CEO act every time it happens, which is the boundary
+Product execution has held since Phase 2. An unlisted tool is still denied and still returns as
+`needs_input`.
+**Evidence:** `agent/execution/claude.py`, `agent/execution/tests/test_executor_runtime.py`.
+
+## D-025 — Thebes pins the executor toolchain per process, never machine-wide
+
+**Status:** ACTIVE
+**Decision:** Product executor subprocesses receive `DEVELOPER_DIR` pointing at the Command Line
+Tools when that path exists. Thebes does not accept system licences, does not run
+`sudo xcodebuild -license`, and makes no machine-wide configuration change.
+**Why:** A machine whose full Xcode licence is unaccepted cannot run `/usr/bin/python3`, and
+therefore cannot run any Thebes tool, git helper or build command an executor needs. The
+Command Line Tools carry no such gate. But accepting a licence on the CEO's behalf is not
+Thebes's to do, and changing a machine to fix one subprocess is a far larger act than the
+problem requires.
+**Consequences:** When the path is absent the inherited environment stands untouched — pinning
+a path that does not exist would break a machine that was working. The executor environment
+adds `DEVELOPER_DIR` and nothing else: no invocation id, lease, claim, seat or operating mode,
+because an executor's environment must not become a side channel for the control-plane state the
+brief firewall keeps out of its prompt.
+
+## D-026 — The infrastructure programme is closed; Thebes changes are evidence-driven
+
+**Status:** ACTIVE
+**Decision:** Phases 1–5 and final operations hardening are closed and the maintenance baseline
+is frozen. Further Thebes infrastructure work requires a real Product need as its evidence, not
+an identified gap.
+**Why:** The system is now capable of the thing it was built for, and the remaining risk changed
+direction: an architecture programme with no Product pulling on it will keep finding defensible
+work forever. `MASTER_ROADMAP.md` §58 named this as the Product-Build Continuity Rule before any
+of it was built.
+**Consequences:** Deferred hardening items stay deferred and remain listed rather than quietly
+dropped. Phase 6 remains deferred under D-015's measured-need test; nothing observed in live
+operation has justified it. The next act is Product.
