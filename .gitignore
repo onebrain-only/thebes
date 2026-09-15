@@ -44,6 +44,12 @@
 # purpose, so nothing here can be mistaken for Product operational truth.
 /agent/listener/runtime/
 
+# QA layer artifacts (2026-09-15): full stdout/stderr of every deterministic test
+# run, referenced from Persistent State by path. Bulky, reproducible from the
+# Product repository, and authority for nothing — the classification and the
+# reference are the evidence; the log is what a reader opens to check them.
+/agent/qa/runtime/
+
 # Machine-written local session metadata. This is execution telemetry, not
 # durable Thebes knowledge; the adjacent agent-memory subtree is deliberately
 # not ignored wholesale because it still requires evidence-preserving curation.
@@ -59,3 +65,11 @@
 # Git's own working state, not Thebes source, and tracking them would nest one
 # repository inside another's history.
 /.claude/worktrees/
+
+# Playwright
+node_modules/
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/

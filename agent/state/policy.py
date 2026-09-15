@@ -34,6 +34,16 @@ SELF, PEER, QA = "self", "peer", "qa"
 # database access by design. A route may escalate; it may never silently drop.
 STRICTNESS = {SELF: 0, QA: 1, PEER: 2}
 
+# Bounded retest (2026-09-15, QA layer integration). A review context may be
+# reopened after a FAIL at most this many times in total: cycle 1 is the first
+# review, so three cycles means two retests. Enforced in the canonical writer
+# (`store.open_review_context`); explained read-only in `agent/qa/retest.py`.
+# Reaching it is a finding for a human — an intervention or a CEO decision —
+# never an automatic retry and never a downgrade to an easier route. A
+# deterministic gate that could not run refuses before any verdict exists and
+# therefore never spends a cycle.
+MAX_REVIEW_CYCLES = 3
+
 CHARACTERISTICS = (
     "schema_change",
     "money_path",

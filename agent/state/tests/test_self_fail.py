@@ -315,10 +315,16 @@ ok("  f. Jira Done observed, ownership null",
 ok("  g. the final record validates",
    [x for x in validate.validate_record("task", s7) if " WARN " not in x] == [])
 
-section("24. repeated failure cycles are monotonic")
+section("24. repeated failure cycles are monotonic — and bounded")
+# Amended 2026-09-15 (QA layer integration). This case looped to cycle 4 to prove
+# cycles never reset. `policy.MAX_REVIEW_CYCLES = 3` now makes the reopen that
+# would create cycle 4 the exact thing the writer refuses, so the invariant is
+# kept within the ceiling and the ceiling is asserted here too: developer -> QA
+# -> developer -> QA does not run forever. See agent/qa/retest.py and
+# agent/state/tests/test_retest_bound.py.
 f = failed("KAN-841")
 cyc = []
-for i in range(3):
+for i in range(policy.MAX_REVIEW_CYCLES - 1):
     cur = store.read("task", "KAN-841")
     cyc.append(cur["review_context"]["review_cycle"])
     a = store.self_fail_reentry("KAN-841", cur["revision"], "frontend-1", "ref:r%d" % i)
@@ -328,12 +334,23 @@ for i in range(3):
     e = store.open_review_context("KAN-841", d["revision"])
     store.record_review_result("KAN-841", e["revision"], "frontend-1", "fail",
                                "ref:defect%d" % i)
-ok("    cycles increase by one each time, never reset", cyc == [1, 2, 3])
-ok("    the final cycle is 4 and still failing",
-   store.read("task", "KAN-841")["review_context"]["review_cycle"] == 4)
+ok("    cycles increase by one each time, never reset", cyc == [1, 2])
+ok("    the final cycle is MAX_REVIEW_CYCLES and still failing",
+   store.read("task", "KAN-841")["review_context"]["review_cycle"]
+   == policy.MAX_REVIEW_CYCLES)
 ok("    and it is still not completion-eligible",
    "review-failed" in q.completion_reasons(store.read("task", "KAN-841"),
                                            interventions=[]))
+cur = store.read("task", "KAN-841")
+a = store.self_fail_reentry("KAN-841", cur["revision"], "frontend-1", "ref:r-last")
+b = store.observe_lifecycle("KAN-841", a["revision"], "10046")
+c = store.release("KAN-841", "frontend-1", b["revision"], "ref:fix-last")
+d = store.observe_lifecycle("KAN-841", c["revision"], "10044")
+raises("    the reopen beyond the ceiling is refused, not retried",
+       lambda: store.open_review_context("KAN-841", d["revision"]),
+       "retest-limit-reached")
+ok("    and the last FAIL stays on the record for a human to act on",
+   store.read("task", "KAN-841")["review_context"]["review_result"] == "fail")
 
 
 # ---------------------------------------------------------------- 25-28 non-regression

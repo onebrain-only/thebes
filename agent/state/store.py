@@ -766,6 +766,19 @@ def open_review_context(work_item_id, expected_revision, opened_by=None,
                 raise StateError("a failed PEER review is not reopened here — "
                                  "peer_fail_transfer moves execution to the reviewer")
             cycle = int(prev.get("review_cycle") or 1) + 1
+            # Bounded retest (policy.MAX_REVIEW_CYCLES). Enforced HERE, in the one
+            # writer that creates a cycle, so a caller cannot loop developer -> QA
+            # -> developer forever by simply asking again. The item keeps its
+            # owner, its status and its last FAIL on the record; what it needs now
+            # is a human decision, which no retry can supply.
+            if cycle > policy.MAX_REVIEW_CYCLES:
+                raise StateError(
+                    "retest-limit-reached: %s failed its %s review at cycle %d and "
+                    "reopening would be cycle %d, above MAX_REVIEW_CYCLES=%d. A "
+                    "bounded intervention or a CEO decision is required; the route "
+                    "is not downgraded and the review is not retried automatically."
+                    % (work_item_id, prev.get("review_type"), cycle - 1, cycle,
+                       policy.MAX_REVIEW_CYCLES))
 
         executors = evidenced_executors(cur)
         owner, resolved = policy.resolve_owner_or_wait(
