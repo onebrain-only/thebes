@@ -108,9 +108,31 @@ class PlannerSelectionUnderACeoGrant(unittest.TestCase):
             answer = auth.for_work_item("KAN-900")
             self.assertTrue(answer["authorized"])
             self.assertEqual("bounded-authorization", answer["reason"])
-            self.assertEqual(CEO_REF, answer["reference"])
+            # The reference is the grant's IDENTIFIER — it becomes claim_ref, and
+            # Persistent State refuses prose there. The prose travels separately.
+            self.assertEqual(record["product_authorization_id"], answer["reference"])
+            self.assertEqual(CEO_REF, answer["authorization_detail"])
             self.assertEqual(record["product_authorization_id"], answer["authorization_id"])
             self.assertEqual(3, answer["authorization_remaining"])
+
+    def test_the_reference_is_an_identifier_short_enough_to_be_a_claim_ref(self):
+        # It becomes `claim_ref` on the task record, and Persistent State caps
+        # reference fields at 300 chars so a ticket body cannot be pasted into
+        # one. A grant quoting a long CEO decision refused the claim outright.
+        with Runtime():
+            long_grant = "CEO decision, 2026-09-15: " + ("x" * 500)
+            record = store.record_product_authorization(
+                authorization_ref=long_grant, maximum_completed_items=3, scope=SCOPE)
+            auth = ProductAuthorization(roadmap=Roadmap(), state_store=store,
+                                        admissibility=admissible("KAN-900"))
+            answer = auth.for_work_item("KAN-900")
+            self.assertTrue(answer["authorized"])
+            self.assertLessEqual(len(answer["reference"]), 300)
+            self.assertEqual(record["product_authorization_id"], answer["reference"])
+            # The prose is not lost — it travels separately and stays on the record.
+            self.assertEqual(long_grant, answer["authorization_detail"])
+            self.assertEqual(long_grant, store.read_product_authorization(
+                record["product_authorization_id"])["authorization_ref"])
 
     def test_the_planner_cannot_authorize_an_inadmissible_ticket(self):
         with Runtime():

@@ -152,8 +152,16 @@ class ProductAuthorization:
                               % ", ".join(reasons),
                     "reference": grant["authorization_ref"],
                     "authorization_id": grant["product_authorization_id"]}
+        # The reference must be an IDENTIFIER, not the grant's prose. It becomes
+        # `claim_ref` on the task record and the wake's reason_ref, and Persistent
+        # State caps reference fields at 300 chars precisely so a ticket body
+        # cannot be pasted into one. A bounded grant quotes the CEO decision that
+        # created it — that text belongs on the authorization record, and the id
+        # is how a reader gets to it. The first grant written this way was 295
+        # chars and passed only by luck; the second was 440 and refused the claim.
         return {"authorized": True, "reason": "bounded-authorization",
-                "reference": grant["authorization_ref"],
+                "reference": grant["product_authorization_id"],
+                "authorization_detail": grant["authorization_ref"],
                 "authorization_id": grant["product_authorization_id"],
                 "authorization_remaining": self.state_store.authorization_remaining(grant)}
 
