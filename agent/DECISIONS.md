@@ -244,3 +244,39 @@ than a false success. An interrupted dispatch is marked and left non-eligible, n
 the Listener cannot prove the Controller did not already run, and a Product execution it cannot
 prove did not happen must not be repeated on a hunch — that is a human decision made against
 canonical state.
+
+## D-020 — The Listener is the operational front door; the Controller is internal
+
+**Status:** ACTIVE
+**Decision:** Normal CEO/controller operation enters Thebes through the Listener. The
+Controller's three orchestrating commands — `execute`, `resume`, `decide` — are launched by the
+Listener, not typed; invoked directly they refuse. The direct path survives for recovery,
+debugging and tests behind an explicit `--maintenance-reason`, and `integrate` plus the
+read-only planning commands are not gated at all because they orchestrate nothing.
+**Why:** Phase 3 left the direct Controller path in place and said so honestly, which meant the
+front door was a documentation claim. This program has learned twice that prose does not stop a
+command being run — `route-to-seat` has to shout "This is a MUST, not a description" for exactly
+that reason, and L-013 recorded that a capability's reachability, not its existence, is what
+decides behaviour. An enforced default is the only version of this that is true tomorrow.
+**Consequences:** The authorizing intent id travels into the Controller's subprocess and returns
+on the result as `entry_path` / `entry_reference`, so an operational run names the intake that
+caused it and a bypass is visible in the record. **No authority moved.** The Controller decides
+exactly what it decided before — authorization, Jira facts, claims, leases, capability routing,
+provider selection, validation, lifecycle, continuation, receipts and remediation — and the
+Listener gained nothing. Phase 4 changed which door is normal, not who decides.
+**Evidence:** `agent/controller/entry.py`, `agent/listener/tests/test_front_door.py`, Phase 4
+closure in `agent/ROADMAP.md`.
+
+## D-021 — The front-door gate is a misuse guard, not authentication
+
+**Status:** ACTIVE
+**Decision:** The marker that distinguishes a Listener-launched Controller invocation from a
+typed one is an environment variable. It must never be described, documented or relied upon as
+a security control.
+**Why:** Any local process can set an environment variable. Calling this authentication would
+be a false claim that invites someone to expose the boundary on the strength of it — and Phase 3
+chose loopback-only precisely because nothing here authenticates a caller. A guard that stops
+a mistake is genuinely useful; a guard mistaken for a security control is dangerous.
+**Consequences:** Loopback-only remains the actual mitigation. Real caller authentication is
+still required before any non-local exposure and remains deferred, unchanged by Phase 4. Every
+document describing the gate states its limit in the same breath as its behaviour.

@@ -4,6 +4,23 @@ The Listener is a **communication boundary**. A CEO instruction enters Thebes
 through it instead of through `python3 -m agent.controller ...`, and the
 Controller's answer comes back through it. That is the whole job.
 
+**Since Phase 4 it is the operational front door, and that is enforced.** The
+Controller's three orchestrating commands — `execute`, `resume`, `decide` —
+refuse a direct operational invocation (`direct-controller-entry-retired`,
+exit 2) and run only when the Listener launches them. The authorizing intent id
+travels into that subprocess and comes back on the result as `entry_path` /
+`entry_reference`, so an operational run can be traced to the intake that caused
+it. See `agent/controller/entry.py`.
+
+That gate is a **misuse guard, not authentication** — the marker is an
+environment variable, and any local process can set one. It makes this door the
+default and a bypass deliberate and visible. `--maintenance-reason "<why>"`
+keeps the direct path for recovery, debugging and tests. `integrate` and the
+read-only planning commands are not gated, because they orchestrate nothing.
+
+**Phase 4 moved no authority.** The Listener owns exactly what it owned in
+Phase 3. Only the normal door changed.
+
 **It is not a second Controller.** It owns no orchestration decision of any
 kind, and it never will: the moment it decides something about Product work,
 the separation Phase 3 exists to establish is gone.
@@ -164,6 +181,7 @@ first; that is Phase 4+ work, not a Phase 3 gap being ignored.
 python3 -m agent.listener serve                 # run it (loopback only)
 python3 -m agent.listener health                # liveness + queue depth
 python3 -m agent.listener submit KAN-183        # one EXECUTE_WORK_ITEM
+python3 -m agent.listener submit KAN-183 --wait # ...and block for the answer
 python3 -m agent.listener status                # every intent's delivery state
 python3 -m agent.listener show <intent-id>      # the intent and its durable result
 python3 -m agent.listener decide <intent-id> \
@@ -179,6 +197,9 @@ tests and experiments; it is not a way to point the Listener at Persistent State
 for t in agent/listener/tests/test_*.py; do python3 "$t"; done
 ```
 
+`test_front_door.py` (Phase 4: the gate, the real refusing and permitted
+Controller processes, intent provenance, the decision path across the real
+boundary, and the executor firewall),
 `test_contract_store.py` (contract, durability, idempotency, correlation),
 `test_dispatch.py` (process boundary, one execution per intent, restart, truthful
 failure, one real Controller subprocess), `test_server.py` (the real Listener

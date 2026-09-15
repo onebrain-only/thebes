@@ -1,10 +1,32 @@
-# Temporary Controller Entry Point v1
+# The Controller
 
-Phase 2 exposes one bounded controller command:
+**This is not the operational front door. Since Phase 4 the front door is the
+Listener** — `python3 -m agent.listener submit KAN-XXX`. It dispatches this same
+command, in its own process, and carries its answer back.
 
 ```sh
-python -m agent.controller execute KAN-XXX
+# normal operation, since Phase 4
+python3 -m agent.listener submit KAN-XXX --wait
+
+# what the Listener runs on your behalf — refuses if you type it yourself
+python3 -m agent.controller execute KAN-XXX
 ```
+
+`execute`, `resume` and `decide` orchestrate Product execution and are gated by
+`agent/controller/entry.py`. Typed directly they refuse with
+`direct-controller-entry-retired` and exit 2; launched by the Listener they run
+unchanged and report `entry_path: listener` with the intent that authorized
+them. `--maintenance-reason "<why>"` keeps the direct path for recovery,
+debugging and tests, and records the reason in the result.
+
+**That gate is a misuse guard, not authentication.** The marker is an
+environment variable and any local process can set one. It makes the Listener
+the default and a bypass deliberate and visible; it stops a mistake, not an
+attacker. The boundary is unauthenticated, which is why it is loopback-only.
+
+`integrate` (recovery) and the read-only `plan-sprint`, `plan-backlog` and
+`authority-manifest` are **not** gated — they orchestrate nothing, and Phase 4
+retired an execution front door, not an architecture.
 
 The command accepts only one work item. It does not select backlog work, change
 authorization or mode, choose a provider, or accept claim/lease/lifecycle
@@ -79,7 +101,7 @@ a deletion.
 ## Landing validated work
 
 ```sh
-python -m agent.controller integrate KAN-XXX
+python -m agent.controller integrate KAN-XXX   # recovery path; not gated
 ```
 
 A separate act from `execute`, because validation happens after an execution

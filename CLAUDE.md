@@ -82,6 +82,12 @@ whole model exists to prevent.
   invocation returns.** `assert_execution_permitted()` is a read-only explanation; only
   `store.open_execution_lease()` serialises wake authority against a maintenance transition.
   `SYSTEM_MAINTENANCE` cannot begin while an execution lease remains active.
+- **Submit the execution act as a Listener intent, not a Controller command.** Since Phase 4
+  the front door is `python3 -m agent.listener submit <WORK-ITEM> --wait`; the Listener runs the
+  Controller in its own process. `python3 -m agent.controller execute|resume|decide` refuses a
+  direct operational invocation. Everything below still governs what happens behind that door,
+  and every gate below is still yours to reason about before you submit — the Listener checks
+  none of them and owns no Product decision.
 - **Pass the wake through `agent.execution.wake.execute_product_wake`.** The core opens the
   lease, builds `ExecutionRequest`, selects exactly one compatible provider, executes it, and
   passes its normalized `ExecutionResult` through core receipt before closing that lease. The

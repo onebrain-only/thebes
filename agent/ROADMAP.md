@@ -6,12 +6,20 @@ Canonical checkout: `~/Desktop/Thebes-Canonical`. Do not create another clone.
 ## Current position
 
 **CURRENT FACT — MODE: `SYSTEM_MAINTENANCE`**
-**CURRENT FACT — CURRENT PHASE: Phase 3 CLOSED 2026-09-15. No phase is current. Phase 4 has NOT started and requires a separate CEO decision.**
+**CURRENT FACT — CURRENT PHASE: Phase 4 CLOSED 2026-09-15. No phase is current. Phase 5 has NOT started and requires a separate CEO decision.**
 **CURRENT FACT — PRODUCT_ACCEPTANCE_STATUS: KAN-183 COMPLETE — the first real single-task run driven end to end by Thebes**
 **CURRENT FACT — PRODUCT_EXECUTION_AUTHORIZED: NO — KAN-183's bounded authorization was consumed on completion 2026-09-14, and Phase 3 created none**
 
-Post-Wave-8 Operational Hardening is closed. Phase 3 closed on 2026-09-15 against the
-criteria in `agent/MASTER_ROADMAP.md` §30 and the CEO's Phase-3 brief; the closure record and
+Post-Wave-8 Operational Hardening is closed. Phase 4 closed on 2026-09-15 against the criteria
+in `agent/MASTER_ROADMAP.md` §34 and the CEO's Phase-4 brief; the closure record and its
+evidence are in "Phase 4 closure" below. **The operational front door is now
+`python3 -m agent.listener submit <WORK-ITEM>`** — the Controller's orchestrating commands are
+launched by the Listener and refuse a direct operational invocation. Like Phase 3, Phase 4 is
+Thebes infrastructure only: it selected no Product work, created no Product authorization, and
+left Jira, Supabase, the Product repository and Persistent State byte-identical.
+
+Phase 3 closed on 2026-09-15 against the criteria in `agent/MASTER_ROADMAP.md` §30 and the
+CEO's Phase-3 brief; the closure record and
 its evidence are in "Phase 3 closure" below. Phase 3 is Thebes infrastructure only — it
 selected no Product work, created no Product authorization, and left Jira, Supabase, the
 Product repository and Persistent State byte-identical.
@@ -64,7 +72,7 @@ may start; **FUTURE TARGET** means architecture direction, not implemented capab
 | Post-Wave-8 Operational Hardening | CLOSED | Corrected real-operation defects, isolated Product from maintenance, established durable program memory, and removed permanent provider coupling. Closed after accepted provider-path remediation `ecac35d` and the final closure review. |
 | Phase 2 — Tangible Operating Interface / Product Proof | **CLOSED 2026-09-14** | Objective: prove Thebes can operate real Product work safely and correctly. Accepted on the evidence in "Phase 2 closure" below — KAN-183 carried a real work item from a CEO-supplied key to authoritative Jira Done through the flow, plus KAN-186's real PEER proof and the deterministic full-flow suites. One live dependency observation is deferred and non-blocking. Closure is not a claim of autonomous backlog execution, and no normal Product execution is authorized. |
 | Phase 3 — Separate Listener | **CLOSED 2026-09-15** | Objective: separate intake from execution orchestration, so a CEO instruction enters Thebes without anyone invoking the Controller by hand. Accepted on the evidence in "Phase 3 closure" below — a separately running loopback Listener with a durable, idempotent intent boundary that dispatches to the existing Controller in its own process and carries a correlated CEO decision back into the existing approval/continuation machinery. Closure is not a claim of remote access, authentication, or autonomous intake: transport is loopback-only and unauthenticated by design, and the Controller's authorization gate is unchanged. |
-| Phase 4 — Controller-to-Listener integration | FUTURE TARGET | Controllers brief Thebes through the Listener; they do not brief a concrete executor directly. Exit requires provider-neutral context handoff to be demonstrated. |
+| Phase 4 — Codex → Listener integration | **CLOSED 2026-09-15** | Objective: make the Listener the normal external operational intake boundary, so a controller conversation expresses intent rather than invoking the Controller. Accepted on the evidence in "Phase 4 closure" below — the front door moved and is enforced rather than documented, the executor firewall learned that the Listener exists, and the Controller's authority is unchanged. Closure is not a claim of authentication, remote access, or natural-language intake: transport stays loopback-only and the intent contract is unchanged from Phase 3. |
 | Phase 5 — Thebes Core | FUTURE TARGET | Evolve ingress into a core that owns orchestration, routing, context assembly, provider selection, lifecycle coordination, recovery and emergency handling behind stable interfaces. Exit criteria remain to be designed. |
 | Phase 6 — Knowledge scaling / RAG | FUTURE TARGET, DEFERRED | Add retrieval only when measured governance/history scale makes direct canonical reads a bottleneck. RAG is not authority and must preserve source provenance. No current evidence justifies implementing it now. |
 
@@ -580,16 +588,131 @@ authorization gate refuses it exactly as it refuses a human.
 
 ### Next
 
-Phase 4 (Controller-to-Listener integration) remains FUTURE TARGET and has **not** started.
+Superseded 2026-09-15: Phase 4 was authorized by the CEO's Phase-4 brief and is now CLOSED.
+See "Phase 4 closure" below.
+
+## Phase 4 closure
+
+**DECISION — Phase 4 (Codex → Listener Integration) is CLOSED and ACCEPTED, recorded 2026-09-15.**
+
+Phase 4's objective was to move the normal CEO/Codex operational path from `Codex → Controller`
+to `Codex → Listener → Controller`, making the Listener the sole normal external intake boundary
+while the Controller stays the authoritative orchestration engine.
+
+It is accepted on the evidence below. **Closure is narrow and two things it is not are worth
+stating plainly.** It is not authentication — the gate that enforces the front door is an
+environment marker, a misuse guard, and loopback-only remains the real mitigation (D-021). And
+**no authority moved**: the Listener owns exactly what it owned at Phase 3 closure, and the
+Controller decides exactly what it decided before. What changed is which door is normal.
+
+### Architecture
+
+```text
+CEO
+   ↓ natural language
+Codex / controller conversation      (interprets intent; derives no execution detail)
+   ↓ canonical intent envelope, unchanged from Phase 3
+Thebes Listener                      (python3 -m agent.listener submit <KEY> --wait)
+   ↓ durable, idempotent, correlated; subprocess with argv array
+Thebes Controller                    (execute | resume | decide — Listener-launched only)
+   ↓ unchanged authority
+authorization → claim → lease → workspace → provider → validation → integration → lifecycle
+   ↓
+durable Listener result / authority request
+   ↓
+Codex → CEO
+```
+
+### Entry-point classification
+
+Phase 4 retired an execution front door, not an architecture. What moved, and what deliberately
+did not:
+
+| Interface | Category | Phase 4 |
+| --- | --- | --- |
+| `agent.controller execute` | external operational front door | **retired** — Listener-launched only; direct invocation refuses `direct-controller-entry-retired`, exit 2 |
+| `agent.controller resume` | external operational front door | **retired** — same gate |
+| `agent.controller decide` | external operational front door | **retired** — same gate |
+| `agent.controller integrate` | recovery | **kept, ungated** — orchestrates nothing new; recovery genuinely needs it |
+| `plan-sprint`, `plan-backlog`, `authority-manifest` | read-only inspection | **kept, ungated** — orchestrate nothing |
+| `--brief-file`, `--maintenance-reason` | debug / maintenance | **kept** — the override must state its reason, which is recorded |
+| `agent.controller.*` Python API, `execute_product_wake` | internal | unchanged |
+
+### Evidence
+
+Verified against the repository, running processes, Persistent State and the suites at closure.
+
+| # | Exit criterion | Evidence |
+| --- | --- | --- |
+| 1 | Normal intake goes through the Listener | Live: `python3 -m agent.listener submit KAN-183 --wait --source codex-controller` returned the Controller's answer without any direct Controller invocation |
+| 2 | Controller authoritative behind the Listener | Both live intents returned `authorization_status: product-execution-not-authorized`, `claim_status: not-started`, `lease_closure_status: not-opened`, `invocation_id: null` — the Controller's own gate, unchanged |
+| 3 | Direct operational path no longer needed | Live: `python3 -m agent.controller execute KAN-183` refused `direct-controller-entry-retired`, exit 2, before reaching authorization. Enforced by `agent/controller/entry.py`, not documented |
+| 4 | Decision responses traverse the Listener | Live: a `DECISION_RESPONSE` through the front door was correlation-checked and refused `decision-target-not-waiting`. Deterministic: a dispatched decision reaches a **real** `agent.controller decide` process as a Listener caller; the positive resume is `test_decision_loop.py` |
+| 5 | Listener remains authority-neutral | No code moved into `agent/listener`. Its contract is unchanged from Phase 3 — live rejections: `seat_id` → `unknown-field`, `provider` → `unknown-field` |
+| 6 | Idempotency intact | Live duplicate returned the same `intent_id`, `duplicate: true`, `dispatch_attempts: 1` |
+| 7 | Restart recovery intact | Live `SIGKILL` and restart; result still queryable, still `dispatch_attempts: 1`, never re-dispatched |
+| 8 | Injection impossible | Live: `RUN_SHELL` → `unknown-intent-type`; `KAN-1; rm -rf /` → `invalid-field`; `seat_id` and `provider` → `unknown-field` |
+| 9 | Separate processes | Listener pid 29053 on `127.0.0.1:8788` (`lsof`-confirmed); Controller a subprocess per intent, `shell=False`, argv array |
+| 10 | Executor self-orchestration prevented | `be15b75` — seven listener instructions that previously passed the executor firewall are now refused; five pieces of ordinary Product English asserted to still pass |
+| 11 | Documentation truthful | `agent/controller/README.md`, `agent/PROGRAM_MEMORY.md`, `agent/listener/README.md`, `CLAUDE.md` and the `route-to-seat` skill all now name the Listener as the front door |
+| 12 | Fresh clone contains the roadmap | `1954f55` tracks `agent/MASTER_ROADMAP.md`; `981c941` supersedes its stale current-position sections |
+
+**Zero mutation, measured.** The `agent/state/runtime` tree hashed
+`704e371b53a7898f8eeb00f2b1478798463a187250d5bcf0d0c6983487cd8249` over 328 files both before
+and after the live proof — the same hash Phase 3 closed on. Mode stayed `SYSTEM_MAINTENANCE`,
+open leases stayed 0, KAN-183 stayed `done`, KAN-191 stayed `ready` owned by `backend-3`, and
+the Product checkout stayed at `05e38fb` with a clean tree. No Jira call and no Supabase call was
+made by Phase 4 at any point.
+
+### Against `MASTER_ROADMAP.md` §34
+
+| §34 criterion | Result |
+| --- | --- |
+| Codex/controller can submit work through the Listener | MET — live, `--source codex-controller`, with `--wait` so a controller reads an answer rather than busy-polling |
+| no manual execution brief copying is normally necessary | MET — unchanged from Phase 2: the brief is derived from canonical state and the intent carries only a work-item key. `--brief-file` remains exceptional and now also sits behind the maintenance override |
+| Listener input maps deterministically into Thebes | MET — one intent, one argv array, one Controller process; `test_front_door.py` asserts the mapping and the provenance |
+| authorization remains explicit | MET — every live intent hit the Controller's own authorization gate and was refused; the Listener grants nothing |
+| conversation state does not replace canonical state | MET — the envelope carries no seat, provider, workspace, route or lifecycle, and unknown fields are rejected |
+| provider-neutral execution still works unchanged | MET — nothing in `agent/execution` changed except the firewall's surface list; 21 controller/execution suites pass |
+
+### What closure does not claim
+
+Natural language is not authorization and nothing here makes it so — Codex interprets intent,
+and Thebes re-derives every fact. The Listener is still loopback-only and still does not
+authenticate its caller. The front-door gate stops a mistake, not an attacker. And Thebes still
+does not select its own work: a CEO instruction names exactly one work item and the
+authorization gate refuses it exactly as it always did.
+
+### Deferred — explicitly non-blocking
+
+**DEFERRED_HARDENING**
+- *Caller authentication.* Unchanged by Phase 4 and still required before any non-loopback
+  exposure. The front-door marker is explicitly not a substitute (D-021).
+- *Live authority-loop proof.* Still deterministic-only, for the Phase-3 reason: proving it live
+  needs authorized Product work that stops at a native permission boundary, and risky work is not
+  manufactured to demonstrate transport. Phase 4 did add a real-process proof of the decision
+  path's front-door admission and canonical refusal.
+- *Interrupted-dispatch reconciliation stays manual*, by design.
+
+**OBSERVATION — pre-existing, not repaired**
+- `authority-manifest` on a nonexistent work item raises an unhandled `ValueError` and prints a
+  traceback instead of a structured blocker; only `ControllerInputError` is caught. Unrelated to
+  the front door, predates Phase 4, and was left alone rather than opportunistically fixed. The
+  Phase-4 suite uses a real key and says why.
+
+### Next
+
+Phase 5 (Listener evolves into Thebes Core) remains FUTURE TARGET and has **not** started.
 Beginning it requires a separate CEO decision.
 
 ## Next bounded decision
 
-Phase 3 is closed and no phase is current. The next decision is the CEO's alone: whether to
-begin Phase 4 (controllers brief Thebes through the Listener rather than briefing an executor
-directly), to authorize another bounded Product ticket under the acceptance protocol above, or
-to take one of the deferred items from either closure. This roadmap does not choose between
-them and authorizes none of them.
+Phase 4 is closed and no phase is current. The next decision is the CEO's alone: whether to
+begin Phase 5 (the Listener evolving into a core that owns orchestration, routing, context
+assembly, provider selection, lifecycle coordination and recovery behind stable interfaces), to
+authorize another bounded Product ticket under the acceptance protocol above, or to take one of
+the deferred items from any closure. This roadmap does not choose between them and authorizes
+none of them.
 
 ## Phase and mode exit rules
 

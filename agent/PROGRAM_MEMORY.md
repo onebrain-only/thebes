@@ -78,8 +78,22 @@ reasoning effort are transport-enforced, while Role, context, surfaces, environm
 and return constraints are an explicit deterministic executor brief. Controller-authorized
 overrides still pass through selection, with no retry, fallback or workflow authority.
 
-**CURRENT FACT — the routine execution brief is derived, not authored.** `python -m
-agent.controller execute KAN-XXX` takes only the work-item key.
+**CURRENT FACT — the Listener is the operational front door (Phase 4, 2026-09-15).** Normal
+CEO/controller operation submits an intent — `python3 -m agent.listener submit KAN-XXX --wait`
+— and the Listener runs the Controller in its own process. The Controller's three orchestrating
+commands (`execute`, `resume`, `decide`) refuse a direct operational invocation with
+`direct-controller-entry-retired` and report `entry_path` / `entry_reference` when the Listener
+launches them, so an operational run names the intake that caused it. `agent/controller/entry.py`
+holds that gate; it is a **misuse guard, not authentication** — the marker is an environment
+variable, it makes the front door the default and a bypass deliberate and visible, and the
+boundary stays loopback-only precisely because it is unauthenticated. `--maintenance-reason`
+preserves the direct path for recovery, debugging and tests. `integrate` and the read-only
+`plan-sprint`, `plan-backlog` and `authority-manifest` are not gated: they orchestrate nothing.
+Phase 4 retired an execution front door, not an architecture, and moved no authority — the
+Controller decides exactly what it decided before.
+
+**CURRENT FACT — the routine execution brief is derived, not authored.** The Listener-dispatched
+`python -m agent.controller execute KAN-XXX` takes only the work-item key.
 `agent/controller/intent.py` resolves it from the sources that already own each fact: Jira for
 the Product definition (summary, description, acceptance criteria, bounded — never dumped),
 Persistent State for capability, surfaces, characteristics, the canonical validation route and
@@ -289,6 +303,15 @@ ownership. The closure record, its 24 evidence rows and the explicitly deferred 
 Thebes runs one CEO-authorized ticket at a time, native provider permissions are denied by
 default and granted per invocation, and production mutation remains a separate authority Phase 2
 never exercised. No Product execution is currently authorized and no phase is current.
+
+**CURRENT FACT — Phase 4 is CLOSED (2026-09-15).** The Codex/CEO operational path is
+`Codex → Listener → Controller`. The Listener gained no authority in the move: it still owns
+intake, durability, idempotency, correlation and delivery, and nothing else. What changed is
+which door is the normal one, plus two bounded fixes Phase 4 genuinely required — the executor
+firewall learned that the Listener exists (an executor told to submit an intent was
+orchestrating its own execution by a route the list predated), and the client gained `--wait` so
+a controller reads an answer instead of busy-polling. The closure record is in `agent/ROADMAP.md`
+"Phase 4 closure"; the front-door rule is `agent/DECISIONS.md` D-020.
 
 **CURRENT FACT — Phase 3 is CLOSED (2026-09-15).** A separate Listener process exists:
 `python3 -m agent.listener serve`, loopback-only, with a durable idempotent intent boundary

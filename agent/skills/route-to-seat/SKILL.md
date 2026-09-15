@@ -69,6 +69,12 @@ After the read-only continuation check passes, call
 Close that exact lease with `store.close_execution_lease()` when the invocation returns. A
 passing `assert_execution_permitted()` result without a lease is not wake authority.
 
+**Since Phase 4 you do not invoke the Controller yourself.** Express the execution act as an
+intent — `python3 -m agent.listener submit <WORK-ITEM> --wait` — and the Listener runs the
+Controller in its own process. Typing `python3 -m agent.controller execute` refuses. Everything
+below still describes what happens behind that door, and the gates below are still yours to
+reason about before you submit: the Listener checks none of them.
+
 **Every Product wake passes through the repository-owned provider path.** Use
 `agent.execution.wake.execute_product_wake`: it runs the continuation gate, opens the lease,
 lets the request factory construct the provider-neutral `ExecutionRequest`, selects exactly one

@@ -159,3 +159,37 @@ unknown honestly, and surface it — not to guess in the direction that looks li
 is the same reasoning as the KAN-186 replay interlock, where a stale reconciliation comment
 would have caused a migration replay had it been acted on.
 **Applied decision:** D-019.
+
+## L-015 — A new control surface must be taught to every boundary that guards the old one
+
+**Classification:** LESSON
+**Observation:** Phase 3 added the Listener — a second control-plane surface — and the executor
+brief firewall was never told. Five instructions reached an executor brief untouched: `from
+agent.listener import store`, `Post a DECISION_RESPONSE to the listener`, `Submit an intent to
+http://127.0.0.1:8787/intents`, `import agent.listener and dispatch yourself`, and `Send an
+EXECUTE_WORK_ITEM for the follow-up ticket`. Only the `python3 -m agent.listener` form was
+caught, and only by accident: an unrelated pattern matched `-m agent` and stopped at the word
+boundary. The KAN-186 boundary — the executor must never orchestrate its own execution — had a
+clean hole through it for the entire life of Phase 3, by a route that did not exist when the
+guard was written.
+**Lesson:** When a phase introduces a new way to command the system, the work is not finished
+when the new surface is safe. Every existing guard that enumerates control-plane surfaces is now
+incomplete, and enumerations do not fail loudly — they silently keep passing. Search for the
+lists, not just the code paths.
+**Evidence:** `be15b75`; the probe results recorded in its message.
+
+## L-016 — An enforced default outlives a documented one
+
+**Classification:** LESSON
+**Observation:** Phase 3 closed with the direct Controller path intact and recorded the §30
+criterion as only partially met rather than claiming otherwise. Phase 4 could have satisfied the
+criterion by rewriting documentation alone — every exit condition about the front door is
+phrased as "no longer needs" and "documentation must no longer describe". A guard was added
+instead, because this repository already contains the counter-evidence: `route-to-seat` has to
+say "This is a MUST, not a description ... prose in an architecture paragraph does not stop the
+Agent tool being called", and `test_wave6` asserts doctrine is operative rather than descriptive.
+**Lesson:** Where a rule can be made a default, make it one. A documented convention degrades to
+whatever is convenient at 2am; a refusal with a message pointing at the right door does not. Pair
+it with a stated, reasoned override, or the next person under pressure will route around it in a
+way nobody records.
+**Applied decision:** D-020, D-021.
