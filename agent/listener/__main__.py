@@ -27,6 +27,7 @@ import urllib.error
 import urllib.request
 import uuid
 
+from agent.core import lifecycle
 from agent.listener import contract, server, store
 
 
@@ -150,11 +151,16 @@ def _await_settlement(port, intent_id, timeout):
         status, body = _get(port, "/intents/%s" % intent_id)
         if status != 200:
             return status, body
-        if body.get("intent", {}).get("delivery_state") in store.TERMINAL:
+        if body.get("intent", {}).get("lifecycle_state") in lifecycle.TERMINAL_STATES:
+            return status, body
+        if body.get("intent", {}).get("lifecycle_state") == lifecycle.INDETERMINATE:
+            # Nothing is progressing and nothing will retry it. Waiting longer
+            # would only be a longer silence, and the answer already carries the
+            # canonical state a human needs to settle it.
             return status, body
         if time.time() >= deadline:
             return status, {"intent_id": intent_id, "waited_seconds": timeout,
-                            "delivery_state": body.get("intent", {}).get("delivery_state"),
+                            "lifecycle_state": body.get("intent", {}).get("lifecycle_state"),
                             "detail": "still in flight; this client stopped waiting. "
                                       "The intent is durable — read it with `show`."}
         time.sleep(POLL_SECONDS)

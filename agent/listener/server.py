@@ -10,11 +10,17 @@ no Product decision of any kind, and the endpoints below are the complete
 surface: there is no endpoint that runs a command, names a seat, selects a
 provider, transitions Jira, or grants an authorization.
 
+Since Phase 5 this is Thebes Core's intake subsystem rather than a separate
+conceptual product (`MASTER_ROADMAP.md` §37). Nothing about its authority
+changed — it still decides nothing — but the answers it gives are now Core's
+canonical ones, derived from Persistent State and reconciled against this
+process's own delivery records, rather than the delivery record alone.
+
 Endpoints:
     GET  /health           liveness and how much is queued
     POST /intents          submit one intent; durable before it answers
-    GET  /intents          delivery summaries, newest intake last
-    GET  /intents/<id>     one intent with its durable Controller result
+    GET  /intents          canonical lifecycle of every intent, oldest first
+    GET  /intents/<id>     one intent's canonical answer and its evidence
 
 Idle cost is a condition wait, not a poll: intake signals the worker directly,
 and the timeout below exists only so a restarted or recovered queue still drains
@@ -25,6 +31,7 @@ import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from agent.core import lifecycle
 from agent.listener import contract, dispatch, store
 
 
@@ -117,25 +124,31 @@ class Handler(BaseHTTPRequestHandler):
                 "pending": len(store.pending())})
         if self.path == "/intents":
             return self._reply(200, {"intents": [
-                {"intent_id": record["intent_id"],
-                 "intent_type": record["intent_type"],
-                 "correlation_id": record.get("correlation_id"),
-                 "work_item_id": (record.get("payload") or {}).get("work_item_id"),
-                 "delivery_state": record.get("delivery_state"),
-                 "delivery_reason": record.get("delivery_reason"),
-                 "recovery": record.get("recovery"),
-                 "received_at": record.get("received_at")}
-                for record in sorted(store.read_intents(),
-                                     key=lambda rec: rec.get("received_at") or "")]})
+                {"intent_id": answer["intent_id"],
+                 "intent_type": answer["intent_type"],
+                 "correlation_id": answer["correlation_id"],
+                 "work_item_id": answer["work_item_id"],
+                 "lifecycle_state": answer["lifecycle_state"],
+                 "reconciliation": answer["reconciliation"],
+                 "received_at": answer["received_at"]}
+                for answer in lifecycle.resolve_all()]})
         if self.path.startswith("/intents/"):
             intent_id = self.path[len("/intents/"):]
-            record = store.read_intent(intent_id)
-            if record is None:
+            answer = lifecycle.resolve(intent_id)
+            if answer is None:
                 return self._reply(404, {"reason": "unknown-intent", "intent_id": intent_id})
             # The durable replay path: a caller that never saw its answer, or a
             # caller asking again after this process died, gets the recorded
-            # result rather than a re-run.
-            return self._reply(200, {"intent": record, "result": store.read_result(intent_id)})
+            # result rather than a re-run. Since Phase 5 it also gets the
+            # canonical state behind that result, so an unobserved outcome
+            # arrives with the facts needed to settle it.
+            return self._reply(200, {
+                "intent": answer,
+                # Kept for callers written against Phase 3/4 and for the audit
+                # trail. `intent.lifecycle_state` is the canonical answer; these
+                # are the delivery records it was derived from.
+                "transport_record": store.read_intent(intent_id),
+                "result": store.read_result(intent_id)})
         return self._reply(404, {"reason": "unknown-path"})
 
     def do_POST(self):

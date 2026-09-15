@@ -87,6 +87,10 @@ CONTROL_PLANE_TOKENS = (
     # it existed. A Listener intent is an orchestration act: an executor told to
     # submit one is orchestrating its own execution by a new route.
     "agent.listener",
+    # Phase 5 named the control plane `agent.core`. Added here in the SAME
+    # milestone that created it, because Phase 3 did not and the Listener sat
+    # outside this list for a whole phase (L-015).
+    "agent.core",
     "EXECUTE_WORK_ITEM",
     "DECISION_RESPONSE",
     "claude --resume",
@@ -129,8 +133,8 @@ CONTROL_PLANE_CONCEPTS = (
     )),
     ("controller_bootstrap", (
         r"\bpython3?\s+-m\s+agent\b",
-        r"\bfrom\s+agent\.(?:execution|controller|state|listener)\b",
-        r"\bimport\s+agent\.(?:execution|controller|state|listener)\b",
+        r"\bfrom\s+agent\.(?:execution|controller|state|listener|core)\b",
+        r"\bimport\s+agent\.(?:execution|controller|state|listener|core)\b",
         r"\b(?:run|execute|start)\s+(?:the\s+)?(?:thebes|controller)\s+(?:bootstrap|entry|loop)\b",
     )),
     ("session_mechanics", (
