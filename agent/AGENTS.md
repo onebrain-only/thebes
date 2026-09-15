@@ -56,6 +56,10 @@ edit a file, read `CONTRACT.md`.
 **Twenty-six seats.** Four company, three product, three project, sixteen developers — and the
 Listener, which is the session itself and has no agent file.
 
+**Not the Phase-3 Listener.** The Listener in this file is the distribution behaviour inside the
+session. `agent/listener/` is a separate process — the Phase-3 intake boundary — and has nothing
+to do with this seat count. See `agent/PROGRAM_MEMORY.md` "Current architecture".
+
 **The sixteen developers work as eight paired teams** — `frontend-N` with `backend-N`, N = 1..8
 — and **they are not owned by a team lead**: leads own features and stacks, not developers
 (§"A seat's purpose is not fungible"). A developer pulls its next ticket from `Ready` itself

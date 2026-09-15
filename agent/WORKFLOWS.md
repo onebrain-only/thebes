@@ -844,7 +844,8 @@ it does not route — and the `orchestrator` seat that the phrase also pointed a
 exists.**
 
 **The Listener is the distribution layer**, and it is a behaviour in the main session's
-thinking rather than a seat in the tree. It writes **directly** to whichever seat owns the
+thinking rather than a seat in the tree. (Unrelated to the Phase-3 Listener process in
+`agent/listener/`, which is an intake boundary and routes nothing to a seat.) It writes **directly** to whichever seat owns the
 question — a senior developer included — and never down a chain of managers. An agent
 finishing a step reports to the Orchestrator, which decides what happens next. Agent A does not
 hand work straight to Agent B.

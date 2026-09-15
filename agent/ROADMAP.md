@@ -6,13 +6,18 @@ Canonical checkout: `~/Desktop/Thebes-Canonical`. Do not create another clone.
 ## Current position
 
 **CURRENT FACT — MODE: `SYSTEM_MAINTENANCE`**
-**CURRENT FACT — CURRENT PHASE: Phase 2 CLOSED 2026-09-14. No phase is current. Phase 3 has NOT started and requires a separate CEO decision.**
+**CURRENT FACT — CURRENT PHASE: Phase 3 CLOSED 2026-09-15. No phase is current. Phase 4 has NOT started and requires a separate CEO decision.**
 **CURRENT FACT — PRODUCT_ACCEPTANCE_STATUS: KAN-183 COMPLETE — the first real single-task run driven end to end by Thebes**
-**CURRENT FACT — PRODUCT_EXECUTION_AUTHORIZED: NO — KAN-183's bounded authorization was consumed on completion 2026-09-14**
+**CURRENT FACT — PRODUCT_EXECUTION_AUTHORIZED: NO — KAN-183's bounded authorization was consumed on completion 2026-09-14, and Phase 3 created none**
 
-Post-Wave-8 Operational Hardening is closed. Phase 2 closed on 2026-09-14 against the
-criteria in `agent/MASTER_ROADMAP.md`; the closure record and its evidence are in
-"Phase 2 closure" below. KAN-198 was the first real Product proof under manual orchestration
+Post-Wave-8 Operational Hardening is closed. Phase 3 closed on 2026-09-15 against the
+criteria in `agent/MASTER_ROADMAP.md` §30 and the CEO's Phase-3 brief; the closure record and
+its evidence are in "Phase 3 closure" below. Phase 3 is Thebes infrastructure only — it
+selected no Product work, created no Product authorization, and left Jira, Supabase, the
+Product repository and Persistent State byte-identical.
+
+Phase 2 closed on 2026-09-14 against the criteria in `agent/MASTER_ROADMAP.md`; the closure
+record and its evidence are in "Phase 2 closure" below. KAN-198 was the first real Product proof under manual orchestration
 (its original normalized receipt was lost when controller observation ended while the provider
 continued; that history is not rewritten, and the corrected path now persists every terminal
 result before lease closure). **KAN-183 is the proof that closes the phase**: a single
@@ -58,7 +63,7 @@ may start; **FUTURE TARGET** means architecture direction, not implemented capab
 | Phase 1 — Agent Architecture, Waves 1–8 | CLOSED | Establish the role/seat model, routing, durable state, Jira-derived lifecycle, queues/claims, observability and inert learning. Closed at the accepted Wave 8 baseline and remediation checkpoints recorded in `agent/history/program-chronology.md`. |
 | Post-Wave-8 Operational Hardening | CLOSED | Corrected real-operation defects, isolated Product from maintenance, established durable program memory, and removed permanent provider coupling. Closed after accepted provider-path remediation `ecac35d` and the final closure review. |
 | Phase 2 — Tangible Operating Interface / Product Proof | **CLOSED 2026-09-14** | Objective: prove Thebes can operate real Product work safely and correctly. Accepted on the evidence in "Phase 2 closure" below — KAN-183 carried a real work item from a CEO-supplied key to authoritative Jira Done through the flow, plus KAN-186's real PEER proof and the deterministic full-flow suites. One live dependency observation is deferred and non-blocking. Closure is not a claim of autonomous backlog execution, and no normal Product execution is authorized. |
-| Phase 3 — Listener | FUTURE TARGET | Separate event/request/state ingress from controller conversation memory and ad-hoc polling. Exit criteria must be designed and approved before implementation. |
+| Phase 3 — Separate Listener | **CLOSED 2026-09-15** | Objective: separate intake from execution orchestration, so a CEO instruction enters Thebes without anyone invoking the Controller by hand. Accepted on the evidence in "Phase 3 closure" below — a separately running loopback Listener with a durable, idempotent intent boundary that dispatches to the existing Controller in its own process and carries a correlated CEO decision back into the existing approval/continuation machinery. Closure is not a claim of remote access, authentication, or autonomous intake: transport is loopback-only and unauthenticated by design, and the Controller's authorization gate is unchanged. |
 | Phase 4 — Controller-to-Listener integration | FUTURE TARGET | Controllers brief Thebes through the Listener; they do not brief a concrete executor directly. Exit requires provider-neutral context handoff to be demonstrated. |
 | Phase 5 — Thebes Core | FUTURE TARGET | Evolve ingress into a core that owns orchestration, routing, context assembly, provider selection, lifecycle coordination, recovery and emergency handling behind stable interfaces. Exit criteria remain to be designed. |
 | Phase 6 — Knowledge scaling / RAG | FUTURE TARGET, DEFERRED | Add retrieval only when measured governance/history scale makes direct canonical reads a bottleneck. RAG is not authority and must preserve source provenance. No current evidence justifies implementing it now. |
@@ -471,15 +476,120 @@ per invocation. Production mutation remains a separate authority that Phase 2 ne
 
 ### Next
 
-Phase 3 (Listener) remains FUTURE TARGET and has **not** started. Its exit criteria must be
-designed and approved before any implementation. Beginning it requires a separate CEO decision.
+Superseded 2026-09-15: Phase 3 was authorized by the CEO's Phase-3 brief and is now CLOSED.
+See "Phase 3 closure" below.
+
+## Phase 3 closure
+
+**DECISION — Phase 3 (Separate Listener) is CLOSED and ACCEPTED, recorded 2026-09-15.**
+
+Phase 3's objective was to separate intake from execution orchestration: a CEO instruction must
+be able to enter Thebes without anyone invoking the Controller by hand, survive process
+boundaries, reach the existing Controller exactly once, return a durable result or authority
+request, and let a correlated CEO response continue the same workflow through the machinery
+Phase 2 already built.
+
+It is accepted on the evidence below. **Closure is deliberately narrow.** The Listener is a
+communication boundary and nothing else: it decides nothing about Product work, it is
+loopback-only, it is not authenticated, and it grants no authorization the Controller did not
+already own. No Product work was selected, no Product authorization was created, and the mode
+never left `SYSTEM_MAINTENANCE`.
+
+### Architecture
+
+```text
+CEO / local caller
+   ↓ loopback HTTP, allow-listed intent
+Thebes Listener            (python3 -m agent.listener serve — its own process)
+   ↓ durable intent, idempotent
+subprocess, argv array     (the OS enforces the boundary, not discipline)
+   ↓
+Thebes Controller          (python3 -m agent.controller — unchanged authority)
+   ↓
+existing orchestration: authorization, claim, lease, provider, validation, integration, lifecycle
+   ↓
+durable Listener result / authority request
+   ↓
+CEO
+```
+
+Entry point `agent/listener/`; contract, durable inbox/outbox, restart semantics, the authority
+loop and the operator commands are documented in `agent/listener/README.md`. The boundary's
+rationale is `agent/DECISIONS.md` D-017, D-018 and D-019.
+
+### Evidence
+
+Verified against the repository, the running processes, Persistent State and the suites at
+closure, not from memory.
+
+| # | Criterion | Evidence |
+| --- | --- | --- |
+| A | Separate entry point | Live: `python3 -m agent.listener submit KAN-183` and `KAN-191` both reached the real Controller. No human invoked `python3 -m agent.controller` for either |
+| B | Process boundary | The Listener ran as pid 11029 bound to `127.0.0.1:8787` (`lsof` confirmed one loopback listener); the Controller ran in its own subprocess per intent. `dispatch.argv_for` builds an array, `shell=False`, never an import |
+| C | Durability | The Listener was `SIGKILL`ed and restarted; `GET /intents/<id>` still returned the intent and its result. Acknowledgement is fsynced before the caller is answered |
+| D | Idempotency | Live duplicate submission of `phase3-proof-kan183` returned the SAME `intent_id`, `duplicate: true`, `dispatch_attempts: 1`. Deterministically: a 4-thread barrier race over one intent produced exactly one Controller invocation |
+| E | Controller authority preserved | The Listener holds no Jira client, no seat, no provider, no workspace, no claim, no lease and no lifecycle. Its contract has no field that can express any of them, and unknown fields are rejected |
+| F | Result delivery | Both live results carry the original `correlation_id` (`phase3-proof-kan183`, `phase3-proof-kan191`) and the Controller's verbatim JSON |
+| G | Authority loop | `test_decision_loop.py` — needs_input → durable `WAITING_INPUT` → correlated decision → canonical `agent.controller decide` naming the same work item and the same invocation → terminal result to the ORIGINAL correlation, original intent untouched |
+| H | Safe failure | Result is written before the intent is settled; an interrupted dispatch is marked `dispatch-interrupted` and never retried; timeout/unavailable/unreadable each settle `FAILED`, never `COMPLETED` |
+| I | Security | Loopback bind plus a client-address check; allow-listed intent types; 64 KiB body cap refused before parsing; no command, path, seat, provider or workspace field; argv arrays only. Live: `KAN-1; rm -rf /` refused `invalid-field`, `RUN_SHELL` refused `unknown-intent-type` |
+| J | Real proof | Two real intents traversed Listener → Controller → durable result. Both returned `authorization_status: product-execution-not-authorized` with `claim_status: not-started`, `lease_closure_status: not-opened`, `invocation_id: null`, `jira_transition_performed: false` — the real governance boundary reached and surfaced, not bypassed |
+
+**Zero mutation, measured.** The `agent/state/runtime` tree hashed
+`704e371b53a7898f8eeb00f2b1478798463a187250d5bcf0d0c6983487cd8249` over 328 files both before
+and after the live proof. Mode stayed `SYSTEM_MAINTENANCE`, open leases stayed 0, KAN-183 stayed
+`done`, KAN-191 stayed `ready` owned by `backend-3`, and the Product checkout stayed at
+`05e38fb` with a clean tree. No Jira call and no Supabase call was made by Phase 3 at any point.
+
+### Against `MASTER_ROADMAP.md` §30
+
+| §30 criterion | Result |
+| --- | --- |
+| a stable intake contract | MET — `agent/listener/contract.py`, one versioned envelope, two allow-listed families, derived identity |
+| separation between conversational input and execution orchestration | MET — separate process, separate package, no Controller logic duplicated, D-017 |
+| removal or reduction of temporary Phase-2 entry glue | **PARTIALLY MET, deliberately.** Reduced: `resume` and the new `decide` were previously reachable only from inside a Python session already holding the controller's imports, so a decision arriving over any boundary had nowhere to land; the CLI is now the complete process-callable surface. Not removed: `agent/controller` remains the direct entry point and still calls itself temporary. Moving controllers off it is Phase 4's exit condition, not Phase 3's |
+| no regression to provider/lifecycle architecture | MET — State 1,491 passed with the one pre-existing failure unchanged; 307 controller/execution tests pass; `validate.py --check` reports persistent state valid |
+
+### What closure does not claim
+
+The Listener is not reachable from anywhere but this machine's loopback interface, and it does
+not authenticate the caller — `actor` records who submitted without proving it. It does not
+brief a controller, does not choose work, does not drain a queue, and does not make Thebes
+autonomous. A CEO instruction still names exactly one work item, and the Controller's
+authorization gate refuses it exactly as it refuses a human.
+
+### Deferred — explicitly non-blocking
+
+**DEFERRED_HARDENING**
+- *Caller authentication.* Required before any non-loopback exposure. Loopback-only is the
+  Phase-3 mitigation, not a permanent answer.
+- *Live authority-loop proof.* The decision loop is proven deterministically end to end
+  (`test_decision_loop.py`) and its controller half is proven against the canonical approval
+  writer. Exercising it live would require authorizing real Product work that stops at a native
+  permission boundary; risky Product work was not manufactured to demonstrate transport. To be
+  collected opportunistically from the next naturally authorized run that stops at a boundary.
+- *Interrupted-dispatch reconciliation is manual.* A `dispatch-interrupted` intent is surfaced
+  and left alone by design. Reconciling it against canonical receipts could be automated later;
+  doing it automatically now would risk the duplicate execution the rule exists to prevent.
+
+**DOCUMENTARY OBSERVATION**
+- `agent/MASTER_ROADMAP.md` is referenced by this roadmap as the canonical Phase-2 and Phase-3
+  criteria source, but is **untracked in this checkout**. It was untracked before Phase 3 began
+  and was deliberately left untouched. A canonical source that git does not carry cannot be
+  reconstructed by a fresh clone; deciding whether to track it is the CEO's, not this phase's.
+
+### Next
+
+Phase 4 (Controller-to-Listener integration) remains FUTURE TARGET and has **not** started.
+Beginning it requires a separate CEO decision.
 
 ## Next bounded decision
 
-Phase 2 is closed and no phase is current. The next decision is the CEO's alone: whether to
-design Phase 3 (Listener) exit criteria, to authorize another bounded Product ticket under the
-acceptance protocol above, or to take one of the deferred items. This roadmap does not choose
-between them and authorizes none of them.
+Phase 3 is closed and no phase is current. The next decision is the CEO's alone: whether to
+begin Phase 4 (controllers brief Thebes through the Listener rather than briefing an executor
+directly), to authorize another bounded Product ticket under the acceptance protocol above, or
+to take one of the deferred items from either closure. This roadmap does not choose between
+them and authorizes none of them.
 
 ## Phase and mode exit rules
 

@@ -191,3 +191,56 @@ identity/provenance when retrieval is introduced.
 **Why:** Premature retrieval creates another derived index and another place for stale or
 decontextualized truth.
 **Evidence:** historical target specification §55; current sequence in `agent/ROADMAP.md`.
+
+## D-017 — The Listener is a communication boundary, never a second Controller
+
+**Status:** ACTIVE
+**Decision:** The Thebes Listener owns intake, transport validation, intent normalization,
+durable acknowledgement, idempotency, correlation and durable result delivery. It owns no
+orchestration decision: not Jira interpretation, Product authorization, capability resolution,
+seat selection, claims, leases, workspace allocation, provider selection, validation routing,
+integration or lifecycle completion. Those remain the Controller's, and the Controller
+re-derives each of them from canonical sources on every invocation.
+**Why:** An intake layer that starts deciding anything about Product work is a second
+orchestrator with a different name, and two orchestrators disagreeing is the failure the whole
+ownership model exists to prevent. Separation is only real if the Listener cannot make the
+decision even when it would be convenient.
+**Consequences:** No Controller logic may be duplicated into the Listener. Its intent contract
+carries no seat, provider, workspace, path, command, validation route or lifecycle field, and
+unknown fields are rejected rather than ignored. It invokes the Controller as a separate
+process with an argv array, never by importing it, so the boundary is enforced by the operating
+system and not by discipline alone. Phase 3 transport is loopback-only and unauthenticated by
+design; any non-local exposure requires authentication first.
+**Evidence:** `agent/listener/`, `agent/listener/README.md`, Phase 3 closure in
+`agent/ROADMAP.md`.
+
+## D-018 — Listener records are communication evidence, not a source of truth
+
+**Status:** ACTIVE
+**Decision:** Listener inbox/outbox records state what arrived, whether it was dispatched, and
+what the Controller answered. They are authority for nothing. Where a listener record and a
+canonical source disagree, the canonical source wins without exception: Jira owns Product
+lifecycle, Persistent State owns Thebes operational truth, Git owns code truth.
+**Why:** A durable record that is convenient to read is exactly how a fourth source of truth
+gets created by accident. A delivery state that merely *looks* like a lifecycle is worse than
+no record at all.
+**Consequences:** Listener records live under `agent/listener/runtime/`, deliberately outside
+`agent/state/runtime/`, and `agent/state/validate.py` does not know they exist. Delivery states
+describe the fate of a message only — `COMPLETED` means the Controller returned an
+authoritative answer, including a refusal, and never that Product work succeeded. The Listener
+reuses Persistent State's atomic-write and `flock` mechanics and nothing else.
+
+## D-019 — Durable intake and idempotent dispatch, not exactly-once
+
+**Status:** ACTIVE
+**Decision:** The Listener guarantees durable intake, idempotent dispatch, a durable result and
+no silent duplicate Product execution. It does not claim distributed exactly-once semantics,
+which the underlying operations cannot provide.
+**Why:** Promising a guarantee the mechanism cannot keep is how a system starts lying about its
+own failures. Stating the real boundary lets a reader trust the parts that are true.
+**Consequences:** An acknowledged intent is on disk before the caller is answered. A result is
+written before its intent is settled, so a crash in between is recoverable and truthful rather
+than a false success. An interrupted dispatch is marked and left non-eligible, never retried:
+the Listener cannot prove the Controller did not already run, and a Product execution it cannot
+prove did not happen must not be repeated on a hunch — that is a human decision made against
+canonical state.

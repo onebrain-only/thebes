@@ -48,6 +48,7 @@ future behavior must be recoverable from canonical repository/runtime sources.
 | Capability-scoped optimization | Role Learning / Wave 8 learning records | Advisory and inert; never lifecycle, claim or review authority. |
 | Program position and authorization | `agent/ROADMAP.md` | Does not duplicate live Product ownership/lifecycle. |
 | Durable rationale and empirical lessons | `agent/DECISIONS.md`, `agent/LEARN.md` | Not a session journal or ticket database. |
+| What arrived at the Listener, whether it was dispatched, and what the Controller answered | Listener inbox/outbox under `agent/listener/runtime/` | **Communication evidence, authority for nothing.** Never consulted for lifecycle, ownership, dependencies, validation or authorization; a canonical source always wins. See `agent/DECISIONS.md` D-018. |
 
 When sources disagree, follow their domain ownership. Jira wins lifecycle conflicts;
 Persistent State wins execution ownership; governance defines rules; `ROADMAP.md` owns
@@ -289,7 +290,24 @@ Thebes runs one CEO-authorized ticket at a time, native provider permissions are
 default and granted per invocation, and production mutation remains a separate authority Phase 2
 never exercised. No Product execution is currently authorized and no phase is current.
 
-**FUTURE TARGET.** Listener → controller integration → Thebes Core → measured knowledge
+**CURRENT FACT — Phase 3 is CLOSED (2026-09-15).** A separate Listener process exists:
+`python3 -m agent.listener serve`, loopback-only, with a durable idempotent intent boundary
+that hands work to the existing Controller in its own subprocess and carries a correlated CEO
+decision back into Phase 2's existing approval and continuation machinery. **It is a
+communication boundary and not a second Controller** — it owns no orchestration decision at
+all, and the Controller's authority, authorization gate and canonical derivation are unchanged.
+Transport is unauthenticated by design, which is exactly why it is local-only. The closure
+record and its evidence are in `agent/ROADMAP.md` "Phase 3 closure"; the boundary's rules are
+`agent/DECISIONS.md` D-017, D-018 and D-019; the contract and semantics are
+`agent/listener/README.md`. Phase 3 created no Product authorization.
+
+**TERMINOLOGY — two different things are called "Listener".** The Phase-3 Listener is the
+process above. The Listener in `agent/AGENTS.md` and `agent/WORKFLOWS.md` is something else
+entirely: the distribution *behaviour* inside the main session that writes directly to whichever
+seat owns a question. They are unrelated, and neither is being renamed here — read which one a
+document means from its context.
+
+**FUTURE TARGET.** Controller-to-Listener integration → Thebes Core → measured knowledge
 scaling is the approved direction, not current implementation. RAG is deferred until
 direct canonical reads demonstrably stop scaling. See `agent/ROADMAP.md` for sequencing.
 

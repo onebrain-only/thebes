@@ -29,11 +29,16 @@ governance/controller history, not a reconstructed commit-by-commit account.
 | `4948607` | HISTORICAL FACT | Remaining hardening concurrency and authority gaps are closed. |
 | `fe997bb` | HISTORICAL FACT | Product wake authorization is serialized through execution leases. |
 | 2026-09-12 documentation pass | CURRENT FACT when committed | The repository gains a master roadmap, durable program memory, restored decision and learning logs, and this chronology. The pass documents but does not implement provider abstraction or authorize Product acceptance. |
+| `1cfa09e` (2026-09-14) | HISTORICAL FACT | Phase 2 — Product Proof — closes. KAN-183 carries one CEO-supplied work-item key to authoritative Jira Done through the flow. Evidence and deferred items are in `agent/ROADMAP.md` "Phase 2 closure". |
+| Phase 3 closure (2026-09-15) | CURRENT FACT when committed | Phase 3 — Separate Listener — closes. A separately running loopback Listener gives Thebes a durable, idempotent intake boundary that dispatches to the existing Controller in its own process and carries a correlated CEO decision back into Phase 2's approval/continuation machinery. It is a communication boundary and not a second Controller; it creates no Product authorization. Evidence and deferred items are in `agent/ROADMAP.md` "Phase 3 closure". |
 
 ## Phase interpretation
 
 - Phase 1 / Waves 1–8 are closed accepted history.
-- Post-Wave-8 Operational Hardening is the current phase.
+- **Superseded 2026-09-15.** This line read "Post-Wave-8 Operational Hardening is the current
+  phase." That was true when written and was not refreshed at Phase 2 closure. Current position
+  is: hardening CLOSED, Phase 2 CLOSED 2026-09-14, Phase 3 CLOSED 2026-09-15, no phase current.
+  `agent/ROADMAP.md` owns current position and is the only place to read it.
 - The real Product operation recorded in role journals is evidence that informed
   hardening; it does not mean Product execution is currently authorized.
 - Historical “next step” language is superseded by `agent/ROADMAP.md`.

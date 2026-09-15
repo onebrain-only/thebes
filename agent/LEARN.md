@@ -129,3 +129,33 @@ canonical checkout until a designed distributed-state layer exists.
 validation plans and withdrawn advisory facts so later readers can explain why state changed.
 **Lesson:** Rewrite current doctrine, but preserve historical evidence with explicit
 classification and supersession. Silent cleanup makes past evidence impossible to interpret.
+
+## L-013 — A capability with no entry point is an unfinished capability
+
+**Classification:** LESSON
+**Observation:** Phase 2 built the whole CEO-decision path — `needs_input` receipts,
+continuation preparation, invocation-scoped approvals, `compose_execution_approvals`, and
+`controller.resume` — and every piece worked. None of it was on the CLI. It was reachable only
+from inside a Python session that already held the controller's imports, so a decision arriving
+over any boundary at all had nowhere to land. Phase 3 could not transport a decision until
+`decide` and `resume` were given entry points. The same shape appeared once before, inside
+Phase 2: `record_execution_continuation_preparation` existed and nothing called it, so a
+`needs_input` result was durably recorded and then unreachable.
+**Lesson:** "Implemented and tested" is not the same as reachable. A function whose only caller
+is a test is indistinguishable from an unfinished feature the moment something outside the
+process needs it. When a capability is declared complete, name the boundary it is callable from.
+**Evidence:** `98024fe`; `agent/controller/continuation.py` module docstring.
+
+## L-014 — A retry you cannot justify is worse than a stall
+
+**Classification:** LESSON
+**Observation:** Designing the Listener's crash recovery, the tempting behaviour was to
+re-dispatch an intent left mid-flight. It is wrong: the Listener cannot prove the Controller did
+not already run, and the Controller may have claimed, dispatched a provider, or mutated
+production before dying. Re-dispatching would turn an unknown into a duplicate Product
+execution.
+**Lesson:** Where a boundary cannot observe an outcome, the safe default is to stop, mark the
+unknown honestly, and surface it — not to guess in the direction that looks like progress. This
+is the same reasoning as the KAN-186 replay interlock, where a stale reconciliation comment
+would have caused a migration replay had it been acted on.
+**Applied decision:** D-019.
