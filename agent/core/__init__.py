@@ -44,7 +44,11 @@ SUBSYSTEMS = {
     "authorization": ("agent.controller", "agent.state.store"),
     "dependencies": ("agent.state.queue", "agent.state.store"),
     "context_assembly": ("agent.controller.intent",),
-    "validation": ("agent.controller.validation", "agent.state.policy"),
+    "validation": ("agent.controller.validation", "agent.state.policy",
+                   # 2026-09-15: deterministic test execution in front of the
+                   # reviewer. Routing, running and classifying live here; the
+                   # verdict still lives only in agent.state.store.
+                   "agent.qa.routing", "agent.qa.gate"),
     "learning": ("agent.state.telemetry", "agent.state.retrospective",
                  "agent.state.learning"),
     "provider_selection": ("agent.execution.selection",),

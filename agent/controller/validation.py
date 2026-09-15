@@ -54,6 +54,8 @@ from agent.execution.provider import (
 from agent.execution.receipt import normalized_result_payload
 from agent.execution.result import receive_execution_result
 from agent.execution.selection import select_provider
+from agent.qa import gate as deterministic_gate
+from agent.qa.results import GATE_INFRA
 from agent.state import policy
 
 
@@ -69,6 +71,11 @@ VALIDATION_CONTEXT_REFUSED = "validation-context-refused"
 VALIDATION_DISPATCH_FAILED = "validation-dispatch-failed"
 VALIDATION_RESULT_MALFORMED = "validation-result-malformed"
 VALIDATION_ALREADY_SETTLED = "validation-already-settled"
+# The deterministic gate could not RUN — toolchain, device, missing tool,
+# timeout. Not a Product failure, not a verdict, no review cycle spent: the
+# context stays pending with its owner and the act is re-run once the
+# infrastructure is repaired. (2026-09-15, QA layer integration.)
+VALIDATION_INFRASTRUCTURE_FAILED = "validation-infrastructure-failed"
 
 VERDICT_EVIDENCE_KIND = "verdict"
 # The Claude CLI transport carries result TEXT and cannot emit structured
@@ -200,11 +207,16 @@ def open_context(work_item_id, task, state_store, seats_by_capability, route):
 
 # ------------------------------------------------------------ the validator
 
-def validation_objective(work_item_id, task, issue, execution, receipt_ref):
+def validation_objective(work_item_id, task, issue, execution, receipt_ref,
+                         deterministic=None):
     """Bounded Product evidence for a validator. No control-plane mechanics.
 
     The executor's own brief is not reused verbatim: a validator needs what was
     asked for and what came back, not instructions to build it.
+
+    `deterministic` is the gate that already ran (`agent.qa.gate`). Its results
+    are rendered as evidence the reviewer INTERPRETS — status, reference, a
+    bounded tail — never as logs to wade through and never as layers to re-run.
     """
     profile = task.get("execution_profile") or {}
     review = task.get("review_context") or {}
@@ -228,11 +240,25 @@ def validation_objective(work_item_id, task, issue, execution, receipt_ref):
     lines += ["", "## Test evidence the executor returned"]
     lines += (["- %s -> %s" % (item.command, item.status.value) for item in tests]
               or ["- none reported"])
+    gate_ran = bool(deterministic is not None and deterministic.runs)
+    if deterministic is not None:
+        lines += ["", "## Deterministic test evidence (run by Thebes before this review)",
+                  deterministic.render()]
+        if gate_ran:
+            lines += ["",
+                      "These layers already ran by command; their full output is at "
+                      "the artifact reference beside each. Do NOT re-run them. "
+                      "Interpret them: a product_defect result is evidence for fail "
+                      "unless you can show the assertion itself is wrong; a pass "
+                      "result covers what that layer tests and nothing more."]
     lines += [
         "", "## Checks to perform",
         "- Confirm every acceptance criterion above is actually met by the work.",
         "- Confirm the change is confined to the declared surfaces.",
-        "- Re-run the Product tests that cover this change and report what happened.",
+        ("- Run only the Product tests NOT already covered by the deterministic "
+         "evidence above, if any criterion needs them, and report what happened."
+         if gate_ran else
+         "- Re-run the Product tests that cover this change and report what happened."),
         "- Report defects you find; do not fix them.",
         "", "## Your verdict",
         "Open your reply with a VERDICT section whose very first word is pass or "
@@ -248,10 +274,19 @@ def validation_objective(work_item_id, task, issue, execution, receipt_ref):
 
 
 def build_validation_request(work_item_id, task, issue, execution, realized,
-                             reviewer, review_ref, receipt_ref):
-    """One read-only validation request, through the same contract and firewall."""
+                             reviewer, review_ref, receipt_ref, deterministic=None):
+    """One read-only validation request, through the same contract and firewall.
+
+    Effort follows the evidence: when the deterministic gate is decisive the
+    reviewer interprets (cost-efficient, low effort); when no layer applied the
+    reviewer is the test and keeps full effort. The gate never sets the verdict.
+    """
     review = task.get("review_context") or {}
     capability = _reviewer_capability(reviewer, task)
+    if deterministic is not None:
+        model_intent, reasoning_effort = deterministic.reviewer_effort()
+    else:
+        model_intent, reasoning_effort = ModelIntent.BALANCED, ReasoningEffort.HIGH
     workspace = Workspace(
         repository_root=realized["repository_root"],
         working_directory=realized["path"],
@@ -268,7 +303,7 @@ def build_validation_request(work_item_id, task, issue, execution, realized,
         required_capability=capability,
         execution_kind=ExecutionKind.VALIDATION,
         objective=validation_objective(work_item_id, task, issue, execution,
-                                       receipt_ref),
+                                       receipt_ref, deterministic=deterministic),
         role_contract_ref="agent/roles/%s.md" % capability,
         context_refs=("CLAUDE.md",),
         workspace=workspace,
@@ -289,8 +324,8 @@ def build_validation_request(work_item_id, task, issue, execution, realized,
             target.get("source", "reported_environment")),
         validation_targets=(ValidationTarget(review.get("review_type") or "review",
                                              "review", True),),
-        model_intent=ModelIntent.BALANCED,
-        reasoning_effort=ReasoningEffort.HIGH,
+        model_intent=model_intent,
+        reasoning_effort=reasoning_effort,
         required_execution_features=frozenset({ExecutionFeature.REPOSITORY_READ,
                                                ExecutionFeature.SHELL}),
         timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
@@ -632,8 +667,16 @@ def remediate(work_item_id, task, state_store, jira_client, route, reviewer,
 
 def run_validation(work_item_id, task, execution, realized, state_store,
                    jira_client, providers, issue=None, seats_by_capability=None,
-                   provider_override=None, receipt_ref=None):
-    """Enter review, dispatch the validator, record the verdict, remediate on fail."""
+                   provider_override=None, receipt_ref=None, deterministic=None):
+    """Enter review, run the deterministic gate, dispatch the validator, record
+    the verdict, remediate on fail.
+
+    `deterministic` is the gate function (default `agent.qa.gate.
+    run_deterministic_gate`); tests inject a double. It runs after the review
+    context exists and before the reviewer is dispatched, and an
+    infrastructure failure refuses the whole act with
+    `VALIDATION_INFRASTRUCTURE_FAILED` — no dispatch, no verdict, no cycle spent.
+    """
     if seats_by_capability is None:
         from agent.state import validate
         seats_by_capability = validate.seats_by_capability()
@@ -650,11 +693,34 @@ def run_validation(work_item_id, task, execution, realized, state_store,
                 "review_cycle": review.get("review_cycle") or 1,
                 "review_context_ref": review_ref}
 
+    # The deterministic gate: commands, not a model. It runs inside the named
+    # review cycle and before any reviewer exists as a process. An
+    # infrastructure failure is refused here — before the Jira read it would
+    # not use and before a dispatch it must not make — and spends nothing.
+    gate_fn = deterministic or deterministic_gate.run_deterministic_gate
+    gate = gate_fn(work_item_id, opened, realized, execution)
+    evidence["deterministic_gate"] = gate.as_payload()
+    if gate.outcome == GATE_INFRA:
+        broken = [run for run in gate.runs
+                  if run.classification.value == "test_infrastructure_failure"]
+        raise ValidationRefused(
+            VALIDATION_INFRASTRUCTURE_FAILED,
+            "the deterministic gate could not run for %s (%s); this is a test-"
+            "infrastructure failure, not a Product failure — the %s review stays "
+            "pending at cycle %s with its owner, no verdict was recorded, and the "
+            "act is re-run once the infrastructure is repaired"
+            % (work_item_id,
+               "; ".join("%s: %s" % (run.layer_id, run.reason or
+                                     (run.tail[-1] if run.tail else "exit %s" % run.exit_code))
+                         for run in broken) or "no layer executed",
+               resolved_route, review.get("review_cycle") or 1))
+
     # Read the issue only once a reviewer actually exists: a route that refuses
     # or waits should not spend a Jira read it will not use.
     issue = issue if issue is not None else jira_client.get_issue(work_item_id)
     request = build_validation_request(work_item_id, opened, issue, execution,
-                                       realized, reviewer, review_ref, release_ref)
+                                       realized, reviewer, review_ref, release_ref,
+                                       deterministic=gate)
     result, selection = dispatch(request, providers, provider_override)
     payload = normalized_result_payload(result)
     evidence.update({"validation_invocation_id": request.invocation_id,
