@@ -411,5 +411,47 @@ class WakeOrderTests(unittest.TestCase):
         self.assertEqual("lease-close", events[-1])
 
 
+# ---------------------------------------------------------------------------
+# A scoped grant must be resumable. The wake compared against
+# "permission(allowed_operation)" while controller.resume built the provider
+# from the bare "permission", so narrowing a grant to one exact operation — the
+# safer thing to do — made its continuation permanently unresumable. The defect
+# punished precision and rewarded breadth, which is why an unscoped Phase-2 run
+# never hit it. One renderer now serves both sides.
+
+class GrantedPermissionRendering(unittest.TestCase):
+    def test_an_unscoped_grant_renders_as_the_bare_permission(self):
+        from agent.execution.wake import granted_permissions
+        self.assertEqual(("Bash",), granted_permissions([{"permission": "Bash"}]))
+        self.assertEqual(("Bash",),
+                         granted_permissions([{"permission": "Bash",
+                                               "allowed_operation": None}]))
+
+    def test_a_scoped_grant_renders_with_its_exact_operation(self):
+        from agent.execution.wake import granted_permissions
+        self.assertEqual(
+            ("mcp__x__execute_sql(read-only SELECT)",),
+            granted_permissions([{"permission": "mcp__x__execute_sql",
+                                  "allowed_operation": "read-only SELECT"}]))
+
+    def test_the_controller_and_the_wake_render_identically(self):
+        # The two callers that diverged. If this ever fails again, a scoped
+        # approval has become unresumable for the same reason as before.
+        import inspect
+        from agent.execution import wake
+        from agent import controller
+        self.assertIn("granted_permissions", inspect.getsource(controller.resume))
+        source = inspect.getsource(controller.resume)
+        self.assertNotIn('record["permission"] for record in approvals', source)
+        self.assertTrue(callable(wake.granted_permissions))
+
+    def test_mixed_grants_keep_their_order_and_their_scoping(self):
+        from agent.execution.wake import granted_permissions
+        self.assertEqual(
+            ("Write", "Bash(ls -la)"),
+            granted_permissions([{"permission": "Write"},
+                                 {"permission": "Bash", "allowed_operation": "ls -la"}]))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

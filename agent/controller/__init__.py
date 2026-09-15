@@ -608,6 +608,7 @@ def resume(work_item_id, *, state_store=store, jira_client=jira, providers=None,
     from agent.execution.claude import ClaudeCliTransport, ClaudeProvider
     from agent.execution.wake import (
         build_prepared_continuation_request, execute_approved_claude_continuation,
+        granted_permissions,
     )
     driver = continuation_driver or execute_approved_claude_continuation
     result = _result_shell(work_item_id)
@@ -643,7 +644,9 @@ def resume(work_item_id, *, state_store=store, jira_client=jira, providers=None,
             result["continuation_status"] = "already-executed"
         else:
             approvals = state_store.compose_execution_approvals(original)
-            permissions = tuple(record["permission"] for record in approvals)
+            # Rendered by the wake's own renderer, not rebuilt here. Building it
+            # twice is what made a scoped grant unresumable.
+            permissions = granted_permissions(approvals)
             result["approved_permissions"] = list(permissions)
             provider = ClaudeProvider(transport or ClaudeCliTransport(),
                                       session_ref=preparation["claude_session_id"],

@@ -151,6 +151,24 @@ def _continuation_invocation_id(approval_ids):
     return "continuation-approval-set-" + digest
 
 
+def granted_permissions(approvals):
+    """Render composed approvals as the provider's exact approved-permission tuple.
+
+    ONE renderer, because there are two callers and they diverged. The wake
+    compared against `permission(allowed_operation)` while `controller.resume`
+    built the provider from the bare `permission`, so every approval that
+    carried a scope — the SAFER kind of grant, narrowed to one exact operation —
+    could never satisfy the check and its continuation was unresumable. An
+    unscoped grant worked, which is why this survived: the defect punished
+    precision and rewarded breadth.
+    """
+    return tuple(
+        rec["permission"] if rec.get("allowed_operation") is None
+        else "%s(%s)" % (rec["permission"], rec["allowed_operation"])
+        for rec in approvals
+    )
+
+
 def execute_approved_claude_continuation(approval_ids, request_factory, provider,
                                          *, state_store=None,
                                          closed_by="orchestrator", replacement_session=False):
@@ -189,11 +207,7 @@ def execute_approved_claude_continuation(approval_ids, request_factory, provider
         raise WakeOrderError("continuation provider must remain Claude Code")
     if provider.capabilities().provider_id != "claude-code":
         raise WakeOrderError("continuation provider switch is refused")
-    permissions = tuple(
-        rec["permission"] if rec.get("allowed_operation") is None
-        else "%s(%s)" % (rec["permission"], rec["allowed_operation"])
-        for rec in approvals
-    )
+    permissions = granted_permissions(approvals)
     if tuple(getattr(provider, "approved_permissions", ())) != permissions:
         raise WakeOrderError("continuation provider permissions do not match exact grants")
     invocation_id = _continuation_invocation_id(tuple(rec["execution_approval_id"] for rec in approvals))
