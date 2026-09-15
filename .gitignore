@@ -37,6 +37,13 @@
 # tooling and Company/Product/Project registry above it ARE tracked.
 /agent/state/runtime/
 
+# Phase 3 Listener durable inbox/outbox. Communication evidence — what arrived,
+# what was dispatched, and what the Controller answered. Same category as
+# Persistent State runtime above: durable on disk, deliberately outside source
+# history, and authority for nothing. It is kept OUT of agent/state/runtime/ on
+# purpose, so nothing here can be mistaken for Product operational truth.
+/agent/listener/runtime/
+
 # Machine-written local session metadata. This is execution telemetry, not
 # durable Thebes knowledge; the adjacent agent-memory subtree is deliberately
 # not ignored wholesale because it still requires evidence-preserving curation.
