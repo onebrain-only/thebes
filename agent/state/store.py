@@ -2341,6 +2341,23 @@ def read_execution_receipt(invocation_id):
     return read("execution_receipt", _receipt_id(invocation_id))
 
 
+# A CLI tool specifier is a COMMAND — `git diff`, `npm test`,
+# `python3 -c 'resume()'`. The realistic failure is a sentence, and the reliable
+# difference is length: a command is short and a scope explanation is not.
+#
+# This is a misuse guard, not a proof. Someone determined could write 100
+# characters of prose and it would pass. What it stops is the accident that
+# actually happened — a careful, well-meant explanation typed into a field that
+# is handed to a command line — and it stops it at the write rather than three
+# invocations later when a tool is mysteriously still denied.
+_CLI_TOOL_SPECIFIER_MAX = 120
+
+
+def _looks_like_cli_specifier(value):
+    return ("\n" not in value and "\r" not in value
+            and len(value) <= _CLI_TOOL_SPECIFIER_MAX)
+
+
 def _approval_id(invocation_id, permission, allowed_operation=None):
     identity = invocation_id + "\0" + permission
     if allowed_operation is not None:
@@ -2376,6 +2393,22 @@ def record_execution_approval(original_invocation_id, work_item_id, seat_id,
                           "claude -p", "agent.execution.wake")
         if any(token in allowed_operation.lower() for token in control_tokens):
             raise StateError("execution approval cannot grant Product executor control-plane continuation")
+
+    # `allowed_operation` is MACHINE-READABLE. It is rendered as
+    # `permission(allowed_operation)` and handed to the Claude CLI's
+    # `--allowedTools`, which matches it against tool rules. Prose there matches
+    # nothing, so the tool stays denied while Persistent State records a grant
+    # that looks perfectly good — a silent, durable lie about what was
+    # authorized. The human-readable scope belongs in `approval_scope`, which is
+    # evidence and never reaches a command line.
+    if allowed_operation is not None and not _looks_like_cli_specifier(allowed_operation):
+        raise StateError(
+            "execution approval allowed_operation must be a CLI tool specifier — a "
+            "bounded command of at most %d characters on one line, such as "
+            "\"python3 -c 'resume()'\" — not prose. It is handed to the provider's "
+            "--allowedTools, where a sentence matches no rule and the tool stays "
+            "denied. Put the human-readable scope in approval_scope."
+            % _CLI_TOOL_SPECIFIER_MAX)
     original = read_execution_receipt(original_invocation_id)
     if original is None or original.get("status") != "needs_input":
         raise StateError("execution approval needs an original needs_input receipt")
