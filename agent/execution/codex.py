@@ -33,6 +33,8 @@ from agent.execution.provider import (
 from agent.execution.brief import render_executor_brief
 from agent.state import roster
 
+from agent.execution.claude import executor_environment
+
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SEATS_JSON = os.path.join(ROOT, "agent", "state", "registry", "seats.json")
@@ -224,6 +226,10 @@ class CodexCliTransport:
                 text=True,
                 timeout=invocation.request.timeout_seconds,
                 check=False,
+                # The same deterministic executor environment Claude gets. A
+                # provider-neutral contract that left one provider's toolchain
+                # broken would not be provider-neutral.
+                env=executor_environment(),
             )
         except FileNotFoundError as exc:
             raise CodexUnavailable("Codex CLI is unavailable: %s" % exc)

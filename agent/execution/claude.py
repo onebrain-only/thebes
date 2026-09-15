@@ -303,6 +303,96 @@ def prepare_claude_authorized_wake(request, session_id, approved_permissions,
     return replace(wake, session_id=session_id, approved_permissions=permissions)
 
 
+# ---------------------------------------------------------------- standing tools
+#
+# The Product executor's ordinary working tools. Live operation established why
+# this has to exist: the CLI runs with `--permission-mode dontAsk`, so WITHOUT a
+# standing set every single tool call — every read, every edit, every shell
+# command — was denied and became a separate Thebes approval plus a full resume
+# invocation. One work item burned four invocations on catalogue reads and a
+# file write. That is not a governance control, it is a tax, and it made routine
+# operation impossible while protecting nothing: each of those denials was
+# approved anyway, one round-trip later.
+#
+# What this deliberately does NOT contain is the whole point of the list.
+STANDING_PRODUCT_EXECUTOR_TOOLS = (
+    "Read",
+    "Bash",
+    "Edit",
+    "Write",
+    # READ-ONLY by the environment authority that authorizes it. The tool itself
+    # can mutate, so the read-only limit is enforced where it belongs — in the
+    # operational_context the CEO granted and in the brief the executor reads —
+    # not by hoping a tool name is safe.
+    "mcp__claude_ai_Supabase__execute_sql",
+)
+
+# Never standing, at any time, for any work item. A production mutation is a
+# separate CEO act every time it happens; putting one of these in the standing
+# set would silently convert "the CEO approves each migration" into "the executor
+# may apply migrations", which is the single boundary Product execution has held
+# since Phase 2.
+NEVER_STANDING = (
+    "mcp__claude_ai_Supabase__apply_migration",
+    "mcp__claude_ai_Supabase__deploy_edge_function",
+    "mcp__claude_ai_Supabase__create_branch",
+    "mcp__claude_ai_Supabase__merge_branch",
+    "mcp__claude_ai_Supabase__delete_branch",
+    "mcp__claude_ai_Supabase__reset_branch",
+    "mcp__claude_ai_Supabase__pause_project",
+    "mcp__claude_ai_Supabase__restore_project",
+)
+
+assert not set(STANDING_PRODUCT_EXECUTOR_TOOLS) & set(NEVER_STANDING), (
+    "a production-mutating tool reached the standing executor set")
+
+
+def standing_tools():
+    """The executor's ordinary tools, verified against the exclusion list.
+
+    Checked at call time as well as import time: this is the list that decides
+    what a Product executor can do without asking, and a future edit that adds
+    `apply_migration` to it should fail loudly rather than ship quietly.
+    """
+    forbidden = set(STANDING_PRODUCT_EXECUTOR_TOOLS) & set(NEVER_STANDING)
+    if forbidden:
+        raise ClaudeWakeError(
+            "standing executor tools may never include %s" % ", ".join(sorted(forbidden)))
+    return STANDING_PRODUCT_EXECUTOR_TOOLS
+
+
+def developer_dir():
+    """The Command Line Tools path, when it is present and usable.
+
+    Live operation hit a machine whose full Xcode licence was not accepted, which
+    makes `/usr/bin/python3` — and therefore every Thebes tool, git helper and
+    build command an executor runs — fail with a licence error. The Command Line
+    Tools carry no such gate.
+
+    Process-scoped on purpose. Thebes sets this for the subprocesses it launches
+    and changes nothing about the machine: accepting a licence on the CEO's
+    behalf is not Thebes's to do, and a machine-wide change to fix one
+    subprocess would be a much larger act than the problem needs. Returns None
+    when the path is absent, in which case the inherited environment stands.
+    """
+    path = "/Library/Developer/CommandLineTools"
+    return path if os.path.isdir(path) else None
+
+
+def executor_environment(environ=None, developer_dir_path=None):
+    """The environment a Product executor subprocess runs in.
+
+    Inherits the caller's environment and pins only what has been shown to break
+    without pinning. It adds no secret, no credential and no Thebes identifier —
+    an executor's environment is not a side channel for control-plane state.
+    """
+    base = dict(os.environ if environ is None else environ)
+    resolved = developer_dir_path if developer_dir_path is not None else developer_dir()
+    if resolved:
+        base["DEVELOPER_DIR"] = resolved
+    return base
+
+
 class ClaudeCliTransport:
     """Direct local transport for the installed Claude Code CLI.
 
@@ -332,14 +422,22 @@ class ClaudeCliTransport:
             command += ("--resume", wake.session_ref)
         if wake.session_id:
             command += ("--session-id", wake.session_id)
-        if wake.approved_permissions:
+        # The standing working set, plus any invocation-scoped grant the CEO
+        # approved for THIS boundary. The scoped grants are additive and still
+        # exact: a standing Read does not imply a standing apply_migration, and
+        # nothing here can widen the never-standing list.
+        allowed = list(standing_tools())
+        for permission in wake.approved_permissions or ():
+            if permission not in allowed:
+                allowed.append(permission)
+        if allowed:
             # Claude CLI parses this option as a variadic list.  Keeping it as
             # one comma-separated argument prevents the final prompt from
             # being swallowed as another allowed tool.
-            command += ("--allowedTools", ",".join(wake.approved_permissions))
-        # Current Claude CLI parses --allowedTools as variadic.  The separator
-        # keeps the immutable Product prompt from being consumed as a tool name.
-        if wake.approved_permissions:
+            command += ("--allowedTools", ",".join(allowed))
+            # Current Claude CLI parses --allowedTools as variadic.  The
+            # separator keeps the immutable Product prompt from being consumed
+            # as a tool name.
             command += ("--",)
         return command + (wake.prompt,)
 
@@ -349,6 +447,7 @@ class ClaudeCliTransport:
                 self.command(wake), capture_output=True, text=True,
                 timeout=wake.timeout_seconds, check=False,
                 cwd=wake.workspace.working_directory,
+                env=executor_environment(),
             )
         except FileNotFoundError as exc:
             raise ClaudeUnavailable("Claude CLI is unavailable: %s" % exc)

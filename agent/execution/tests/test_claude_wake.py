@@ -13,6 +13,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__)))))
 sys.path.insert(0, ROOT)
 
+from agent.execution.claude import standing_tools  # noqa: E402
 from agent.execution.claude import (  # noqa: E402
     ClaudeProvider,
     ClaudeCliTransport,
@@ -254,8 +255,15 @@ class ClaudeCliTransportTests(unittest.TestCase):
         self.assertIn("--resume", command)
         self.assertEqual("claude-session-9", command[command.index("--resume") + 1])
         self.assertIn("--allowedTools", command)
-        self.assertEqual("mcp__claude_ai_Supabase__apply_migration",
-                         command[command.index("--allowedTools") + 1])
+        # Since the standing executor tool set exists, --allowedTools carries the
+        # ordinary working tools PLUS this invocation's exact grant. The claim
+        # that matters is unchanged and still asserted: the grant is present, it
+        # is exact, and nothing beyond standing + granted appears.
+        allowed = command[command.index("--allowedTools") + 1].split(",")
+        self.assertIn("mcp__claude_ai_Supabase__apply_migration", allowed)
+        self.assertEqual(set(), set(allowed) - set(standing_tools())
+                         - {"mcp__claude_ai_Supabase__apply_migration"})
+        self.assertNotIn("mcp__claude_ai_Supabase__apply_migration", standing_tools())
         self.assertIn("dontAsk", command)
         self.assertNotIn("bypassPermissions", command)
         self.assertIn("Continue the existing task", wake.prompt)
@@ -278,8 +286,13 @@ class ClaudeCliTransportTests(unittest.TestCase):
                          command[command.index("--session-id") + 1])
         self.assertNotIn("--resume", command)
         self.assertIn("--allowedTools", command)
-        self.assertEqual("Bash,mcp__claude_ai_Supabase__apply_migration",
-                         command[command.index("--allowedTools") + 1])
+        allowed = command[command.index("--allowedTools") + 1].split(",")
+        self.assertIn("mcp__claude_ai_Supabase__apply_migration", allowed)
+        self.assertIn("Bash", allowed)
+        self.assertEqual(set(), set(allowed) - set(standing_tools())
+                         - {"Bash", "mcp__claude_ai_Supabase__apply_migration"})
+        # Bash is standing now, so it must appear once rather than twice.
+        self.assertEqual(1, allowed.count("Bash"))
         self.assertEqual("--", command[-2])
         self.assertEqual(render_executor_brief(request()), command[-1])
         self.assertEqual(render_executor_brief(request()), wake.prompt)
@@ -303,7 +316,13 @@ class ClaudeCliTransportTests(unittest.TestCase):
         wake = prepare_claude_continuation_wake(request(), "claude-session-9", grants)
         command = ClaudeCliTransport().command(wake)
         position = command.index("--allowedTools")
-        self.assertEqual(",".join(grants), command[position + 1])
+        allowed = command[position + 1].split(",")
+        # Finite and exact is still the claim: standing working tools, plus these
+        # two grants, and nothing else. A third tool nobody approved does not
+        # appear, which is the assertion this test exists for.
+        self.assertEqual(set(), set(allowed) - set(standing_tools()) - set(grants))
+        for grant in grants:
+            self.assertIn(grant, allowed)
         self.assertEqual("--", command[position + 2])
         self.assertEqual(wake.prompt, command[position + 3])
         self.assertEqual(grants, wake.approved_permissions)
