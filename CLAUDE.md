@@ -304,13 +304,50 @@ return Result.guard(
 
 ### Design System
 
-- Standard screen layout: `TwoSectionLayout` (purple top / dark bottom).
-- Theme: Material 3 via `AppTheme`. Colors via `Theme.of(context).colorScheme`. **Never hardcode colors.**
-- Domain color extensions: `colorScheme.categoryMain`, `colorScheme.categorySocial`, etc.
-- Components: `AppButton.primary/secondary/ghost`, `AppCard`, `AppButtonCard`, `AppActionCard`, `CustomInputField`.
-- Spacing: 4dp grid system.
-- Icons: Lucide (`lucide_icons`) and Iconsax (`iconsax_flutter`).
-- Theme categories (`main`, `social`, `sports`, `activity`, `profile`) are preloaded in `main.dart` via `AppTheme.initialize()`. Switch active palette with `AppTheme.setActiveCategory(category)` — screens do this in their `initState` or on navigation.
+**Corrected 2026-09-16 against the code. This section named four components that do not
+exist and an icon package that was removed** — every line below was re-verified by search,
+and the ones that were false are marked with what is actually there. A brief written from
+the old text would have been written against a design system that is not in the repository.
+**What the standard should BE is a separate question**, under a joint `cxo` + `cto` ruling
+(`CONTRACT.md` `G-011`) that is in progress; this correction only stops the document
+asserting things that are untrue.
+
+- **Theme: Material 3 via `AppTheme`. Colors via `Theme.of(context).colorScheme`.** True and
+  load-bearing: `lib/themes/app_theme.dart` (1,303 lines, 26 importers) reaches `main.dart`.
+- **Never hardcode colors** — the rule stands, and **the codebase does not currently meet
+  it**: 696 `Colors.<name>` occurrences across 108 files and 233 `Color(0x…)` literals across
+  30. 103 of 193 widget-bearing UI files contain a hardcoded colour. Treat conformance as
+  something new work achieves, not something it inherits.
+- **Theme categories** (`main`, `social`, `sports`, `activity`, `profile`) are preloaded in
+  `main.dart` via `AppTheme.initialize()`; switch with `AppTheme.setActiveCategory(category)`
+  in `initState` or on navigation. **This works**: the five palettes carry five distinct
+  primaries (main `#7328CE`, social `#2762C5`, sports `#2D7331`, activity `#B52C76`, profile
+  `#985609`) and `setActiveCategory` rebuilds the active `ColorScheme` from that category
+  (`app_theme.dart:98-101, 683-692`).
+- **Domain colour extensions:** `colorScheme.categoryMain` is live (73 uses). **But
+  `categorySocial`, `categorySports`, `categoryActivities` and `categoryProfile` all alias to
+  `categoryMain`** (`lib/themes/material3_extensions.dart:15,21,27,30`), and
+  `getCategoryColor(String)` ignores its argument (`:33-34`). They return the ACTIVE
+  category's colour, which is correct on a single-category screen and means **two categories'
+  colours cannot be shown on the same screen**. Prefer `categoryMain`.
+- **Components — three of the five named here did not exist.** Verified 2026-09-16:
+  | Named | Reality |
+  |---|---|
+  | `AppButton.primary/secondary/ghost` | **exists**, `lib/widgets/app_button.dart`; also has `.outline`. Used by 1 screen |
+  | `CustomInputField` | **exists**, `lib/widgets/input_field.dart` (not `custom_input_field.dart`). 16 call sites in 2 screens |
+  | `AppCard` | **does not exist.** Removed as dead code by KAN-203 (`3f55cce`); `lib/widgets/app_card.dart` now holds only `LoadingPlaceholder`. The barrel's own header suggests `Card.filled()` / `Card.outlined()` |
+  | `AppButtonCard` | **does not exist**, and never did in this repository's history |
+  | `AppActionCard` | **does not exist**, and never did |
+- **Standard screen layout: `TwoSectionLayout` does not exist.** Zero declarations, zero Dart
+  references; its 17 mentions are all inside markdown files under `lib/core/design_system/`.
+  The layout primitive screens actually use is **`AdaptiveScaffold`**
+  (`lib/widgets/adaptive_scaffold.dart`, 36 uses).
+- **Spacing: 4dp grid.** `AppSpacing` (`lib/core/design_system/spacing/`) is live with 116
+  uses. 403 of 2,071 `EdgeInsets` values (19%) are currently off the grid.
+- **Icons: Iconsax (`iconsax_flutter`) only** — 493 uses. **Lucide was removed** by KAN-201
+  (`42d3d31`); `lucide_icons` is no longer in `pubspec.yaml` and `LucideIcons` has 0 uses.
+- **Also live and prescribed:** `DSAvatar` (27 files) and `design_tokens.dart`, both under
+  `lib/core/design_system/`.
 
 ### Data Models
 
@@ -357,7 +394,8 @@ a gate. *(This said "No tests exist yet" until 2026-09-06 — it was written bef
 - **Do** use `Result<T, Failure>` for all data operations — never throw across layer boundaries.
 - **Do** export new providers from `lib/providers.dart`.
 - **Do** gate new routes/features with `FeatureFlags.<name>`.
-- **Do** use `TwoSectionLayout` for standard screens.
+- **Do** use `AdaptiveScaffold` for standard screens — **corrected 2026-09-16**, this line
+  said `TwoSectionLayout`, which does not exist anywhere in `lib/`.
 - **Avoid** hardcoded colors — use `ColorScheme` or `AppTheme` extensions.
 - **Avoid** raw `MaterialPage` — use transition wrappers.
 - **Avoid** throwing exceptions from repositories.
