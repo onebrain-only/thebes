@@ -83,6 +83,12 @@ CONTROL_PLANE_TOKENS = (
     "agent.execution.wake",
     "agent.execution.brief",
     "agent.controller",
+    # Phase 3 created a second control-plane surface and this list did not know
+    # it existed. A Listener intent is an orchestration act: an executor told to
+    # submit one is orchestrating its own execution by a new route.
+    "agent.listener",
+    "EXECUTE_WORK_ITEM",
+    "DECISION_RESPONSE",
     "claude --resume",
     "claude -p",
     "--session-id",
@@ -123,14 +129,27 @@ CONTROL_PLANE_CONCEPTS = (
     )),
     ("controller_bootstrap", (
         r"\bpython3?\s+-m\s+agent\b",
-        r"\bfrom\s+agent\.(?:execution|controller|state)\b",
-        r"\bimport\s+agent\.(?:execution|controller|state)\b",
+        r"\bfrom\s+agent\.(?:execution|controller|state|listener)\b",
+        r"\bimport\s+agent\.(?:execution|controller|state|listener)\b",
         r"\b(?:run|execute|start)\s+(?:the\s+)?(?:thebes|controller)\s+(?:bootstrap|entry|loop)\b",
     )),
     ("session_mechanics", (
         r"\b(?:create|allocate|resume|retire|replace)\s+(?:a|an|the|your|one)?\s*"
         r"(?:new\s+|native\s+|claude\s+|existing\s+)?session\b",
         r"\bsession[\s_-]?(?:id|ref|handle)\b",
+    )),
+    # The Listener is the front door, which makes it a control-plane surface an
+    # executor must never be pointed at. Phrase-level like its neighbours: the
+    # word "intent" alone is ordinary English and stays harmless.
+    ("listener_intake", (
+        r"\b(?:submit|send|post|deliver|queue|file|raise)\s+(?:an?|the|your|one)?\s*"
+        r"(?:new\s+|follow-?up\s+)?intent\b",
+        r"\b(?:the\s+|thebes\s+)?listener\b",
+        r"\bintent\s+(?:envelope|contract|id|type)\b",
+        r"\bidempotency[\s_-]?key\b",
+        r"\b/intents\b",
+        r"\b127\.0\.0\.1:\d+\b",
+        r"\blocalhost:\d+\b",
     )),
     ("jira_orchestration", (
         r"\b(?:transition|move|advance|progress|close|reopen)\s+(?:the\s+|this\s+|its\s+)?"
