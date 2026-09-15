@@ -22,6 +22,7 @@ from agent.execution.brief import (  # noqa: E402
     CONTROL_PLANE_TOKENS,
     PRODUCT_BRIEF_FIELDS,
     ExecutorBriefViolation,
+    assert_no_control_plane_concept,
     assert_product_scoped,
     render_executor_brief,
 )
@@ -307,6 +308,39 @@ class ThebesRetainsAuthorityTests(unittest.TestCase):
         wake = prepare_claude_wake(request())
         invocation = prepare_codex_invocation(request())
         self.assertEqual(wake.prompt, invocation.prompt)
+
+
+class ProviderSelectionPhrasing(unittest.TestCase):
+    """An adjective must not be a way through the provider-selection rule.
+
+    "select a different provider" leaked until the final operations smoke proof
+    probed it: the pattern allowed a determiner but no adjective, so the single
+    most natural phrasing of the prohibited instruction was the one that passed.
+    """
+
+    LEAKS = (
+        "select a different provider",
+        "choose another execution provider",
+        "switch to a faster provider",
+        "pick a more capable provider",
+        "override the currently selected provider",
+        "fall back to the other provider",
+    )
+
+    ORDINARY_ENGLISH = (
+        "the provider of these figures is the finance team",
+        "a provider network outage is the cause",
+        "document who the data provider is",
+    )
+
+    def test_every_phrasing_of_provider_selection_is_refused(self):
+        for text in self.LEAKS:
+            with self.assertRaises(ExecutorBriefViolation, msg=text):
+                assert_no_control_plane_concept(text, "objective")
+
+    def test_ordinary_uses_of_the_word_provider_still_pass(self):
+        for text in self.ORDINARY_ENGLISH:
+            assert_no_control_plane_concept(text, "objective")
 
 
 if __name__ == "__main__":

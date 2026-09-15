@@ -125,8 +125,11 @@ CONTROL_PLANE_CONCEPTS = (
         r"\btake\s+ownership\s+of\b",
     )),
     ("provider_selection", (
+        # `(?:\w+\s+){0,3}` is the adjective slot. Without it "select a DIFFERENT
+        # provider" walked straight through — a phrasing that means exactly the
+        # prohibited thing, found by the final smoke proof rather than by reading.
         r"\b(?:select|choose|pick|switch|change|swap|override|fall\s*back(?:\s+to)?)\s+"
-        r"(?:to\s+)?(?:a|an|another|the|your)?\s*(?:execution\s+)?provider\b",
+        r"(?:to\s+)?(?:a|an|another|the|your)?\s*(?:\w+\s+){0,3}?(?:execution\s+)?provider\b",
         r"\bprovider\s+(?:selection|registry|override|routing|fallback)\b",
         r"\b(?:retry|rerun)\s+(?:this|the\s+work)?\s*(?:with|on)\s+(?:another|a\s+different)\s+"
         r"(?:provider|model|executor)\b",
