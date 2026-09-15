@@ -6,8 +6,8 @@
 **Repository:** Thebes-Canonical  
 **Owner:** CEO / Program Controller  
 **Status:** Active  
-**Current Phase:** Phase 2 — Product Proof  
-**Current Milestone:** Tangible Operating Interface  
+**Current Phase:** see `agent/ROADMAP.md` "Current position" — it owns current
+position and this file does not duplicate it (§48–§51, superseded 2026-09-15).  
 
 ---
 
@@ -1644,10 +1644,32 @@ clearer.
 
 # 48. Current Program Position
 
+**SUPERSEDED 2026-09-15. `agent/ROADMAP.md` owns current position; read it there.**
+
+This section, and §49–§51 below, were written when Phase 2 was current and were
+never refreshed as phases closed. They are preserved rather than deleted so the
+program's own history stays interpretable (`LEARN.md` L-012), but they are not
+current fact and must not be read as one. §51 already said as much at the time:
+*"Runtime state remains authoritative if it later changes."*
+
+Position as of 2026-09-15:
+
 ```text
 THEBES MASTER PROGRAM
 ══════════════════════════════════════════════════════════
 
+PHASE 1 — Company / Agent Architecture          CLOSED
+Post-Wave-8 Operational Hardening               CLOSED
+PHASE 2 — Product Proof                         CLOSED 2026-09-14
+PHASE 3 — Separate Listener                     CLOSED 2026-09-15
+PHASE 4 — Codex → Listener                      CURRENT
+PHASE 5 — Listener → Thebes Core                FUTURE
+PHASE 6 — Knowledge Scale / RAG                 FUTURE
+```
+
+Historical text as written:
+
+```text
 PHASE 1 — Company / Agent Architecture
 ████████████████████████████████████████████████  CLOSED ✅
 
@@ -1670,6 +1692,8 @@ PHASE 6 — Knowledge Scale / RAG
 ---
 
 # 49. Current Zoom
+
+**SUPERSEDED 2026-09-15 — historical, not current fact.** See §48 and `agent/ROADMAP.md`. The Temporary Controller Entry Point this section calls unimplemented was built in Phase 2 (`agent/controller`), and Phase 4 is retiring it as the external front door.
 
 ```text
 PHASE 2 — PRODUCT PROOF
@@ -1713,6 +1737,8 @@ Real Product work should be used where possible.
 
 # 50. Current Immediate Sequence
 
+**SUPERSEDED 2026-09-15 — historical, not current fact.** See §48 and `agent/ROADMAP.md`. The Temporary Controller Entry Point this section calls unimplemented was built in Phase 2 (`agent/controller`), and Phase 4 is retiring it as the external front door.
+
 The current sequence is:
 
 ```text
@@ -1729,6 +1755,8 @@ Do not skip directly from Step 1 to broad Product execution.
 ---
 
 # 51. Current Operating Status
+
+**SUPERSEDED 2026-09-15 — historical, not current fact.** See §48 and `agent/ROADMAP.md`. The Temporary Controller Entry Point this section calls unimplemented was built in Phase 2 (`agent/controller`), and Phase 4 is retiring it as the external front door.
 
 At the time this roadmap is established:
 
