@@ -24,6 +24,7 @@ import os
 import subprocess
 import sys
 
+from agent.controller.entry import INTENT_ENV
 from agent.listener import contract, store
 
 
@@ -58,12 +59,26 @@ def argv_for(intent):
     raise ValueError("no controller transport for %r" % intent["intent_type"])
 
 
+def controller_environment(intent, environ=None):
+    """The subprocess environment, carrying which intent authorized this run.
+
+    Since Phase 4 the Controller's orchestrating commands expect to be launched
+    here rather than typed, so the intent id travels with the invocation and
+    comes back on the result. It is provenance, not a credential: it says WHICH
+    intake caused this run, and the Controller still re-derives every
+    authorization, claim and lifecycle fact from canonical sources regardless.
+    """
+    return dict(environ if environ is not None else os.environ,
+                **{INTENT_ENV: intent["intent_id"]})
+
+
 def run_controller(intent, timeout=DEFAULT_TIMEOUT_SECONDS, root=ROOT):
     """Invoke the Controller once, in its own process, and return what it said."""
     command = argv_for(intent)
     try:
         completed = subprocess.run(command, cwd=root, capture_output=True,
-                                   text=True, timeout=timeout, shell=False)
+                                   text=True, timeout=timeout, shell=False,
+                                   env=controller_environment(intent))
     except subprocess.TimeoutExpired:
         return {"transport": "timeout",
                 "detail": "controller did not return within %ss" % timeout}

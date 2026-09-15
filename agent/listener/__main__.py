@@ -8,19 +8,31 @@
     python3 -m agent.listener status                 # every intent's delivery state
 
 `submit`, `decide`, `health` and `show` speak to a RUNNING Listener over
-loopback HTTP. They are a convenience for a human at a terminal, not a second
-entry point: they build exactly the same envelope any caller would POST, and
-they have no access to Persistent State, Jira or a provider.
+loopback HTTP. Since Phase 4 this is the normal operational front door for a
+CEO or a controller conversation — but it is still only a client: it builds
+exactly the same envelope any caller would POST, and it has no access to
+Persistent State, Jira or a provider.
+
+`--wait` blocks until the intent settles, so a controller can ask a question and
+read its answer instead of busy-polling. It is the CLIENT'S patience and nothing
+more: it adds no server surface, holds no authority, and a caller that gives up
+waiting loses nothing, because the answer is durable and `show` returns it.
 """
 
 import argparse
 import json
 import sys
+import time
 import urllib.error
 import urllib.request
 import uuid
 
 from agent.listener import contract, server, store
+
+
+# Slow enough to be free when idle, fast enough that a short refusal feels
+# immediate. A settled intent is durable either way.
+POLL_SECONDS = 0.5
 
 
 def _url(port, path):
@@ -64,6 +76,9 @@ def main(argv=None):
                       help="resubmitting with the same key is harmless by design")
     send.add_argument("--actor", default="ceo")
     send.add_argument("--source", default="listener-cli")
+    send.add_argument("--wait", type=float, nargs="?", const=1800.0, default=None,
+                      metavar="SECONDS",
+                      help="block until the intent settles, then print its result")
     answer = sub.add_parser("decide", help="answer one WAITING_INPUT intent")
     answer.add_argument("responds_to", help="the waiting intent's id")
     answer.add_argument("--invocation", required=True)
@@ -73,6 +88,9 @@ def main(argv=None):
     answer.add_argument("--idempotency-key", default=None)
     answer.add_argument("--actor", default="ceo")
     answer.add_argument("--source", default="listener-cli")
+    answer.add_argument("--wait", type=float, nargs="?", const=1800.0, default=None,
+                        metavar="SECONDS",
+                        help="block until the decision settles, then print its result")
     show = sub.add_parser("show", help="one intent and its durable result")
     show.add_argument("intent_id")
     args = parser.parse_args(argv)
@@ -113,8 +131,33 @@ def main(argv=None):
                         "permission": args.permission,
                         "approval_scope": args.scope,
                         **({"allowed_operation": args.operation} if args.operation else {})}})
+    if (getattr(args, "wait", None) and status and 200 <= status < 300
+            and body.get("intent_id")):
+        status, body = _await_settlement(args.port, body["intent_id"], args.wait)
     print(json.dumps({"http_status": status, "body": body}, indent=2, sort_keys=True))
     return 0 if status and 200 <= status < 300 else 1
+
+
+def _await_settlement(port, intent_id, timeout):
+    """Poll one intent until it settles, or until the caller's patience runs out.
+
+    A timeout is not a failure of the work — the intent is durable and still
+    being dispatched. It says only that this client stopped watching, and it
+    says so in those words rather than inventing an outcome.
+    """
+    deadline = time.time() + timeout
+    while True:
+        status, body = _get(port, "/intents/%s" % intent_id)
+        if status != 200:
+            return status, body
+        if body.get("intent", {}).get("delivery_state") in store.TERMINAL:
+            return status, body
+        if time.time() >= deadline:
+            return status, {"intent_id": intent_id, "waited_seconds": timeout,
+                            "delivery_state": body.get("intent", {}).get("delivery_state"),
+                            "detail": "still in flight; this client stopped waiting. "
+                                      "The intent is durable — read it with `show`."}
+        time.sleep(POLL_SECONDS)
 
 
 if __name__ == "__main__":

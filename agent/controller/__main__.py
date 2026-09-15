@@ -1,10 +1,22 @@
-"""Command line for the temporary Phase-2 controller entry point."""
+"""Command line for the Controller.
+
+Since Phase 4 this is NOT the operational front door. `execute`, `resume` and
+`decide` orchestrate Product execution and now expect to be launched by the
+Listener, which runs them in its own process; invoked directly they refuse and
+say where the front door is. A maintenance override remains, because recovery
+and debugging genuinely need it — it just has to state its reason.
+
+Everything else here is unchanged and deliberately still direct: `integrate` is
+the recovery path, and `plan-sprint`, `plan-backlog` and `authority-manifest`
+are read-only and orchestrate nothing.
+"""
 
 import argparse
 import json
 import sys
 
 from . import ControllerInputError, decide, execute, integrate, load_brief, resume
+from .entry import ORCHESTRATING_COMMANDS, caller as classify_caller
 from .sprint_plan import plan_current_sprint
 from .backlog_plan import plan_backlog
 from agent.execution.authority import discover_execution_authority
@@ -43,7 +55,20 @@ def main(argv=None):
     sub.add_parser("plan-backlog", help="read-only plan for the canonical Jira Product backlog")
     manifest = sub.add_parser("authority-manifest", help="read-only execution authority discovery")
     manifest.add_argument("work_item_id")
+    for orchestrating in (run, again, call):
+        orchestrating.add_argument(
+            "--maintenance-reason", default=None,
+            help="bypass the Listener front door for recovery, debugging or a "
+                 "test, stating why; the reason is recorded in the result")
     args = parser.parse_args(argv)
+
+    permitted, classification, detail = classify_caller(
+        args.command, getattr(args, "maintenance_reason", None))
+    if not permitted:
+        print(json.dumps({"work_item_id": getattr(args, "work_item_id", None),
+                          "blocker": classification, "entry_path": "direct",
+                          "detail": detail}, indent=2, sort_keys=True))
+        return 2
     try:
         outcome = (integrate(args.work_item_id) if args.command == "integrate"
                    else resume(args.work_item_id) if args.command == "resume"
@@ -58,6 +83,12 @@ def main(argv=None):
                                 load_brief(args.brief_file) if args.brief_file else None))
     except ControllerInputError as exc:
         outcome = {"work_item_id": args.work_item_id, "blocker": str(exc)}
+    if args.command in ORCHESTRATING_COMMANDS:
+        # How this invocation was authorized travels with its result, so an
+        # operational run can be traced back to the intent that caused it and a
+        # bypass is visible in the record rather than only in a shell history.
+        outcome["entry_path"] = classification
+        outcome["entry_reference"] = detail
     print(json.dumps(outcome, indent=2, sort_keys=True))
     if args.command in ("plan-sprint", "plan-backlog", "authority-manifest"):
         return 0
