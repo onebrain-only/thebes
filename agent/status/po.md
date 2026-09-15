@@ -5021,3 +5021,58 @@ wtncuzcskpigqpmnxwws before recording:
   (`has_function_privilege`) catches it.
 
 No production mutation performed by po. Reported to team-lead.
+
+### KAN-184 due_date preflight — canonical capacity derivation, 2026-09-15
+
+CEO authorization: "RESUME THEBES ROUTINE PRODUCT PILOT", CEO DECISION 1 — DUE DATE GOVERNANCE,
+2026-09-15. Applied `capacity-to-date` skill directly, not from memory.
+
+Verified inputs myself before deriving, per skill rule that a sitting count from another seat
+is that seat's current position and must be re-read, not trusted from a relay:
+
+- Read `agent/state/runtime/tasks/KAN-184.json` directly: `execution_profile.work_effort` = 2,
+  `basis_ref` names pf-remainder's Preflight 2026-09-11, reason is the ownership-check design
+  question on Finding 2, not volume across findings — matches the brief. `validation_route` =
+  `peer`. `ownership` = null (unowned). `required_capability` = `backend`.
+- Scanned every `agent/state/runtime/tasks/*.json` with `required_capability` = `backend`:
+  only `KAN-191` carries an `ownership` record (`backend-3`). `KAN-130` is `required_capability`
+  backend, unowned, work_effort 2 — but its Jira status is `To Do` (Backlog column), not
+  `Ready`, so it has not been selected into the queue and does not sit ahead of KAN-184.
+  No other backend item is claimable ahead of it.
+- `agent/state/registry/topology.json`: 8 defined backend seats. 7 free (only backend-3 busy).
+  Backend authorship is per-team since Wave 6 (`backend-1..8`), not a shared single-writer
+  seat — §3 of the skill does not apply here; only the PEER gate needs a distinct free backend
+  seat, and 7 are free.
+
+DERIVABLE: YES. No shared-seat blocker, no unresolved predecessor dependency, no missing
+Work Effort.
+
+SITTINGS: 2 (recorded by pf-remainder, not re-sized by po).
+GATES: 1 (PEER — one acceptance gate on a distinct backend seat; system-derived
+`validation_route`, not chosen by po).
+WORK_WEEK_ASSUMPTION: one sitting or gate per working day, Mon–Fri, Asia/Dubai — the Phase 0
+precedent from the skill (§2, "6 sittings + 5 acceptance gates" converted 1:1 to working days).
+Today Tue 2026-09-15; working days used: Wed 09-16, Thu 09-17, Fri 09-18, Mon 09-21 (weekend
+skipped).
+
+ARITHMETIC:
+  Sitting 1 → Wed 2026-09-16
+  Sitting 2 → Thu 2026-09-17
+  PEER gate → Fri 2026-09-18   ← EARLIEST_BELIEVED = 2026-09-18
+  +1 working day rework-cycle buffer (same-shape gap as KAN-128, a 2-sitting ticket carrying
+  a 1-working-day ceiling gap for one rework cycle) → Mon 2026-09-21 ← CEILING_COMMITTED
+
+EARLIEST_BELIEVED: 2026-09-18
+CEILING_COMMITTED: 2026-09-21
+
+WRITTEN: YES. `agent/integrations/jira.py` `update_issue('KAN-184', {'duedate': '2026-09-21'})`,
+`duedate` field only — no transition, no description edit, no other issue touched, no
+Persistent State write. Re-read via `get_issue('KAN-184')` immediately after: `due_date` =
+`2026-09-21`, `status` = `Ready` (unchanged).
+
+ANY_CONCERN: The +1 working-day ceiling gap is a judgement call, not a measured figure — the
+skill states the sitting-to-calendar mapping has no derived method (its own "Open questions"
+section) and that the rework-budget gap is po's to size by analogy to precedent (KAN-128: a
+2-sitting ticket carried a 1-working-day ceiling gap). I used that analogy rather than
+inventing a wider buffer. If the PEER reviewer fails the gate, the ticket returns to `Back-end`
+for rework and this ceiling will need re-derivation at that point, not extension in place.
