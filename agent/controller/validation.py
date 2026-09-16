@@ -700,9 +700,13 @@ def run_validation(work_item_id, task, execution, realized, state_store,
     gate_fn = deterministic or deterministic_gate.run_deterministic_gate
     gate = gate_fn(work_item_id, opened, realized, execution)
     evidence["deterministic_gate"] = gate.as_payload()
+    # Only a gate that learned NOTHING refuses the act. A gate where one layer
+    # broke and another answered is DEGRADED: it proceeds, carrying real
+    # evidence and an explicit statement of what is missing, and it is never
+    # decisive — so the reviewer keeps full effort rather than reading partial
+    # coverage as whole. (2026-09-16: before this, one broken local layer
+    # refused every validation on the machine.)
     if gate.outcome == GATE_INFRA:
-        broken = [run for run in gate.runs
-                  if run.classification.value == "test_infrastructure_failure"]
         raise ValidationRefused(
             VALIDATION_INFRASTRUCTURE_FAILED,
             "the deterministic gate could not run for %s (%s); this is a test-"
@@ -710,10 +714,12 @@ def run_validation(work_item_id, task, execution, realized, state_store,
             "pending at cycle %s with its owner, no verdict was recorded, and the "
             "act is re-run once the infrastructure is repaired"
             % (work_item_id,
-               "; ".join("%s: %s" % (run.layer_id, run.reason or
-                                     (run.tail[-1] if run.tail else "exit %s" % run.exit_code))
-                         for run in broken) or "no layer executed",
+               "; ".join("%s: %s" % (lid, why) for lid, why in gate.unavailable)
+               or "no layer executed",
                resolved_route, review.get("review_cycle") or 1))
+    if gate.unavailable:
+        evidence["deterministic_gate_unavailable"] = [
+            {"layer_id": lid, "reason": why} for lid, why in gate.unavailable]
 
     # Read the issue only once a reviewer actually exists: a route that refuses
     # or waits should not spend a Jira read it will not use.

@@ -20,9 +20,10 @@ sys.path.insert(0, ROOT)
 from agent.execution.provider import TestStatus                       # noqa: E402
 from agent.qa.layers import LAYERS                                     # noqa: E402
 from agent.qa.results import (                                         # noqa: E402
-    Classification, GATE_EXTERNAL, GATE_INFRA, GATE_NOT_RUN, GATE_PASS,
-    GATE_PRODUCT, GATE_TEST, LayerRun, QADefect, TIMEOUT_EXIT, classify,
-    gate_outcome, render_for_validator, to_evidence_claims, to_test_claims,
+    Classification, GATE_DEGRADED, GATE_EXTERNAL, GATE_INFRA, GATE_NOT_RUN,
+    GATE_PASS, GATE_PRODUCT, GATE_TEST, LayerRun, QADefect, TIMEOUT_EXIT,
+    classify, gate_outcome, render_for_validator, to_evidence_claims,
+    to_test_claims,
 )
 
 UNIT = LAYERS["flutter_unit"]
@@ -85,10 +86,23 @@ class GateOutcome(unittest.TestCase):
         self.assertEqual(gate_outcome((run("flutter_unit", Classification.NOT_RUN, None),)),
                          GATE_NOT_RUN)
 
-    def test_infrastructure_outranks_everything(self):
+    def test_infrastructure_outranks_a_result_only_over_its_own_layer(self):
+        # AMENDED 2026-09-16. This asserted that any infrastructure failure
+        # anywhere returned GATE_INFRA — "infrastructure outranks everything".
+        # Real Product work showed what that costs: `flutter test` is broken on
+        # this machine, routing selects it for every Dart change, and KAN-212
+        # and KAN-208 were refused although two other layers had answered.
+        # A broken layer now condemns ITSELF, not the act. What it must never
+        # do is read as a pass: see test_degraded_gate.py for that half.
         runs = (run("flutter_analyze", Classification.PASS, 0),
                 run("flutter_unit", Classification.PRODUCT_DEFECT),
                 run("playwright_e2e", Classification.TEST_INFRASTRUCTURE_FAILURE))
+        self.assertEqual(gate_outcome(runs), GATE_DEGRADED)
+
+    def test_infrastructure_still_refuses_when_nothing_else_answered(self):
+        # The protection the case above was really written to give.
+        runs = (run("flutter_unit", Classification.TEST_INFRASTRUCTURE_FAILURE),
+                run("playwright_e2e", Classification.NOT_RUN, None))
         self.assertEqual(gate_outcome(runs), GATE_INFRA)
 
     def test_product_defect_outranks_test_defect(self):

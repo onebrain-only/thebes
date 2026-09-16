@@ -234,23 +234,68 @@ def to_evidence_claims(runs):
 GATE_PASS, GATE_PRODUCT, GATE_TEST, GATE_INFRA, GATE_EXTERNAL, GATE_NOT_RUN = (
     "pass", "product-defect", "test-defect", "infrastructure-failure",
     "external-failure", "not-run")
+# Some layer could not run, and some other layer did produce a result. Evidence
+# exists but its coverage is INCOMPLETE, and the reviewer is told exactly which
+# layer is missing. (2026-09-16 — see gate_outcome.)
+GATE_DEGRADED = "degraded"
+
+# Classifications that answer something about the Product.
+_VERDICT_BEARING = (Classification.PASS, Classification.PRODUCT_DEFECT,
+                    Classification.TEST_DEFECT)
 
 
 def gate_outcome(runs):
-    """One word for the whole gate. Infrastructure outranks everything: a run that
-    could not execute says nothing about the Product either way."""
+    """One word for the whole gate.
+
+    INFRASTRUCTURE STILL OUTRANKS A RESULT, BUT ONLY OVER ITS OWN LAYER.
+    Until 2026-09-16 a single layer that could not run condemned the entire act:
+    one `TEST_INFRASTRUCTURE_FAILURE` anywhere returned `GATE_INFRA`, the
+    validation route refused, and nothing could be validated at all. Found by
+    real Product work — `flutter test` is broken on this machine by a
+    native-asset link fault, routing selects it for every Dart change, and
+    KAN-212 and KAN-208 were both refused although `flutter analyze` and the web
+    E2E layer were perfectly capable of answering.
+
+    So the question became: did we learn ANYTHING?
+
+      no layer ran at all            -> GATE_NOT_RUN
+      every layer that ran was broken -> GATE_INFRA. Nothing was learned; the act
+                                         refuses and spends no review cycle.
+      some broken, some answered      -> GATE_DEGRADED. Real evidence exists and
+                                         is reported WITH the hole in it named.
+      nothing broken                  -> the strongest result stands, as before.
+
+    DEGRADED IS NOT A PASS AND MUST NEVER READ AS ONE. It is never `decisive`,
+    so the reviewer keeps full effort, and `render_for_validator` states which
+    layer could not run and what coverage went missing with it. A layer silently
+    skipped would be the worst outcome available here — worse than refusing —
+    because the reviewer would weigh partial evidence as whole.
+    """
     kinds = {run.classification for run in runs}
     if not runs or kinds <= {Classification.NOT_RUN}:
         return GATE_NOT_RUN
-    if Classification.TEST_INFRASTRUCTURE_FAILURE in kinds:
-        return GATE_INFRA
-    if Classification.EXTERNAL_QA_FAILURE in kinds:
-        return GATE_EXTERNAL
+    broken = kinds & {Classification.TEST_INFRASTRUCTURE_FAILURE,
+                      Classification.EXTERNAL_QA_FAILURE}
+    answered = kinds & set(_VERDICT_BEARING)
+    if broken and not answered:
+        return (GATE_INFRA if Classification.TEST_INFRASTRUCTURE_FAILURE in broken
+                else GATE_EXTERNAL)
+    if broken:
+        return GATE_DEGRADED
     if Classification.PRODUCT_DEFECT in kinds:
         return GATE_PRODUCT
     if Classification.TEST_DEFECT in kinds:
         return GATE_TEST
     return GATE_PASS
+
+
+def unavailable_layers(runs):
+    """The layers that could not run, with the reason. Never silently dropped."""
+    return tuple((run.layer_id,
+                  run.reason or (run.tail[-1] if run.tail else "exit %s" % run.exit_code))
+                 for run in runs
+                 if run.classification in (Classification.TEST_INFRASTRUCTURE_FAILURE,
+                                           Classification.EXTERNAL_QA_FAILURE))
 
 
 def render_for_validator(runs, decision=None):
@@ -265,6 +310,17 @@ def render_for_validator(runs, decision=None):
     if not runs:
         lines.append("- no deterministic layer applied to this change")
         return "\n".join(lines)
+    # State the hole FIRST and in the reviewer's own terms. Partial evidence
+    # read as complete is the failure this paragraph exists to prevent.
+    missing = unavailable_layers(runs)
+    if missing and gate_outcome(runs) == GATE_DEGRADED:
+        lines.append("INCOMPLETE COVERAGE — %d of %d selected layer(s) could not run: %s"
+                     % (len(missing), len(runs),
+                        "; ".join("%s (%s)" % (lid, why[:90]) for lid, why in missing)))
+        lines.append("The results below are real but do NOT cover what those layers "
+                     "test. Weigh them accordingly; a pass here is narrower than a "
+                     "full pass, and this is a test-infrastructure fault, not a "
+                     "Product one.")
     for run in runs:
         lines.append("- %s -> %s (exit %s, %.1fs)%s" % (
             run.layer_id, run.classification.value, run.exit_code,

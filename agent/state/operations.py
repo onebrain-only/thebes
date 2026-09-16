@@ -29,8 +29,29 @@ def initial_phase(intent):
     raise ValueError("unknown task intent %r" % intent)
 
 
+DEFAULT_FLUTTER_WEB_LAUNCH = "flutter run -d chrome"
+
+
 def derive_primary_target(reported_environment):
-    """Derive where diagnosis starts; tools are separate from environments."""
+    """Derive where diagnosis starts; tools are separate from environments.
+
+    A DECLARED LAUNCH COMMAND OUTRANKS THE DERIVED DEFAULT (2026-09-16).
+    `launch_command` was derived from runtime+platform alone and could not be
+    stated, so `flutter_web` + `chrome` always produced
+    `flutter run -d chrome`. That default was right when a manual launch was
+    the only way to start the app. It is now wrong often enough to cost real
+    work: KAN-207's `environment_ref` had been rewritten to name the
+    deterministic web layer, the derived `launch_command` still said
+    `flutter run -d chrome`, the executor followed the command, asked for a
+    tool to watch the startup, and stalled 30 minutes at a permission boundary
+    that nothing needed to cross.
+
+    Derivation exists so nobody INVENTS a launch. It does not exist to override
+    a caller who knows which command actually starts this target — so a stated
+    command is kept and the derived one fills the silence. `po` may state it
+    from a fact (a runner that exists in the Product repository); it still may
+    not invent one, and validate.py's reference bounds apply to it as before.
+    """
     env = dict(reported_environment or {})
     locality = env.get("locality", "unknown")
     runtime = env.get("runtime")
@@ -41,9 +62,13 @@ def derive_primary_target(reported_environment):
         target = {"locality": "local", "runtime": runtime, "platform": platform,
                   "environment_ref": env.get("environment_ref"),
                   "browser_automation": False, "source": "reported_environment"}
-        if runtime == "flutter_web" and platform == "chrome":
+        declared = env.get("launch_command")
+        if declared:
+            target.update({"launch_method": env.get("launch_method") or "terminal",
+                           "launch_command": declared})
+        elif runtime == "flutter_web" and platform == "chrome":
             target.update({"launch_method": "terminal",
-                           "launch_command": "flutter run -d chrome"})
+                           "launch_command": DEFAULT_FLUTTER_WEB_LAUNCH})
         return target
     if locality == "deployed":
         return {"locality": "deployed", "runtime": runtime, "platform": platform,

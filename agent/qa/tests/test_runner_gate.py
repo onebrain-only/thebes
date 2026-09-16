@@ -130,17 +130,30 @@ class Execution(RunnerTestCase):
         self.assertIs(r.classification, Classification.TEST_INFRASTRUCTURE_FAILURE)
         self.assertIn("TIMEOUT", "\n".join(r.tail))
 
-    def test_runner_stops_at_first_infrastructure_failure(self):
+    def test_runner_continues_past_an_infrastructure_failure(self):
+        # AMENDED 2026-09-16. This asserted the runner STOPPED at the first
+        # infrastructure failure, on the reasoning that later layers could add
+        # nothing a broken toolchain had not already said. That assumed the
+        # failure was toolchain-WIDE. `flutter test` alone is broken on this
+        # machine, and stopping meant KAN-212 and KAN-208 never reached
+        # `flutter analyze` — the one gate that sees the barrel export lines
+        # they change. The runner now runs every selected layer; `gate_outcome`
+        # reports the hole instead of the runner hiding it.
         markers(self.ws, "pubspec.yaml", "playwright.config.ts")
         decision = RoutingDecision(
             (LayerSelection("flutter_analyze", "t"), LayerSelection("flutter_unit", "t"),
              LayerSelection("playwright_e2e", "t")), (), ("dart",), "test")
         run = fake_run_factory({"flutter": (69, "You have not agreed to the Xcode license"),
-                                "npm": (0, "ok")})
+                                "npm": (0, "Running 3 tests\n3 passed")})
         runs = run_layers(decision, self.ws, self.art, run=run,
                           which=lambda t: "/bin/x", environ={})
-        self.assertEqual([r.layer_id for r in runs], ["flutter_analyze"])
-        self.assertEqual(len(run.calls), 1)
+        self.assertEqual([r.layer_id for r in runs],
+                         ["flutter_analyze", "flutter_unit", "playwright_e2e"])
+        self.assertEqual(len(run.calls), 3)
+        # The broken layer is still classified honestly, not swallowed.
+        self.assertIs(runs[0].classification,
+                      Classification.TEST_INFRASTRUCTURE_FAILURE)
+        self.assertIs(runs[2].classification, Classification.PASS)
 
     def test_never_raises_on_os_error(self):
         markers(self.ws, "pubspec.yaml")

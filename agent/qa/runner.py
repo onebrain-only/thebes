@@ -97,13 +97,20 @@ def run_layer(layer_id, workspace_path, artifact_root=None, run=subprocess.run,
 
 
 def run_layers(decision, workspace_path, artifact_root=None, **kw):
-    """Run every selected layer in decision order (cheapest first). Stop at the
-    first infrastructure failure: later layers cannot say anything the broken
-    toolchain has not already said, and each one costs minutes."""
-    runs = []
-    for selection in decision.selected:
-        run_ = run_layer(selection.layer_id, workspace_path, artifact_root, **kw)
-        runs.append(run_)
-        if run_.classification is Classification.TEST_INFRASTRUCTURE_FAILURE:
-            break
-    return tuple(runs)
+    """Run every selected layer in decision order, cheapest first.
+
+    IT DOES NOT STOP AT THE FIRST INFRASTRUCTURE FAILURE. It did until
+    2026-09-16, on the reasoning that "later layers cannot say anything the
+    broken toolchain has not already said." That reasoning assumed a failure is
+    toolchain-WIDE. A single broken layer is the commoner case and the
+    assumption cost real work: `flutter test` is broken on this machine by a
+    native-asset link fault, so KAN-212 and KAN-208 were refused without ever
+    running `flutter analyze` — the one gate that actually sees the barrel
+    export lines those tickets change.
+
+    The cost of being wrong in the other direction is bounded by each layer's
+    own timeout, and `gate_outcome` reports the hole rather than papering over
+    it. Paying minutes to learn something beats saving them to learn nothing.
+    """
+    return tuple(run_layer(selection.layer_id, workspace_path, artifact_root, **kw)
+                 for selection in decision.selected)
