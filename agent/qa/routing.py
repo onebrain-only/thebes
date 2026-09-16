@@ -88,7 +88,7 @@ _TEST_OWNERS = (
 
 def _normalise(path):
     p = str(path).strip().lstrip("./")
-    for marker in ("dabbler-code/", "webapp/"):
+    for marker in ("dabbler-code/", "dabbler-design-system/", "webapp/"):
         i = p.find(marker)
         if i != -1:
             p = p[i + len(marker):]
