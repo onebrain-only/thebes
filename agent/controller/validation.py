@@ -843,7 +843,13 @@ def _terminal_validation_receipt(work_item_id, review_ref, state_store):
         if record.get("review_context_ref") != review_ref:
             continue
         payload = record.get("normalized_result") or {}
-        if payload.get("status") == ExecutionStatus.NEEDS_INPUT.value:
+        # Only a COMPLETED validation act can carry a verdict. A needs_input
+        # result is handled by the prepared-continuation precondition, and a
+        # provider failure (api_error, timeout, execution_failed) is not a
+        # settled review: re-dispatching it is exactly the right thing to do.
+        # (2026-09-21: KAN-290's review was refused as "settled" by its own
+        # 429-failed receipt until this line existed.)
+        if payload.get("status") != ExecutionStatus.COMPLETED.value:
             continue
         matches.append(record)
     if not matches:
