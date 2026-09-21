@@ -41,6 +41,10 @@ def _environment():
         return dict(os.environ)
 
 
+# Workspaces whose packages this process already tried to resolve (T-093 B2).
+_PUB_RESOLVED = set()
+
+
 def _artifact_path(root, layer_id, started):
     os.makedirs(root, exist_ok=True)
     stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(started))
@@ -71,6 +75,26 @@ def run_layer(layer_id, workspace_path, artifact_root=None, run=subprocess.run,
     env = dict(environ if environ is not None else _environment())
     env.setdefault("CI", "1")           # deterministic: no watch mode, no prompts
     exit_code, output = None, ""
+    # T-093(B2): a fresh worktree has a pubspec.yaml and no resolved packages.
+    # `flutter analyze --no-pub` then reports thousands of uri_does_not_exist
+    # "issues" that are not Product findings. Resolve packages ONCE, only when
+    # the marker is absent, and record it in the artifact ahead of the layer.
+    resolved_note = ""
+    if layer.tool == "flutter" and os.path.exists(os.path.join(workspace_path, "pubspec.yaml")) \
+            and not os.path.exists(os.path.join(workspace_path, ".dart_tool",
+                                                "package_config.json")) \
+            and workspace_path not in _PUB_RESOLVED:
+        _PUB_RESOLVED.add(workspace_path)      # once per workspace per process
+        try:
+            pub = run(["flutter", "pub", "get"], cwd=workspace_path, env=env,
+                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                      timeout=layer.timeout_seconds, check=False)
+            pub_out = (pub.stdout or b"").decode("utf-8", "replace") \
+                if isinstance(pub.stdout, bytes) else (pub.stdout or "")
+            resolved_note = ("$ flutter pub get  (package_config.json absent)\n%s\nexit=%s\n\n"
+                             % (pub_out.rstrip(), pub.returncode))
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            resolved_note = "$ flutter pub get  (package_config.json absent)\n!!! %s\n\n" % exc
     try:
         completed = run(list(layer.argv), cwd=workspace_path, env=env,
                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -88,6 +112,7 @@ def run_layer(layer_id, workspace_path, artifact_root=None, run=subprocess.run,
         output = "OSError: %s" % exc
     duration = clock() - started
     with open(artifact, "w", encoding="utf-8") as handle:
+        handle.write(resolved_note)
         handle.write("$ %s\n(cwd %s)\n\n" % (command, workspace_path))
         handle.write(output)
         handle.write("\n\nexit=%s duration=%.1fs\n" % (exit_code, duration))

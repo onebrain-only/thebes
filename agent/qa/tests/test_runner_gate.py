@@ -97,6 +97,40 @@ class ExternalAndMissing(RunnerTestCase):
 
 
 class Execution(RunnerTestCase):
+    def test_packages_are_resolved_once_when_the_marker_is_absent(self):
+        # T-093(B2): a fresh worktree has pubspec.yaml but no
+        # .dart_tool/package_config.json; `flutter analyze --no-pub` would then
+        # report every package: import as uri_does_not_exist.
+        markers(self.ws, "pubspec.yaml")
+        run = fake_run_factory({"flutter": (0, "No issues found!")})
+        r = run_layer("flutter_analyze", self.ws, self.art, run=run,
+                      which=lambda t: "/bin/x", environ={})
+        self.assertEqual(run.calls[0][0][:3], ("flutter", "pub", "get"))
+        self.assertEqual(run.calls[1][0][:2], ("flutter", "analyze"))
+        with open(r.artifact_ref) as handle:
+            self.assertIn("flutter pub get", handle.read())
+        # Same workspace again in this process: no second resolution.
+        run2 = fake_run_factory({"flutter": (0, "All tests passed!")})
+        run_layer("flutter_unit", self.ws, self.art, run=run2,
+                  which=lambda t: "/bin/x", environ={})
+        self.assertEqual([c[0][:2] for c in run2.calls], [("flutter", "test")])
+
+    def test_packages_are_not_resolved_when_the_marker_exists(self):
+        markers(self.ws, "pubspec.yaml", ".dart_tool/package_config.json")
+        run = fake_run_factory({"flutter": (0, "No issues found!")})
+        run_layer("flutter_analyze", self.ws, self.art, run=run,
+                  which=lambda t: "/bin/x", environ={})
+        self.assertEqual([c[0][:2] for c in run.calls], [("flutter", "analyze")])
+
+    def test_unresolved_package_imports_classify_as_infrastructure(self):
+        markers(self.ws, "pubspec.yaml", ".dart_tool/package_config.json")
+        noise = "\n".join("error • Target of URI doesn't exist: 'package:flutter/x.dart' "
+                          "• lib/a.dart:1:8 • uri_does_not_exist" for _ in range(5))
+        run = fake_run_factory({"flutter": (1, noise + "\n23739 issues found.")})
+        r = run_layer("flutter_analyze", self.ws, self.art, run=run,
+                      which=lambda t: "/bin/x", environ={})
+        self.assertIs(r.classification, Classification.TEST_INFRASTRUCTURE_FAILURE)
+
     def test_pass_writes_artifact_and_bounded_tail(self):
         markers(self.ws, "pubspec.yaml")
         long = "\n".join("line %d" % i for i in range(300)) + "\nAll tests passed!"
@@ -149,7 +183,12 @@ class Execution(RunnerTestCase):
                           which=lambda t: "/bin/x", environ={})
         self.assertEqual([r.layer_id for r in runs],
                          ["flutter_analyze", "flutter_unit", "playwright_e2e"])
-        self.assertEqual(len(run.calls), 3)
+        # Three layers, plus exactly ONE package resolution for the fresh
+        # workspace (T-093 B2) ahead of the first Flutter layer.
+        layer_calls = [c for c in run.calls if c[0][:3] != ("flutter", "pub", "get")]
+        pub_calls = [c for c in run.calls if c[0][:3] == ("flutter", "pub", "get")]
+        self.assertEqual(len(layer_calls), 3)
+        self.assertEqual(len(pub_calls), 1)
         # The broken layer is still classified honestly, not swallowed.
         self.assertIs(runs[0].classification,
                       Classification.TEST_INFRASTRUCTURE_FAILURE)

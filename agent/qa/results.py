@@ -67,6 +67,10 @@ INFRASTRUCTURE_SIGNATURES = (
     "Timed out waiting",
     "Error: Timed out",
     "Could not find a file named \"pubspec.yaml\"",
+    # Unresolved packages in a fresh worktree (T-093 B2): every import of
+    # package:flutter/... fails to resolve, which is the environment, not the
+    # Product. The runner resolves packages first; this names the residue.
+    "uri_does_not_exist",
     "Error: missing required env var",
     "ECONNREFUSED",
     "getaddrinfo ENOTFOUND",

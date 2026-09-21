@@ -167,6 +167,30 @@ class ProductAuthorization:
                 "authorization_remaining": self.state_store.authorization_remaining(grant)}
 
 
+def _self_fail_reentry_seat(task, live_status_id):
+    """The seat a SELF-review FAIL handed the work back to, or None. (T-093 A)
+
+    True only when every fact agrees: review_context is `self` with result
+    `fail`; ownership names exactly the review owner; the store's lifecycle is
+    `development`; and the LIVE Jira status is the capability's own execution
+    status (a board lookup, never a hard-coded id). A PEER route, a pending or
+    passed review, a different owner, or any other status is not a re-entry.
+    """
+    from agent.state import board
+    review = task.get("review_context") or {}
+    owner = (task.get("ownership") or {}).get("seat_id")
+    if not owner or review.get("review_type") != "self" \
+            or review.get("review_result") != "fail" \
+            or review.get("review_owner") != owner:
+        return None
+    if (task.get("lifecycle") or {}).get("canonical") != "development":
+        return None
+    capability = (task.get("execution_profile") or {}).get("required_capability")
+    if str(live_status_id) != str(board.execution_status_for(capability)):
+        return None
+    return owner
+
+
 def canonical_admissibility(state_store=store, jira_client=jira):
     """Prove admissibility with the canonical predicates and nothing else."""
     def prove(work_item_id):
@@ -181,6 +205,17 @@ def canonical_admissibility(state_store=store, jira_client=jira):
         facts = {"status_id": issue["status_id"],
                  "has_due_date": bool(issue.get("due_date")),
                  "has_acceptance_criteria": bool(issue.get("description"))}
+        # T-093(A): a SELF-review FAIL re-entry is a CONTINUATION, not a claim.
+        # store.self_fail_reentry re-established the exact same seat's ownership
+        # and Jira returned to the capability's execution status; the claim
+        # gate would answer not-ready + already-owned by construction and the
+        # continuation branch would never be reached. For that one shape, and
+        # only for the seat the review names, the continuation gate is the
+        # proof. Everything else still proves through the claim gate.
+        reentry_seat = _self_fail_reentry_seat(task, issue["status_id"])
+        if reentry_seat:
+            return list(queue.execution_reasons(
+                task, reentry_seat, interventions=state_store.active_interventions()))
         return list(queue.unclaimable_reasons(
             task, all_tasks=state_store.read_all("task"),
             edges=[e for e in state_store.read_all("dependency") if not e.get("retired_at")],
