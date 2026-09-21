@@ -13,6 +13,7 @@
     "backend-7": {"role": "backend"},
     "backend-8": {"role": "backend"},
     "content-manager": {"role": "content"},
+    "content-2": {"role": "content"},
     "cpo": {"role": "cpo"},
     "cto": {"role": "cto"},
     "cxo": {"role": "cxo"},
