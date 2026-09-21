@@ -202,6 +202,7 @@ A transition made by the wrong seat is a process failure, not a shortcut.
 | back to its **same** execution status (review FAIL) | **the review owner** |
 | **back to `Ready` from an execution status, when the item has NO owner and the work is INCOMPLETE** | **`po`** — execution recovery, added 2026-09-09. See below |
 | **forward to the derived review status from an execution status, when the item has NO owner and the work is COMPLETE** | **`po`** — completed-execution reconciliation, added 2026-09-09. See below |
+| **back to `Ready` from `Peer-review`, when the PEER review recorded FAIL and the item has NO owner and NO evidenced executor** | **`po`** — failed-review recovery, `store.recover_failed_review_to_ready`, added 2026-09-21 (`T-092`). The PEER-fail transfer cannot apply where there is nobody to transfer from; the reviewer's findings become the rework brief, the failed context is closed under `execution_recovery.closed_review`, the route returns to the policy floor, and the item is won by an ordinary claim |
 | `Done` | **the review owner** — SELF: the worker · PEER: the reviewer · QA: `qa` |
 
 **EXECUTION RECOVERY — the orphaned-execution row above.** An executable item can end up

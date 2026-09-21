@@ -930,6 +930,134 @@ def recover_execution_to_ready(work_item_id, expected_revision, recovery_ref, ac
         return merged
 
 
+def recover_failed_review_to_ready(work_item_id, expected_revision, recovery_ref, actor,
+                                   jira_status_id):
+    """Return a PEER-FAILED item that has NO evidenced executor to Ready. CAS'd. (T-092)
+
+    THE STATE THIS RECOVERS
+      A PEER review recorded `fail` on an item whose `executor_evidence` is empty —
+      work that reached the branch outside the wake seam and was routed UP to PEER
+      under T-090. The canonical PEER-fail transfer cannot apply: it hands
+      execution to the reviewer and records `previous_owner` from the one
+      evidenced executor, and here there is none; writing a transfer anyway would
+      fabricate executor evidence for work nobody did (T-089(f), T-090(b)).
+      `recover_execution_to_ready` refuses a review status and a review context by
+      design, `open_review_context` never reopens a failed PEER context, and the
+      validator refuses a context in Ready — so nothing could move the item.
+
+    WHAT IT WRITES, ATOMICALLY
+      * `review_context` -> null. The failed verdict is preserved verbatim under
+        `execution_recovery.closed_review`, so the record still says the review
+        happened and what it found; it is brief input for the remediation, never
+        a verdict on the next cycle, which starts fresh at cycle 1.
+      * `execution_recovery` — the same field `recover_execution_to_ready` writes,
+        with `from_status` the review status it left (10045).
+      * `lifecycle` observed at the Ready status the caller read back from Jira
+        (po transitions Jira FIRST; this records that fact, it does not cause it).
+      * `validation_route` recomputed to the POLICY FLOOR from the item's own
+        characteristics. The stored PEER was T-090(d)'s evidence-absence raise,
+        not a characteristic; left in place it would make the next review
+        unopenable (route_for derives from characteristics, open_review_context
+        reads the stored route). A floor is not a downgrade.
+
+    Refuses, with a structured reason, everything that is NOT exactly this state.
+    It creates no ownership: the item goes back to the QUEUE and is won by an
+    ordinary claim.
+    """
+    import board, policy                                # noqa: E402
+    if expected_revision is None:
+        raise StateError("expected_revision is required; there is no force update")
+    if not recovery_ref:
+        raise StateError("recovery_ref is required — recovery is a lifecycle act and "
+                         "every lifecycle act names its reason")
+    if actor not in RECOVERY_AUTHORITIES:
+        raise StateError("unauthorised-recovery-actor: %r may not recover review "
+                         "state; this is a Product lifecycle act (%s)"
+                         % (actor, "/".join(RECOVERY_AUTHORITIES)))
+    sid_to = str(jira_status_id)
+    if board.canonical_for(sid_to) != "ready":
+        raise StateError("jira-not-ready: %s read back from Jira is %s (%s), not the "
+                         "Ready status; po transitions Jira first and passes the "
+                         "status it read back" % (work_item_id, sid_to,
+                                                   board.name_for(sid_to) or "unknown"))
+    with record_lock("task", work_item_id):
+        cur = read("task", work_item_id)
+        if cur is None:
+            raise StateError("task %s does not exist" % work_item_id)
+        if cur["revision"] != expected_revision:
+            raise StateError("stale write refused: task %s is at revision %d, caller "
+                             "expected %d" % (work_item_id, cur["revision"],
+                                              expected_revision))
+        if cur.get("record_type") != "executable":
+            raise StateError("container records hold no review state to recover")
+        lc = cur.get("lifecycle") or {}
+        sid_from = str(lc.get("jira_status_id") or "")
+        if lc.get("canonical") != "review":
+            raise StateError("not-in-review: %s is %r at status %s; this recovery "
+                             "applies only to an item in a review status"
+                             % (work_item_id, lc.get("canonical"), sid_from or "none"))
+        rc = cur.get("review_context")
+        if not isinstance(rc, dict):
+            raise StateError("no-review-context: %s carries no review context; "
+                             "there is no failed review to close" % work_item_id)
+        if rc.get("review_type") != "peer":
+            raise StateError("not-a-peer-review: %s's review is %r; SELF and QA fails "
+                             "have their own canonical handlers"
+                             % (work_item_id, rc.get("review_type")))
+        if rc.get("review_result") != "fail":
+            raise StateError("review-not-failed: %s's PEER review is %r; only a "
+                             "recorded FAIL is recovered" % (work_item_id,
+                                                             rc.get("review_result")))
+        if cur.get("ownership") is not None:
+            raise StateError("already-owned: %s is owned by %s — recovery never takes "
+                             "work from a current owner"
+                             % (work_item_id, (cur["ownership"] or {}).get("seat_id")))
+        if evidenced_executors(cur):
+            raise StateError("executor-evidenced: %s has evidenced executor(s) %s; the "
+                             "PEER-fail TRANSFER is the path when evidence exists"
+                             % (work_item_id, ", ".join(evidenced_executors(cur))))
+        if cur.get("completion_reconciliation") is not None:
+            raise StateError("already-reconciled-complete: %s is recorded as factually "
+                             "complete; it is never sent backward to Ready" % work_item_id)
+        for iv in active_interventions():
+            if iv.get("kind") == "stop" and iv.get("target") == work_item_id:
+                raise StateError("task-stopped: a STOP is active on %s; recovery waits "
+                                 "until it is cleared" % work_item_id)
+
+        prof = dict(cur.get("execution_profile") or {})
+        floor = policy.validation_route(prof.get("characteristics") or {})
+        prov = dict(prof.get("provenance") or {})
+        if prof.get("validation_route") != floor:
+            prof["validation_route"] = floor
+            prov["validation_route"] = {"by": "system-policy", "at": now(),
+                                        "basis_ref": "T-092 recovery: route "
+                                                     "recomputed to the policy floor "
+                                                     "after a PEER FAIL with no "
+                                                     "evidenced executor"}
+            prof["provenance"] = prov
+
+        merged = dict(cur)
+        merged["execution_profile"] = prof
+        merged["review_context"] = None
+        merged["execution_recovery"] = {"by": actor, "at": now(),
+                                        "recovery_ref": recovery_ref,
+                                        "from_status": sid_from,
+                                        "closed_review": dict(rc)}
+        merged["lifecycle"] = {
+            "canonical": board.canonical_for(sid_to),
+            "jira_column": board.column_for(sid_to),
+            "jira_status_id": sid_to,
+            "jira_status_name": board.name_for(sid_to),
+            "observed_at": now(),
+            "source": "jira",
+        }
+        merged["revision"] = cur["revision"] + 1
+        merged["updated_at"] = now()
+        _validate_one("task", merged)
+        _atomic_write(path_for("task", work_item_id), merged)
+        return merged
+
+
 def reconcile_completed_execution(work_item_id, expected_revision, actor,
                                   completion_ref):
     """Move ALREADY-COMPLETE orphaned execution FORWARD to its derived review. CAS'd.

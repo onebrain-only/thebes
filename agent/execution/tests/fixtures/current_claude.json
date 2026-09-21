@@ -1,5 +1,5 @@
 {
-  "seat_count": 26,
+  "seat_count": 27,
   "seats": {
     "analyst": {"role": "analyst", "model": "opus", "effort": "medium"},
     "backend-1": {"role": "backend", "model": "opus", "effort": "low"},
@@ -11,6 +11,7 @@
     "backend-7": {"role": "backend", "model": "opus", "effort": "low"},
     "backend-8": {"role": "backend", "model": "opus", "effort": "low"},
     "content-manager": {"role": "content", "model": "sonnet", "effort": "low"},
+    "content-2": {"role": "content", "model": "sonnet", "effort": "low"},
     "cpo": {"role": "cpo", "model": "opus", "effort": "low"},
     "cto": {"role": "cto", "model": "opus", "effort": "low"},
     "cxo": {"role": "cxo", "model": "opus", "effort": "low"},
