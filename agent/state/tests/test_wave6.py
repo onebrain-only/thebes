@@ -368,8 +368,8 @@ ok("Team Lead STATUS history PRESERVED (5 files)",
 ok("ux-engineer-1 binding exists", "ux-engineer-1" in binds)
 ok("ux-engineer-1 generated agent exists", "ux-engineer-1" in agents)
 ok("bindings and generated agents are 1:1", binds == agents)
-ok("Claude provider retains 26 bindings", len(binds) == 26)
-ok("roster is 26 generated agents", len(agents) == 26)
+ok("Claude provider retains 27 bindings", len(binds) == 27)
+ok("roster is 27 generated agents", len(agents) == 27)
 ok("agent/seats/ is gone", not os.path.isdir(os.path.join(ROOT, "agent", "seats")))
 ok("no binding declares seat_context",
    not any("seat_context" in open(os.path.join(B, f), encoding="utf-8").read()

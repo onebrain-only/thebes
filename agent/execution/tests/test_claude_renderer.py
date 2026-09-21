@@ -48,12 +48,12 @@ class ClaudeRendererTests(unittest.TestCase):
     def errors(self):
         return renderer.validation_errors(self.registry, self.bindings, self.roles)
 
-    def test_all_26_checked_in_agents_are_byte_for_byte_goldens(self):
+    def test_all_27_checked_in_agents_are_byte_for_byte_goldens(self):
         expected = renderer.expected_outputs()
         agent_dir = os.path.join(ROOT, ".claude", "agents")
         actual_names = sorted(f[:-3] for f in os.listdir(agent_dir)
                               if f.endswith(".md"))
-        self.assertEqual(26, len(expected))
+        self.assertEqual(27, len(expected))
         self.assertEqual(sorted(expected), actual_names)
         for seat, content in expected.items():
             with open(os.path.join(agent_dir, seat + ".md"), "rb") as fh:

@@ -245,8 +245,8 @@ class CurrentClaudeCharacterizationTests(unittest.TestCase):
         self.assertEqual(self.fixture["seat_count"], len(actual))
         self.assertEqual(self.fixture["seats"], actual)
         self.assertEqual(20, sum(v["model"] == "opus" for v in actual.values()))
-        self.assertEqual(6, sum(v["model"] == "sonnet" for v in actual.values()))
-        self.assertEqual(21, sum(v["effort"] == "low" for v in actual.values()))
+        self.assertEqual(7, sum(v["model"] == "sonnet" for v in actual.values()))
+        self.assertEqual(22, sum(v["effort"] == "low" for v in actual.values()))
         self.assertEqual(5, sum(v["effort"] == "medium" for v in actual.values()))
 
     def test_prompt_contract_remains_in_current_source(self):
