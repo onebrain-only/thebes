@@ -71,6 +71,9 @@ VALIDATION_CONTEXT_REFUSED = "validation-context-refused"
 VALIDATION_DISPATCH_FAILED = "validation-dispatch-failed"
 VALIDATION_RESULT_MALFORMED = "validation-result-malformed"
 VALIDATION_ALREADY_SETTLED = "validation-already-settled"
+# A validator on this very cycle stopped at a native permission boundary and a
+# continuation is prepared; the answer is a DECISION_RESPONSE, not a new wake.
+VALIDATION_CONTINUATION_PENDING = "validation-continuation-pending"
 # The deterministic gate could not RUN — toolchain, device, missing tool,
 # timeout. Not a Product failure, not a verdict, no review cycle spent: the
 # context stays pending with its owner and the act is re-run once the
@@ -231,11 +234,25 @@ def validation_objective(work_item_id, task, issue, execution, receipt_ref,
         lines += ["", "## Acceptance criteria and requirement",
                   description[:2000].rstrip()]
     lines += ["", "## What the executor reported"]
-    summary = getattr(execution, "summary", None) or "no executor summary recorded"
-    lines.append(summary[:1500].rstrip())
+    if execution is None:
+        # An already-open review (T-091): the work reached the branch outside
+        # the wake seam, so there is no execution receipt to summarise. Say so;
+        # a synthesised report would be the fabricated evidence T-090 refuses.
+        lines.append("No execution receipt exists for this work: it reached the "
+                     "integration branch outside the Thebes wake seam, so there is "
+                     "no executor summary, no changed-file claim and no test claim "
+                     "to interpret. Judge the work itself, in the tree you are "
+                     "given, against the acceptance criteria above.")
+    else:
+        summary = getattr(execution, "summary", None) or "no executor summary recorded"
+        lines.append(summary[:1500].rstrip())
     changed = [item.path for item in getattr(execution, "changed_files", ()) or ()]
     lines += ["", "## Changed surfaces", *(["- %s" % path for path in changed]
                                            or ["- none reported"])]
+    declared = task.get("surfaces")
+    lines += ["", "## Declared surfaces (assessed before execution)",
+              *(["- %s" % path for path in declared] if declared
+                else ["- none declared" if declared == [] else "- not assessed"])]
     tests = getattr(execution, "tests", ()) or ()
     lines += ["", "## Test evidence the executor returned"]
     lines += (["- %s -> %s" % (item.command, item.status.value) for item in tests]
@@ -728,7 +745,7 @@ def run_validation(work_item_id, task, execution, realized, state_store,
 
 def run_open_review(work_item_id, task, realized, state_store, jira_client, providers,
                     issue=None, seats_by_capability=None, provider_override=None,
-                    deterministic=None):
+                    deterministic=None, receipt_ref=None):
     """Dispatch a review context that is ALREADY open and owned. (T-091)
 
     The complement of `run_validation` for work whose execution Thebes did not
@@ -772,16 +789,26 @@ def run_open_review(work_item_id, task, realized, state_store, jira_client, prov
             % (work_item_id, resolved_route))
     review_ref = "review:%s:%s:%s" % (work_item_id, resolved_route,
                                       review.get("review_cycle") or 1)
-    # The verdict cites the review context itself: there is no execution receipt
-    # for work Thebes did not wake, and inventing one would be a second kind of
-    # fabricated evidence.
-    release_ref = "open review context %s (executor evidence: %s)" % (
-        review_ref, ", ".join(sorted({e.get("seat_id") for e in
-                                      (task.get("executor_evidence") or [])
-                                      if e.get("seat_id")})) or "none recorded")
+    # The verdict cites the review context and the tree the reviewer read
+    # (`integration:<branch>@<revision>`, supplied by the caller): there is no
+    # execution receipt for work Thebes did not wake, and inventing one would
+    # be a second kind of fabricated evidence.
+    release_ref = "open review context %s; tree %s; executor evidence: %s" % (
+        review_ref, receipt_ref or "not stated",
+        ", ".join(sorted({e.get("seat_id") for e in
+                          (task.get("executor_evidence") or [])
+                          if e.get("seat_id")})) or "none recorded")
     evidence = {"validation_route": resolved_route, "reviewer": reviewer,
                 "review_cycle": review.get("review_cycle") or 1,
                 "review_context_ref": review_ref}
+    # Idempotency: a validation act on this exact cycle that already returned a
+    # terminal result is settled from its receipt, never re-woken. A second
+    # VALIDATE after a crash between receipt and verdict costs no invocation.
+    recorded = _terminal_validation_receipt(work_item_id, review_ref, state_store)
+    if recorded is not None:
+        return _settle_from_receipt(work_item_id, task, review,
+                                    {"seat_id": reviewer, "review_context_ref": review_ref},
+                                    recorded, state_store, jira_client)
     gate_fn = deterministic or deterministic_gate.run_deterministic_gate
     gate = gate_fn(work_item_id, task, realized, None)
     evidence["deterministic_gate"] = gate.as_payload()
@@ -800,6 +827,28 @@ def run_open_review(work_item_id, task, realized, state_store, jira_client, prov
     return _dispatch_and_settle(work_item_id, task, None, realized, state_store,
                                 jira_client, providers, issue, provider_override,
                                 release_ref, gate, evidence)
+
+
+def _terminal_validation_receipt(work_item_id, review_ref, state_store):
+    """The recorded terminal result of a validation act on this exact review
+    cycle, if one exists. A needs_input result is not terminal and is handled
+    by the prepared-continuation precondition instead."""
+    reader = getattr(state_store, "read_all", None)
+    if reader is None:
+        return None
+    matches = []
+    for record in reader("execution_receipt"):
+        if record.get("work_item_id") != work_item_id:
+            continue
+        if record.get("review_context_ref") != review_ref:
+            continue
+        payload = record.get("normalized_result") or {}
+        if payload.get("status") == ExecutionStatus.NEEDS_INPUT.value:
+            continue
+        matches.append(record)
+    if not matches:
+        return None
+    return sorted(matches, key=lambda record: record.get("created_at") or "")[-1]
 
 
 def _dispatch_and_settle(work_item_id, opened, execution, realized, state_store,

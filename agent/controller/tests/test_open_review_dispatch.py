@@ -30,6 +30,8 @@ from agent.controller.validation import (                          # noqa: E402
 from agent.controller.tests.test_validation_dispatch import (      # noqa: E402
     PEER_REVIEW, SEATS, Jira, ValidationTestCase, Validator, make_task,
 )
+from agent.controller.tests.test_workspace_allocation import sh    # noqa: E402
+from agent.controller.workspace import realize_workspace           # noqa: E402
 
 
 def open_peer_review(work_item_id="KAN-950"):
@@ -140,6 +142,74 @@ class ValidateEntryPoint(ValidationTestCase):
                           providers=(validator,))
         self.assertEqual(VALIDATION_WAITING_FOR_REVIEWER, result["validation_status"])
         self.assertEqual([], validator.requests)
+
+    def _entry(self, work_item_id, jira, validator, interventions=None):
+        return validate(
+            work_item_id, state_store=store, jira_client=jira, providers=(validator,),
+            interventions=interventions, seats_by_capability=SEATS,
+            workspace_resolver=lambda task, seat, st: {
+                "repository_root": self.repo, "working_directory": None,
+                "worktree_path": None, "expected_revision": None,
+                "mutation_mode": "repository_edit"},
+            workspace_allocator=lambda w, s, ws: realize_workspace(w, s, ws,
+                                                                   root=self.wtroot))
+
+    def test_hold_and_freeze_do_not_block_a_review_and_a_pass_does_not_integrate(self):
+        task = open_peer_review("KAN-964")
+        store.resolve_review_owner("KAN-964", task["revision"], "backend-2", "ceo")
+        validator = Validator(PASS)
+        gating_claims_only = [
+            {"kind": "hold", "target": "backend", "cleared_at": None},
+            {"kind": "freeze", "target": "system", "cleared_at": None}]
+        result = self._entry("KAN-964", Jira(PEER_REVIEW), validator,
+                             interventions=gating_claims_only)
+        self.assertIsNone(result["blocker"], result)
+        self.assertEqual(VALIDATION_PASSED, result["validation_status"])
+        self.assertEqual("backend-2", result["reviewer"])
+        self.assertEqual(1, len(validator.requests))
+        # The act stops on PASS: no integration, no completion, Done is derived.
+        self.assertEqual("not-attempted", result["integration_status"])
+        self.assertEqual("not-attempted", result["completion_status"])
+        self.assertEqual(sh(self.repo, "rev-parse", "main"), self.main_before)
+        self.assertEqual("pass", store.read("task", "KAN-964")["review_context"]["review_result"])
+        self.assertIn("integration:", validator.requests[0].objective)
+        self.assertIn("No execution receipt exists", validator.requests[0].objective)
+        self.assertIn("alpha.dart", validator.requests[0].objective)
+
+    def test_a_route_above_the_live_jira_status_is_refused_not_adopted(self):
+        # Context says PEER (opened at Peer-review), but Jira now shows Self-review:
+        # the mismatch is po's reconciliation, never this act's.
+        task = open_peer_review("KAN-965")
+        store.resolve_review_owner("KAN-965", task["revision"], "backend-2", "ceo")
+        validator = Validator(PASS)
+        result = self._entry("KAN-965", Jira("10044"), validator)
+        # The store refuses to OBSERVE a status weaker than the policy route
+        # (an unauthorised downgrade), so the act never reaches its own
+        # route-mismatch check; either way nothing is adopted and nothing runs.
+        self.assertTrue(str(result["blocker"]).startswith(
+            ("review-route-mismatch", "lifecycle-unobservable")), result)
+        self.assertIn("downgrade", str(result["blocker"]))
+        self.assertEqual([], validator.requests)
+        self.assertEqual("peer", store.read("task", "KAN-965")["review_context"]["review_type"])
+
+    def test_a_second_validate_settles_from_the_recorded_receipt_without_a_wake(self):
+        task = open_peer_review("KAN-966")
+        task = store.resolve_review_owner("KAN-966", task["revision"], "backend-2", "ceo")
+        first = Validator(PASS)
+        run_open_review("KAN-966", task, self.realize("backend-2", "KAN-966"),
+                        store, Jira(PEER_REVIEW), (first,))
+        # Simulate a crash between receipt and verdict: reopen the context as
+        # pending with the same cycle by resetting only the verdict fields.
+        current = store.read("task", "KAN-966")
+        rc = dict(current["review_context"], review_result="pending")
+        store.update("task", "KAN-966", current["revision"], {"review_context": rc})
+        second = Validator(FAIL)
+        evidence = run_open_review("KAN-966", store.read("task", "KAN-966"),
+                                   self.realize("backend-2", "KAN-966"),
+                                   store, Jira(PEER_REVIEW), (second,))
+        self.assertEqual([], second.requests)
+        self.assertEqual("recorded-receipt", evidence["validation_source"])
+        self.assertEqual(VALIDATION_PASSED, evidence["outcome"])
 
     def test_a_stop_on_the_item_blocks_the_review(self):
         task = open_peer_review("KAN-963")
