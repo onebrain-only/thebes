@@ -50,7 +50,8 @@ def run_controller(args, environment=None):
 
 class FrontDoorClassification(unittest.TestCase):
     def test_only_the_orchestrating_commands_are_gated(self):
-        self.assertEqual(("execute", "resume", "decide"), entry.ORCHESTRATING_COMMANDS)
+        self.assertEqual(("execute", "resume", "decide", "validate"),
+                         entry.ORCHESTRATING_COMMANDS)
         for internal in ("integrate", "plan-sprint", "plan-backlog", "authority-manifest"):
             permitted, classification, _ = entry.caller(internal, environ={})
             self.assertTrue(permitted)

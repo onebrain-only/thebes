@@ -40,7 +40,8 @@ from agent.controller.integration import (
 from agent.controller import completion as completion_policy
 from agent.controller import continuation as continuation_policy
 from agent.controller import validation as validation_policy
-from agent.controller.validation import ValidationRefused, run_validation
+from agent.controller.validation import (ValidationRefused, run_open_review,
+                                         run_validation)
 from agent.controller import integration as integration_policy
 from agent.controller.completion import CompletionRefused, complete_lifecycle
 from agent.controller.workspace import (
@@ -508,6 +509,168 @@ def integrate(work_item_id, *, state_store=store, jira_client=jira,
         result.update(workspace_concluder(work_item_id, seat_id, None, task,
                                           realized, integration=evidence))
     return result
+
+
+def validate(work_item_id, *, state_store=store, jira_client=jira, providers=None,
+             workspace_allocator=realize_workspace,
+             workspace_concluder=conclude_workspace, interventions=None,
+             seats_by_capability=None, validator=run_open_review,
+             workspace_resolver=None):
+    """Dispatch an ALREADY-OPEN review context to its recorded owner. (T-091)
+
+    The Listener's VALIDATE_WORK_ITEM lands here. It is for work that is
+    canonically in review with a pending context and a resolved owner but no
+    execution in this process to hang the review off — the reviews `po` opens
+    after reconciliation and the CEO names an owner for. It creates nothing:
+    no claim, no lease, no route, no reviewer, no verdict of its own. It refuses,
+    with a structured reason, whenever the canonical state is not exactly that.
+
+    STOP on the item blocks it: a review is a continuation of that item's
+    lifecycle, and the intervention exists to halt exactly that. HOLD and FREEZE
+    do not: they gate NEW CLAIMS, and a review claims nothing.
+
+    A passed review earns the same tail an execution-time pass earns —
+    integration and lifecycle completion — through the same functions, gated on
+    the same canonical truth.
+    """
+    workspace_resolver = workspace_resolver or _integration_workspace
+    result = _result_shell(work_item_id)
+    result.update({"operating_mode": state_store.current_operating_mode(),
+                   "validation_status": "not-attempted",
+                   "validation_blocker": None, "reviewer": None,
+                   "validation_route": None, "review_cycle": None, "verdict": None})
+    if result["operating_mode"] != "PRODUCT_EXECUTION":
+        result["blocker"] = "system-maintenance-active"
+        return result
+    task = state_store.read("task", work_item_id)
+    if task is None:
+        result["blocker"] = "work-item-not-found"
+        return result
+    review = task.get("review_context") or {}
+    result.update({"validation_route": review.get("review_type"),
+                   "reviewer": review.get("review_owner"),
+                   "review_cycle": review.get("review_cycle")})
+    # Jira owns lifecycle: observe it the way `execute` does, so a review whose
+    # Jira status moved since the store last looked is judged on the live fact.
+    state_error = getattr(state_store, "StateError", store.StateError)
+    try:
+        issue = jira_client.get_issue(work_item_id)
+        task = state_store.observe_lifecycle(work_item_id, task["revision"],
+                                             issue["status_id"])
+    except (state_error, store.StateError, jira.JiraError, KeyError, ValueError) as exc:
+        # Includes the store's own refusal of a Jira status WEAKER than the
+        # policy route: that is an unauthorised downgrade to repair in Jira.
+        result["blocker"] = "lifecycle-unobservable: %s" % exc
+        return result
+    lifecycle = (task.get("lifecycle") or {}).get("canonical")
+    review = task.get("review_context") or {}
+    result["lifecycle"] = lifecycle
+    if lifecycle != "review":
+        result["blocker"] = "not-in-review"
+        return result
+    active = state_store.active_interventions() if interventions is None else interventions
+    if any(iv.get("kind") == "stop" and iv.get("target") == work_item_id
+           for iv in active):
+        result["blocker"] = "task-stopped"
+        return result
+    if any((lease.get("work_item_id") == work_item_id)
+           for lease in _open_leases(state_store, work_item_id)):
+        result["blocker"] = "execution-lease-active"
+        return result
+    # The Jira status must be the one the recorded route names. A context whose
+    # route is above (or below) the live status is po's reconciliation to do
+    # (T-090(d)); this act never adopts a route or moves an issue.
+    if review.get("review_type"):
+        try:
+            expected_status = state_store.transition_target(route=review["review_type"])
+        except store.StateError as exc:
+            result["blocker"] = "review-route-unresolvable: %s" % exc
+            return result
+        observed_status = str((task.get("lifecycle") or {}).get("jira_status_id"))
+        if str(expected_status) != observed_status:
+            result["blocker"] = ("review-route-mismatch: %s review expects Jira status "
+                                 "%s, observed %s" % (review["review_type"],
+                                                      expected_status, observed_status))
+            return result
+    if review.get("review_result") == "pending" and \
+            validation_policy._pending_validation_preparation(work_item_id, review,
+                                                              state_store):
+        # A validator already stopped at a native permission boundary on this
+        # very cycle. The answer is a DECISION_RESPONSE, never a second wake.
+        result["blocker"] = "validation-continuation-pending"
+        result["validation_status"] = validation_policy.VALIDATION_CONTINUATION_PENDING
+        return result
+    reviewer = review.get("review_owner")
+    if not review or review.get("review_result") != "pending" or not reviewer:
+        # The validator states the exact reason; let it, so there is one wording.
+        try:
+            validator(work_item_id, task, None, state_store, jira_client, (), issue=issue)
+        except ValidationRefused as exc:
+            result.update({"validation_status": exc.outcome,
+                           "validation_blocker": str(exc)})
+        return result
+    try:
+        mapping = workspace_resolver(task, reviewer, state_store)
+    except Exception as exc:                              # noqa: BLE001
+        result.update({"workspace_status": "unresolved", "workspace_blocker": str(exc),
+                       "blocker": "workspace-unresolved"})
+        return result
+    try:
+        realized = workspace_allocator(work_item_id, reviewer, mapping)
+    except WorkspaceUnavailable as exc:
+        result.update({"workspace_status": "unavailable", "workspace_blocker": str(exc),
+                       "blocker": "workspace-unavailable"})
+        return result
+    result.update({"workspace_status": "allocated", "workspace_path": realized["path"],
+                   "workspace_branch": realized["branch"],
+                   "workspace_reused": realized["reused"]})
+    registry = tuple(providers) if providers is not None else available_provider_registry()
+    # The verdict cites the tree the reviewer actually read: the integration
+    # branch at the revision the allocator proved. There is no execution
+    # receipt for work this process never woke, and none is invented.
+    receipt_ref = "integration:%s@%s" % (realized.get("branch"),
+                                         realized.get("expected_revision"))
+    try:
+        evidence = validator(work_item_id, task, realized, state_store, jira_client,
+                             registry, issue=issue,
+                             seats_by_capability=seats_by_capability,
+                             receipt_ref=receipt_ref)
+    except ValidationRefused as exc:
+        result.update({"validation_status": exc.outcome, "validation_blocker": str(exc)})
+        return result
+    except (state_error, store.StateError, jira.JiraError, ValueError) as exc:
+        result.update({"validation_status": validation_policy.VALIDATION_DISPATCH_FAILED,
+                       "validation_blocker": str(exc)})
+        return result
+    result.update({"validation_status": evidence["outcome"],
+                   "validation_route": evidence.get("validation_route"),
+                   "reviewer": evidence.get("reviewer"),
+                   "review_cycle": evidence.get("review_cycle"),
+                   "verdict": evidence.get("verdict"),
+                   "validation_invocation_id": evidence.get("validation_invocation_id"),
+                   "deterministic_gate": evidence.get("deterministic_gate"),
+                   "remediation_owner": evidence.get("remediation_owner"),
+                   "remediation_route": evidence.get("remediation_route")})
+    # The act STOPS on PASS (T-091). Integration would refuse `not-owned` for
+    # work with no owner and no evidenced executor — exactly the work this act
+    # exists for — and completion stays DERIVED (`queue.completion_reasons`):
+    # the Done move is the Orchestrator's separate act, never this one's tail.
+    result["integration_status"] = "not-attempted"
+    result["completion_status"] = "not-attempted"
+    result.update(workspace_concluder(
+        work_item_id, reviewer, None,
+        state_store.read("task", work_item_id) or task, realized, integration=None))
+    return result
+
+
+def _open_leases(state_store, work_item_id):
+    """Execution leases still open on this item: a review must not overlap a wake."""
+    reader = getattr(state_store, "read_all", None)
+    if reader is None:
+        return ()
+    return tuple(lease for lease in reader("execution_lease")
+                 if lease.get("work_item_id") == work_item_id
+                 and not lease.get("closed_at"))
 
 
 def _run_completion_tail(result, work_item_id, execution, realized, state_store,

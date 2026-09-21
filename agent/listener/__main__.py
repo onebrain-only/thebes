@@ -80,6 +80,17 @@ def main(argv=None):
     send.add_argument("--wait", type=float, nargs="?", const=1800.0, default=None,
                       metavar="SECONDS",
                       help="block until the intent settles, then print its result")
+    check = sub.add_parser("validate",
+                           help="submit one VALIDATE_WORK_ITEM intent: dispatch an "
+                                "already-open review context to its recorded owner")
+    check.add_argument("work_item_id")
+    check.add_argument("--idempotency-key", default=None,
+                       help="resubmitting with the same key is harmless by design")
+    check.add_argument("--actor", default="ceo")
+    check.add_argument("--source", default="listener-cli")
+    check.add_argument("--wait", type=float, nargs="?", const=1800.0, default=None,
+                       metavar="SECONDS",
+                       help="block until the intent settles, then print its result")
     answer = sub.add_parser("decide", help="answer one WAITING_INPUT intent")
     answer.add_argument("responds_to", help="the waiting intent's id")
     answer.add_argument("--invocation", required=True)
@@ -104,11 +115,13 @@ def main(argv=None):
         status, body = _get(args.port, "/intents")
     elif args.command == "show":
         status, body = _get(args.port, "/intents/%s" % args.intent_id)
-    elif args.command == "submit":
-        key = args.idempotency_key or "submit-%s-%s" % (args.work_item_id, uuid.uuid4())
+    elif args.command in ("submit", "validate"):
+        key = args.idempotency_key or "%s-%s-%s" % (args.command, args.work_item_id,
+                                                    uuid.uuid4())
         status, body = _post(args.port, "/intents", {
             "schema_version": contract.SCHEMA_VERSION,
-            "intent_type": contract.EXECUTE_WORK_ITEM,
+            "intent_type": (contract.EXECUTE_WORK_ITEM if args.command == "submit"
+                            else contract.VALIDATE_WORK_ITEM),
             "source": args.source, "actor": args.actor,
             "idempotency_key": key, "correlation_id": key,
             "payload": {"work_item_id": args.work_item_id}})

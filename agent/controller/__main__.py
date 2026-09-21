@@ -15,7 +15,8 @@ import argparse
 import json
 import sys
 
-from . import ControllerInputError, decide, execute, integrate, load_brief, resume
+from . import (ControllerInputError, decide, execute, integrate, load_brief, resume,
+               validate)
 from .entry import ORCHESTRATING_COMMANDS, caller as classify_caller
 from .sprint_plan import plan_current_sprint
 from .backlog_plan import plan_backlog
@@ -48,6 +49,13 @@ def main(argv=None):
     call.add_argument("--scope", required=True, help="what this approval permits")
     call.add_argument("--operation", default=None,
                       help="the exact allowed operation, when the permission is scoped")
+    # A review that is already open — context recorded, owner resolved — has no
+    # execution to run first. `validate` dispatches exactly that context to its
+    # recorded owner and runs the same tail a passed validation always earns.
+    check = sub.add_parser("validate",
+                           help="dispatch one already-open review context to its "
+                                "recorded owner, then run integration and completion")
+    check.add_argument("work_item_id")
     land = sub.add_parser("integrate",
                           help="land one work item's validated Product work on Canary")
     land.add_argument("work_item_id")
@@ -55,7 +63,7 @@ def main(argv=None):
     sub.add_parser("plan-backlog", help="read-only plan for the canonical Jira Product backlog")
     manifest = sub.add_parser("authority-manifest", help="read-only execution authority discovery")
     manifest.add_argument("work_item_id")
-    for orchestrating in (run, again, call):
+    for orchestrating in (run, again, call, check):
         orchestrating.add_argument(
             "--maintenance-reason", default=None,
             help="bypass the Listener front door for recovery, debugging or a "
@@ -71,6 +79,7 @@ def main(argv=None):
         return 2
     try:
         outcome = (integrate(args.work_item_id) if args.command == "integrate"
+                   else validate(args.work_item_id) if args.command == "validate"
                    else resume(args.work_item_id) if args.command == "resume"
                    else decide(args.work_item_id, args.invocation, args.permission,
                                args.scope, args.operation)
@@ -94,6 +103,9 @@ def main(argv=None):
         return 0
     if args.command in ("execute", "resume", "decide"):
         return 0 if outcome.get("execution_status") == "completed" else 1
+    if args.command == "validate":
+        return 0 if outcome.get("validation_status") in (
+            "validation-passed", "validation-failed") else 1
     if args.command == "integrate":
         return 0 if outcome.get("integration_status") in (
             "integrated", "already-present", "no-product-commit-required") else 1

@@ -30,7 +30,7 @@ INTENT_ENV = "THEBES_LISTENER_INTENT_ID"
 # The commands that orchestrate Product execution. Read-only planning and the
 # recovery `integrate` path are deliberately absent: they orchestrate nothing,
 # and Phase 4 is about the execution front door, not about every command.
-ORCHESTRATING_COMMANDS = ("execute", "resume", "decide")
+ORCHESTRATING_COMMANDS = ("execute", "resume", "decide", "validate")
 
 FRONT_DOOR_REFUSAL = "direct-controller-entry-retired"
 
