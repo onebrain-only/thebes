@@ -211,6 +211,27 @@ class ValidateEntryPoint(ValidationTestCase):
         self.assertEqual("recorded-receipt", evidence["validation_source"])
         self.assertEqual(VALIDATION_PASSED, evidence["outcome"])
 
+    def test_a_failed_provider_receipt_does_not_settle_and_the_review_is_redispatched(self):
+        # The first act reached the provider and FAILED (api_error / 429): a
+        # receipt exists on the same review_ref but carries no verdict. The
+        # second VALIDATE must wake the reviewer again, not "settle" from it.
+        task = open_peer_review("KAN-967")
+        task = store.resolve_review_owner("KAN-967", task["revision"], "backend-2", "ceo")
+        from agent.execution.provider import ExecutionStatus, Failure, FailureCode
+        broken = Validator(PASS, status=ExecutionStatus.EXECUTION_FAILED,
+                           summary="You've hit your session limit")
+        with self.assertRaises(ValidationRefused):
+            run_open_review("KAN-967", task, self.realize("backend-2", "KAN-967"),
+                            store, Jira(PEER_REVIEW), (broken,))
+        pending = store.read("task", "KAN-967")
+        self.assertEqual("pending", pending["review_context"]["review_result"])
+        healthy = Validator(PASS)
+        evidence = run_open_review("KAN-967", pending, self.realize("backend-2", "KAN-967"),
+                                   store, Jira(PEER_REVIEW), (healthy,))
+        self.assertEqual(1, len(healthy.requests))
+        self.assertEqual(VALIDATION_PASSED, evidence["outcome"])
+        self.assertNotEqual("recorded-receipt", evidence.get("validation_source"))
+
     def test_a_stop_on_the_item_blocks_the_review(self):
         task = open_peer_review("KAN-963")
         store.resolve_review_owner("KAN-963", task["revision"], "backend-2", "ceo")
