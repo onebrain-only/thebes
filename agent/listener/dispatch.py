@@ -48,6 +48,8 @@ def argv_for(intent):
         raise ValueError("work item id was not contract-validated")
     if intent["intent_type"] == contract.EXECUTE_WORK_ITEM:
         return [sys.executable, "-m", "agent.controller", "execute", work_item_id]
+    if intent["intent_type"] == contract.VALIDATE_WORK_ITEM:
+        return [sys.executable, "-m", "agent.controller", "validate", work_item_id]
     if intent["intent_type"] == contract.DECISION_RESPONSE:
         command = [sys.executable, "-m", "agent.controller", "decide", work_item_id,
                    "--invocation", payload["original_invocation_id"],

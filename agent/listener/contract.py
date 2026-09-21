@@ -23,7 +23,14 @@ SCHEMA_VERSION = 1
 # and never reaches a dispatcher, so adding a family is a deliberate act.
 EXECUTE_WORK_ITEM = "EXECUTE_WORK_ITEM"
 DECISION_RESPONSE = "DECISION_RESPONSE"
-INTENT_TYPES = (EXECUTE_WORK_ITEM, DECISION_RESPONSE)
+# Dispatch an ALREADY-OPEN review context to its recorded owner. It names work
+# that already exists and is already in review; it carries no reviewer, no
+# route and no verdict — the Controller re-derives all of those from the store.
+# Added 2026-09-21 (T-091): before it, a review opened by po and resolved to a
+# CEO-named reviewer had no front door, because EXECUTE_WORK_ITEM refuses an
+# item that is not Ready and never reaches the validator.
+VALIDATE_WORK_ITEM = "VALIDATE_WORK_ITEM"
+INTENT_TYPES = (EXECUTE_WORK_ITEM, DECISION_RESPONSE, VALIDATE_WORK_ITEM)
 
 # Bounded intake. A body larger than this is refused before it is parsed.
 MAX_BODY_BYTES = 64 * 1024
@@ -42,6 +49,7 @@ OPTIONAL_ENVELOPE_FIELDS = ("responds_to",)
 
 PAYLOAD_FIELDS = {
     EXECUTE_WORK_ITEM: (("work_item_id",), ()),
+    VALIDATE_WORK_ITEM: (("work_item_id",), ()),
     DECISION_RESPONSE: (("work_item_id", "original_invocation_id", "decision",
                          "permission", "approval_scope"),
                         ("allowed_operation",)),
@@ -142,7 +150,7 @@ def _payload(intent_type, payload):
         raise IntentRejected("missing-field", "payload is missing: %s" % ", ".join(missing))
     clean = {"work_item_id": _text(payload.get("work_item_id"), "work_item_id",
                                    WORK_ITEM_ID, 40)}
-    if intent_type == EXECUTE_WORK_ITEM:
+    if intent_type in (EXECUTE_WORK_ITEM, VALIDATE_WORK_ITEM):
         return clean
     decision = _text(payload.get("decision"), "decision", TOKEN, 40)
     if decision not in DECISIONS:

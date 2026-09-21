@@ -40,7 +40,8 @@ from agent.controller.integration import (
 from agent.controller import completion as completion_policy
 from agent.controller import continuation as continuation_policy
 from agent.controller import validation as validation_policy
-from agent.controller.validation import ValidationRefused, run_validation
+from agent.controller.validation import (ValidationRefused, run_open_review,
+                                         run_validation)
 from agent.controller import integration as integration_policy
 from agent.controller.completion import CompletionRefused, complete_lifecycle
 from agent.controller.workspace import (
@@ -508,6 +509,141 @@ def integrate(work_item_id, *, state_store=store, jira_client=jira,
         result.update(workspace_concluder(work_item_id, seat_id, None, task,
                                           realized, integration=evidence))
     return result
+
+
+def validate(work_item_id, *, state_store=store, jira_client=jira, providers=None,
+             workspace_allocator=realize_workspace,
+             workspace_concluder=conclude_workspace, interventions=None,
+             seats_by_capability=None, validator=run_open_review,
+             worktree_root=None, integration_branch=None):
+    """Dispatch an ALREADY-OPEN review context to its recorded owner. (T-091)
+
+    The Listener's VALIDATE_WORK_ITEM lands here. It is for work that is
+    canonically in review with a pending context and a resolved owner but no
+    execution in this process to hang the review off — the reviews `po` opens
+    after reconciliation and the CEO names an owner for. It creates nothing:
+    no claim, no lease, no route, no reviewer, no verdict of its own. It refuses,
+    with a structured reason, whenever the canonical state is not exactly that.
+
+    STOP on the item blocks it: a review is a continuation of that item's
+    lifecycle, and the intervention exists to halt exactly that. HOLD and FREEZE
+    do not: they gate NEW CLAIMS, and a review claims nothing.
+
+    A passed review earns the same tail an execution-time pass earns —
+    integration and lifecycle completion — through the same functions, gated on
+    the same canonical truth.
+    """
+    result = _result_shell(work_item_id)
+    result.update({"operating_mode": state_store.current_operating_mode(),
+                   "validation_status": "not-attempted",
+                   "validation_blocker": None, "reviewer": None,
+                   "validation_route": None, "review_cycle": None, "verdict": None})
+    if result["operating_mode"] != "PRODUCT_EXECUTION":
+        result["blocker"] = "system-maintenance-active"
+        return result
+    task = state_store.read("task", work_item_id)
+    if task is None:
+        result["blocker"] = "work-item-not-found"
+        return result
+    review = task.get("review_context") or {}
+    result.update({"validation_route": review.get("review_type"),
+                   "reviewer": review.get("review_owner"),
+                   "review_cycle": review.get("review_cycle")})
+    # Jira owns lifecycle: observe it the way `execute` does, so a review whose
+    # Jira status moved since the store last looked is judged on the live fact.
+    try:
+        issue = jira_client.get_issue(work_item_id)
+        task = state_store.observe_lifecycle(work_item_id, task["revision"],
+                                             issue["status_id"])
+    except (store.StateError, jira.JiraError, KeyError, ValueError) as exc:
+        result["blocker"] = "lifecycle-unobservable: %s" % exc
+        return result
+    lifecycle = (task.get("lifecycle") or {}).get("canonical")
+    review = task.get("review_context") or {}
+    result["lifecycle"] = lifecycle
+    if lifecycle != "review":
+        result["blocker"] = "not-in-review"
+        return result
+    active = state_store.active_interventions() if interventions is None else interventions
+    if any(iv.get("kind") == "stop" and iv.get("target") == work_item_id
+           for iv in active):
+        result["blocker"] = "task-stopped"
+        return result
+    if any((lease.get("work_item_id") == work_item_id)
+           for lease in _open_leases(state_store, work_item_id)):
+        result["blocker"] = "execution-lease-active"
+        return result
+    reviewer = review.get("review_owner")
+    if not review or review.get("review_result") != "pending" or not reviewer:
+        # The validator states the exact reason; let it, so there is one wording.
+        try:
+            validator(work_item_id, task, None, state_store, jira_client, (), issue=issue)
+        except ValidationRefused as exc:
+            result.update({"validation_status": exc.outcome,
+                           "validation_blocker": str(exc)})
+        return result
+    try:
+        realized = workspace_allocator(work_item_id, reviewer,
+                                       _integration_workspace(task, reviewer, state_store))
+    except WorkspaceUnavailable as exc:
+        result.update({"workspace_status": "unavailable", "workspace_blocker": str(exc),
+                       "blocker": "workspace-unavailable"})
+        return result
+    result.update({"workspace_status": "allocated", "workspace_path": realized["path"],
+                   "workspace_branch": realized["branch"],
+                   "workspace_reused": realized["reused"]})
+    registry = tuple(providers) if providers is not None else available_provider_registry()
+    try:
+        evidence = validator(work_item_id, task, realized, state_store, jira_client,
+                             registry, issue=issue,
+                             seats_by_capability=seats_by_capability)
+    except ValidationRefused as exc:
+        result.update({"validation_status": exc.outcome, "validation_blocker": str(exc)})
+        return result
+    except (store.StateError, jira.JiraError, ValueError) as exc:
+        result.update({"validation_status": validation_policy.VALIDATION_DISPATCH_FAILED,
+                       "validation_blocker": str(exc)})
+        return result
+    result.update({"validation_status": evidence["outcome"],
+                   "validation_route": evidence.get("validation_route"),
+                   "reviewer": evidence.get("reviewer"),
+                   "review_cycle": evidence.get("review_cycle"),
+                   "verdict": evidence.get("verdict"),
+                   "validation_invocation_id": evidence.get("validation_invocation_id"),
+                   "deterministic_gate": evidence.get("deterministic_gate"),
+                   "remediation_owner": evidence.get("remediation_owner"),
+                   "remediation_route": evidence.get("remediation_route")})
+    integration_evidence = None
+    if evidence["outcome"] == validation_policy.VALIDATION_PASSED:
+        tail = integrate(work_item_id, state_store=state_store, jira_client=jira_client,
+                         workspace_allocator=workspace_allocator,
+                         workspace_concluder=workspace_concluder,
+                         interventions=interventions, worktree_root=worktree_root,
+                         integration_branch=integration_branch,
+                         conclude_workspace_after=False, record_refusals=True)
+        result.update({key: tail[key] for key in (
+            "integration_status", "attributed_files", "product_commit",
+            "integrated_as", "integration_branch", "previous_head",
+            "conflict_paths", "remediation_required", "receipt_status",
+            "completion_status", "completion_blocker",
+            "jira_transition_performed", "lifecycle", "ownership_status",
+            "open_leases") if key in tail})
+        integration_evidence = tail.get("integration_evidence")
+    result.update(workspace_concluder(
+        work_item_id, reviewer, None,
+        state_store.read("task", work_item_id) or task, realized,
+        integration=integration_evidence))
+    return result
+
+
+def _open_leases(state_store, work_item_id):
+    """Execution leases still open on this item: a review must not overlap a wake."""
+    reader = getattr(state_store, "read_all", None)
+    if reader is None:
+        return ()
+    return tuple(lease for lease in reader("execution_lease")
+                 if lease.get("work_item_id") == work_item_id
+                 and not lease.get("closed_at"))
 
 
 def _run_completion_tail(result, work_item_id, execution, realized, state_store,
