@@ -5,7 +5,7 @@
   "capabilities": {
     "frontend":         { "defined_seats": 8, "ceiling": 9, "expandable": true },
     "backend":          { "defined_seats": 8, "ceiling": 9, "expandable": true },
-    "content":          { "defined_seats": 1, "ceiling": 2, "expandable": true },
+    "content":          { "defined_seats": 2, "ceiling": 2, "expandable": true },
     "devops":           { "defined_seats": 1, "ceiling": 2, "expandable": true },
     "analyst":          { "defined_seats": 1, "ceiling": 2, "expandable": true },
     "qa":               { "defined_seats": 1, "ceiling": 2, "expandable": true },
