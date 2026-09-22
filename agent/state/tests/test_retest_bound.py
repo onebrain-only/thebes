@@ -192,4 +192,22 @@ ok("12. an opened, pending review sits at cycle 1 until a verdict exists",
 ok("    and the read-only rule says nothing to retest yet",
    retest.retest_permitted(t["review_context"])[1] == "no failed review to retest")
 
+section("T-095(B) — a review opens on RELEASED work")
+
+# The legacy shape KAN-219 was stuck in: an owner that was never released, a
+# recorded FAIL, and no way forward — `self_fail_reentry` correctly refuses to
+# re-establish an ownership nobody gave up, so the loop dead-ends.
+mk("KAN-907", owner="frontend-1", evidence=("frontend-1",))
+raises("13. an item that still has an owner cannot open a review",
+       lambda: store.open_review_context("KAN-907",
+                                         store.read("task", "KAN-907")["revision"]),
+       "owner-not-released")
+before = store.read("task", "KAN-907")
+released = store.release("KAN-907", "frontend-1", before["revision"],
+                         "ref: the owner releases, which records the evidence")
+opened = store.open_review_context("KAN-907", released["revision"])
+ok("    and once released it opens for the evidenced executor",
+   opened["review_context"]["review_owner"] == "frontend-1"
+   and opened["review_context"]["review_result"] == "pending")
+
 summary()
