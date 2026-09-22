@@ -744,6 +744,22 @@ def open_review_context(work_item_id, expected_revision, opened_by=None,
                              "opened only once the item is in its review status"
                              % (work_item_id, canonical))
 
+        # T-095(B): a review opens on RELEASED work. `release` is the only act
+        # that mints executor evidence, and SELF's owner is derived from that
+        # evidence — so an item that still has an owner has not finished the act
+        # the review is about to judge. Nothing checked this, which is how a
+        # legacy record (KAN-219: owner never released, cycle-1 FAIL still on
+        # the record) could be dispatched for review and then dead-end, because
+        # `self_fail_reentry` correctly refuses to re-establish an ownership that
+        # was never given up.
+        owner = (cur.get("ownership") or {}).get("seat_id")
+        if owner:
+            raise StateError(
+                "owner-not-released: %s is still owned by %s. A review opens on "
+                "released work — the owner releases, which is also what records "
+                "the executor evidence a SELF review's owner is derived from."
+                % (work_item_id, owner))
+
         prof = dict(cur.get("execution_profile") or {})
         route = prof.get("validation_route")
         if route not in policy.STRICTNESS:

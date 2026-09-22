@@ -172,7 +172,12 @@ class ValidateEntryPoint(ValidationTestCase):
         self.assertEqual("not-attempted", result["completion_status"])
         self.assertEqual(sh(self.repo, "rev-parse", "main"), self.main_before)
         self.assertEqual("pass", store.read("task", "KAN-964")["review_context"]["review_result"])
-        self.assertIn("integration:", validator.requests[0].objective)
+        # T-095: the tree is named honestly. This review reads the seat's own
+        # exec branch, so it is NOT labelled "integration:" — that prefix is
+        # claimed only for the integration branch itself.
+        self.assertIn("tree workspace:exec/backend-2/KAN-964@",
+                      validator.requests[0].objective)
+        self.assertNotIn("integration:", validator.requests[0].objective)
         self.assertIn("No execution receipt exists", validator.requests[0].objective)
         self.assertIn("alpha.dart", validator.requests[0].objective)
 

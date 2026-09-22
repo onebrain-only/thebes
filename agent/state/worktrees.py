@@ -115,13 +115,76 @@ def _assert_not_protected(name):
                             "integration; it deploys to production" % name)
 
 
+def _head_revision_of(path):
+    p = subprocess.run(["git", "-C", path, "rev-parse", "HEAD"],
+                       capture_output=True, text=True)
+    return p.stdout.strip() if p.returncode == 0 else None
+
+
+def _require_base(path, repo, base, work_item_id):
+    """Make a reused worktree actually contain `base`, or refuse. (T-095)
+
+    Returns the sha it was fast-forwarded to, or None when it already contained
+    the base. Raises rather than touching anything a person might still want.
+    """
+    tip = subprocess.run(["git", "-C", repo, "rev-parse", base],
+                         capture_output=True, text=True)
+    if tip.returncode != 0:
+        raise WorktreeError("stale-workspace: cannot resolve %s in %s to check the "
+                            "workspace against it" % (base, repo))
+    tip_sha = tip.stdout.strip()
+    head = _head_revision_of(path)
+    if head and subprocess.run(["git", "-C", path, "merge-base", "--is-ancestor",
+                                tip_sha, "HEAD"],
+                               capture_output=True, text=True).returncode == 0:
+        return None                       # already contains the base tip
+    # NOT stripped as a whole: porcelain v1 encodes status in the first two
+    # columns, so stripping the output eats the leading space of the FIRST line
+    # and `line[3:]` then eats the first character of that filename. The same
+    # trap is documented on `changed_files` above.
+    dirty = subprocess.run(["git", "-C", path, "status", "--porcelain"],
+                           capture_output=True, text=True).stdout
+    if dirty.strip():
+        raise WorktreeError(
+            "stale-workspace: %s's worktree is at %s, behind %s at %s, and carries "
+            "uncommitted changes, so it cannot be brought up to date without "
+            "deciding their fate: %s. Judging work in this tree would judge a "
+            "superseded one — the reason this check exists."
+            % (work_item_id, (head or "an unknown head")[:7], base, tip_sha[:7],
+               ", ".join(line[3:].strip().split(" -> ")[-1]
+                         for line in dirty.splitlines() if line.strip())))
+    ff = subprocess.run(["git", "-C", path, "merge", "--ff-only", tip_sha],
+                        capture_output=True, text=True)
+    if ff.returncode != 0:
+        raise WorktreeError(
+            "stale-workspace: %s's worktree at %s cannot fast-forward to %s at %s "
+            "— it has diverged, and this function never resets or merges to force "
+            "it: %s" % (work_item_id, (head or "an unknown head")[:7], base,
+                        tip_sha[:7], (ff.stderr or ff.stdout).strip()[:200]))
+    return tip_sha
+
+
 # ---------------------------------------------------------------- allocation
 
-def allocate(seat_id, work_item_id, repo=None, root=None, base=None):
+def allocate(seat_id, work_item_id, repo=None, root=None, base=None,
+             require_base=False):
     """Give this seat its own checkout and its own branch. Idempotent.
 
     The branch is created FROM the integration branch, so the executor starts from
     what Canary actually is rather than from whatever another seat left behind.
+
+    **That contract held only at FIRST allocation** until T-095. A reused
+    worktree was returned untouched, so a VALIDATION of already-integrated work
+    could be handed a tree weeks behind the branch — which is exactly what
+    happened on KAN-219, where a reviewer failed committed work that met its
+    criterion because the tree it read predated the rework.
+
+    `require_base` is the caller saying *this act must see the base*. Only
+    `validate()` passes it. When the reused worktree is CLEAN and behind, it is
+    fast-forwarded to the base tip and the allocation reports `rebased_to`; when
+    it is DIRTY, or cannot fast-forward, it is REFUSED and named. Never a reset,
+    never a merge, never a rebase: this function does not decide what happens to
+    work somebody else left in a tree.
     """
     repo = repo or PRODUCT_REPO
     base = base or INTEGRATION_BRANCH
@@ -136,9 +199,13 @@ def allocate(seat_id, work_item_id, repo=None, root=None, base=None):
     existing = {w["path"]: w for w in list_worktrees(repo)}
     if os.path.isdir(path) and os.path.realpath(path) in existing:
         found = existing[os.path.realpath(path)]
-        return {"path": path, "branch": found.get("branch", br), "seat_id": seat_id,
-                "work_item_id": work_item_id, "base": base,
-                "base_commit": found.get("head"), "reused": True}
+        allocation = {"path": path, "branch": found.get("branch", br),
+                      "seat_id": seat_id, "work_item_id": work_item_id,
+                      "base": base, "base_commit": found.get("head"), "reused": True}
+        if require_base:
+            allocation["rebased_to"] = _require_base(path, repo, base, work_item_id)
+            allocation["base_commit"] = _head_revision_of(path) or allocation["base_commit"]
+        return allocation
     if os.path.isdir(path) and os.listdir(path):
         raise WorktreeError("occupied: %s already exists and is not a registered "
                             "worktree — refusing to write into it blind" % path)

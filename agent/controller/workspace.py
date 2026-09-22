@@ -67,7 +67,7 @@ def _is_clean(path):
 
 
 def realize_workspace(work_item_id, seat_id, workspace, repo=None, root=None,
-                      base=None):
+                      base=None, require_base=False):
     """Allocate the isolated checkout this request names, then prove it is ours.
 
     ``workspace`` is the mapping the canonical intent resolver derived. The
@@ -88,10 +88,16 @@ def realize_workspace(work_item_id, seat_id, workspace, repo=None, root=None,
             "from it" % repository)
     try:
         allocation = worktrees.allocate(seat_id, work_item_id, repo=repository,
-                                        root=root, base=base)
+                                        root=root, base=base,
+                                        require_base=require_base)
     except worktrees.WorktreeError as exc:
         # Includes the protected-branch refusal and the occupied-path refusal.
         # Neither is a reason to fall back to the canonical Product checkout.
+        if str(exc).startswith("stale-workspace:"):
+            # T-095: a validation asked to see the base and the tree cannot show
+            # it. Distinct reason, because the repair is a human decision about
+            # the work in that tree, not a re-allocation.
+            raise WorkspaceUnavailable("workspace-stale-for-validation", str(exc))
         raise WorkspaceUnavailable("workspace-allocation-refused", str(exc))
     except OSError as exc:
         raise WorkspaceUnavailable("workspace-allocation-failed", str(exc))
@@ -104,6 +110,7 @@ def realize_workspace(work_item_id, seat_id, workspace, repo=None, root=None,
     return {"workspace": realized, "branch": allocation["branch"],
             "base": allocation.get("base"), "base_commit": allocation.get("base_commit"),
             "reused": bool(allocation.get("reused")), "expected_revision": revision,
+            "rebased_to": allocation.get("rebased_to"),
             "path": path, "repository_root": repository}
 
 
