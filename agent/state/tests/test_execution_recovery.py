@@ -367,4 +367,280 @@ ok("  the operation CALLS no Jira machinery at store level",
 ok("  and never writes ownership",
    'merged["ownership"]' not in fn)
 
+# ------------------------------------------- settled PASS + remediation_required
+#
+# KAN-292's deadlock: a SELF review settled PASS, ownership released, and the only
+# integration receipt says `remediation_required`. Every door refuses — EXECUTE
+# (`not-ready`), EXECUTE-in-Ready (the validator refuses a review context in Ready),
+# VALIDATE (`validation-already-settled`), completion ("receipt still requires
+# Product remediation") — and each refusal is correct. These tests pin the one exit.
+
+section("a settled PASS whose integration demands remediation")
+
+RREF = "po:recover-remediation-required"
+READY = "10008"
+SELF_RC = {"review_type": "self", "review_owner": "frontend-2",
+           "review_result": "pass", "review_cycle": 3}
+
+
+def rmk(key, *, rc=None, route="self", **kw):
+    """Baseline S: frontend, Self-review (10044), settled PASS, unowned."""
+    if rc is None:
+        rc = dict(SELF_RC)
+    return mk(key, capability="frontend", sid="10044", canonical="review",
+              route=route, evidence=("frontend-2",), rc=rc, **kw)
+
+
+def rcpt(key, *, outcome="integration-conflict", remediation=True, commit=None,
+         created_at=None, seat_id="frontend-2",
+         conflict_paths=("lib/src/navigation/tab_bar.dart",)):
+    """One integration receipt. `created_at` is forced where a test needs an order:
+    now() is second-precision, so two receipts written back to back would tie."""
+    ev = {"product_commit": commit or ("commit:%s:%s" % (key, outcome)),
+          "remediation_required": remediation,
+          "conflict_paths": list(conflict_paths)}
+    if outcome == "integrated":
+        # A clean receipt has to be a REAL clean receipt or the validator refuses it.
+        ev.update({"integrated_as": ev["product_commit"],
+                   "integration_branch": "integration/%s" % key,
+                   "previous_head": "head:%s" % key})
+    r = store.record_integration_receipt(key, seat_id, outcome, ev)
+    if created_at:
+        r = dict(r)
+        r["created_at"] = created_at
+        store._atomic_write(
+            store.path_for("integration_receipt", r["integration_receipt_id"]), r)
+        r = store.read("integration_receipt", r["integration_receipt_id"])
+    return r
+
+
+def patch(key, **kw):
+    """Write a shape the public API would refuse to construct."""
+    rec = store.read("task", key)
+    rec.update(kw)
+    with open(store.path_for("task", key), "w") as fh:
+        json.dump(rec, fh)
+    return store.read("task", key)
+
+
+def rec_to_ready(key, rev, *, ref=RREF, actor="po", sid=READY):
+    return store.recover_remediation_required_to_ready(key, rev, ref, actor, sid)
+
+
+# --- 71-77. the happy path
+t = rmk("KAN-600")
+r0 = rcpt("KAN-600")
+before = store.read("task", "KAN-600")
+r = rec_to_ready("KAN-600", t["revision"])
+ok("71. a settled SELF PASS with a remediation-required receipt recovers",
+   r["review_context"] is None)
+ok("72. lifecycle is the Ready status the caller read back from Jira",
+   r["lifecycle"]["jira_status_id"] == READY
+   and r["lifecycle"]["canonical"] == "ready"
+   and r["lifecycle"]["source"] == "jira")
+ok("73. the settled verdict is preserved VERBATIM, not summarised",
+   r["execution_recovery"]["closed_review"] == SELF_RC
+   and r["execution_recovery"]["from_status"] == "10044"
+   and r["execution_recovery"]["by"] == "po"
+   and r["execution_recovery"]["recovery_ref"] == RREF)
+ok("74. the receipt that demanded the remediation is named",
+   r["execution_recovery"]["remediation_receipt_id"] == r0["integration_receipt_id"])
+ok("75. recovery creates no ownership — the item goes back to the QUEUE",
+   r["ownership"] is None)
+ok("76. execution_profile is byte-identical — the route is NOT recomputed",
+   r["execution_profile"] == before["execution_profile"]
+   and r["execution_profile"]["validation_route"] == "self")
+ok("77. the revision advances by exactly one",
+   r["revision"] == before["revision"] + 1)
+ok("78. and the WRITTEN record validates — validate.py:392-393 refuses a review "
+   "context in Ready, so this is the assertion that guards the whole transition",
+   [x for x in validate.validate_record("task", store.read("task", "KAN-600"))
+    if " WARN " not in x] == [])
+
+t = rmk("KAN-601", rc={"review_type": "qa", "review_owner": "qa",
+                       "review_result": "pass", "review_cycle": 1}, route="qa")
+rcpt("KAN-601")
+ok("79. a settled QA PASS reaches the same exit",
+   rec_to_ready("KAN-601", t["revision"])["review_context"] is None)
+
+# --- 80-84. the four pre-lock preconditions, and the record it never read
+section("preconditions refuse everything that is not exactly this state")
+
+t = rmk("KAN-602")
+rcpt("KAN-602")
+b = store.read("task", "KAN-602")
+raises("80. expected_revision=None is refused — there is no force update",
+       lambda: rec_to_ready("KAN-602", None), "expected_revision is required")
+raises("81. an unnamed reason is refused",
+       lambda: rec_to_ready("KAN-602", t["revision"], ref=""),
+       "recovery_ref is required")
+raises("82. an executor may not recover its own review state",
+       lambda: rec_to_ready("KAN-602", t["revision"], actor="frontend-2"),
+       "unauthorised-recovery-actor")
+ok("   and nothing was written", unchanged("KAN-602", b))
+raises("83. a status that is not Ready is refused — po transitions Jira FIRST",
+       lambda: rec_to_ready("KAN-602", t["revision"], sid="10043"), "jira-not-ready")
+ok("   still nothing was written", unchanged("KAN-602", b))
+raises("84. an unknown work item is refused",
+       lambda: rec_to_ready("KAN-NOPE", 1), "does not exist")
+raises("85. a stale revision is refused",
+       lambda: rec_to_ready("KAN-602", t["revision"] + 1), "stale write refused")
+ok("   and the CAS failure wrote nothing", unchanged("KAN-602", b))
+
+t = rmk("KAN-603")
+rcpt("KAN-603")
+patch("KAN-603", record_type="container")
+raises("86. a container holds no review state to recover",
+       lambda: rec_to_ready("KAN-603", t["revision"]),
+       "container records hold no review state to recover")
+
+# --- 87-89. it is a REVIEW recovery
+t = mk("KAN-604", capability="frontend", sid="10043", canonical="development",
+       route="self", rc=dict(SELF_RC))
+rcpt("KAN-604")
+b = store.read("task", "KAN-604")
+raises("87. an item still in a development status is refused",
+       lambda: rec_to_ready("KAN-604", t["revision"]), "not-in-review")
+ok("   unchanged", unchanged("KAN-604", b))
+
+t = mk("KAN-605", capability="frontend", sid="10011", canonical="done",
+       route="self", rc=dict(SELF_RC))
+rcpt("KAN-605")
+b = store.read("task", "KAN-605")
+raises("88. a DONE item is refused by the same check — no separate branch exists, "
+       "because a dead branch only invites belief",
+       lambda: rec_to_ready("KAN-605", t["revision"]), "not-in-review")
+ok("   unchanged", unchanged("KAN-605", b))
+
+# --- 89-93. the review context itself
+t = mk("KAN-606", capability="frontend", sid="10044", canonical="review",
+       route="self", evidence=("frontend-2",), rc=None)
+rcpt("KAN-606")
+b = store.read("task", "KAN-606")
+raises("89. no review context — there is no settled review to close",
+       lambda: rec_to_ready("KAN-606", t["revision"]), "no-review-context")
+ok("   unchanged", unchanged("KAN-606", b))
+
+t = rmk("KAN-607", rc="settled, honest")
+rcpt("KAN-607")
+raises("90. a review context that is not an object is refused the same way",
+       lambda: rec_to_ready("KAN-607", t["revision"]), "no-review-context")
+
+t = rmk("KAN-608", rc=dict(SELF_RC, review_type="peer"), route="peer")
+rcpt("KAN-608")
+b = store.read("task", "KAN-608")
+raises("91. a PEER context is refused — it carries transfer semantics this "
+       "transition does not reason about",
+       lambda: rec_to_ready("KAN-608", t["revision"]), "not-a-self-or-qa-review")
+ok("   unchanged", unchanged("KAN-608", b))
+
+t = rmk("KAN-609", rc=dict(SELF_RC, review_result="fail"))
+rcpt("KAN-609")
+b = store.read("task", "KAN-609")
+raises("92. a settled FAIL is refused — a FAIL has its own handlers",
+       lambda: rec_to_ready("KAN-609", t["revision"]), "review-not-passed")
+ok("   unchanged", unchanged("KAN-609", b))
+
+t = rmk("KAN-610", rc=dict(SELF_RC, review_result="pending"))
+rcpt("KAN-610")
+raises("93. an UNSETTLED review is refused by the same check — only PASS recovers",
+       lambda: rec_to_ready("KAN-610", t["revision"]), "review-not-passed")
+
+# --- 94-95. ownership and completion
+t = rmk("KAN-611", owner="frontend-2")
+rcpt("KAN-611")
+b = store.read("task", "KAN-611")
+raises("94. recovery never takes work from a current owner",
+       lambda: rec_to_ready("KAN-611", t["revision"]), "already-owned")
+ok("   unchanged", unchanged("KAN-611", b))
+
+t = rmk("KAN-612")
+rcpt("KAN-612")
+patch("KAN-612", completion_reconciliation={"by": "po", "at": store.now(),
+                                            "completion_ref": "ref:done"})
+b = store.read("task", "KAN-612")
+raises("95. work recorded factually complete is never sent backward to Ready",
+       lambda: rec_to_ready("KAN-612", b["revision"]), "already-reconciled-complete")
+ok("   unchanged", unchanged("KAN-612", b))
+
+# --- 96-99. the receipt is the whole reason this transition exists
+section("the integration receipt decides, and LATEST wins")
+
+t = rmk("KAN-613")
+b = store.read("task", "KAN-613")
+raises("96. no integration receipt — nothing records a remediation to perform",
+       lambda: rec_to_ready("KAN-613", t["revision"]), "no-integration-receipt")
+ok("   unchanged", unchanged("KAN-613", b))
+
+t = rmk("KAN-614")
+rcpt("KAN-614", outcome="integrated", remediation=False, conflict_paths=())
+b = store.read("task", "KAN-614")
+raises("97. a CLEAN receipt is refused — a settled PASS with a clean receipt "
+       "completes, it is not recovered",
+       lambda: rec_to_ready("KAN-614", t["revision"]), "no-remediation-required")
+ok("   unchanged", unchanged("KAN-614", b))
+
+t = rmk("KAN-615")
+rcpt("KAN-615", created_at="2026-09-20T10:00:00Z")
+rcpt("KAN-615", outcome="integrated", remediation=False, conflict_paths=(),
+     created_at="2026-09-21T10:00:00Z")
+b = store.read("task", "KAN-615")
+raises("98. an OLD conflict under a NEW clean integration is refused — the "
+       "remediation already happened; this is latest-wins, not any-matching",
+       lambda: rec_to_ready("KAN-615", t["revision"]), "no-remediation-required")
+ok("   unchanged", unchanged("KAN-615", b))
+
+t = rmk("KAN-616")
+rcpt("KAN-616", outcome="integrated", remediation=False, conflict_paths=(),
+     created_at="2026-09-20T10:00:00Z")
+newest = rcpt("KAN-616", created_at="2026-09-21T10:00:00Z")
+r = rec_to_ready("KAN-616", t["revision"])
+ok("99. and the inverse recovers, naming the NEWEST receipt",
+   r["review_context"] is None
+   and r["execution_recovery"]["remediation_receipt_id"]
+   == newest["integration_receipt_id"])
+
+# --- 100-102. interventions, and replay
+section("STOP blocks; HOLD and FREEZE deliberately do not; replay is refused")
+
+t = rmk("KAN-617")
+rcpt("KAN-617")
+iv = store.create_intervention("stop", "KAN-617", "ceo", "reason:collision-found")
+b = store.read("task", "KAN-617")
+raises("100. a STOP on the item blocks the recovery itself",
+       lambda: rec_to_ready("KAN-617", t["revision"]), "task-stopped")
+ok("   unchanged", unchanged("KAN-617", b))
+store.clear_intervention(iv["intervention_id"], iv["revision"], "ceo")
+ok("   once RESUMEd it is authorised",
+   rec_to_ready("KAN-617", t["revision"])["review_context"] is None)
+
+t = rmk("KAN-618")
+rcpt("KAN-618")
+h = store.create_intervention("hold", "frontend", "ceo", "reason:safety")
+f = store.create_intervention("freeze", None, "ceo", "reason:incident")
+ok("101. HOLD and FREEZE do NOT block — they gate new CLAIMS, and recovery "
+   "creates no ownership; the item simply sits in Ready unclaimable",
+   rec_to_ready("KAN-618", t["revision"])["review_context"] is None)
+store.clear_intervention(h["intervention_id"], h["revision"], "ceo")
+store.clear_intervention(f["intervention_id"], f["revision"], "ceo")
+
+raises("102. a replay against the new revision is refused — the item is in Ready "
+       "now, and Ready is not a review status",
+       lambda: rec_to_ready("KAN-600", store.read("task", "KAN-600")["revision"]),
+       "not-in-review")
+
+# --- 103. what the source text must never contain
+rsrc = open(os.path.join(repo_root(), "agent", "state", "store.py")).read()
+rfn = rsrc.split("def recover_remediation_required_to_ready")[1].split("\ndef ")[0]
+rcode = "\n".join(l for l in rfn.split("\n")
+                  if not l.strip().startswith("#")).split('"""')[-1]
+ok("103. it never writes ownership — none is created, and none is restored",
+   'merged["ownership"]' not in rcode)
+ok("   and it never recomputes the validation route — the divergence from "
+   "recover_failed_review_to_ready is deliberate and documented",
+   "policy.validation_route" not in rcode)
+ok("   nor does it call Jira machinery at store level",
+   not any(w in rcode for w in ("transition_issue(", "observe_lifecycle(",
+                                "get_issue(")))
+
 sys.exit(summary())

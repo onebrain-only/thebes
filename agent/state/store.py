@@ -1074,6 +1074,167 @@ def recover_failed_review_to_ready(work_item_id, expected_revision, recovery_ref
         return merged
 
 
+def recover_remediation_required_to_ready(work_item_id, expected_revision,
+                                          recovery_ref, actor, jira_status_id):
+    """Return a SETTLED-PASS item whose integration DEMANDS REMEDIATION to Ready. CAS'd.
+
+    THE STATE THIS RECOVERS
+      An executable item whose SELF (or QA) review settled PASS, sitting in a review
+      status with `ownership: null`, whose latest integration receipt recorded
+      `remediation_required: true` — an integration conflict, not a verdict. The
+      review is over and cannot be reopened; the Product work is not over. Every
+      existing door refuses it, each of them correctly:
+        * EXECUTE refuses `not-ready` — the item is not in Ready.
+        * EXECUTE-in-Ready cannot be reached by moving Jira alone: the validator
+          refuses a review context in Ready (`validate.py:392-393`).
+        * VALIDATE refuses `validation-already-settled` — a settled review is settled.
+        * `recover_execution_to_ready` refuses a review status and, at
+          `store.py:918-921`, any review context at all — by design.
+        * `recover_failed_review_to_ready` refuses at `store.py:1019-1022`
+          (`not-a-peer-review`) and, were the type peer, again at the FAIL check —
+          T-092 is strictly the PEER-fail-with-no-evidence case.
+        * completion refuses at `completion.py:104-105` — "receipt still requires
+          Product remediation".
+      So the item is reachable by nothing. This is its one exit.
+
+    SELF AND QA ONLY — NEVER PEER
+      A PEER context carries transfer semantics (`previous_owner`,
+      `validate.py:406-410`) that this transition does not reason about, and the
+      PEER paths have their own handlers. PASS means `review_result == "pass"`;
+      a FAIL has its own handlers too and is refused here.
+
+    WHAT IT WRITES, ATOMICALLY
+      * `review_context` -> null. The settled PASS is preserved verbatim under
+        `execution_recovery.closed_review` — the record still says the review
+        happened and what it found.
+      * `execution_recovery` — the same field the neighbouring recoveries write,
+        with `from_status` the review status it left, plus
+        `remediation_receipt_id` naming the receipt that demanded the remediation.
+      * `lifecycle` observed at the Ready status the caller read back from Jira
+        (po transitions Jira FIRST; this records that fact, it does not cause it).
+
+    WHY `validation_route` IS NOT RECOMPUTED HERE
+      This is the deliberate divergence from `recover_failed_review_to_ready`
+      (`store.py:1043-1053`), and it is a decision rather than an omission. That
+      transition recomputes because the route it found was T-090(d)'s
+      evidence-absence RAISE to PEER — an artefact of missing evidence, not a
+      characteristic of the work — and leaving it in place would make the next
+      review unopenable (`store.py:972-977`). Here the route was derived from the
+      item's own characteristics in the ordinary way, and a review actually opened
+      and settled on it, which proves it is openable. There is nothing to repair,
+      so `execution_profile` is left byte-identical.
+
+    It creates no ownership: the item goes back to the QUEUE and is won by an
+    ordinary claim. Refuses, with a structured reason, everything that is NOT
+    exactly this state.
+    """
+    import board                                         # noqa: E402
+    if expected_revision is None:
+        raise StateError("expected_revision is required; there is no force update")
+    if not recovery_ref:
+        raise StateError("recovery_ref is required — recovery is a lifecycle act and "
+                         "every lifecycle act names its reason")
+    if actor not in RECOVERY_AUTHORITIES:
+        raise StateError("unauthorised-recovery-actor: %r may not recover review "
+                         "state; this is a Product lifecycle act (%s)"
+                         % (actor, "/".join(RECOVERY_AUTHORITIES)))
+    sid_to = str(jira_status_id)
+    if board.canonical_for(sid_to) != "ready":
+        raise StateError("jira-not-ready: %s read back from Jira is %s (%s), not the "
+                         "Ready status; po transitions Jira first and passes the "
+                         "status it read back" % (work_item_id, sid_to,
+                                                  board.name_for(sid_to) or "unknown"))
+    with record_lock("task", work_item_id):
+        cur = read("task", work_item_id)
+        if cur is None:
+            raise StateError("task %s does not exist" % work_item_id)
+        if cur["revision"] != expected_revision:
+            raise StateError("stale write refused: task %s is at revision %d, caller "
+                             "expected %d" % (work_item_id, cur["revision"],
+                                              expected_revision))
+        if cur.get("record_type") != "executable":
+            raise StateError("container records hold no review state to recover")
+        lc = cur.get("lifecycle") or {}
+        sid_from = str(lc.get("jira_status_id") or "")
+        # A Done item needs no separate branch: it is not canonically `review`, so
+        # this same check refuses it. A dead branch would only invite belief.
+        if lc.get("canonical") != "review":
+            raise StateError("not-in-review: %s is %r at status %s; this recovery "
+                             "applies only to an item in a review status"
+                             % (work_item_id, lc.get("canonical"), sid_from or "none"))
+        rc = cur.get("review_context")
+        if not isinstance(rc, dict):
+            raise StateError("no-review-context: %s carries no review context; there "
+                             "is no settled review to close" % work_item_id)
+        if rc.get("review_type") not in ("self", "qa"):
+            raise StateError("not-a-self-or-qa-review: %s's review is %r; only a "
+                             "settled SELF or QA review reaches this recovery, and a "
+                             "PEER context carries transfer semantics this transition "
+                             "does not reason about"
+                             % (work_item_id, rc.get("review_type")))
+        if rc.get("review_result") != "pass":
+            raise StateError("review-not-passed: %s's review is %r; only a settled "
+                             "PASS is recovered — a FAIL has its own handlers"
+                             % (work_item_id, rc.get("review_result")))
+        if cur.get("ownership") is not None:
+            raise StateError("already-owned: %s is owned by %s — recovery never takes "
+                             "work from a current owner"
+                             % (work_item_id, (cur["ownership"] or {}).get("seat_id")))
+        if cur.get("completion_reconciliation") is not None:
+            raise StateError("already-reconciled-complete: %s is recorded as factually "
+                             "complete; it is never sent backward to Ready" % work_item_id)
+
+        # NOT `valid_integration_receipt`: that helper filters OUT receipts requiring
+        # remediation, so it would refuse every legitimate input to this transition.
+        # Latest-wins, mirroring completion.py:87 — a later clean integration means
+        # the remediation already happened, and any-matching would recover it anyway.
+        receipts = read_integration_receipts(work_item_id)
+        usable = [r for r in receipts if isinstance(r, dict)]
+        if not usable:
+            if receipts:
+                raise StateError("malformed-integration-receipt: %s's latest receipt "
+                                 "is not an object" % work_item_id)
+            raise StateError("no-integration-receipt: %s has no integration receipt; "
+                             "nothing records a remediation to perform" % work_item_id)
+        latest = sorted(usable, key=lambda r: r.get("created_at") or "")[-1]
+        if not latest.get("remediation_required"):
+            raise StateError("no-remediation-required: %s's latest integration receipt "
+                             "%s (%r) does not require Product remediation; a settled "
+                             "PASS with a clean receipt completes, it is not recovered"
+                             % (work_item_id, latest.get("integration_receipt_id"),
+                                latest.get("outcome")))
+        # STOP is task-scoped safety and blocks the recovery itself. HOLD and FREEZE
+        # deliberately do NOT: they gate new CLAIMS, and recovery creates no
+        # ownership. A recovered item under HOLD or FREEZE simply sits in Ready
+        # unclaimable, which is truthful rather than hidden.
+        for iv in active_interventions():
+            if iv.get("kind") == "stop" and iv.get("target") == work_item_id:
+                raise StateError("task-stopped: a STOP is active on %s; recovery waits "
+                                 "until it is cleared" % work_item_id)
+
+        merged = dict(cur)
+        merged["review_context"] = None
+        merged["execution_recovery"] = {"by": actor, "at": now(),
+                                        "recovery_ref": recovery_ref,
+                                        "from_status": sid_from,
+                                        "closed_review": dict(rc),
+                                        "remediation_receipt_id":
+                                            latest.get("integration_receipt_id")}
+        merged["lifecycle"] = {
+            "canonical": board.canonical_for(sid_to),
+            "jira_column": board.column_for(sid_to),
+            "jira_status_id": sid_to,
+            "jira_status_name": board.name_for(sid_to),
+            "observed_at": now(),
+            "source": "jira",
+        }
+        merged["revision"] = cur["revision"] + 1
+        merged["updated_at"] = now()
+        _validate_one("task", merged)
+        _atomic_write(path_for("task", work_item_id), merged)
+        return merged
+
+
 def reconcile_completed_execution(work_item_id, expected_revision, actor,
                                   completion_ref):
     """Move ALREADY-COMPLETE orphaned execution FORWARD to its derived review. CAS'd.
