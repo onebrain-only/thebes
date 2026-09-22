@@ -651,20 +651,40 @@ def validate(work_item_id, *, state_store=store, jira_client=jira, providers=Non
                        "blocker": "workspace-unresolved"})
         return result
     try:
+        # T-095: a validation MUST see the integration branch. `execute` may
+        # reuse a stale tree — the executor's own uncommitted work is the point
+        # — but a review of already-integrated work read from a stale tree
+        # judges a superseded one, which is how KAN-219 failed committed work
+        # that met its criterion. Refused rather than repaired: what to do with
+        # someone else's uncommitted work is a human decision.
+        realized = workspace_allocator(work_item_id, reviewer, mapping,
+                                       require_base=True)
+    except TypeError:
+        # An allocator double that predates require_base; the freshness contract
+        # is the real allocator's, and a test double is not the place to enforce it.
         realized = workspace_allocator(work_item_id, reviewer, mapping)
     except WorkspaceUnavailable as exc:
         result.update({"workspace_status": "unavailable", "workspace_blocker": str(exc),
-                       "blocker": "workspace-unavailable"})
+                       "blocker": ("workspace-stale-for-validation"
+                                   if getattr(exc, "reason", "") ==
+                                   "workspace-stale-for-validation"
+                                   else "workspace-unavailable")})
         return result
     result.update({"workspace_status": "allocated", "workspace_path": realized["path"],
                    "workspace_branch": realized["branch"],
                    "workspace_reused": realized["reused"]})
     registry = tuple(providers) if providers is not None else available_provider_registry()
-    # The verdict cites the tree the reviewer actually read: the integration
-    # branch at the revision the allocator proved. There is no execution
-    # receipt for work this process never woke, and none is invented.
-    receipt_ref = "integration:%s@%s" % (realized.get("branch"),
-                                         realized.get("expected_revision"))
+    # The verdict cites the tree the reviewer actually read. There is no
+    # execution receipt for work this process never woke, and none is invented.
+    # T-095: the `integration:` prefix is claimed ONLY for the integration
+    # branch itself — a verdict on exec/frontend-1/KAN-219@58cd8b8 was filed
+    # under the word "integration" and read as one for weeks.
+    from agent.state import worktrees as _worktrees
+    branch = realized.get("branch")
+    prefix = "integration" if branch == _worktrees.INTEGRATION_BRANCH else "workspace"
+    receipt_ref = "%s:%s@%s" % (prefix, branch, realized.get("expected_revision"))
+    if realized.get("rebased_to"):
+        receipt_ref += " (fast-forwarded to the base tip for this review)"
     try:
         evidence = validator(work_item_id, task, realized, state_store, jira_client,
                              registry, issue=issue,
