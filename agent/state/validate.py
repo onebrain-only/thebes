@@ -1041,7 +1041,7 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
 
     elif kind == "work_cycle":
         _req(rec, ["work_cycle_id", "employee_id", "work_item_id", "work_kind",
-                   "objective", "status", "plan", "execution", "self_review",
+                   "objective", "status", "plan", "role_work", "self_review",
                    "learning", "definition_of_done"], errs, where)
         if not str(rec.get("work_cycle_id") or "").startswith("cycle-"):
             errs.append("%s: work_cycle_id must start with cycle-" % where)
@@ -1052,21 +1052,21 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
             errs.append("%s: unknown work_kind %r" % (where, rec.get("work_kind")))
         if rec.get("status") not in WORK_CYCLE_STATUSES:
             errs.append("%s: unknown work cycle status %r" % (where, rec.get("status")))
-        for phase in ("plan", "execution", "self_review", "learning"):
+        for phase in ("plan", "role_work", "self_review", "learning"):
             if not isinstance(rec.get(phase), dict):
                 errs.append("%s: %s must be a structured phase" % (where, phase))
         if not isinstance(rec.get("definition_of_done"), list) or not rec.get("definition_of_done"):
             errs.append("%s: definition_of_done must be a non-empty list" % where)
         if rec.get("status") == "completed":
-            for phase in ("plan", "execution", "self_review", "learning"):
+            for phase in ("plan", "role_work", "self_review", "learning"):
                 phase_status = (rec.get(phase) or {}).get("status")
                 accepted = ("completed", "passed", "recorded", "none")
                 if phase_status not in accepted:
                     errs.append("%s: completed work requires completed %s, got %r"
                                 % (where, phase, phase_status))
-            evidence = (rec.get("execution") or {}).get("evidence_refs")
+            evidence = (rec.get("role_work") or {}).get("evidence_refs")
             if not isinstance(evidence, list) or not evidence:
-                errs.append("%s: completed work requires execution evidence" % where)
+                errs.append("%s: completed work requires role-work evidence" % where)
 
     elif kind == "decision":
         _req(rec, ["decision_id", "decision_class", "decided_by", "decision",

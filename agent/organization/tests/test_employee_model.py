@@ -17,10 +17,11 @@ from agent.organization.authority import decision_class_for_permission
 class EmployeeRegistry(unittest.TestCase):
     def test_every_employee_has_the_four_professional_capabilities(self):
         self.assertEqual([], validate_registries())
-        expected = ["understand_and_plan", "execute", "self_review_and_audit",
+        expected = ["understand_and_plan", "perform_role_work", "self_review_and_audit",
                     "learn_and_adapt"]
         for employee in employees().values():
             self.assertEqual(expected, employee["core_capabilities"])
+            self.assertTrue(employee["work_outputs"])
 
     def test_compatibility_roles_share_human_job_families(self):
         self.assertEqual("software-engineer",
@@ -29,6 +30,14 @@ class EmployeeRegistry(unittest.TestCase):
                          employee_profile("backend-1")["role_family"])
         self.assertEqual("product-designer",
                          employee_profile("ux-engineer-1")["role_family"])
+
+    def test_role_work_outputs_are_role_specific_not_code_by_default(self):
+        po = employee_profile("po")
+        self.assertIn("stories", po["work_outputs"])
+        self.assertIn("work_effort", po["work_outputs"])
+        self.assertNotIn("client_changes", po["work_outputs"])
+        self.assertIn("client_changes",
+                      employee_profile("frontend-1")["work_outputs"])
 
     def test_decisions_have_one_owner_and_ceo_is_not_technical_owner(self):
         self.assertEqual(["cto"],
@@ -78,7 +87,7 @@ class ProfessionalLedger(unittest.TestCase):
                                    "Set the bounded architecture direction")
         cycle = records.record_plan(cycle["work_cycle_id"], cycle["revision"], "cto",
                                     ["inspect", "decide"])
-        cycle = records.record_execution(cycle["work_cycle_id"], cycle["revision"],
+        cycle = records.record_role_work(cycle["work_cycle_id"], cycle["revision"],
                                          "cto", ["evidence:decision"])
         cycle = records.record_self_review(cycle["work_cycle_id"], cycle["revision"],
                                            "cto", True)

@@ -424,3 +424,23 @@ decision and delegation records become the professional ledger. RAG remains out 
 scope until this foundation proves stable.
 **Evidence:** `CONTEXT.md`, `agent/EMPLOYEE_MODEL.md`, `agent/organization/`,
 `agent/state/registry/{roles,employee_profiles,authority}.json`.
+
+## D-029 — The four employee capabilities operate on Role Work, not code by default
+
+**Status:** ACTIVE (2026-09-23)
+**Decision:** Planning, performing, self-reviewing and learning are phases of an
+employee's own job. Their object is the Role-specific output named by the assignment.
+Code implementation is only one possible output and is never implied by the word
+"perform". A PO performs work by defining and preparing work; a CTO by deciding,
+directing or delegating technical work; a software engineer may perform code work.
+**Why:** Treating "execution" as a synonym for writing code falsely made leadership
+and operational Roles appear unable to execute, while using the same word for the
+provider runtime, Jira lanes, code implementation and professional work obscured the
+actual authority boundary.
+**Consequences:** The employee cycle calls its second phase `role_work`; every Role
+declares concrete `work_outputs`; self-review checks the employee's own output and is
+not automatically code review or independent acceptance. Technical execution names
+remain valid in the provider and workflow contexts where they actually mean runtime
+or implementation.
+**Evidence:** `CONTEXT.md`, `agent/EMPLOYEE_MODEL.md`,
+`agent/state/registry/roles.json`, `agent/organization/`.

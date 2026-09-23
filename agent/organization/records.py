@@ -27,11 +27,11 @@ def record_plan(work_cycle_id, expected_revision, employee_id, steps, risks=(),
     })
 
 
-def record_execution(work_cycle_id, expected_revision, employee_id, evidence_refs):
+def record_role_work(work_cycle_id, expected_revision, employee_id, evidence_refs):
     refs = list(evidence_refs or ())
     if not refs:
-        raise store.StateError("execution requires evidence_refs")
-    return _advance(work_cycle_id, expected_revision, employee_id, "execution", {
+        raise store.StateError("role work requires evidence_refs")
+    return _advance(work_cycle_id, expected_revision, employee_id, "role_work", {
         "status": "completed", "evidence_refs": refs,
     })
 
@@ -57,17 +57,17 @@ def _advance(work_cycle_id, expected_revision, employee_id, phase, value):
         raise store.StateError("work cycle %s does not exist" % work_cycle_id)
     if current.get("employee_id") != employee_id:
         raise store.StateError("only the assigned employee may advance its work cycle")
-    if phase == "execution" and (current.get("plan") or {}).get("status") != "completed":
-        raise store.StateError("execution cannot be recorded before planning")
-    if phase == "self_review" and (current.get("execution") or {}).get("status") != "completed":
-        raise store.StateError("self-review cannot be recorded before execution")
+    if phase == "role_work" and (current.get("plan") or {}).get("status") != "completed":
+        raise store.StateError("role work cannot be recorded before planning")
+    if phase == "self_review" and (current.get("role_work") or {}).get("status") != "completed":
+        raise store.StateError("self-review cannot be recorded before role work")
     if phase == "learning" and (current.get("self_review") or {}).get("status") != "passed":
         raise store.StateError("learning cannot close a cycle before self-review passes")
     changes = {phase: value, "status": "in_progress"}
     projected = dict(current)
     projected.update(changes)
     if all((projected.get(name) or {}).get("status") in allowed for name, allowed in (
-            ("plan", ("completed",)), ("execution", ("completed",)),
+            ("plan", ("completed",)), ("role_work", ("completed",)),
             ("self_review", ("passed",)), ("learning", ("recorded", "none")))):
         changes["status"] = "completed"
     return store.update("work_cycle", work_cycle_id, expected_revision, changes)

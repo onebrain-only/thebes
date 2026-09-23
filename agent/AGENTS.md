@@ -1,7 +1,7 @@
 # agent/AGENTS.md — The Agent Constitution
 
 **Owner:** analyst (write) · all agents (read)
-**Version:** v1.1 — human employee model + neutral provider boundary
+**Version:** v1.2 — Role Work semantics + neutral provider boundary
 **Last updated:** 2026-09-23
 
 **This file says what each agent *is*.** It does not say what an agent may write — that is
@@ -9,9 +9,11 @@
 `WORKFLOWS.md`. **No permission matrix appears here.** If you need to know whether you may
 edit a file, read `CONTRACT.md`.
 
-> **v1.1 superseding rule.** `agent/EMPLOYEE_MODEL.md` is the canonical employee
-> operating model. Every Seat can understand and plan, execute, self-review, and
-> learn. The hierarchy describes accountability and decision authority, not an
+> **v1.2 superseding rule.** `agent/EMPLOYEE_MODEL.md` is the canonical employee
+> operating model. Every Seat can understand and plan, perform Role Work,
+> self-review, and learn. Role Work means the output owned by the assignment and
+> Role; it does not mean code unless that work calls for code. The hierarchy
+> describes accountability and decision authority, not an
 > inability to perform other direct work. Provider/model restrictions are never
 > Role identity. Where older text below says a Role "never" performs a category of
 > work, read it as a routine-scope or conflict boundary unless an active safety or
@@ -116,12 +118,12 @@ parent is not executable merely because its children are**, and no board column 
 This is the work-item counterpart of the rule below. A seat's purpose is not fungible; neither
 is a work item's capability.
 
-### Accountability is stable; execution is bounded by the assignment
+### Accountability is stable; Role Work is bounded by the assignment
 
 **Added 2026-09-06 by the CEO (`G-023`).**
 
-**A seat has one continuing accountability. That does not make its execution
-capability single-purpose.**
+**A seat has one continuing accountability. That does not make the work it can
+perform synonymous with code or single-purpose.**
 
 Routine work follows Role scope. A direct assignment may be accepted by another
 employee when its outcome, authority, competence, and conflicts are explicit. The
@@ -773,6 +775,7 @@ to this one for the shape.
 
 | Date | Change |
 |---|---|
+| 2026-09-23 | **v1.2 — Role Work semantics.** The four employee capabilities apply to each Role's own outputs, not to a universal code lifecycle. Planning, performing, self-reviewing and learning are role-relative; code implementation is only one possible kind of Role Work. |
 | 2026-09-12 | **v1.0 — Claude configuration renderer boundary.** The Claude renderer now enumerates Seats and resolves Roles from `agent/state/registry/seats.json`, then combines them with Claude-only binding metadata. Legacy binding `role:` fields remain temporarily for migration validation but are not renderer authority. All 26 generated artifacts remain byte-identical; no provider execution is implemented. |
 | 2026-09-12 | **v0.9 — provider-neutral Seat registry.** `agent/state/registry/seats.json` becomes the canonical Seat identity and Seat → Role mapping source. Claude bindings remain unchanged provider configuration and temporarily duplicate the Role for the current renderer; validation checks migration parity. No provider adapter, selection or execution wiring is implemented. |
 | 2026-09-05 | **v0.8 — the developer expansion, CEO-directed.** Roster 17 → **30**. Each team leader gets three developers: `senior-frontend-N` plus `junior-frontend-Na`/`-Nb`, so 5 seniors and 10 juniors. **Each project gets one backend developer** — the app is the only staffed project, so `senior-backend` stays a single seat shared by all five leads. Renamed `senior-frontend`→`senior-frontend-1` and `junior-frontend`→`junior-frontend-1a`; the notification client memory moved to `senior-frontend-5`, whose lead owns D6. **Each senior is scoped to its lead's slices** so the five have disjoint file sets — the only thing that makes five parallel teams real rather than nominal (§5). `lib/core/**`, `lib/data/**` and the four contended files stay shared and serialised. **This puts `G-012`'s Phase 0 router split on the critical path**: at sixteen developers, `app_router.dart` is the schedule |

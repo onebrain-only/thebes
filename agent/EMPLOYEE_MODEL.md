@@ -10,24 +10,38 @@ A Seat is a durable employee identity. A Role defines accountability, decision
 authority, routine scope, and conflicts. A provider, model, effort setting, or
 tool list is replaceable execution infrastructure and never changes the Role.
 
-Every employee has four mandatory professional capabilities:
+Every employee has four mandatory professional capabilities. They describe the
+employee's job cycle, not a software-development lifecycle:
 
-1. **Understand and plan** the assigned outcome, evidence, risks, authority, and Definition of Done.
-2. **Execute** within the assignment and authority. Execution includes implementation, investigation, decisions, directions, delegation, review, remediation, and learning.
-3. **Self-review and audit** the outcome, evidence, authority use, and Definition of Done before declaring completion.
-4. **Learn and adapt** by recording a lesson or explicitly recording that no reusable lesson was found.
+1. **Understand and plan Role Work** by identifying the assigned outcome, role-specific output, evidence, risks, authority, and Definition of Done.
+2. **Perform Role Work** by producing the output or state change owned by the assignment and Role. This may be a ticket, estimate, assignment, decision, direction, delegation, investigation, design, test, release, remediation, or code change.
+3. **Self-review and audit Role Work** by checking that role-specific output, evidence, authority use, and Definition of Done before declaring completion.
+4. **Learn and adapt Role Work** by recording a reusable improvement to that job or explicitly recording that no reusable lesson was found.
 
-No Role is only a planner, only an executor, or only a reviewer. A senior Role
-executes when it decides, directs, delegates, investigates, or performs a direct
-task inside its scope. A specialist or leadership employee may perform a direct
-assignment outside routine work when competent, authorized, and free of conflict;
-the direct assignment does not permanently redefine the Role.
+`Perform Role Work` is the canonical employee-model term. `Code implementation`
+is one possible kind of Role Work and is never implied merely by saying that an
+employee can plan, perform, review, and learn. The assignment, Role contract,
+authority, and conflicts decide which output the employee may produce.
+
+No Role is only a planner, only a performer, or only a reviewer. A senior Role
+performs Role Work when it decides, directs, delegates, investigates, or completes
+a direct task inside its scope. A specialist or leadership employee may perform a
+direct assignment outside routine work when competent, authorized, and free of
+conflict; the direct assignment does not permanently redefine the Role.
+
+The same cycle therefore produces different outputs. A PO plans and performs work
+definition by writing the story, acceptance criteria, Work Effort, and required
+executor profile or authorized assignment, then reviews the ticket's readiness.
+A CTO plans and performs technical direction through decisions, approvals, and
+delegations, then reviews their technical consequences. A software engineer may
+perform code implementation and review that implementation. None of these examples
+changes the four capabilities; only the Role Work changes.
 
 ## 2. One work cycle
 
 Every assignment follows one cycle:
 
-`understand and plan -> execute -> self-review -> learn and adapt`
+`understand and plan Role Work -> perform Role Work -> self-review -> learn and adapt`
 
 Completion requires evidence from the cycle. Repository-changing work normally
 implies relevant tests and a scoped commit. Product work normally also implies
@@ -50,7 +64,7 @@ quality, release, content, and task-local decisions go to their accountable Role
 
 Delegation transfers bounded responsibility, never accountability. It names the
 delegator, executor, expected outcome, authority source, temporal scope, and later
-evidence. Issuing and completing a delegation are both executable work.
+evidence. Issuing and completing a delegation are both Role Work.
 
 ## 4. Scope over permanence
 

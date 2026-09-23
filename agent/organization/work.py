@@ -39,7 +39,7 @@ def new_work_cycle(employee_id, work_item_id, work_kind, objective,
         "objective": objective,
         "status": "planned",
         "plan": {"status": "required", "steps": [], "risks": [], "authority_refs": []},
-        "execution": {"status": "pending", "evidence_refs": []},
+        "role_work": {"status": "pending", "evidence_refs": []},
         "self_review": {"status": "pending", "findings": [], "evidence_refs": []},
         "learning": {"status": "pending", "learning_refs": []},
         "definition_of_done": list(completion_actions(

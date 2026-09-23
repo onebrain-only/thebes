@@ -12,7 +12,8 @@ ROLES = os.path.join(REGISTRY, "roles.json")
 PROFILES = os.path.join(REGISTRY, "employee_profiles.json")
 AUTHORITY = os.path.join(REGISTRY, "authority.json")
 CORE_CAPABILITIES = (
-    "understand_and_plan", "execute", "self_review_and_audit", "learn_and_adapt",
+    "understand_and_plan", "perform_role_work", "self_review_and_audit",
+    "learn_and_adapt",
 )
 _ID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
@@ -70,6 +71,10 @@ def validate_registries():
             errors.append("invalid seat id %r" % seat_id)
         if not str((profiles.get(seat_id) or {}).get("primary_scope") or "").strip():
             errors.append("employee %r needs a primary_scope" % seat_id)
+    for role_id, role in sorted(roles.items()):
+        outputs = (role or {}).get("work_outputs") or []
+        if not isinstance(outputs, list) or not outputs:
+            errors.append("role %r needs at least one work_output" % role_id)
     decisions = docs["authority"].get("decision_classes") or {}
     for decision_class, rule in sorted(decisions.items()):
         owner = (rule or {}).get("accountable_role")
@@ -102,6 +107,7 @@ def employees():
             "core_capabilities": list(CORE_CAPABILITIES),
             "accountability": role["accountability"],
             "routine_scope": list(role.get("routine_scope") or []),
+            "work_outputs": list(role.get("work_outputs") or []),
             "decision_classes": list(role.get("decision_classes") or []),
             "conflicts": list(role.get("conflicts") or []),
         }
