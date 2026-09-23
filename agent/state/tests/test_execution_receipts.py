@@ -136,21 +136,21 @@ class DurableReceiptRecoveryTests(unittest.TestCase):
         before = store.read_execution_receipt(invocation)
         approval = store.record_execution_approval(
             invocation, "KAN-198", "frontend-1", "claude-session-1",
-            "mcp__claude_ai_Supabase__apply_migration", "ceo", "one native tool call")
+            "mcp__claude_ai_Supabase__apply_migration", "devops", "one native tool call")
         self.assertEqual("claude-code", approval["provider_id"])
         self.assertEqual(before, store.read_execution_receipt(invocation))
         with self.assertRaisesRegex(store.StateError, "does not match"):
             store.record_execution_approval(
                 invocation, "KAN-198", "frontend-1", "wrong-session",
-                "mcp__claude_ai_Supabase__apply_migration", "ceo", "one native tool call")
+                "mcp__claude_ai_Supabase__apply_migration", "devops", "one native tool call")
         with self.assertRaisesRegex(store.StateError, "does not match"):
             store.record_execution_approval(
                 invocation, "KAN-198", "frontend-1", "claude-session-1",
-                "mcp__claude_ai_Supabase__other", "ceo", "one native tool call")
+                "mcp__claude_ai_Supabase__other", "frontend-1", "one native tool call")
         with self.assertRaisesRegex(store.StateError, "wildcarded"):
             store.record_execution_approval(
                 invocation, "KAN-198", "frontend-1", "claude-session-1",
-                "mcp__claude_ai_Supabase__*", "ceo", "one native tool call")
+                "mcp__claude_ai_Supabase__*", "frontend-1", "one native tool call")
 
     def test_exact_grants_compose_without_subset_or_boundary_drift(self):
         original = "controller-composed-boundary"
@@ -167,7 +167,7 @@ class DurableReceiptRecoveryTests(unittest.TestCase):
             provider_selection={"primary_provider_id": "claude-code", "selected_provider_id": "claude-code"})
         first = store.record_execution_approval(
             original, "KAN-198", "frontend-1", "claude-session-1", "mcp__example__write",
-            "ceo", "exact write")
+            "frontend-1", "exact write")
         second_lease = store.create("execution_lease", {
             "work_item_id": "KAN-198", "seat_id": "frontend-1", "mode_revision": 12,
             "reason_ref": "continuation", "closed_at": None, "closed_by": None,
@@ -180,7 +180,7 @@ class DurableReceiptRecoveryTests(unittest.TestCase):
             continuation_of=original, approval_id=first["execution_approval_id"],
             approval_ids=[first["execution_approval_id"]])
         second = store.record_execution_approval(
-            original, "KAN-198", "frontend-1", "claude-session-1", "Bash", "ceo",
+            original, "KAN-198", "frontend-1", "claude-session-1", "Bash", "frontend-1",
             "exact local continuation command", allowed_operation="python3 -c 'resume_kan186()'")
         before_composition = {
             kind: store.read_all(kind)
@@ -198,10 +198,10 @@ class DurableReceiptRecoveryTests(unittest.TestCase):
             store.compose_execution_approvals(original, [first["execution_approval_id"]])
         with self.assertRaisesRegex(store.StateError, "does not match"):
             store.record_execution_approval(
-                original, "KAN-198", "frontend-1", "wrong-session", "Bash", "ceo", "no")
+                original, "KAN-198", "frontend-1", "wrong-session", "Bash", "frontend-1", "no")
         with self.assertRaisesRegex(store.StateError, "does not match"):
             store.record_execution_approval(
-                original, "KAN-999", "frontend-1", "claude-session-1", "Bash", "ceo", "no")
+                original, "KAN-999", "frontend-1", "claude-session-1", "Bash", "frontend-1", "no")
 
     def test_retired_session_has_one_linked_replacement_without_replay(self):
         invocation = "controller-retire-session"
@@ -236,7 +236,7 @@ class DurableReceiptRecoveryTests(unittest.TestCase):
         store.record_execution_receipt(original, "KAN-198", "frontend-1",
                                        self.lease["execution_lease_id"], blocked)
         grant = store.record_execution_approval(original, "KAN-198", "frontend-1",
-                                                "claude-session-1", "mcp__example__write", "ceo", "once")
+                                                "claude-session-1", "mcp__example__write", "frontend-1", "once")
         later = store.create("execution_lease", {"work_item_id": "KAN-198", "seat_id": "frontend-1",
                                                     "mode_revision": 12, "reason_ref": "continuation",
                                                     "closed_at": None, "closed_by": None})
@@ -260,7 +260,7 @@ class DurableReceiptRecoveryTests(unittest.TestCase):
                                        self.lease["execution_lease_id"], blocked)
         with self.assertRaisesRegex(store.StateError, "control-plane"):
             store.record_execution_approval(
-                invocation, "KAN-198", "frontend-1", "claude-session-1", "Bash", "ceo", "never",
+                invocation, "KAN-198", "frontend-1", "claude-session-1", "Bash", "frontend-1", "never",
                 allowed_operation="python3 -c 'execute_approved_claude_continuation()'")
 
 

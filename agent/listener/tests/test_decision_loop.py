@@ -46,7 +46,7 @@ def decision_envelope(responds_to, key="d-1", work_item_id=WORK_ITEM,
                       invocation=INVOCATION, permission="Bash"):
     return contract.normalize({
         "schema_version": 1, "intent_type": contract.DECISION_RESPONSE,
-        "source": "listener-cli", "actor": "ceo", "idempotency_key": key,
+        "source": "listener-cli", "actor": "backend-1", "idempotency_key": key,
         "correlation_id": "corr-w-1", "responds_to": responds_to,
         "payload": {"work_item_id": work_item_id, "decision": "approve",
                     "original_invocation_id": invocation, "permission": permission,
@@ -88,7 +88,7 @@ class ListenerDecisionLoop(unittest.TestCase):
             original = waiting_intent(transport)
             waiting = store.read_intent(original["intent_id"])
             self.assertEqual(store.WAITING_INPUT, waiting["delivery_state"])
-            # The bounded decision request the CEO reads back.
+            # The bounded decision request the accountable employee reads back.
             result = store.read_result(original["intent_id"])
             self.assertEqual(INVOCATION,
                              result["controller_result"]["result"]["invocation_id"])
@@ -235,6 +235,7 @@ class ControllerDecision(unittest.TestCase):
 
         result = controller.decide(WORK_ITEM, INVOCATION, "Bash",
                                    "resume past the boundary",
+                                   approving_authority="backend-1",
                                    state_store=state, resumer=resumer)
         self.assertEqual(1, len(state.approvals))
         approval = state.approvals[0]
@@ -242,7 +243,8 @@ class ControllerDecision(unittest.TestCase):
         # from the caller — a decision can answer a question, not redirect it.
         self.assertEqual("backend-1", approval["seat_id"])
         self.assertEqual(SESSION, approval["claude_session_id"])
-        self.assertEqual("ceo", approval["approving_authority"])
+        self.assertEqual("backend-1", approval["approving_authority"])
+        self.assertEqual("task_local_technical", approval["decision_class"])
         self.assertEqual("Bash", approval["permission"])
         self.assertEqual(WORK_ITEM, resumed["work_item_id"])
         self.assertEqual("recorded", result["decision_status"])

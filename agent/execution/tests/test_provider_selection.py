@@ -87,7 +87,7 @@ class ProviderSelectionTests(unittest.TestCase):
         self.assertEqual([], claude_transport.wakes)
         self.assertEqual([], codex_transport.wakes)
 
-    def test_product_capability_filter_keeps_claude_primary_despite_codex_override(self):
+    def test_override_is_honored_only_when_the_provider_is_eligible(self):
         browser_request = request(required_execution_features=frozenset({
             ExecutionFeature.REPOSITORY_READ,
             ExecutionFeature.BROWSER_AUTOMATION,
@@ -98,7 +98,8 @@ class ProviderSelectionTests(unittest.TestCase):
         self.assertEqual("claude-code", selected.provider_id)
 
         forced = select_provider(browser_request, providers, override="codex-cli")
-        self.assertEqual("claude-code", forced.provider_id)
+        self.assertIsNone(forced.provider_id)
+        self.assertEqual(FailureCode.UNSUPPORTED_CAPABILITY, forced.failure.code)
 
     def test_non_product_override_selects_only_the_requested_eligible_provider(self):
         claude_transport = RecordingTransport("Claude")
@@ -114,14 +115,13 @@ class ProviderSelectionTests(unittest.TestCase):
         self.assertIsNone(invalid.provider)
         self.assertEqual(FailureCode.UNSUPPORTED_CAPABILITY, invalid.failure.code)
 
-    def test_product_code_codex_override_cannot_bypass_eligible_claude(self):
-        """Product code has a provider policy; a controller override is not a bypass."""
+    def test_product_code_override_is_context_not_employee_identity(self):
         providers = (StubProvider(declared("claude-code")),
                      StubProvider(declared("codex-cli")))
         selected = select_provider(request(), providers, override="codex-cli")
-        self.assertEqual("claude-code", selected.provider_id)
-        self.assertEqual({"primary_provider_id": "claude-code",
-                          "selected_provider_id": "claude-code"}, selected.receipt_evidence())
+        self.assertEqual("codex-cli", selected.provider_id)
+        self.assertEqual({"primary_provider_id": "codex-cli",
+                          "selected_provider_id": "codex-cli"}, selected.receipt_evidence())
 
     def test_product_frontend_and_backend_choose_eligible_claude(self):
         for capability in ("frontend", "backend"):

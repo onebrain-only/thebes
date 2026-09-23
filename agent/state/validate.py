@@ -29,6 +29,7 @@ SEATS_JSON = os.path.join(REGISTRY, "seats.json")
 TOPOLOGY_JSON = os.path.join(REGISTRY, "topology.json")
 SCHEMA_VERSIONS = {1, 2, 3}
 
+sys.path.insert(0, ROOT)
 sys.path.insert(0, STATE)
 import policy                                          # noqa: E402
 import board                                           # noqa: E402
@@ -59,7 +60,7 @@ CANONICAL_STATES = set(board.CANONICAL_STATES)
 
 # Bounded CEO Product grants. Mirrors agent/state/store.py; kept here because
 # validate.py must not import store (store imports validate).
-AUTHORIZATION_KINDS = ("BOUNDED_PRODUCT_BATCH",)
+AUTHORIZATION_KINDS = ("BOUNDED_PRODUCT_BATCH", "APPROVED_ROADMAP_BATCH")
 AUTHORIZATION_STATUSES = ("active", "exhausted", "revoked", "suspended")
 CANONICAL_PLANNER = "canonical-thebes-planner"
 
@@ -184,6 +185,13 @@ MAX_REF_LEN = 300      # identifier/reference fields; catches a pasted ticket bo
 # characters. Removing the bound entirely was rejected — a reference field that
 # accepts anything stops being a reference field.
 MAX_VERDICT_REF_LEN = 2000
+
+WORK_KINDS = {"plan", "implement", "investigate", "decide", "direct",
+              "delegate", "review", "remediate", "learn"}
+WORK_CYCLE_STATUSES = {"planned", "in_progress", "blocked", "completed"}
+TEMPORAL_SCOPES = {"invocation", "task", "session", "project", "product",
+                   "organization", "until_condition"}
+DELEGATION_STATUSES = {"active", "completed", "revoked"}
 
 
 def seats():
@@ -1013,7 +1021,8 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
         _req(rec, ["learning_id", "scope_type", "scope_id", "pattern",
                    "evidence_refs", "occurrences", "status", "recommendation"],
              errs, where)
-        if rec.get("scope_type") not in {"capability", "product", "workflow"}:
+        if rec.get("scope_type") not in {"employee", "capability", "project", "product",
+                                         "workflow", "organization"}:
             errs.append("%s: unknown learning scope_type %r" % (where, rec.get("scope_type")))
         if rec.get("status") not in {"candidate", "accepted", "rejected",
                                      "superseded", "contradicted"}:
@@ -1023,11 +1032,81 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
         if rec.get("status") != "candidate" and not rec.get("decided_by"):
             errs.append("%s: a decided learning record records who decided it — "
                         "runtime analysis may only produce 'candidate'" % where)
-        if rec.get("decided_by") and rec["decided_by"] not in ("ceo", "cto"):
-            errs.append("%s: %r is not a learning decision authority"
-                        % (where, rec.get("decided_by")))
+        if rec.get("status") == "accepted" and not rec.get("implementation_hook") \
+                and rec.get("classification") != "informational":
+            errs.append("%s: accepted learning needs an implementation_hook or "
+                        "informational classification" % where)
         for f in sorted(set(rec) & EVENT_BANNED_FIELDS):
             errs.append("%s: learning carries banned field %r" % (where, f))
+
+    elif kind == "work_cycle":
+        _req(rec, ["work_cycle_id", "employee_id", "work_item_id", "work_kind",
+                   "objective", "status", "plan", "execution", "self_review",
+                   "learning", "definition_of_done"], errs, where)
+        if not str(rec.get("work_cycle_id") or "").startswith("cycle-"):
+            errs.append("%s: work_cycle_id must start with cycle-" % where)
+        if rec.get("employee_id") not in seatset:
+            errs.append("%s: employee_id %r is not a declared seat"
+                        % (where, rec.get("employee_id")))
+        if rec.get("work_kind") not in WORK_KINDS:
+            errs.append("%s: unknown work_kind %r" % (where, rec.get("work_kind")))
+        if rec.get("status") not in WORK_CYCLE_STATUSES:
+            errs.append("%s: unknown work cycle status %r" % (where, rec.get("status")))
+        for phase in ("plan", "execution", "self_review", "learning"):
+            if not isinstance(rec.get(phase), dict):
+                errs.append("%s: %s must be a structured phase" % (where, phase))
+        if not isinstance(rec.get("definition_of_done"), list) or not rec.get("definition_of_done"):
+            errs.append("%s: definition_of_done must be a non-empty list" % where)
+        if rec.get("status") == "completed":
+            for phase in ("plan", "execution", "self_review", "learning"):
+                phase_status = (rec.get(phase) or {}).get("status")
+                accepted = ("completed", "passed", "recorded", "none")
+                if phase_status not in accepted:
+                    errs.append("%s: completed work requires completed %s, got %r"
+                                % (where, phase, phase_status))
+            evidence = (rec.get("execution") or {}).get("evidence_refs")
+            if not isinstance(evidence, list) or not evidence:
+                errs.append("%s: completed work requires execution evidence" % where)
+
+    elif kind == "decision":
+        _req(rec, ["decision_id", "decision_class", "decided_by", "decision",
+                   "rationale_ref", "temporal_scope", "consulted"], errs, where)
+        if not str(rec.get("decision_id") or "").startswith("decision-"):
+            errs.append("%s: decision_id must start with decision-" % where)
+        if rec.get("temporal_scope") not in TEMPORAL_SCOPES:
+            errs.append("%s: unknown temporal_scope %r"
+                        % (where, rec.get("temporal_scope")))
+        if rec.get("temporal_scope") != "organization" and not rec.get("scope_ref"):
+            errs.append("%s: a bounded decision requires scope_ref" % where)
+        if not isinstance(rec.get("consulted"), list):
+            errs.append("%s: consulted must be a list" % where)
+        try:
+            from agent.organization.authority import assert_decision_authority
+            assert_decision_authority(rec.get("decision_class"), rec.get("decided_by"),
+                                      task_owner=rec.get("task_owner"))
+        except (ValueError, KeyError) as exc:
+            errs.append("%s: invalid decision authority: %s" % (where, exc))
+
+    elif kind == "delegation":
+        _req(rec, ["delegation_id", "delegated_by", "delegated_to", "work_ref",
+                   "outcome", "decision_class", "accountable_role", "authority_ref",
+                   "temporal_scope", "status", "evidence_refs"], errs, where)
+        if not str(rec.get("delegation_id") or "").startswith("delegation-"):
+            errs.append("%s: delegation_id must start with delegation-" % where)
+        for field in ("delegated_by", "delegated_to"):
+            actor = rec.get(field)
+            if actor != "ceo" and actor not in seatset:
+                errs.append("%s: %s %r is not a declared employee"
+                            % (where, field, actor))
+        if rec.get("status") not in DELEGATION_STATUSES:
+            errs.append("%s: unknown delegation status %r" % (where, rec.get("status")))
+        if rec.get("temporal_scope") not in TEMPORAL_SCOPES:
+            errs.append("%s: unknown delegation temporal_scope %r"
+                        % (where, rec.get("temporal_scope")))
+        if not isinstance(rec.get("evidence_refs"), list):
+            errs.append("%s: delegation evidence_refs must be a list" % where)
+        if rec.get("status") == "completed" and not rec.get("evidence_refs"):
+            errs.append("%s: a completed delegation requires evidence" % where)
 
     elif kind == "coverage":
         _req(rec, ["coverage_id"], errs, where)
@@ -1213,9 +1292,12 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
                         % (where, rec.get("authorization_kind")))
         # The whole point of the record: a grant that does not name a human act
         # is not a grant. Thebes must never be able to author one for itself.
-        if rec.get("approving_authority") != "ceo":
-            errs.append("%s: a product authorization is a CEO act, not %r"
-                        % (where, rec.get("approving_authority")))
+        expected_authority = ("ceo" if rec.get("authorization_kind") == "BOUNDED_PRODUCT_BATCH"
+                              else "pm")
+        if rec.get("approving_authority") != expected_authority:
+            errs.append("%s: %s authorization requires %s authority, not %r"
+                        % (where, rec.get("authorization_kind"), expected_authority,
+                           rec.get("approving_authority")))
         if rec.get("selection_authority") != CANONICAL_PLANNER:
             errs.append("%s: selection authority must be the canonical planner" % where)
         if not str(rec.get("authorization_ref") or "").strip():
@@ -1292,8 +1374,18 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
             errs.append("%s: execution approval seat %r is not declared" % (where, rec.get("seat_id")))
         if rec.get("provider_id") != "claude-code":
             errs.append("%s: execution approval is Claude Code only" % where)
-        if rec.get("approving_authority") != "ceo":
-            errs.append("%s: execution approval requires ceo authority" % where)
+        decision_class = rec.get("decision_class")
+        if decision_class is None:
+            if rec.get("approving_authority") != "ceo":
+                errs.append("%s: legacy execution approval requires ceo authority" % where)
+        else:
+            try:
+                from agent.organization.authority import assert_decision_authority
+                assert_decision_authority(decision_class,
+                                          rec.get("approving_authority"),
+                                          task_owner=rec.get("seat_id"))
+            except ValueError as exc:
+                errs.append("%s: invalid execution approval authority: %s" % (where, exc))
         if "*" in str(rec.get("permission") or ""):
             errs.append("%s: execution approval cannot be wildcarded" % where)
         operation = rec.get("allowed_operation")
@@ -1312,8 +1404,9 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
         if (not JIRA_KEY.match(str(rec.get("work_item_id") or ""))
                 or rec.get("seat_id") not in seatset):
             errs.append("%s: continuation preparation needs a known work item and seat" % where)
-        if rec.get("provider_id") != "claude-code" or rec.get("prepared_by") != "ceo":
-            errs.append("%s: continuation preparation must be CEO-authorized Claude Code" % where)
+        if (rec.get("provider_id") != "claude-code"
+                or rec.get("prepared_by") not in ("system-policy", "orchestrator", "ceo")):
+            errs.append("%s: continuation preparation needs a known system actor" % where)
         if rec.get("historical_request_persisted") is not False:
             errs.append("%s: preparation must not rewrite historical request truth" % where)
         if "*" in str(rec.get("permission") or ""):
@@ -1328,8 +1421,9 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
                    "seat_id", "provider_id", "claude_session_id", "reason", "retired_by"], errs, where)
         if not str(rec.get("execution_session_retirement_id") or "").startswith("session-retirement-"):
             errs.append("%s: session retirement id must start with session-retirement-" % where)
-        if rec.get("provider_id") != "claude-code" or rec.get("retired_by") != "ceo":
-            errs.append("%s: session retirement must be CEO-authorized Claude evidence" % where)
+        allowed_retirement = ("orchestrator", "system-policy", "ceo", rec.get("seat_id"))
+        if rec.get("provider_id") != "claude-code" or rec.get("retired_by") not in allowed_retirement:
+            errs.append("%s: session retirement needs a known system or task actor" % where)
 
     elif kind == "execution_replacement":
         _req(rec, ["execution_replacement_id", "original_invocation_id", "retirement_id", "work_item_id",
@@ -1337,8 +1431,9 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
                    "authorization_scope", "prepared_by", "replay_product_actions"], errs, where)
         if not str(rec.get("execution_replacement_id") or "").startswith("replacement-"):
             errs.append("%s: replacement id must start with replacement-" % where)
-        if rec.get("provider_id") != "claude-code" or rec.get("prepared_by") != "ceo":
-            errs.append("%s: replacement must retain CEO-authorized Claude lineage" % where)
+        allowed_replacement = ("orchestrator", "system-policy", "ceo", rec.get("seat_id"))
+        if rec.get("provider_id") != "claude-code" or rec.get("prepared_by") not in allowed_replacement:
+            errs.append("%s: replacement needs a known system or task actor" % where)
         if rec.get("replay_product_actions") is not False:
             errs.append("%s: replacement must prohibit Product replay" % where)
 
@@ -1493,6 +1588,11 @@ def check(runtime=None):
     errs = []
     registry_errors = roster.validation_errors(SEATS_JSON)
     errs += ["seat registry: %s" % e for e in registry_errors]
+    try:
+        from agent.organization.registry import validate_registries
+        errs += ["organization registry: %s" % e for e in validate_registries()]
+    except (ImportError, ValueError) as exc:
+        errs.append("organization registry: %s" % exc)
     if not registry_errors:
         seat_topology = seats_by_capability()
         for capability in sorted(set(seat_topology) - CAPABILITIES):
@@ -1529,6 +1629,8 @@ def check(runtime=None):
     kinds = {"task": "tasks", "routing": "routing", "exception": "exceptions",
              "dependency": "dependencies", "intervention": "interventions",
              "policy": "policies", "event": "events", "learning": "learning",
+             "work_cycle": "work-cycles", "decision": "decisions",
+             "delegation": "delegations",
              "coverage": "coverage", "correction": "corrections",
              "operating_mode": "operating-mode", "execution_lease": "execution-leases",
              "execution_receipt": "execution-receipts", "execution_approval": "execution-approvals",
@@ -1559,6 +1661,8 @@ def check(runtime=None):
                    "exception": "exception_id", "dependency": "dependency_id",
                    "intervention": "intervention_id", "policy": "policy_id",
                    "event": "event_id", "learning": "learning_id",
+                   "work_cycle": "work_cycle_id", "decision": "decision_id",
+                   "delegation": "delegation_id",
                    "coverage": "coverage_id", "correction": "correction_id",
                    "operating_mode": "operating_mode_id",
                    "execution_lease": "execution_lease_id",

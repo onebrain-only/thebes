@@ -764,7 +764,7 @@ def _run_completion_tail(result, work_item_id, execution, realized, state_store,
 def decide(work_item_id, original_invocation_id, permission, approval_scope,
            allowed_operation=None, *, approving_authority="ceo", state_store=store,
            resumer=None, **resume_kwargs):
-    """Record one exact CEO decision, then resume the workflow that asked for it.
+    """Record one exact accountable-role decision, then resume the workflow.
 
     This is the missing process-callable half of the Phase-2 authority loop.
     `store.record_execution_approval` and `resume` both already existed, and both
@@ -798,6 +798,8 @@ def decide(work_item_id, original_invocation_id, permission, approval_scope,
         if preparation.get("work_item_id") != work_item_id:
             result["blocker"] = "decision-work-item-mismatch"
             return result
+        from agent.organization.authority import decision_class_for_permission
+        decision_class = decision_class_for_permission(permission, allowed_operation)
         approval = state_store.record_execution_approval(
             original_invocation_id=original_invocation_id,
             work_item_id=work_item_id,
@@ -806,7 +808,8 @@ def decide(work_item_id, original_invocation_id, permission, approval_scope,
             permission=permission,
             approving_authority=approving_authority,
             approval_scope=approval_scope,
-            allowed_operation=allowed_operation)
+            allowed_operation=allowed_operation,
+            decision_class=decision_class)
         result.update({"decision_status": "recorded",
                        "execution_approval_id": approval["execution_approval_id"]})
     except (store.StateError, ValueError) as exc:

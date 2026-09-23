@@ -7,9 +7,10 @@ path, a provider, a seat, a workspace, or a lifecycle decision. A caller can
 name work that already exists and answer a decision Thebes already asked for.
 Nothing else crosses this boundary.
 
-The envelope carries no authority of its own. `actor` records who submitted;
-it does not authenticate them, and Phase 3 is loopback-only for exactly that
-reason.
+The envelope carries no authority of its own. `actor` records the claimed
+employee answering a decision and is checked against the organization authority
+registry by the Controller; it is not authentication, and Phase 3 is loopback-only
+for exactly that reason.
 """
 
 import hashlib

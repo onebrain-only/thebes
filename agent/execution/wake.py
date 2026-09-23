@@ -172,7 +172,7 @@ def granted_permissions(approvals):
 def execute_approved_claude_continuation(approval_ids, request_factory, provider,
                                          *, state_store=None,
                                          closed_by="orchestrator", replacement_session=False):
-    """Resume exactly one Claude session after one immutable CEO approval.
+    """Resume exactly one Claude session after one immutable accountable-role approval.
 
     This is deliberately not provider selection or a new claim.  The original
     receipt, owner, provider, and Claude session are the authority; a fresh

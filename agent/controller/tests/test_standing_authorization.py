@@ -349,7 +349,7 @@ class DurableAndAuditable(unittest.TestCase):
             record = grant()
             self.assertEqual([], validate.validate_record("product_authorization", record))
             forged = dict(record, approving_authority="thebes")
-            self.assertTrue(any("CEO act" in e for e in
+            self.assertTrue(any("requires ceo authority" in e for e in
                                 validate.validate_record("product_authorization", forged)))
             overspent = dict(record, completed_items=[
                 {"work_item_id": "KAN-901", "completed_at": "x", "evidence_ref": "e"},

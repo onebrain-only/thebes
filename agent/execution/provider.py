@@ -18,11 +18,16 @@ from typing import FrozenSet, Optional, Protocol, Tuple, runtime_checkable
 
 
 class ExecutionKind(str, Enum):
+    PLANNING = "planning"
     ASSESSMENT = "assessment"
     IMPLEMENTATION = "implementation"
     VALIDATION = "validation"
     REVIEW = "review"
     DECISION = "decision"
+    DIRECTION = "direction"
+    DELEGATION = "delegation"
+    REMEDIATION = "remediation"
+    LEARNING = "learning"
 
 
 class MutationMode(str, Enum):
@@ -281,6 +286,23 @@ class EscalationRequirement:
 
 
 @dataclass(frozen=True)
+class SelfReview:
+    objective_met: bool
+    authority_respected: bool
+    definition_of_done_met: bool
+    evidence_complete: bool
+    findings: Tuple[str, ...] = ()
+
+    def __post_init__(self):
+        object.__setattr__(self, "findings", tuple(self.findings))
+
+    @property
+    def passed(self):
+        return (self.objective_met and self.authority_respected
+                and self.definition_of_done_met and self.evidence_complete)
+
+
+@dataclass(frozen=True)
 class Failure:
     code: FailureCode
     message: str
@@ -303,11 +325,16 @@ class ExecutionResult:
     duration_seconds: Optional[float] = None
     raw_artifact_ref: Optional[str] = None
     continuation_ref: Optional[str] = None
+    # New work-cycle fields are optional during adapter migration. The canonical
+    # organization layer requires them before a work cycle may be marked complete.
+    self_review: Optional[SelfReview] = None
+    learning_claims: Tuple[EvidenceClaim, ...] = ()
 
     def __post_init__(self):
         object.__setattr__(self, "evidence", tuple(self.evidence))
         object.__setattr__(self, "changed_files", tuple(self.changed_files))
         object.__setattr__(self, "tests", tuple(self.tests))
+        object.__setattr__(self, "learning_claims", tuple(self.learning_claims))
         if not self.invocation_id or not self.summary:
             raise ValueError("invocation_id and summary are required")
         if self.status == ExecutionStatus.PROVIDER_FAILED:

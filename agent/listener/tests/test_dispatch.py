@@ -53,16 +53,17 @@ class ProcessBoundary(unittest.TestCase):
     def test_decision_reaches_the_canonical_controller_decision_entry(self):
         answer = contract.normalize({
             "schema_version": 1, "intent_type": contract.DECISION_RESPONSE,
-            "source": "listener-cli", "actor": "ceo", "idempotency_key": "d-1",
+            "source": "listener-cli", "actor": "backend-1", "idempotency_key": "d-1",
             "correlation_id": "c-1", "responds_to": "intent-1",
             "payload": {"work_item_id": "KAN-900", "decision": "approve",
                         "original_invocation_id": "inv-1", "permission": "Bash",
                         "approval_scope": "the one denied command",
                         "allowed_operation": "psql -c 'select 1'"}})
         self.assertEqual(
-            [sys.executable, "-m", "agent.controller", "decide", "KAN-900",
+             [sys.executable, "-m", "agent.controller", "decide", "KAN-900",
              "--invocation", "inv-1", "--permission", "Bash",
              "--scope", "the one denied command",
+             "--authority", "backend-1",
              "--operation", "psql -c 'select 1'"],
             dispatch.argv_for(answer))
 

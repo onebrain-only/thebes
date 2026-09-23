@@ -1,0 +1,19 @@
+{
+  "record_type": "role_registry",
+  "schema_version": 1,
+  "required_capabilities": ["understand_and_plan", "execute", "self_review_and_audit", "learn_and_adapt"],
+  "roles": {
+    "analyst": {"family": "analysis", "accountability": "Establish evidence-backed organizational and system truth.", "routine_scope": ["investigation", "measurement", "evidence_synthesis"], "decision_classes": ["factual_finding"], "conflicts": ["approve_own_finding_as_policy"]},
+    "backend": {"family": "software-engineer", "accountability": "Deliver and sustain server, data, and integration outcomes.", "routine_scope": ["backend_implementation", "data_implementation", "technical_remediation"], "decision_classes": ["task_local_technical"], "conflicts": ["independently_review_own_high_risk_change"]},
+    "content": {"family": "content", "accountability": "Deliver accurate product language and content operations.", "routine_scope": ["content_creation", "localization", "content_operations"], "decision_classes": ["content_direction"], "conflicts": []},
+    "cpo": {"family": "product-leadership", "accountability": "Own product vision and cross-product scope.", "routine_scope": ["product_strategy", "scope_decision", "direct_product_work"], "decision_classes": ["product_scope"], "conflicts": ["approve_own_company_investment"]},
+    "cto": {"family": "technology-leadership", "accountability": "Own technical direction, architecture, and engineering risk.", "routine_scope": ["technical_strategy", "architecture_decision", "direct_technical_work"], "decision_classes": ["technical_architecture", "security_exception"], "conflicts": ["independently_review_own_high_risk_change"]},
+    "cxo": {"family": "experience-leadership", "accountability": "Own the quality and coherence of the end-to-end experience.", "routine_scope": ["experience_direction", "design_decision", "direct_experience_work"], "decision_classes": ["experience_direction"], "conflicts": ["independently_review_own_high_risk_change"]},
+    "devops": {"family": "platform-engineering", "accountability": "Own delivery platforms, releases, environments, and operational reliability.", "routine_scope": ["platform_implementation", "release", "environment_operation"], "decision_classes": ["release_operation", "production_operation"], "conflicts": ["independently_review_own_high_risk_change"]},
+    "frontend": {"family": "software-engineer", "accountability": "Deliver and sustain client-facing software outcomes.", "routine_scope": ["client_implementation", "accessibility", "technical_remediation"], "decision_classes": ["task_local_technical"], "conflicts": ["independently_review_own_high_risk_change"]},
+    "pm": {"family": "product-management", "accountability": "Own product outcomes, sequencing, and delivery across projects.", "routine_scope": ["roadmap", "priority", "delivery_decision", "direct_product_work"], "decision_classes": ["roadmap_priority", "approved_product_batch"], "conflicts": ["approve_own_company_investment"]},
+    "po": {"family": "product-ownership", "accountability": "Own the work definition, acceptance, and board readiness for a project.", "routine_scope": ["work_definition", "acceptance", "backlog_operation"], "decision_classes": ["work_acceptance", "definition_of_done"], "conflicts": ["accept_work_without_evidence"]},
+    "qa": {"family": "quality-engineering", "accountability": "Own quality strategy, risk-based gates, and regression learning.", "routine_scope": ["quality_strategy", "test_engineering", "risk_review"], "decision_classes": ["quality_gate"], "conflicts": ["rewrite_product_during_review"]},
+    "ux-engineer": {"family": "product-designer", "accountability": "Deliver experience design through specifications and implementation-ready artifacts.", "routine_scope": ["interaction_design", "design_system", "experience_implementation"], "decision_classes": ["task_local_experience"], "conflicts": ["independently_review_own_high_risk_change"]}
+  }
+}

@@ -36,17 +36,19 @@ def main(argv=None):
     again = sub.add_parser("resume",
                            help="resume one already-approved continuation and run its tail")
     again.add_argument("work_item_id")
-    # A decision is the CEO's answer to a boundary Thebes already reported. The
+    # A decision is the accountable employee's answer to a boundary Thebes reported. The
     # seat and provider session are derived from canonical state, never supplied
     # here: a caller may answer a question, not choose who it was asked of.
     call = sub.add_parser("decide",
-                          help="record one exact CEO approval and resume that workflow")
+                          help="record one exact accountable-role approval and resume")
     call.add_argument("work_item_id")
     call.add_argument("--invocation", required=True,
                       help="the original needs_input invocation this answers")
     call.add_argument("--permission", required=True,
                       help="the exact native permission that was denied")
     call.add_argument("--scope", required=True, help="what this approval permits")
+    call.add_argument("--authority", default=None,
+                      help="the employee/owner answering the decision boundary")
     call.add_argument("--operation", default=None,
                       help="the exact allowed operation, when the permission is scoped")
     # A review that is already open — context recorded, owner resolved — has no
@@ -82,7 +84,8 @@ def main(argv=None):
                    else validate(args.work_item_id) if args.command == "validate"
                    else resume(args.work_item_id) if args.command == "resume"
                    else decide(args.work_item_id, args.invocation, args.permission,
-                               args.scope, args.operation)
+                               args.scope, args.operation,
+                               approving_authority=args.authority)
                    if args.command == "decide"
                    else plan_current_sprint() if args.command == "plan-sprint" else plan_backlog()
                    if args.command == "plan-backlog"

@@ -281,7 +281,7 @@ class ResumeTests(PreparationTestCase):
                 original_invocation_id=outcome["invocation_id"],
                 work_item_id="KAN-900", seat_id="backend-1",
                 claude_session_id=SESSION, permission=permission,
-                approving_authority="ceo", approval_scope="fixture grant")
+                approving_authority="backend-1", approval_scope="fixture grant")
 
     def test_resume_drives_the_real_continuation_and_then_the_tail(self):
         make_task()

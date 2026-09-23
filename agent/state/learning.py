@@ -11,17 +11,15 @@ Never `learning -> automatic change`. This module has no write path into task
 records, prompts, bindings or governance, and that is asserted by tests rather than
 promised here: it imports `store` for its own record kind and nothing else.
 
-THE SUBJECT IS A CAPABILITY, NOT A SEAT
-  Patterns attach to `frontend`, `backend`, `po`, `qa` — to the work, not the worker.
-  A seat id may appear inside `evidence_refs` because that is a fact, but no
-  operation scores, ranks or compares seats, and none may be added. There is no
-  leaderboard here and there must never be one: the moment a system rates its own
-  workers, every subsequent report is written for the rating.
+THE SUBJECT MAY BE AN EMPLOYEE OR A DOMAIN
+  Learning is a professional record, not a score. It may describe an employee's
+  own adaptation or a recurring capability/project/product/workflow pattern. It
+  never ranks or compares employees.
 
 RUNTIME MAY ONLY PROPOSE
   Automatic analysis creates `candidate` records and nothing else. Moving one to
   accepted, rejected, superseded or contradicted requires `decide()`, an explicitly
-  authorised act by `ceo` or `cto`. Nothing in Agent View can call it.
+  authorised act by the accountable domain owner. Nothing in Agent View can call it.
 
 HISTORY IS NEVER OVERWRITTEN
   Superseding or contradicting a record leaves it, its evidence and its status in
@@ -35,9 +33,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import store                                            # noqa: E402
 
-SCOPE_TYPES = ("capability", "product", "workflow")
+SCOPE_TYPES = ("employee", "capability", "project", "product", "workflow", "organization")
 STATUSES = ("candidate", "accepted", "rejected", "superseded", "contradicted")
-DECISION_AUTHORITIES = ("ceo", "cto")
 # Runtime analysis may create only this. Everything else needs a human decision.
 RUNTIME_STATUS = "candidate"
 
@@ -74,28 +71,57 @@ def propose(scope_type, scope_id, pattern, evidence_refs, occurrences,
     return store.create("learning", rec)
 
 
+def _scope_owner(record):
+    scope_type, scope_id = record.get("scope_type"), record.get("scope_id")
+    return {
+        "employee": scope_id,
+        "capability": scope_id,
+        "project": "po",
+        "product": "cpo",
+        "workflow": "analyst",
+        "organization": "ceo",
+    }.get(scope_type)
+
+
+def _actor_owns(record, actor):
+    owner = _scope_owner(record)
+    if actor == owner:
+        return True
+    try:
+        from agent.organization.registry import employee_profile
+        return employee_profile(actor)["role"] == owner
+    except (ValueError, KeyError):
+        return False
+
+
 def decide(learning_id, expected_revision, status, actor, reason_ref,
-           supersedes=None):
+           supersedes=None, implementation_hook=None, classification=None):
     """Move a candidate to a decided status. AUTHORISED ACT ONLY.
 
     Runtime analysis cannot reach this: `propose` hard-codes `candidate`, and every
-    other status arrives only through here, only from `ceo` or `cto`, and only with a
-    reason. History is preserved — the superseded record keeps its own status,
+    other status arrives only through here, only from the accountable domain owner,
+    and only with a reason. History is preserved — the superseded record keeps its own status,
     evidence and text, and the new record points back at it.
     """
     if status not in STATUSES or status == RUNTIME_STATUS:
         raise store.StateError("decide() sets a DECIDED status (%s), not %r"
                                % ("/".join(s for s in STATUSES if s != RUNTIME_STATUS),
                                   status))
-    if actor not in DECISION_AUTHORITIES:
-        raise store.StateError("unauthorised-learning-decision: %r may not accept, "
-                               "reject, supersede or contradict learning. Promotion "
-                               "into doctrine is an authorised decision (%s)."
-                               % (actor, "/".join(DECISION_AUTHORITIES)))
+    record = store.read("learning", learning_id)
+    if record is None:
+        raise store.StateError("learning %s does not exist" % learning_id)
+    if not _actor_owns(record, actor):
+        raise store.StateError("unauthorised-learning-decision: %r is not the owner "
+                               "of %s/%s learning"
+                               % (actor, record.get("scope_type"), record.get("scope_id")))
     if not reason_ref:
         raise store.StateError("reason_ref is required — a decision records why")
+    if status == "accepted" and not implementation_hook and classification != "informational":
+        raise store.StateError("accepted learning requires an implementation_hook or "
+                               "classification='informational'")
     changes = {"status": status, "decided_by": actor, "decided_at": store.now(),
-               "reason_ref": reason_ref}
+               "reason_ref": reason_ref, "implementation_hook": implementation_hook,
+               "classification": classification}
     if supersedes:
         changes["supersedes"] = supersedes
     return store.update("learning", learning_id, expected_revision, changes)

@@ -266,7 +266,7 @@ def _exact_permissions(approved_permissions):
 def prepare_claude_continuation_wake(request, session_ref, approved_permissions,
                                      registry_path=SEATS_JSON,
                                      bindings_dir=BINDINGS_DIR, agents_dir=AGENTS_DIR):
-    """Prepare one same-session resume after an exact, durable CEO approval."""
+    """Prepare one same-session resume after an exact, durable accountable-role approval."""
     permissions = _exact_permissions(approved_permissions)
     if session_ref is not None and (not isinstance(session_ref, str) or not session_ref.strip()):
         raise ClaudeWakeError("Claude continuation requires one exact session and permission")
@@ -328,7 +328,7 @@ STANDING_PRODUCT_EXECUTOR_TOOLS = (
 )
 
 # Never standing, at any time, for any work item. A production mutation is a
-# separate CEO act every time it happens; putting one of these in the standing
+# separate domain-owner act every time it happens; putting one of these in the standing
 # set would silently convert "the CEO approves each migration" into "the executor
 # may apply migrations", which is the single boundary Product execution has held
 # since Phase 2.

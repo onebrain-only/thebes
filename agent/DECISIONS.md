@@ -399,3 +399,28 @@ Tests are Product assets under `Dabbler/dabbler-code/tests/` with a written cont
 (`tests/README.md`). Reaching the retest ceiling is a human decision, never a retry. CI is
 designed for and not yet wired; local execution is the proof. Secrets stay outside Git;
 Product mutation authority is unchanged and no test integration reaches around it.
+
+## D-028 — Seats are human-like employees; Roles own accountability, not model ability
+
+**Status:** ACTIVE (2026-09-23)
+**Decision:** Every Seat has four mandatory capabilities: understand and plan,
+execute, self-review and audit, learn and adapt. Execution includes decisions,
+directions and delegations as well as technical work. Roles define continuing
+accountability, decision authority, routine scope and conflicts; providers and
+models are replaceable mechanisms. Exactly one Role owns each decision class. CEO
+approval is reserved for company direction, investment, legal/external commitment,
+and authority constitution. Self-review is normal; independent review is triggered
+only by enumerated risk or conflict. Every decision has temporal scope, and accepted
+learning must have a behavioral hook or be explicitly informational.
+**Why:** The former structure turned transient instructions into permanent identity,
+routed routine technical questions to the CEO, treated senior decision work as
+non-execution, and repeatedly requested approval for Definition-of-Done acts already
+implied by an assigned task. That made the flow a bottleneck instead of a production
+system.
+**Consequences:** `agent/EMPLOYEE_MODEL.md` supersedes absolute incapability language
+in older Role descriptions. Current Seat/Role ids remain compatible while the new
+organization registry composes employee profiles and decision ownership. Work,
+decision and delegation records become the professional ledger. RAG remains out of
+scope until this foundation proves stable.
+**Evidence:** `CONTEXT.md`, `agent/EMPLOYEE_MODEL.md`, `agent/organization/`,
+`agent/state/registry/{roles,employee_profiles,authority}.json`.

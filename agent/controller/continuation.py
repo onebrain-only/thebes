@@ -14,7 +14,7 @@ against the record rather than trusting this module.
 
 The preparation is CONTEXT, not authority. It says "here is exactly where and
 how this work would resume"; it grants nothing. The approval is a separate
-durable CEO act (`store.record_execution_approval`), and the resume itself is
+durable accountable-role act (`store.record_execution_approval`), and the resume itself is
 `agent.execution.wake.execute_approved_claude_continuation`, which is
 Thebes-side. A Product executor neither sees nor invokes any of it.
 """

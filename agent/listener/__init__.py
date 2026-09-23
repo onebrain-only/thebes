@@ -3,7 +3,7 @@
 The Listener receives an instruction, validates its shape, normalizes it into a
 bounded intent, writes it down durably, and hands it to the existing Thebes
 Controller in a separate process. It carries the Controller's answer back, and
-it carries a CEO decision forward into the continuation machinery that already
+it carries an accountable employee decision into the continuation machinery that already
 exists.
 
 IT IS NOT A SECOND CONTROLLER. It never interprets Jira, authorizes Product

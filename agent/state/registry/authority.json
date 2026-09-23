@@ -1,0 +1,26 @@
+{
+  "record_type": "authority_registry",
+  "schema_version": 1,
+  "decision_classes": {
+    "company_direction": {"accountable_role": "ceo", "consulted_roles": ["cpo", "cto", "cxo", "analyst"], "owner_decision": true},
+    "company_investment": {"accountable_role": "ceo", "consulted_roles": ["cpo", "pm", "analyst"], "owner_decision": true},
+    "legal_external_commitment": {"accountable_role": "ceo", "consulted_roles": [], "owner_decision": true},
+    "authority_constitution": {"accountable_role": "ceo", "consulted_roles": ["cto", "cpo", "cxo", "analyst"], "owner_decision": true},
+    "product_scope": {"accountable_role": "cpo", "consulted_roles": ["pm", "cxo", "analyst"], "owner_decision": false},
+    "roadmap_priority": {"accountable_role": "pm", "consulted_roles": ["cpo", "po"], "owner_decision": false},
+    "approved_product_batch": {"accountable_role": "pm", "consulted_roles": ["po"], "owner_decision": false},
+    "work_acceptance": {"accountable_role": "po", "consulted_roles": ["qa"], "owner_decision": false},
+    "technical_architecture": {"accountable_role": "cto", "consulted_roles": ["devops", "backend", "frontend"], "owner_decision": false},
+    "security_exception": {"accountable_role": "cto", "consulted_roles": ["devops"], "owner_decision": false},
+    "release_operation": {"accountable_role": "devops", "consulted_roles": ["cto", "qa"], "owner_decision": false},
+    "production_operation": {"accountable_role": "devops", "consulted_roles": ["cto"], "owner_decision": false},
+    "experience_direction": {"accountable_role": "cxo", "consulted_roles": ["cpo", "ux-engineer"], "owner_decision": false},
+    "quality_gate": {"accountable_role": "qa", "consulted_roles": ["po"], "owner_decision": false},
+    "factual_finding": {"accountable_role": "analyst", "consulted_roles": [], "owner_decision": false},
+    "content_direction": {"accountable_role": "content", "consulted_roles": ["cpo", "cxo"], "owner_decision": false},
+    "task_local_technical": {"accountable_role": "task_owner", "consulted_roles": [], "owner_decision": false},
+    "task_local_experience": {"accountable_role": "task_owner", "consulted_roles": [], "owner_decision": false},
+    "definition_of_done": {"accountable_role": "task_owner", "consulted_roles": ["po"], "owner_decision": false}
+  },
+  "independent_review_risks": ["security", "privacy", "money", "irreversible_production", "public_contract", "architecture_boundary", "evidence_conflict", "explicit_policy"]
+}

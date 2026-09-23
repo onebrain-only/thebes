@@ -350,7 +350,7 @@ ok("telemetry completeness is reported inside the retrospective",
 
 # ---------------------------------------------------------------- LEARNING
 
-section("LEARNING — advisory, capability-scoped, never a ranking")
+section("LEARNING — advisory, domain-owned, never a ranking")
 
 fresh_runtime(); SBC = fresh_roster()
 L = learn.propose("capability", "backend", "recurring PEER waits",
@@ -366,27 +366,30 @@ raises("a learning record refuses without evidence",
 raises("runtime cannot auto-ACCEPT",
        lambda: learn.decide(L["learning_id"], L["revision"], "accepted", "orchestrator",
                             "r"), "unauthorised-learning-decision")
-raises("nor can a seat",
-       lambda: learn.decide(L["learning_id"], L["revision"], "accepted", "backend-1",
-                            "r"), "unauthorised-learning-decision")
+raises("CEO cannot replace the domain owner",
+       lambda: learn.decide(L["learning_id"], L["revision"], "accepted", "ceo",
+                            "r", implementation_hook="test:x"),
+       "unauthorised-learning-decision")
 raises("decide() cannot set 'candidate' back",
        lambda: learn.decide(L["learning_id"], L["revision"], "candidate", "ceo", "r"),
        "DECIDED status")
-acc = learn.decide(L["learning_id"], L["revision"], "accepted", "ceo", "ceo:adopt")
-ok("an authorised decision records who and why",
-   acc["status"] == "accepted" and acc["decided_by"] == "ceo"
-   and acc["reason_ref"] == "ceo:adopt")
+acc = learn.decide(L["learning_id"], L["revision"], "accepted", "backend-1",
+                   "backend:adopt", implementation_hook="test:review-routing")
+ok("the domain owner records who, why, and the behavioral hook",
+   acc["status"] == "accepted" and acc["decided_by"] == "backend-1"
+   and acc["reason_ref"] == "backend:adopt"
+   and acc["implementation_hook"] == "test:review-routing")
 
 L2 = learn.propose("capability", "backend", "contradicting evidence",
                    ["state:KAN-9@rev1", "jira-comment:9"], 2, "repeated", "revisit")
-sup = learn.decide(L2["learning_id"], L2["revision"], "superseded", "ceo", "ceo:x",
+sup = learn.decide(L2["learning_id"], L2["revision"], "superseded", "backend-1", "backend:x",
                    supersedes=L["learning_id"])
 ok("supersession LINKS rather than overwrites", sup["supersedes"] == L["learning_id"])
 ok("  the superseded record and its evidence survive intact",
    store.read("learning", L["learning_id"])["evidence_refs"] == L["evidence_refs"])
 rej = learn.decide(learn.propose("capability", "frontend", "p", ["state:K@1"], 2,
                                  "repeated", "r")["learning_id"], 1, "rejected",
-                   "cto", "cto:no")
+                   "frontend-1", "frontend:no")
 ok("rejection preserves the record rather than deleting it",
    rej["status"] == "rejected" and store.read("learning", rej["learning_id"]) is not None)
 ok("candidate survives restart",
@@ -396,10 +399,9 @@ ok("NO ranking, scoring or leaderboard exists in the CODE",
    not any(w in code_only(lsrc).lower() for w in ("leaderboard", "ranking", "rank(",
                                                   "score", "best_agent", "worst",
                                                   "reputation")))
-ok("  the subject is capability, never a seat",
-   learn.SCOPE_TYPES == ("capability", "product", "workflow"))
-ok("  seat ids may appear only as evidence",
-   "seat" not in [k for k in L if k != "evidence_refs"])
+ok("  subjects include employee and organizational domains",
+   learn.SCOPE_TYPES == ("employee", "capability", "project", "product", "workflow",
+                         "organization"))
 
 
 # ---------------------------------------------------------------- MODEL / COST

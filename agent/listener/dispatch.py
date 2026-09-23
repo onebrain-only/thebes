@@ -54,7 +54,8 @@ def argv_for(intent):
         command = [sys.executable, "-m", "agent.controller", "decide", work_item_id,
                    "--invocation", payload["original_invocation_id"],
                    "--permission", payload["permission"],
-                   "--scope", payload["approval_scope"]]
+                   "--scope", payload["approval_scope"],
+                   "--authority", intent["actor"]]
         if payload.get("allowed_operation"):
             command += ["--operation", payload["allowed_operation"]]
         return command

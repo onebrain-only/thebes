@@ -172,7 +172,7 @@ class DecisionPathAcrossTheRealBoundary(unittest.TestCase):
             waiting = self._waiting_intent()
             answer = contract.normalize({
                 "schema_version": 1, "intent_type": contract.DECISION_RESPONSE,
-                "source": "codex-controller", "actor": "ceo",
+                "source": "codex-controller", "actor": "backend-1",
                 "idempotency_key": "decide-phase4", "correlation_id": "c-await",
                 "responds_to": waiting["intent_id"],
                 "payload": {"work_item_id": "KAN-999999", "decision": "approve",

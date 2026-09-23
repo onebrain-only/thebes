@@ -40,6 +40,11 @@ KINDS = {
     "policy":       ("policies",      "pol"),
     "event":        ("events",        "evt"),
     "learning":     ("learning",      "lrn"),
+    # Human-organization records. These are not provider transcripts: they are
+    # the durable professional ledger of work, decisions, and delegations.
+    "work_cycle":   ("work-cycles",   "cycle"),
+    "decision":     ("decisions",     "decision"),
+    "delegation":   ("delegations",   "delegation"),
     # Coverage is NOT an event. It records that observation HAPPENED, which is the
     # only way "no blockers" can be told apart from "nobody looked".
     "coverage":     ("coverage",      None),
@@ -67,11 +72,9 @@ KINDS = {
     # and offered to the integration branch, and what git said happened. It
     # records the orchestration act; git remains the authority on the code.
     "integration_receipt": ("integration-receipts", "integration"),
-    # A CEO grant of bounded Product execution. It is EVIDENCE OF A HUMAN ACT,
-    # not a thing Thebes may decide it has: `approving_authority` must be `ceo`
-    # and a reference to the actual grant is required. Selection stays with the
-    # canonical planner; this record only says how many admissible items that
-    # planner may carry to completion.
+    # Evidence of a bounded Product grant. A company investment envelope belongs
+    # to CEO; execution inside an approved roadmap belongs to PM. Selection stays
+    # with the canonical planner and every grant references the actual decision.
     "product_authorization": ("product-authorizations", "authz"),
 }
 
@@ -2686,14 +2689,27 @@ def _approval_id(invocation_id, permission, allowed_operation=None):
 
 def record_execution_approval(original_invocation_id, work_item_id, seat_id,
                               claude_session_id, permission, approving_authority,
-                              approval_scope, allowed_operation=None):
-    """Persist one CEO approval for the exact denied Claude tool, immutably."""
+                              approval_scope, allowed_operation=None,
+                              decision_class=None):
+    """Persist one exact denied-tool decision, immutably.
+
+    The decision class is either explicit or deterministically derived from the
+    exact permission. New writes can never use the legacy CEO-only shape;
+    validation alone keeps historical records readable during migration.
+    """
     required = (original_invocation_id, work_item_id, seat_id, claude_session_id,
                 permission, approving_authority, approval_scope)
     if any(not isinstance(value, str) or not value.strip() for value in required):
         raise StateError("execution approval fields must be non-empty strings")
-    if approving_authority != "ceo":
-        raise StateError("execution approval requires ceo authority")
+    try:
+        from agent.organization.authority import (assert_decision_authority,
+                                                  decision_class_for_permission)
+        decision_class = decision_class or decision_class_for_permission(
+            permission, allowed_operation)
+        assert_decision_authority(decision_class, approving_authority,
+                                  task_owner=seat_id)
+    except ValueError as exc:
+        raise StateError("execution approval authority refused: %s" % exc)
     if "*" in permission or (allowed_operation is not None and
                               (not isinstance(allowed_operation, str)
                                or not allowed_operation.strip()
@@ -2756,6 +2772,7 @@ def record_execution_approval(original_invocation_id, work_item_id, seat_id,
            "claude_session_id": claude_session_id, "permission": permission,
            "allowed_operation": allowed_operation,
            "approving_authority": approving_authority, "approval_scope": approval_scope}
+    rec["decision_class"] = decision_class
     with _Lock("execution-domain"):
         with record_lock("execution_approval", rid):
             existing = read("execution_approval", rid)
@@ -2826,16 +2843,16 @@ def _continuation_id(invocation_id):
 def record_execution_continuation_preparation(
         original_invocation_id, work_item_id, seat_id, claude_session_id, permission,
         repository_root, working_directory, worktree_path, branch, expected_revision,
-        authorization_ref, authorization_scope, prepared_by="ceo",
+        authorization_ref, authorization_scope, prepared_by="system-policy",
         review_context_ref=None):
-    """Record CEO-supplied continuation context without amending historical evidence."""
+    """Record system-derived continuation context without granting authority."""
     required = (original_invocation_id, work_item_id, seat_id, claude_session_id, permission,
                 repository_root, working_directory, branch, expected_revision,
                 authorization_ref, authorization_scope, prepared_by)
     if any(not isinstance(value, str) or not value.strip() for value in required):
         raise StateError("continuation preparation fields must be non-empty strings")
-    if prepared_by != "ceo" or "*" in permission:
-        raise StateError("continuation preparation requires ceo and one exact permission")
+    if prepared_by not in ("system-policy", "orchestrator", "ceo") or "*" in permission:
+        raise StateError("continuation preparation requires a system actor and one exact permission")
     original = read_execution_receipt(original_invocation_id)
     task = read("task", work_item_id)
     if original is None or original.get("status") != "needs_input":
@@ -2895,13 +2912,14 @@ def _session_retirement_id(original_invocation_id):
     return "session-retirement-" + hashlib.sha256(original_invocation_id.encode("utf-8")).hexdigest()
 
 
-def retire_execution_session(original_invocation_id, reason, retired_by="ceo"):
+def retire_execution_session(original_invocation_id, reason, retired_by="orchestrator"):
     """Retire one unsafe provider session without altering its historical receipt."""
     original = read_execution_receipt(original_invocation_id)
     if original is None or original.get("provider_id") != "claude-code":
         raise StateError("session retirement needs a Claude execution receipt")
-    if not isinstance(reason, str) or not reason.strip() or retired_by != "ceo":
-        raise StateError("session retirement needs a CEO reason")
+    if (not isinstance(reason, str) or not reason.strip()
+            or retired_by not in ("orchestrator", "system-policy", "ceo", original.get("seat_id"))):
+        raise StateError("session retirement needs an accountable system or task actor and reason")
     session = (original.get("normalized_result") or {}).get("continuation_ref")
     if not isinstance(session, str) or not session:
         raise StateError("session retirement needs the original Claude session")
@@ -2929,7 +2947,8 @@ def read_execution_session_retirement(original_invocation_id):
 
 
 def prepare_replacement_execution(original_invocation_id, replacement_session_id,
-                                  authorization_ref, authorization_scope, prepared_by="ceo"):
+                                  authorization_ref, authorization_scope,
+                                  prepared_by="orchestrator"):
     """Create exactly one linked replacement for a retired provider session.
 
     This is intentionally preparation only: it acquires no lease, invokes no
@@ -2940,8 +2959,9 @@ def prepare_replacement_execution(original_invocation_id, replacement_session_id
     if original is None or retired is None:
         raise StateError("replacement needs a retired historical execution")
     required = (replacement_session_id, authorization_ref, authorization_scope)
-    if any(not isinstance(value, str) or not value.strip() for value in required) or prepared_by != "ceo":
-        raise StateError("replacement needs CEO authorization and one session")
+    if (any(not isinstance(value, str) or not value.strip() for value in required)
+            or prepared_by not in ("orchestrator", "system-policy", "ceo", original.get("seat_id"))):
+        raise StateError("replacement needs an accountable system or task actor and one session")
     if replacement_session_id == retired["claude_session_id"]:
         raise StateError("replacement must use a new Claude session")
     rid = "replacement-" + hashlib.sha256(original_invocation_id.encode("utf-8")).hexdigest()
@@ -2970,7 +2990,8 @@ def read_execution_replacement(original_invocation_id):
 
 
 BOUNDED_PRODUCT_BATCH = "BOUNDED_PRODUCT_BATCH"
-AUTHORIZATION_KINDS = (BOUNDED_PRODUCT_BATCH,)
+APPROVED_ROADMAP_BATCH = "APPROVED_ROADMAP_BATCH"
+AUTHORIZATION_KINDS = (BOUNDED_PRODUCT_BATCH, APPROVED_ROADMAP_BATCH)
 AUTHORIZATION_STATUSES = ("active", "exhausted", "revoked", "suspended")
 CANONICAL_PLANNER = "canonical-thebes-planner"
 
@@ -2979,24 +3000,23 @@ def record_product_authorization(authorization_ref, maximum_completed_items,
                                  scope, approving_authority="ceo",
                                  authorization_kind=BOUNDED_PRODUCT_BATCH,
                                  selection_authority=CANONICAL_PLANNER):
-    """Persist one CEO grant of bounded Product execution.
+    """Persist one accountable-role grant of bounded Product execution.
 
     This does NOT weaken D-003. D-003 forbids a controller INFERRING permission
     from queue availability, green tests or a finished ticket. Here permission is
-    an explicit human act and only its representation is new: the CEO decides the
-    envelope and its size, the canonical planner decides which admissible item
-    fills it, and those stay two different things.
+    an explicit human act and only its representation is new: CEO decides a new
+    investment envelope; PM decides a batch inside an approved roadmap; the
+    canonical planner decides which admissible item fills it.
 
-    Like every other authority record here, `approving_authority` must be `ceo`
-    and this is contractual rather than cryptographic — `validate.py` says so of
-    the whole store. What the guard does buy is that no code path can create one
-    while claiming to be anything else, and that every grant names the human act
-    it came from.
+    Authority is contractual rather than cryptographic — `validate.py` says so
+    of the whole store. Every grant names the human act it came from.
     """
     if authorization_kind not in AUTHORIZATION_KINDS:
         raise StateError("unknown product authorization kind %r" % authorization_kind)
-    if approving_authority != "ceo":
-        raise StateError("product authorization requires ceo authority")
+    required_authority = "ceo" if authorization_kind == BOUNDED_PRODUCT_BATCH else "pm"
+    if approving_authority != required_authority:
+        raise StateError("%s product authorization requires %s authority"
+                         % (authorization_kind, required_authority))
     if selection_authority != CANONICAL_PLANNER:
         raise StateError("product authorization selection authority must be the "
                          "canonical planner")
@@ -3218,6 +3238,8 @@ def _id_field(kind):
             "exception": "exception_id", "dependency": "dependency_id",
             "intervention": "intervention_id", "policy": "policy_id",
             "event": "event_id", "learning": "learning_id",
+            "work_cycle": "work_cycle_id", "decision": "decision_id",
+            "delegation": "delegation_id",
             "coverage": "coverage_id", "correction": "correction_id",
             "operating_mode": "operating_mode_id",
             "execution_lease": "execution_lease_id",

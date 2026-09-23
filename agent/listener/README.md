@@ -62,11 +62,12 @@ One envelope, transport-neutral, in `contract.py`:
 `intent_id` is **derived**, not supplied: `sha256(intent_type + idempotency_key)`.
 The same logical request submitted twice is literally the same record.
 
-Two allow-listed families, and nothing else reaches a dispatcher:
+Three allow-listed families, and nothing else reaches a dispatcher:
 
 | Family | Payload | Means |
 | --- | --- | --- |
 | `EXECUTE_WORK_ITEM` | `work_item_id` only | run the work item the Controller already knows about |
+| `VALIDATE_WORK_ITEM` | `work_item_id` only | run an already-open risk-required review through its recorded owner |
 | `DECISION_RESPONSE` | `work_item_id`, `original_invocation_id`, `decision`, `permission`, `approval_scope`, optional `allowed_operation` | answer a boundary Thebes already reported, on the workflow it reported it from |
 
 There is no field anywhere that carries a command, a file path, a seat, a
@@ -137,7 +138,7 @@ architecture** — it transports decisions into that machinery.
 EXECUTE_WORK_ITEM
    → Controller returns needs_input (invocation I)
       → Listener records WAITING_INPUT carrying I
-         → CEO submits DECISION_RESPONSE responds_to=<that intent>, invocation=I
+         → accountable employee submits DECISION_RESPONSE responds_to=<that intent>, invocation=I
             → Listener binds it: same intent, still waiting, same work item, same invocation
                → python3 -m agent.controller decide ...
                   → store.record_execution_approval  (the EXISTING writer)
@@ -145,7 +146,7 @@ EXECUTE_WORK_ITEM
                         → same workflow, same provider session, same tail
 ```
 
-The seat and the provider session are **derived from the canonical continuation
+The executing seat and provider session are **derived from the canonical continuation
 preparation**, never accepted from the caller: a decision may answer a question,
 not redirect it at another seat or another session. The approval writer then
 re-verifies identity, session and the exact permission boundary against the

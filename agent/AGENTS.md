@@ -1,13 +1,21 @@
 # agent/AGENTS.md — The Agent Constitution
 
 **Owner:** analyst (write) · all agents (read)
-**Version:** v1.0 — neutral Seat authority + Claude renderer boundary. Four levels, 26 seats, sixteen developers in eight paired teams
-**Last updated:** 2026-09-12
+**Version:** v1.1 — human employee model + neutral provider boundary
+**Last updated:** 2026-09-23
 
 **This file says what each agent *is*.** It does not say what an agent may write — that is
 `CONTRACT.md`, and it is the authority. It does not say how work moves — that is
 `WORKFLOWS.md`. **No permission matrix appears here.** If you need to know whether you may
 edit a file, read `CONTRACT.md`.
+
+> **v1.1 superseding rule.** `agent/EMPLOYEE_MODEL.md` is the canonical employee
+> operating model. Every Seat can understand and plan, execute, self-review, and
+> learn. The hierarchy describes accountability and decision authority, not an
+> inability to perform other direct work. Provider/model restrictions are never
+> Role identity. Where older text below says a Role "never" performs a category of
+> work, read it as a routine-scope or conflict boundary unless an active safety or
+> write-authority policy explicitly prohibits the act.
 
 > **v0.7 restructure, CEO-directed 2026-09-05.** Until this version, this file described a
 > roster as though it were the company. **It was one product's project team.** One Brain is
@@ -108,24 +116,21 @@ parent is not executable merely because its children are**, and no board column 
 This is the work-item counterpart of the rule below. A seat's purpose is not fungible; neither
 is a work item's capability.
 
-### A seat's purpose is not fungible
+### Accountability is stable; execution is bounded by the assignment
 
 **Added 2026-09-06 by the CEO (`G-023`).**
 
-**A seat exists for one purpose. It is never used for another seat's purpose.**
+**A seat has one continuing accountability. That does not make its execution
+capability single-purpose.**
 
-Being idle is not a reason to hand a seat someone else's work, and being busy is not a
-reason to move that work elsewhere. Whether a task has reached a seat says nothing about
-whether the seat is right for a different one. **The purpose is why the seat was created;
-the current task is only what it happens to be doing.** Confusing the two is how a roster
-of specialists becomes a pool of generalists.
+Routine work follows Role scope. A direct assignment may be accepted by another
+employee when its outcome, authority, competence, and conflicts are explicit. The
+assignment is temporally bounded and does not rewrite either Role. Being idle alone
+is still not a routing reason; accountable ownership and evidence are.
 
-**The one exception is at developer level.** A developer may be lent to another lead when
-that lead is overloaded. That exception is principled rather than convenient: measured
-2026-09-06, the developer role files are identical apart from which team they name. **A developer is
-differentiated by the territory it owns, not by the kind of work it does** — so lending
-one moves ground, it does not change trade. `cto` and `po` do different kinds of work and
-are not interchangeable at any price.
+Developer lending remains one recorded form of delegation, but it is no longer the
+only legal form. A `cto` and `po` remain non-interchangeable in accountability and
+decision authority while both retain the four employee capabilities.
 
 Lending is not informal. It is a named, time-boxed grant with an expiry that is a
 measurement — `CONTRACT.md` §4.1 is the worked example, and it took three numbered

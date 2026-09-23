@@ -104,7 +104,7 @@ class ValidationContinuationTestCase(unittest.TestCase):
         return store.record_execution_approval(
             original_invocation_id=invocation_id, work_item_id=work_item_id,
             seat_id=seat_id, claude_session_id=VSESSION, permission=permission,
-            approving_authority="ceo", approval_scope="read-only fixture grant")
+            approving_authority=seat_id, approval_scope="read-only fixture grant")
 
 
 class PreparationTests(ValidationContinuationTestCase):
@@ -194,7 +194,7 @@ class ApprovalIsolationTests(ValidationContinuationTestCase):
                         original_invocation_id=invocation, work_item_id=work_item,
                         seat_id=seat, claude_session_id=session,
                         permission="mcp__claude_ai_Supabase__execute_sql",
-                        approving_authority="ceo", approval_scope="forged")
+                        approving_authority=seat, approval_scope="forged")
 
     def test_a_validator_approval_does_not_reach_the_product_execution(self):
         validator = self.blocked_self_review()
