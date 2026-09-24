@@ -348,6 +348,55 @@ raises("[22] nor may a PASS verdict be discarded by superseding",
                                     "KAN-901", "po", "why"),
        "already-validated")
 
+# ------------------------------------------------------- 23. cancellation
+
+section("CANCELLATION — withdrawn with no replacement, kept, never active")
+
+mk("KAN-910", sid="10008", canonical="ready", ev=("frontend-1", ))
+c0 = store.read("task", "KAN-910")
+raises("[23] an executor cannot cancel work",
+       lambda: store.cancel_task("KAN-910", c0["revision"], "frontend-1", "why"),
+       "not-a-cancellation-authority")
+raises("[23] a cancellation with no reason is refused",
+       lambda: store.cancel_task("KAN-910", c0["revision"], "po", ""),
+       "reason_ref is required")
+raises("[23] a stale revision is refused",
+       lambda: store.cancel_task("KAN-910", c0["revision"] + 5, "po", "why"),
+       "stale write refused")
+ok("[23] before cancelling, the item is not flagged cancelled",
+   "cancelled" not in q.eligibility_reasons(c0))
+c = store.cancel_task("KAN-910", c0["revision"], "po",
+                      "CEO 2026-09-24: Jira issue deliberately deleted")
+ok("[23] po may cancel", c["cancelled"]["by"] == "po")
+ok("[23] the reason is recorded", "deliberately deleted" in c["cancelled"]["reason_ref"])
+ok("[23] history is kept: executor evidence untouched",
+   c["executor_evidence"] == c0["executor_evidence"])
+ok("[23] history is kept: lifecycle as last observed is untouched",
+   c["lifecycle"] == c0["lifecycle"])
+ok("[23] cancelled is never done", c["lifecycle"]["canonical"] != "done")
+ok("[23] a cancelled item is not queue-eligible",
+   q.eligibility_reasons(c, {"status_id": "10008", "has_due_date": True,
+                             "has_acceptance_criteria": True}) == ["cancelled"])
+ok("[23] and is not claimable",
+   "cancelled" in q.unclaimable_reasons(c, jira_status_id="10008"))
+raises("[23] cancelling twice is refused",
+       lambda: store.cancel_task("KAN-910", c["revision"], "po", "again"),
+       "already-cancelled")
+
+mk("KAN-911", sid="10008", canonical="ready", owner="frontend-1")
+raises("[23] owned work cannot be cancelled until released",
+       lambda: store.cancel_task("KAN-911", store.read("task", "KAN-911")["revision"],
+                                 "po", "why"),
+       "owned")
+raises("[23] completed work cannot be cancelled",
+       lambda: store.cancel_task("KAN-902", store.read("task", "KAN-902")["revision"],
+                                 "po", "why"),
+       "already-done")
+raises("[23] nor may a PASS verdict be discarded by cancelling",
+       lambda: store.cancel_task("KAN-903", store.read("task", "KAN-903")["revision"],
+                                 "po", "why"),
+       "already-validated")
+
 _errs = [e for e in validate.check(store.RUNTIME) if " WARN " not in e]
 if _errs:
     print("  validator errors: " + " | ".join(_errs[:4]))

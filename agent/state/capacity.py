@@ -287,6 +287,7 @@ def scheduler_condition(plans, tasks, capabilities, jira_by_key=None, **kw):
     in_scope = [t for t in tasks if q.capability_of(t) in set(capabilities)]
     pending = [t for t in in_scope
                if not (t.get("ownership") or {}).get("seat_id")
+               and not q.is_cancelled(t)
                and (t.get("lifecycle") or {}).get("canonical") != "done"]
     if selected:
         return SATURATED if (claimable > selected or pending) else DRAINED

@@ -946,6 +946,15 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
             _review_coherence(rec, prof, canonical, got, errs, where)
         validate_review_context(rec.get("review_context"), canonical, prof, errs,
                                 where, rec=rec)
+        cancelled = rec.get("cancelled")
+        if cancelled is not None:
+            if not isinstance(cancelled, dict) or any(
+                    not cancelled.get(f) for f in ("by", "reason_ref", "at")):
+                errs.append("%s: cancelled requires by, reason_ref and at" % where)
+            elif rec.get("ownership") is not None:
+                errs.append("%s: a cancelled item cannot be owned" % where)
+            elif canonical == "done":
+                errs.append("%s: a cancelled item cannot be done" % where)
         cr = rec.get("completion_reconciliation")
         if cr is not None:
             if not isinstance(cr, dict):

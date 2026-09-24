@@ -2055,6 +2055,68 @@ def supersede_task(work_item_id, expected_revision, replaced_by, authority,
         return merged
 
 
+def cancel_task(work_item_id, expected_revision, authority, reason_ref):
+    """Record that a work item was CANCELLED — withdrawn with no replacement. CAS'd.
+
+    The act `supersede_task` refuses by design. A Jira issue the CEO deleted
+    (KAN-292, KAN-346, 2026-09-24) left records reading `ready` with no issue behind
+    them: never claimable (`unverified-jira`), yet still counted as pending work and
+    shown as Ready anywhere that does not re-verify Jira.
+
+    WHAT IT KEEPS. Everything: revisions, lifecycle as last observed, executor
+    evidence, execution history and landed-commit references stay exactly as they
+    were. Cancellation is a marker added to the record, never an erasure of it.
+
+    WHAT IT REFUSES. Completed work, a PASS verdict, owned work (the owner releases
+    first) and work under an open execution lease — cancelling any of those would
+    discard or strand something real. Any open review context is CLEARED, not decided.
+    """
+    if authority not in SUPERSESSION_AUTHORITIES:
+        raise StateError("not-a-cancellation-authority: %r may not cancel a work item; "
+                         "only %s may — withdrawing work is Product definition"
+                         % (authority, "/".join(SUPERSESSION_AUTHORITIES)))
+    if not reason_ref:
+        raise StateError("reason_ref is required — a cancellation with no recorded "
+                         "reason is indistinguishable from quietly dropping the work")
+    with record_lock("task", work_item_id):
+        cur = read("task", work_item_id)
+        if cur is None:
+            raise StateError("task %s does not exist" % work_item_id)
+        if cur["revision"] != expected_revision:
+            raise StateError("stale write refused: task %s is at revision %d, caller "
+                             "expected %d" % (work_item_id, cur["revision"],
+                                              expected_revision))
+        if cur.get("cancelled"):
+            raise StateError("already-cancelled: %s" % work_item_id)
+        if (cur.get("lifecycle") or {}).get("canonical") == "done":
+            raise StateError("already-done: %s is complete; completed work is not "
+                             "cancelled" % work_item_id)
+        rc = cur.get("review_context") or {}
+        if rc.get("review_result") == "pass":
+            raise StateError("already-validated: %s carries a PASS verdict; "
+                             "cancelling it would discard a real review" % work_item_id)
+        if (cur.get("ownership") or {}).get("seat_id"):
+            raise StateError("owned: %s is owned by %s; the owner releases first"
+                             % (work_item_id, cur["ownership"]["seat_id"]))
+        open_leases = [lease for lease in read_all("execution_lease")
+                       if lease.get("work_item_id") == work_item_id
+                       and not lease.get("closed_at")]
+        if open_leases:
+            raise StateError("active-lease: %s has an open execution lease" % work_item_id)
+        merged = dict(cur)
+        merged["review_context"] = None
+        merged["cancelled"] = {"by": authority, "reason_ref": reason_ref, "at": now(),
+                               "lifecycle_at_cancellation":
+                                   (cur.get("lifecycle") or {}).get("canonical"),
+                               "review_state_at_cancellation":
+                                   rc.get("review_result") or "none"}
+        merged["revision"] = cur["revision"] + 1
+        merged["updated_at"] = now()
+        _validate_one("task", merged)
+        _atomic_write(path_for("task", work_item_id), merged)
+        return merged
+
+
 def read_corrections(corrects_event_id=None):
     """Advisory correction records, oldest first. Read-only."""
     out = [c for c in read_all("correction")

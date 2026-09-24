@@ -61,6 +61,11 @@ def is_executable(task):
     return task.get("record_type") == "executable"
 
 
+def is_cancelled(task):
+    """Withdrawn with no replacement (`store.cancel_task`): kept, never active."""
+    return bool(task.get("cancelled"))
+
+
 def validation_route_for(task):
     """The canonical route a scheduler must carry for this task.
 
@@ -84,6 +89,9 @@ def eligibility_reasons(task, jira=None):
     out = []
     if not is_executable(task):
         out.append("not-executable")
+        return out
+    if is_cancelled(task):
+        out.append("cancelled")
         return out
 
     lc = task.get("lifecycle") or {}
