@@ -29,6 +29,7 @@
     "pm": {"role": "pm"},
     "po": {"role": "po"},
     "qa": {"role": "qa"},
-    "ux-engineer-1": {"role": "ux-engineer"}
+    "ux-engineer-1": {"role": "ux-engineer"},
+    "ux-engineer-2": {"role": "ux-engineer"}
   }
 }

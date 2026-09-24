@@ -1,5 +1,5 @@
 {
-  "seat_count": 27,
+  "seat_count": 28,
   "seats": {
     "analyst": {"role": "analyst", "model": "opus", "effort": "medium"},
     "backend-1": {"role": "backend", "model": "opus", "effort": "low"},
@@ -27,7 +27,8 @@
     "pm": {"role": "pm", "model": "sonnet", "effort": "medium"},
     "po": {"role": "po", "model": "sonnet", "effort": "medium"},
     "qa": {"role": "qa", "model": "sonnet", "effort": "medium"},
-    "ux-engineer-1": {"role": "ux-engineer", "model": "sonnet", "effort": "medium"}
+    "ux-engineer-1": {"role": "ux-engineer", "model": "sonnet", "effort": "medium"},
+    "ux-engineer-2": {"role": "ux-engineer", "model": "sonnet", "effort": "medium"}
   },
   "prompt_contract": {
     "source": "agent/skills/route-to-seat/SKILL.md",

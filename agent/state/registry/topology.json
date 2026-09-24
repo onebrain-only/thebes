@@ -9,7 +9,7 @@
     "devops":           { "defined_seats": 1, "ceiling": 2, "expandable": true },
     "analyst":          { "defined_seats": 1, "ceiling": 2, "expandable": true },
     "qa":               { "defined_seats": 1, "ceiling": 2, "expandable": true },
-    "ux-engineer":      { "defined_seats": 1, "ceiling": 2, "expandable": true },
+    "ux-engineer":      { "defined_seats": 2, "ceiling": 2, "expandable": true },
     "product-designer": { "defined_seats": 0, "ceiling": 0, "expandable": false,
                           "why": "Inactive: the CEO supplies design. No seat, and expansion is not a system decision." },
     "po":               { "defined_seats": 1, "ceiling": 1, "expandable": false,
