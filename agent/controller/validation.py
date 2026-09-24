@@ -210,6 +210,24 @@ def open_context(work_item_id, task, state_store, seats_by_capability, route):
 
 # ------------------------------------------------------------ the validator
 
+# The reviewer judges what it is given, so what it is given must be the evidence.
+# A report or audit IS its deliverable: clipping it to a few hundred words made
+# every long audit fail review on a copy the executor never wrote (KAN-359,
+# KAN-362, 2026-09-25). Content is passed whole up to a generous safety cap, and
+# anything beyond it is marked, never cut silently.
+MAX_REVIEW_REPORT_CHARS = 100000
+MAX_REVIEW_CRITERIA_CHARS = 30000
+
+
+def review_evidence(text, cap):
+    """`text` whole when it fits `cap`; otherwise cut and explicitly marked."""
+    text = (text or "").rstrip()
+    if len(text) <= cap:
+        return text
+    return "%s\n[TRUNCATED: reviewer received %d of %d characters]" % (
+        text[:cap].rstrip(), cap, len(text))
+
+
 def validation_objective(work_item_id, task, issue, execution, receipt_ref,
                          deterministic=None):
     """Bounded Product evidence for a validator. No control-plane mechanics.
@@ -232,7 +250,7 @@ def validation_objective(work_item_id, task, issue, execution, receipt_ref,
     description = ((issue or {}).get("description") or "").strip()
     if description:
         lines += ["", "## Acceptance criteria and requirement",
-                  description[:2000].rstrip()]
+                  review_evidence(description, MAX_REVIEW_CRITERIA_CHARS)]
     lines += ["", "## What the executor reported"]
     if execution is None:
         # An already-open review (T-091): the work reached the branch outside
@@ -245,7 +263,7 @@ def validation_objective(work_item_id, task, issue, execution, receipt_ref,
                      "given, against the acceptance criteria above.")
     else:
         summary = getattr(execution, "summary", None) or "no executor summary recorded"
-        lines.append(summary[:1500].rstrip())
+        lines.append(review_evidence(summary, MAX_REVIEW_REPORT_CHARS))
     changed = [item.path for item in getattr(execution, "changed_files", ()) or ()]
     lines += ["", "## Changed surfaces", *(["- %s" % path for path in changed]
                                            or ["- none reported"])]
