@@ -43,18 +43,34 @@ IDLE_WAIT_SECONDS = 30.0
 LOOPBACK = ("127.0.0.1", "::1", "::ffff:127.0.0.1")
 
 
+# At most this many intents execute at once (CEO, 2026-09-25). The bound is on
+# DISPATCH only: every safety decision — claim, lease, surface contention,
+# dependencies, roadmap authorization, operating mode — is still made inside the
+# Controller process under its own locks, and `store.begin_dispatch` still lets
+# exactly one worker take any one intent.
+MAX_CONCURRENT_DISPATCHES = 2
+
+
 class Worker(threading.Thread):
-    """Drains the durable inbox. One intent, one Controller process, once."""
+    """Drains the durable inbox. One intent, one Controller process, once —
+    up to `max_concurrency` intents at the same time."""
 
     daemon = True
 
-    def __init__(self, dispatcher=dispatch.dispatch, idle_wait=IDLE_WAIT_SECONDS):
+    def __init__(self, dispatcher=dispatch.dispatch, idle_wait=IDLE_WAIT_SECONDS,
+                 max_concurrency=MAX_CONCURRENT_DISPATCHES):
         super().__init__(name="thebes-listener-worker")
+        if not isinstance(max_concurrency, int) or max_concurrency < 1:
+            raise ValueError("max_concurrency must be a positive integer")
         self._dispatch = dispatcher
         self._idle_wait = idle_wait
+        self._max = max_concurrency
         self._wake = threading.Condition()
+        self._slots = threading.Lock()
+        self._inflight = {}                                  # intent_id -> thread
         self._stopping = False
         self.dispatched = []
+        self._settled = []
 
     def signal(self):
         with self._wake:
@@ -65,15 +81,59 @@ class Worker(threading.Thread):
             self._stopping = True
             self._wake.notify_all()
 
-    def drain_once(self):
-        """Dispatch everything currently eligible. Returns what it settled."""
-        settled = []
+    def in_flight(self):
+        with self._slots:
+            return sorted(self._inflight)
+
+    def _run_one(self, intent_id):
+        outcome = None
+        try:
+            outcome = self._dispatch(intent_id)
+        except Exception as exc:                          # never kill the worker
+            print("listener worker error: %s" % exc, flush=True)
+        finally:
+            with self._slots:
+                self._inflight.pop(intent_id, None)
+                if outcome is not None:
+                    self._settled.append(outcome)
+                    self.dispatched.append(outcome["intent_id"])
+            self.signal()                                 # a slot just freed
+
+    def _fill(self):
+        """Start pending intents into free slots, oldest first. Never blocks."""
         for record in store.pending():
-            outcome = self._dispatch(record["intent_id"])
-            if outcome is not None:
-                settled.append(outcome)
-                self.dispatched.append(outcome["intent_id"])
-        return settled
+            intent_id = record["intent_id"]
+            with self._slots:
+                if len(self._inflight) >= self._max:
+                    return
+                if intent_id in self._inflight:
+                    continue
+                thread = threading.Thread(target=self._run_one, args=(intent_id,),
+                                          name="thebes-dispatch-%s" % intent_id[:18],
+                                          daemon=True)
+                self._inflight[intent_id] = thread
+                # Started under the lock, so no drain_once can ever see (and
+                # join) a registered thread that has not started yet.
+                thread.start()
+
+    def drain_once(self):
+        """Dispatch everything currently eligible, bounded, and wait for it.
+
+        Returns what it settled. Synchronous by design so a caller (and a test)
+        can observe a fully drained inbox.
+        """
+        with self._slots:
+            mark = len(self._settled)
+        while True:
+            self._fill()
+            with self._slots:
+                active = list(self._inflight.values())
+            if not active:
+                break
+            for thread in active:
+                thread.join()
+        with self._slots:
+            return list(self._settled[mark:])
 
     def run(self):
         while True:
@@ -81,7 +141,7 @@ class Worker(threading.Thread):
                 if self._stopping:
                     return
             try:
-                self.drain_once()
+                self._fill()
             except Exception as exc:                      # never kill the worker
                 print("listener worker error: %s" % exc, flush=True)
             with self._wake:
