@@ -2680,18 +2680,24 @@ def record_session_outcome(dispatch_id, outcome, summary, recorded_by,
         if outcome == "worker_unreachable":
             recovery_hint = ('claude --bg --resume %s "<prompt>" — no other flags; '
                              'extra flags create a copy' % cur.get("session_id"))
-        lease_id = cur.get("execution_lease_id")
-        if lease_id:
-            lease = read("execution_lease", lease_id)
-            if lease is not None and not lease.get("closed_at"):
-                close_execution_lease(lease_id, lease["revision"], recorded_by)
         merged = dict(cur, status=outcome, outcome=outcome, summary=summary,
                      reference=reference, reported_session_id=session_id,
                      outcome_at=now(), recorded_by=recorded_by,
                      recovery_hint=recovery_hint,
                      revision=cur["revision"] + 1, updated_at=now())
+        # Validate and write the settled dispatch BEFORE touching the lease. If
+        # either fails, nothing has happened: the dispatch is still open and its
+        # lease is still open with it. The conservative failure direction is the
+        # other one — a settled dispatch whose lease did not close — and that is
+        # exactly what a failure AFTER this point below leaves: recoverable from
+        # the lease id already on the written record, not silently lost.
         _validate_one("session_dispatch", merged)
         _atomic_write(path_for("session_dispatch", dispatch_id), merged)
+        lease_id = cur.get("execution_lease_id")
+        if lease_id:
+            lease = read("execution_lease", lease_id)
+            if lease is not None and not lease.get("closed_at"):
+                close_execution_lease(lease_id, lease["revision"], recorded_by)
         return merged
 
 

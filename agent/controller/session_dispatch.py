@@ -141,6 +141,13 @@ def dispatch_session(work_item_id, *, authorization=None, state_store=store,
                        "lease_closure_status": "open-until-outcome"})
         request = _build_request(task, seat_id, prepared["brief"], lease)
         rendered = render_executor_brief(request)
+        # The id is generated before the record so the delivered message can
+        # name it, but nothing is durably recorded — and no packet is handed
+        # back — until every step that can still fail (build, render) has
+        # already succeeded.
+        dispatch_id = state_store.new_id("session_dispatch")
+        message = render_dispatch_message(dispatch_id, work_item_id, binding, realized,
+                                          rendered)
         record = state_store.create("session_dispatch", {
             "work_item_id": work_item_id, "seat_id": seat_id,
             "provider": binding["provider"], "session_id": binding["session_id"],
@@ -150,7 +157,7 @@ def dispatch_session(work_item_id, *, authorization=None, state_store=store,
             "authorization_ref": auth["reference"], "status": "dispatched",
             "outcome": None, "summary": None, "reference": None,
             "reported_session_id": None, "outcome_at": None, "recorded_by": None,
-        })
+        }, rid=dispatch_id)
         packet = {
             "dispatch_id": record["dispatch_id"], "work_item_id": work_item_id,
             "seat_id": seat_id, "provider": binding["provider"],
@@ -162,8 +169,7 @@ def dispatch_session(work_item_id, *, authorization=None, state_store=store,
             "invocation_id": request.invocation_id,
             "restrictions": {"prohibited_actions": list(request.prohibited_actions),
                              "allowed_surfaces": list(request.allowed_surfaces)},
-            "message": render_dispatch_message(record["dispatch_id"], work_item_id,
-                                               binding, realized, rendered),
+            "message": message,
         }
         result.update({"dispatch_status": "dispatched", "dispatch_id": record["dispatch_id"],
                        "dispatch_packet": packet, "session_id": binding["session_id"],

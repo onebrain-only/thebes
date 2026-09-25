@@ -117,6 +117,63 @@ try:
            "session-identity-mismatch")
     ok("its lease is still open", store.read("execution_lease", L2["execution_lease_id"])["closed_at"] is None)
 
+    section("FIX 1. write order: dispatch settles before its lease closes")
+    active_sid_for_fix1 = store.active_role_session(SEAT)["session_id"]
+    L3 = lease("KAN-903")
+    D3 = dispatch(L3, session_id=active_sid_for_fix1, work_item_id="KAN-903")
+    before = store.read("session_dispatch", D3["dispatch_id"])
+    real_validate_one = store._validate_one
+
+    def _fail_validate(kind, record):
+        if kind == "session_dispatch":
+            raise store.StateError("fixture: refuse validation of the settled dispatch")
+        return real_validate_one(kind, record)
+
+    store._validate_one = _fail_validate
+    try:
+        raises("a validation failure at step (b) records nothing",
+               lambda: store.record_session_outcome(D3["dispatch_id"], "completed", "x",
+                                                    "orchestrator", session_id=active_sid_for_fix1),
+               "fixture: refuse validation")
+    finally:
+        store._validate_one = real_validate_one
+    after_validate_failure = store.read("session_dispatch", D3["dispatch_id"])
+    ok("the dispatch record is byte-for-byte unchanged after a validation failure",
+       after_validate_failure == before)
+    ok("its status is still dispatched", after_validate_failure["status"] == "dispatched")
+    ok("its lease is still open (closed_at null)",
+       store.read("execution_lease", L3["execution_lease_id"])["closed_at"] is None)
+    ok("its lease revision is unchanged",
+       store.read("execution_lease", L3["execution_lease_id"])["revision"] == L3["revision"])
+
+    real_atomic_write = store._atomic_write
+
+    def _fail_write(path, obj):
+        if path == store.path_for("session_dispatch", D3["dispatch_id"]):
+            raise OSError("fixture: refuse the atomic write of the settled dispatch")
+        return real_atomic_write(path, obj)
+
+    store._atomic_write = _fail_write
+    try:
+        raises("an atomic-write failure at step (c) records nothing",
+               lambda: store.record_session_outcome(D3["dispatch_id"], "completed", "x",
+                                                    "orchestrator", session_id=active_sid_for_fix1),
+               "refuse the atomic write")
+    finally:
+        store._atomic_write = real_atomic_write
+    after_write_failure = store.read("session_dispatch", D3["dispatch_id"])
+    ok("the dispatch record is byte-for-byte unchanged after a write failure",
+       after_write_failure == before)
+    ok("its lease is STILL open after the write failure too",
+       store.read("execution_lease", L3["execution_lease_id"])["closed_at"] is None)
+    # Now let it succeed for real, proving the fixtures above changed nothing
+    # about ordinary success.
+    settled = store.record_session_outcome(D3["dispatch_id"], "completed", "x", "orchestrator",
+                                           session_id=active_sid_for_fix1)
+    ok("an unpatched call still settles and closes the lease",
+       settled["status"] == "completed"
+       and bool(store.read("execution_lease", L3["execution_lease_id"])["closed_at"]))
+
     section("7. every outcome is durably representable, once")
     active_sid = store.active_role_session(SEAT)["session_id"]
     for index, outcome in enumerate(sorted(store.SESSION_DISPATCH_OUTCOMES)):

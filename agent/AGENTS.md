@@ -548,9 +548,13 @@ make a seat claim its own work.
 A named seat is a durable, addressable identity **within its spawning session** — resumable,
 and reachable by `SendMessage`. It is **not** a process sitting and waiting for work.
 
-**Occupancy is not knowable.** `ListAgents` shows only agents *this* session spawned; Agent View
-shows what has *ever* logged work and dispatch counts within one transcript; status files carry
-no current-assignment field. **None of the three is authoritative global busy/free state.**
+**Occupancy is not knowable.** `ListAgents` shows this session's own spawned agents plus other
+live local Claude sessions (and, where connected, Remote Control and cloud sessions) — more than
+just this session's own spawns, but still not a global registry: a session it cannot see is a
+session it does not list. Agent View shows what has *ever* logged work and dispatch counts within
+one transcript; status files carry no current-assignment field. **None of the three is
+authoritative global busy/free state** — see `agent/WORKFLOWS.md`'s cross-session `SendMessage`
+facts for what reaching another session actually requires.
 
 **Multiple Main Sessions may run against this repository at once**, and there is no cross-session
 seat lock. No document may claim that one dispatcher controls occupancy, and no rule may select a

@@ -123,11 +123,15 @@ class State:
         self.lease["revision"] += 1
         return copy.deepcopy(self.lease)
 
+    def new_id(self, kind):
+        self.events.append("new_id:%s" % kind)
+        return "dispatch-fixture"
+
     def create(self, kind, record, rid=None):
         self.events.append("create:%s" % kind)
         if self.fail_create:
             raise real_store.StateError("fixture refuses the dispatch record")
-        record = dict(record, dispatch_id="dispatch-fixture", revision=1)
+        record = dict(record, dispatch_id=rid or "dispatch-fixture", revision=1)
         self.dispatches[record["dispatch_id"]] = record
         return copy.deepcopy(record)
 
@@ -219,7 +223,7 @@ class PreparationTests(unittest.TestCase):
         state = State(bindings={"backend-1": binding("backend-1")})
         prepare(state)
         self.assertEqual(["observe", "claim:backend-1", "continuation", "lease-open",
-                          "create:session_dispatch"], state.events)
+                          "new_id:session_dispatch", "create:session_dispatch"], state.events)
 
     def test_packet_carries_the_realized_worktree_and_the_rendered_brief(self):
         state = State(bindings={"backend-1": binding("backend-1")})
@@ -280,6 +284,42 @@ class PreparationTests(unittest.TestCase):
         self.assertEqual("lease-close", state.events[-1])
         self.assertEqual("closed-after-preparation-failure", result["lease_closure_status"])
         self.assertIsNone(result["dispatch_packet"])
+
+    def test_a_render_failure_leaves_no_record_and_closes_the_lease(self):
+        # FIX 2 regression: render_dispatch_message runs BEFORE the dispatch
+        # record is created, so a failure there must leave no record at all —
+        # not a half-written one — and still close the lease it opened. The
+        # failure is a ValueError, one of the kinds dispatch_session's own
+        # except clauses handle (unlike the AssertionError _refuse raises,
+        # which exists only to prove a call never happened).
+        def _boom(*args, **kwargs):
+            raise ValueError("fixture: refuse to render the dispatch message")
+
+        state = State(bindings={"backend-1": binding("backend-1")})
+        with mock.patch.object(sd, "render_dispatch_message", _boom):
+            result = prepare(state)
+        self.assertIn("fixture: refuse to render the dispatch message", result["blocker"])
+        self.assertEqual({}, state.dispatches)
+        self.assertEqual("lease-close", state.events[-1])
+        self.assertNotIn("create:session_dispatch", state.events)
+        self.assertEqual("closed-after-preparation-failure", result["lease_closure_status"])
+        # The claim survives a post-claim preparation failure, exactly as
+        # execute() leaves it: ownership was already established before the
+        # lease opened, and this failure is purely in dispatch construction.
+        self.assertEqual("backend-1", state.task["ownership"]["seat_id"])
+
+    def test_a_brief_render_failure_also_leaves_no_record_and_closes_the_lease(self):
+        def _boom(*args, **kwargs):
+            raise ValueError("fixture: refuse to render the executor brief")
+
+        state = State(bindings={"backend-1": binding("backend-1")})
+        with mock.patch("agent.controller.session_dispatch.render_executor_brief", _boom):
+            result = prepare(state)
+        self.assertIn("fixture: refuse to render the executor brief", result["blocker"])
+        self.assertEqual({}, state.dispatches)
+        self.assertEqual("lease-close", state.events[-1])
+        self.assertEqual("closed-after-preparation-failure", result["lease_closure_status"])
+        self.assertEqual("backend-1", state.task["ownership"]["seat_id"])
 
 
 class OutcomeTests(unittest.TestCase):

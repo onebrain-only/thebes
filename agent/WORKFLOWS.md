@@ -940,11 +940,26 @@ fabrication.
 **The Dispatcher is not in the technical return path.** The receiving seat sends its result to
 `RETURN_TO` **directly** via `SendMessage` when that seat is addressable in the same session.
 
-**When `RETURN_TO` is not addressable** — a different session, or an identity that no longer
-resolves — the Dispatcher may re-wake the originating seat with the result as context. That is
-a **COMPATIBILITY RE-WAKE**, and it must be called that. **It is not direct messaging**, and
-cross-session `SendMessage` does not exist. The exception and routing records live only in
-prompt context until Wave 4 gives them durable state.
+**When `RETURN_TO` is not addressable** — an identity that no longer resolves — the Dispatcher
+may re-wake the originating seat with the result as context. That is a
+**COMPATIBILITY RE-WAKE**, and it must be called that. **It is not direct messaging.** The
+exception and routing records live only in prompt context until Wave 4 gives them durable
+state.
+
+**Cross-session `SendMessage` exists and is the real transport between two live sessions on
+this machine** — verified facts, stated once here:
+
+- Native Claude `SendMessage` works between live persistent sessions on this machine.
+- A message to an idle receiver starts a new turn there; the sender does not poll.
+- A STOPPED session is not queued to — `SendMessage` refuses it as **not reachable**.
+- Revive the same worker with `claude --bg --resume <session-id> "<prompt>"`, **no other
+  flags** — no model, name, effort or permission flag. Extra flags were observed to start a
+  **copy** with the same name and history, not resume the original.
+- **The session ID is the identity** — never the name, PID, socket or bridge id. A copy reuses
+  the name, so the name proves nothing.
+- Claude native messaging is the **transport**; Thebes (`agent/state`) remains the durable
+  task/state/recovery **truth**. A message is not a state change until it is recorded — see
+  the persistent-session section of `agent/controller/README.md`.
 
 ---
 
