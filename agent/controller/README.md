@@ -239,6 +239,55 @@ Outcomes, none of which is a provider, Product or PEER failure:
 Ownership survives every failure above, and a Jira failure is never a reason to
 re-run a provider.
 
+## The persistent-session path
+
+A second path sits beside `execute`, for a worker that already lives in a
+durable Claude session bound to its seat. It does not replace the one-shot
+path, and nothing about `execute` changed.
+
+```
+python3 -m agent.listener session-dispatch KAN-XXX --wait        # prepare, return a packet
+python3 -m agent.listener session-outcome KAN-XXX --dispatch <id> \
+    --outcome completed --session-id <uuid> --summary "..." --wait
+```
+
+**Prepare** runs exactly the preparation `execute` runs — authorization, mode,
+task, seat, Jira observation, intent and brief, claim, realized workspace,
+continuation gate, execution lease — and then stops. It never selects,
+constructs or launches a provider. It returns a **dispatch packet**: dispatch
+id, work item, seat, bound session id, worktree path and branch, stable home,
+lease, invocation, restrictions, and `message` — the text the controller
+conversation sends to the bound session with its own `SendMessage`. Thebes
+sends nothing.
+
+Seat choice is narrowed before the claim. An owned item's owner must have an
+active binding (`no-bound-session`); an unowned item is allocated only among
+seats with one (`no-bound-session-for-capability`). A binding to any provider
+other than `claude` is refused (`persistent-session-unsupported-provider`) —
+the path is Claude-only in this slice, the role is not.
+
+**Outcome** records what the worker reported. Vocabulary, exact:
+`completed`, `blocked`, `decision_required`, `clarification_required`,
+`failed`, `worker_unreachable`. Every outcome ends that dispatch and closes its
+lease. The claim is preserved; a follow-up — an answer to a decision, an
+unblock — is a new prepare for the same item, which reuses the worktree. No
+validation, integration or Jira transition runs on an outcome.
+
+**Identity is the session id.** Not the session name, PID, socket or bridge
+address. Every outcome except `worker_unreachable` must name the session id,
+and it must equal both the dispatch's session and the seat's current active
+binding, or nothing is recorded and the lease stays open. Bind a seat with
+`python3 -m agent.controller bind-session <seat> --provider claude
+--session-id <uuid> --stable-home <abs path>`; a rebind keeps the old id in
+`previous_session_ids`.
+
+**Dead worker rule.** If `SendMessage` says the bound worker is unreachable,
+record `worker_unreachable`. Never create a new worker in its place. Manual
+recovery is `claude --bg --resume <BOUND_SESSION_ID> "<prompt>"` with **no
+other flags** — extra flags were proved to create a copy, not resume the
+original — then check the returned session id equals the binding before
+preparing again. There is no automatic revival in this slice.
+
 ## Exceptional brief shape
 
 `--brief-file` survives for debugging and for work whose canonical facts are

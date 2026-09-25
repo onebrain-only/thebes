@@ -31,7 +31,14 @@ DECISION_RESPONSE = "DECISION_RESPONSE"
 # CEO-named reviewer had no front door, because EXECUTE_WORK_ITEM refuses an
 # item that is not Ready and never reaches the validator.
 VALIDATE_WORK_ITEM = "VALIDATE_WORK_ITEM"
-INTENT_TYPES = (EXECUTE_WORK_ITEM, DECISION_RESPONSE, VALIDATE_WORK_ITEM)
+# The persistent-session path. PREPARE names work that already exists and
+# returns a packet; it launches nothing. RECORD reports what a bound session
+# said about one dispatch; the Controller checks the session id against the
+# binding, so naming one here grants nothing by itself.
+PREPARE_SESSION_DISPATCH = "PREPARE_SESSION_DISPATCH"
+RECORD_SESSION_OUTCOME = "RECORD_SESSION_OUTCOME"
+INTENT_TYPES = (EXECUTE_WORK_ITEM, DECISION_RESPONSE, VALIDATE_WORK_ITEM,
+                PREPARE_SESSION_DISPATCH, RECORD_SESSION_OUTCOME)
 
 # Bounded intake. A body larger than this is refused before it is parsed.
 MAX_BODY_BYTES = 64 * 1024
@@ -54,9 +61,22 @@ PAYLOAD_FIELDS = {
     DECISION_RESPONSE: (("work_item_id", "original_invocation_id", "decision",
                          "permission", "approval_scope"),
                         ("allowed_operation",)),
+    PREPARE_SESSION_DISPATCH: (("work_item_id",), ()),
+    RECORD_SESSION_OUTCOME: (("work_item_id", "dispatch_id", "outcome", "summary"),
+                             ("session_id", "reference")),
 }
 
 DECISIONS = ("approve",)
+
+# Mirrors agent/state/store.py SESSION_DISPATCH_OUTCOMES. worker_unreachable is
+# the one outcome that carries no session id: nobody answered to name one.
+SESSION_OUTCOMES = ("completed", "blocked", "decision_required",
+                    "clarification_required", "failed", "worker_unreachable")
+UNREACHABLE = "worker_unreachable"
+SESSION_UUID = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+# No control characters in free text: a summary is a report, not a terminal.
+CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 
 
 class IntentRejected(ValueError):
@@ -151,8 +171,10 @@ def _payload(intent_type, payload):
         raise IntentRejected("missing-field", "payload is missing: %s" % ", ".join(missing))
     clean = {"work_item_id": _text(payload.get("work_item_id"), "work_item_id",
                                    WORK_ITEM_ID, 40)}
-    if intent_type in (EXECUTE_WORK_ITEM, VALIDATE_WORK_ITEM):
+    if intent_type in (EXECUTE_WORK_ITEM, VALIDATE_WORK_ITEM, PREPARE_SESSION_DISPATCH):
         return clean
+    if intent_type == RECORD_SESSION_OUTCOME:
+        return _session_outcome_payload(payload, clean)
     decision = _text(payload.get("decision"), "decision", TOKEN, 40)
     if decision not in DECISIONS:
         raise IntentRejected("unsupported-decision",
@@ -173,6 +195,28 @@ def _payload(intent_type, payload):
             raise IntentRejected("invalid-field", "allowed_operation cannot be wildcarded")
     if "*" in clean["permission"]:
         raise IntentRejected("invalid-field", "permission cannot be wildcarded")
+    return clean
+
+
+def _session_outcome_payload(payload, clean):
+    outcome = _text(payload.get("outcome"), "outcome", TOKEN, 40)
+    if outcome not in SESSION_OUTCOMES:
+        raise IntentRejected("unsupported-outcome",
+                             "outcome must be one of: %s" % ", ".join(SESSION_OUTCOMES))
+    summary = _text(payload.get("summary"), "summary")
+    if CONTROL_CHARS.search(summary):
+        raise IntentRejected("invalid-field", "summary may not contain control characters")
+    clean.update({"dispatch_id": _text(payload.get("dispatch_id"), "dispatch_id",
+                                       IDENTIFIER),
+                  "outcome": outcome, "summary": summary})
+    session_id = payload.get("session_id")
+    if session_id is not None:
+        clean["session_id"] = _text(session_id, "session_id", SESSION_UUID, 36)
+    elif outcome != UNREACHABLE:
+        raise IntentRejected("missing-field",
+                             "session_id is required unless outcome is %s" % UNREACHABLE)
+    if payload.get("reference") is not None:
+        clean["reference"] = _text(payload["reference"], "reference", TOKEN)
     return clean
 
 

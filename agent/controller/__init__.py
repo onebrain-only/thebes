@@ -261,6 +261,88 @@ def available_provider_registry():
     return (ClaudeProvider(ClaudeCliTransport()), CodexProvider(CodexCliTransport()))
 
 
+def _prepare_dispatch(result, work_item_id, brief, auth, state_store, jira_client,
+                      seat_registry, intent_resolver, workspace_allocator,
+                      seat_resolver=None):
+    """The preparation both execution paths share: mode → task → seat → Jira
+    observation → intent/brief → claim → realized workspace.
+
+    Mutates ``result`` in place. Returns None when ``result`` already holds the
+    caller's final answer (an ordinary refusal); otherwise returns the prepared
+    facts. Exceptions are NOT handled here — they propagate to the caller's own
+    ``try`` so each path keeps exactly its existing error handling.
+
+    ``seat_resolver`` lets a caller narrow seat choice (the persistent-session
+    path accepts only seats with a bound session) while still running before
+    the claim. It defaults to ``_resolve_seat``, which is what ``execute`` uses.
+    """
+    if result["operating_mode"] != "PRODUCT_EXECUTION":
+        result["blocker"] = "system-maintenance-active"
+        return None
+
+    task = state_store.read("task", work_item_id)
+    if task is None:
+        result["blocker"] = "work-item-not-found"
+        return None
+    if seat_resolver is None:
+        seat_id, capability, already_owned = _resolve_seat(task, seat_registry, state_store)
+    else:
+        seat_id, capability, already_owned = seat_resolver(task)
+    result.update({"capability": capability, "seat_id": seat_id,
+                   "seat_resolution_status": "capability-verified"})
+
+    issue = jira_client.get_issue(work_item_id)
+    observed = state_store.observe_lifecycle(
+        work_item_id, task["revision"], issue["status_id"]
+    )
+    result["readiness_status"] = "jira-observed"
+
+    # Derivation happens before the claim: work Thebes cannot brief is work
+    # it must not take ownership of.
+    try:
+        derived = intent_resolver(work_item_id, observed, issue, seat_id, state_store)
+    except ExecutionIntentUnresolved as exc:
+        if brief is None:
+            result.update({"blocker": str(exc), "brief_source": "unresolved",
+                           "needs_input": exc.detail,
+                           "ceo_input_required": exc.classification == "CEO_INPUT_REQUIRED",
+                           "governance_input": exc.as_governance_input(work_item_id)})
+            return None
+        derived = None
+    if brief is None:
+        brief = derived
+        result["brief_source"] = "canonical-state"
+    else:
+        assert_manual_brief_cannot_override_canonical(brief, derived)
+        result["brief_source"] = "supplied-brief"
+    result["derived_from"] = (derived or {}).get("derived_from")
+    if already_owned:
+        # A continuation preserves the canonical owner.  Re-claiming would
+        # either fail as already-owned or silently turn a resume into a new
+        # allocation decision.
+        result["claim_status"] = "preserved"
+    else:
+        state_store.claim(
+            work_item_id, seat_id, auth["reference"], observed["revision"],
+            capability_of_seat=capability, jira_status_id=issue["status_id"],
+        )
+        result["claim_status"] = "claimed"
+
+    # The workspace becomes real here: after ownership exists, before any
+    # lease, request or provider. A provider is never pointed at a directory
+    # that has not been allocated and proven to be this seat's own.
+    realized = workspace_allocator(work_item_id, seat_id, brief["workspace"])
+    brief = dict(brief, workspace=realized["workspace"])
+    result.update({"workspace_status": "allocated",
+                   "workspace_path": realized["path"],
+                   "workspace_branch": realized["branch"],
+                   "workspace_reused": realized["reused"],
+                   "expected_revision": realized["expected_revision"]})
+    return {"task": task, "seat_id": seat_id, "capability": capability,
+            "already_owned": already_owned, "brief": brief, "realized": realized,
+            "issue": issue, "observed": observed}
+
+
 def execute(work_item_id, brief=None, *, authorization=None, state_store=store,
             jira_client=jira, seat_registry=roster, providers=None,
             intent_resolver=resolve_execution_intent,
@@ -288,65 +370,15 @@ def execute(work_item_id, brief=None, *, authorization=None, state_store=store,
         return result
 
     try:
-        if result["operating_mode"] != "PRODUCT_EXECUTION":
-            result["blocker"] = "system-maintenance-active"
+        prepared = _prepare_dispatch(result, work_item_id, brief, auth, state_store,
+                                     jira_client, seat_registry, intent_resolver,
+                                     workspace_allocator)
+        if prepared is None:
             return result
-
-        task = state_store.read("task", work_item_id)
-        if task is None:
-            result["blocker"] = "work-item-not-found"
-            return result
-        seat_id, capability, already_owned = _resolve_seat(task, seat_registry, state_store)
-        result.update({"capability": capability, "seat_id": seat_id,
-                       "seat_resolution_status": "capability-verified"})
-
-        issue = jira_client.get_issue(work_item_id)
-        observed = state_store.observe_lifecycle(
-            work_item_id, task["revision"], issue["status_id"]
-        )
-        result["readiness_status"] = "jira-observed"
-
-        # Derivation happens before the claim: work Thebes cannot brief is work
-        # it must not take ownership of.
-        try:
-            derived = intent_resolver(work_item_id, observed, issue, seat_id, state_store)
-        except ExecutionIntentUnresolved as exc:
-            if brief is None:
-                result.update({"blocker": str(exc), "brief_source": "unresolved",
-                               "needs_input": exc.detail,
-                               "ceo_input_required": exc.classification == "CEO_INPUT_REQUIRED",
-                               "governance_input": exc.as_governance_input(work_item_id)})
-                return result
-            derived = None
-        if brief is None:
-            brief = derived
-            result["brief_source"] = "canonical-state"
-        else:
-            assert_manual_brief_cannot_override_canonical(brief, derived)
-            result["brief_source"] = "supplied-brief"
-        result["derived_from"] = (derived or {}).get("derived_from")
-        if already_owned:
-            # A continuation preserves the canonical owner.  Re-claiming would
-            # either fail as already-owned or silently turn a resume into a new
-            # allocation decision.
-            result["claim_status"] = "preserved"
-        else:
-            state_store.claim(
-                work_item_id, seat_id, auth["reference"], observed["revision"],
-                capability_of_seat=capability, jira_status_id=issue["status_id"],
-            )
-            result["claim_status"] = "claimed"
-
-        # The workspace becomes real here: after ownership exists, before any
-        # lease, request or provider. A provider is never pointed at a directory
-        # that has not been allocated and proven to be this seat's own.
-        realized = workspace_allocator(work_item_id, seat_id, brief["workspace"])
-        brief = dict(brief, workspace=realized["workspace"])
-        result.update({"workspace_status": "allocated",
-                       "workspace_path": realized["path"],
-                       "workspace_branch": realized["branch"],
-                       "workspace_reused": realized["reused"],
-                       "expected_revision": realized["expected_revision"]})
+        seat_id = prepared["seat_id"]
+        brief = prepared["brief"]
+        realized = prepared["realized"]
+        observed = prepared["observed"]
 
         registry = tuple(providers) if providers is not None else available_provider_registry()
         captured = {}

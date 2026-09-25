@@ -18,6 +18,7 @@ import sys
 from . import (ControllerInputError, decide, execute, integrate, load_brief, resume,
                validate)
 from .entry import ORCHESTRATING_COMMANDS, caller as classify_caller
+from .session_dispatch import bind_session, dispatch_session, session_outcome
 from .sprint_plan import plan_current_sprint
 from .backlog_plan import plan_backlog
 from agent.execution.authority import discover_execution_authority
@@ -65,7 +66,30 @@ def main(argv=None):
     sub.add_parser("plan-backlog", help="read-only plan for the canonical Jira Product backlog")
     manifest = sub.add_parser("authority-manifest", help="read-only execution authority discovery")
     manifest.add_argument("work_item_id")
-    for orchestrating in (run, again, call, check):
+    # The persistent-session path: prepare exactly as `execute` does, stop before
+    # any provider, and return a packet the controller conversation delivers.
+    prep = sub.add_parser("dispatch-session",
+                          help="prepare one work item for a bound persistent session "
+                               "and return its dispatch packet; launches nothing")
+    prep.add_argument("work_item_id")
+    report = sub.add_parser("session-outcome",
+                            help="record what a bound session reported for one dispatch")
+    report.add_argument("work_item_id")
+    report.add_argument("--dispatch", required=True)
+    report.add_argument("--outcome", required=True)
+    report.add_argument("--summary", required=True)
+    report.add_argument("--session-id", default=None)
+    report.add_argument("--reference", default=None)
+    # Maintenance/internal: binds identity, orchestrates nothing.
+    bind = sub.add_parser("bind-session",
+                          help="bind or rebind one seat to a persistent provider session")
+    bind.add_argument("seat_id")
+    bind.add_argument("--provider", required=True)
+    bind.add_argument("--session-id", required=True)
+    bind.add_argument("--stable-home", required=True)
+    bind.add_argument("--session-name", default=None)
+    bind.add_argument("--bound-by", default="ceo")
+    for orchestrating in (run, again, call, check, prep, report):
         orchestrating.add_argument(
             "--maintenance-reason", default=None,
             help="bypass the Listener front door for recovery, debugging or a "
@@ -80,7 +104,15 @@ def main(argv=None):
                           "detail": detail}, indent=2, sort_keys=True))
         return 2
     try:
-        outcome = (integrate(args.work_item_id) if args.command == "integrate"
+        outcome = (dispatch_session(args.work_item_id) if args.command == "dispatch-session"
+                   else session_outcome(args.work_item_id, args.dispatch, args.outcome,
+                                        args.session_id, args.summary, args.reference)
+                   if args.command == "session-outcome"
+                   else bind_session(args.seat_id, args.provider, args.session_id,
+                                     args.stable_home, session_name=args.session_name,
+                                     bound_by=args.bound_by)
+                   if args.command == "bind-session"
+                   else integrate(args.work_item_id) if args.command == "integrate"
                    else validate(args.work_item_id) if args.command == "validate"
                    else resume(args.work_item_id) if args.command == "resume"
                    else decide(args.work_item_id, args.invocation, args.permission,
@@ -94,7 +126,7 @@ def main(argv=None):
                    else execute(args.work_item_id,
                                 load_brief(args.brief_file) if args.brief_file else None))
     except ControllerInputError as exc:
-        outcome = {"work_item_id": args.work_item_id, "blocker": str(exc)}
+        outcome = {"work_item_id": getattr(args, "work_item_id", None), "blocker": str(exc)}
     if args.command in ORCHESTRATING_COMMANDS:
         # How this invocation was authorized travels with its result, so an
         # operational run can be traced back to the intent that caused it and a
@@ -112,6 +144,12 @@ def main(argv=None):
     if args.command == "integrate":
         return 0 if outcome.get("integration_status") in (
             "integrated", "already-present", "no-product-commit-required") else 1
+    if args.command == "dispatch-session":
+        return 0 if outcome.get("dispatch_status") == "dispatched" else 1
+    if args.command == "session-outcome":
+        return 0 if outcome.get("outcome_status") == "recorded" else 1
+    if args.command == "bind-session":
+        return 0 if outcome.get("binding_status") in ("bound", "rebound") else 1
     return 1
 
 

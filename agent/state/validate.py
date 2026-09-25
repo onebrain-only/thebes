@@ -64,6 +64,14 @@ AUTHORIZATION_KINDS = ("BOUNDED_PRODUCT_BATCH", "APPROVED_ROADMAP_BATCH")
 AUTHORIZATION_STATUSES = ("active", "exhausted", "revoked", "suspended")
 CANONICAL_PLANNER = "canonical-thebes-planner"
 
+# Mirrors agent/state/store.py; kept here for the same reason as the
+# authorization vocabulary above — validate.py must not import store.
+ROLE_SESSION_PROVIDERS = ("claude", "codex")
+SESSION_UUID = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+SESSION_DISPATCH_OUTCOMES = ("completed", "blocked", "decision_required",
+                            "clarification_required", "failed", "worker_unreachable")
+
 # ---- Wave 6 orchestration ---------------------------------------------------
 #
 # Interventions are INDEPENDENT records, not a field on a task. A task-level object
@@ -1446,6 +1454,62 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
         if rec.get("replay_product_actions") is not False:
             errs.append("%s: replacement must prohibit Product replay" % where)
 
+    elif kind == "role_session":
+        _req(rec, ["seat_id", "provider", "session_id", "stable_home", "status",
+                   "bound_by"], errs, where)
+        if rec.get("seat_id") not in seatset:
+            errs.append("%s: role session seat %r is not declared" % (where, rec.get("seat_id")))
+        if rec.get("provider") not in ROLE_SESSION_PROVIDERS:
+            errs.append("%s: role session provider must be one of %s"
+                        % (where, "/".join(ROLE_SESSION_PROVIDERS)))
+        if rec.get("status") not in ("active", "retired"):
+            errs.append("%s: role session status must be active or retired" % where)
+        if not isinstance(rec.get("session_id"), str) or not SESSION_UUID.match(rec["session_id"]):
+            errs.append("%s: role session session_id must be a UUID — identity is the "
+                        "session id, never a name, PID or socket" % where)
+        if not isinstance(rec.get("stable_home"), str) or not os.path.isabs(rec.get("stable_home") or ""):
+            errs.append("%s: role session stable_home must be an absolute path" % where)
+        previous = rec.get("previous_session_ids")
+        if previous is None:
+            previous = []
+        if not isinstance(previous, list) or any(
+                not isinstance(p, str) or not p for p in previous):
+            errs.append("%s: previous_session_ids must be a list of session ids" % where)
+        if rec.get("bound_by") not in seatset and rec.get("bound_by") not in ("ceo", "orchestrator"):
+            errs.append("%s: role session bound_by %r is not a known authority or seat"
+                        % (where, rec.get("bound_by")))
+
+    elif kind == "session_dispatch":
+        _req(rec, ["dispatch_id", "work_item_id", "seat_id", "provider", "session_id",
+                   "worktree_path", "branch", "execution_lease_id", "invocation_id",
+                   "authorization_ref", "status"], errs, where)
+        if not str(rec.get("dispatch_id") or "").startswith("dispatch-"):
+            errs.append("%s: dispatch_id must start with dispatch-" % where)
+        if not JIRA_KEY.match(str(rec.get("work_item_id") or "")):
+            errs.append("%s: session dispatch needs a Jira work_item_id" % where)
+        if rec.get("seat_id") not in seatset:
+            errs.append("%s: session dispatch seat %r is not declared" % (where, rec.get("seat_id")))
+        if rec.get("provider") not in ROLE_SESSION_PROVIDERS:
+            errs.append("%s: session dispatch provider must be one of %s"
+                        % (where, "/".join(ROLE_SESSION_PROVIDERS)))
+        if not str(rec.get("execution_lease_id") or "").startswith("lease-"):
+            errs.append("%s: session dispatch needs an execution lease" % where)
+        status = rec.get("status")
+        if status not in ("dispatched",) + SESSION_DISPATCH_OUTCOMES:
+            errs.append("%s: unknown session dispatch status %r" % (where, status))
+        elif status != "dispatched":
+            _req(rec, ["outcome", "summary", "outcome_at", "recorded_by"], errs, where)
+            if rec.get("outcome") != status:
+                errs.append("%s: session dispatch outcome must match its terminal status"
+                            % where)
+            if status != "worker_unreachable" and rec.get("reported_session_id") != rec.get("session_id"):
+                errs.append("%s: a session dispatch outcome must be reported by its own "
+                            "bound session" % where)
+            if status == "worker_unreachable" and not rec.get("recovery_hint"):
+                errs.append("%s: a worker_unreachable outcome requires a recovery_hint"
+                            % where)
+        _reflen(rec, ["authorization_ref"], errs, where)
+
     elif kind == "policy":
         _req(rec, ["policy_id", "policy_kind", "scope", "activated_by", "reason_ref"],
              errs, where)
@@ -1646,7 +1710,9 @@ def check(runtime=None):
              "execution_continuation_preparation": "execution-continuations",
              "execution_session_retirement": "execution-session-retirements",
              "execution_replacement": "execution-replacements",
-             "product_authorization": "product-authorizations"}
+             "product_authorization": "product-authorizations",
+             "role_session": "role-sessions",
+             "session_dispatch": "session-dispatches"}
     seen_ids = {}
     edges = []
     active_iv = []
@@ -1680,7 +1746,9 @@ def check(runtime=None):
                    "execution_continuation_preparation": "execution_continuation_id",
                    "execution_session_retirement": "execution_session_retirement_id",
                    "execution_replacement": "execution_replacement_id",
-                   "product_authorization": "product_authorization_id"}[kind]
+                   "product_authorization": "product_authorization_id",
+                   "role_session": "seat_id",
+                   "session_dispatch": "dispatch_id"}[kind]
             rid = rec.get(idf)
             if rid != fn[:-5]:
                 errs.append("%s: filename does not match %s %r" % (p, idf, rid))

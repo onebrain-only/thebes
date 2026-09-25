@@ -93,6 +93,11 @@ CONTROL_PLANE_TOKENS = (
     "agent.core",
     "EXECUTE_WORK_ITEM",
     "DECISION_RESPONSE",
+    # The persistent-session intent families, added in the milestone that
+    # created them (L-015). A worker told to submit one would be orchestrating
+    # its own dispatch.
+    "PREPARE_SESSION_DISPATCH",
+    "RECORD_SESSION_OUTCOME",
     "claude --resume",
     "claude -p",
     "--session-id",

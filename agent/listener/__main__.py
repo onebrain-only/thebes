@@ -4,6 +4,8 @@
     python3 -m agent.listener health                 # probe a running Listener
     python3 -m agent.listener submit KAN-183         # send one EXECUTE_WORK_ITEM
     python3 -m agent.listener decide <intent-id> ... # answer one waiting intent
+    python3 -m agent.listener session-dispatch KAN-183   # prepare for a bound session
+    python3 -m agent.listener session-outcome KAN-183 --dispatch <id> --outcome <o> ...
     python3 -m agent.listener show <intent-id>       # durable intent + result
     python3 -m agent.listener status                 # every intent's delivery state
 
@@ -103,6 +105,31 @@ def main(argv=None):
     answer.add_argument("--wait", type=float, nargs="?", const=1800.0, default=None,
                         metavar="SECONDS",
                         help="block until the decision settles, then print its result")
+    prep = sub.add_parser("session-dispatch",
+                          help="submit one PREPARE_SESSION_DISPATCH intent: prepare a "
+                               "work item for its bound persistent session")
+    prep.add_argument("work_item_id")
+    prep.add_argument("--idempotency-key", default=None,
+                      help="resubmitting with the same key is harmless by design")
+    prep.add_argument("--actor", default="ceo")
+    prep.add_argument("--source", default="listener-cli")
+    prep.add_argument("--wait", type=float, nargs="?", const=1800.0, default=None,
+                      metavar="SECONDS",
+                      help="block until the intent settles, then print its result")
+    report = sub.add_parser("session-outcome",
+                            help="submit one RECORD_SESSION_OUTCOME intent")
+    report.add_argument("work_item_id")
+    report.add_argument("--dispatch", required=True)
+    report.add_argument("--outcome", required=True)
+    report.add_argument("--summary", required=True)
+    report.add_argument("--session-id", default=None)
+    report.add_argument("--reference", default=None)
+    report.add_argument("--idempotency-key", default=None)
+    report.add_argument("--actor", default="ceo")
+    report.add_argument("--source", default="listener-cli")
+    report.add_argument("--wait", type=float, nargs="?", const=1800.0, default=None,
+                        metavar="SECONDS",
+                        help="block until the intent settles, then print its result")
     show = sub.add_parser("show", help="one intent and its durable result")
     show.add_argument("intent_id")
     args = parser.parse_args(argv)
@@ -125,6 +152,30 @@ def main(argv=None):
             "source": args.source, "actor": args.actor,
             "idempotency_key": key, "correlation_id": key,
             "payload": {"work_item_id": args.work_item_id}})
+    elif args.command == "session-dispatch":
+        key = args.idempotency_key or "session-dispatch-%s-%s" % (args.work_item_id,
+                                                                  uuid.uuid4())
+        status, body = _post(args.port, "/intents", {
+            "schema_version": contract.SCHEMA_VERSION,
+            "intent_type": contract.PREPARE_SESSION_DISPATCH,
+            "source": args.source, "actor": args.actor,
+            "idempotency_key": key, "correlation_id": key,
+            "payload": {"work_item_id": args.work_item_id}})
+    elif args.command == "session-outcome":
+        # The dispatch id makes a repeated report of the same outcome the same
+        # intent; a different outcome for one dispatch is refused by the store.
+        key = args.idempotency_key or "session-outcome-%s-%s" % (args.dispatch, args.outcome)
+        payload = {"work_item_id": args.work_item_id, "dispatch_id": args.dispatch,
+                   "outcome": args.outcome, "summary": args.summary}
+        if args.session_id:
+            payload["session_id"] = args.session_id
+        if args.reference:
+            payload["reference"] = args.reference
+        status, body = _post(args.port, "/intents", {
+            "schema_version": contract.SCHEMA_VERSION,
+            "intent_type": contract.RECORD_SESSION_OUTCOME,
+            "source": args.source, "actor": args.actor,
+            "idempotency_key": key, "correlation_id": key, "payload": payload})
     else:
         waiting = store.read_intent(args.responds_to) or {}
         work_item_id = (waiting.get("payload") or {}).get("work_item_id")

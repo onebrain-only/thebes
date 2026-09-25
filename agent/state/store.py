@@ -76,7 +76,30 @@ KINDS = {
     # to CEO; execution inside an approved roadmap belongs to PM. Selection stays
     # with the canonical planner and every grant references the actual decision.
     "product_authorization": ("product-authorizations", "authz"),
+    # The durable identity binding a persistent provider session to a seat.
+    # Natural key = seat_id: a seat has at most one ACTIVE binding, and rebinding
+    # is a CAS update that keeps history rather than a second record.
+    "role_session": ("role-sessions", None),
+    # One prepared-but-not-yet-woken persistent-session dispatch. It exists
+    # beside the one-shot execute path, not instead of it: preparation runs the
+    # same authorization/claim/workspace machinery and stops before any provider
+    # wake, so a durably-bound worker session can be told to do the work itself.
+    "session_dispatch": ("session-dispatches", "dispatch"),
 }
+
+# Providers a role_session may be bound to. The persistent-session dispatch
+# path is Claude-only in this slice (see agent/controller/session_dispatch.py);
+# this vocabulary is not hardwired to that restriction — it just names the two
+# providers Thebes knows how to wake at all.
+ROLE_SESSION_PROVIDERS = frozenset({"claude", "codex"})
+
+# The complete outcome vocabulary a session_dispatch may settle to. Exactly one
+# of these ends a dispatch; a follow-up (an answer to a decision, an unblock) is
+# a NEW prepare for the same item, not a second outcome on this one.
+SESSION_DISPATCH_OUTCOMES = frozenset({
+    "completed", "blocked", "decision_required", "clarification_required",
+    "failed", "worker_unreachable",
+})
 
 
 # The complete integration vocabulary. A git failure is not a provider failure
@@ -2553,6 +2576,125 @@ def close_execution_lease(execution_lease_id, expected_revision, closed_by):
             return rec
 
 
+def bind_role_session(seat_id, provider, session_id, stable_home, bound_by,
+                      session_name=None, expected_revision=None):
+    """Create or CAS-rebind the durable session identity backing one seat.
+
+    Identity is the session_id, never the name, PID, socket or bridge address —
+    none of those survive a restart. A rebind is not a new identity: the
+    previous session_id is appended to previous_session_ids and kept, exactly
+    like an execution replacement keeps the lineage it replaces.
+    """
+    import roster                                       # noqa: E402
+    if provider not in ROLE_SESSION_PROVIDERS:
+        raise StateError("unknown provider %r — expected one of %s"
+                         % (provider, "/".join(sorted(ROLE_SESSION_PROVIDERS))))
+    if not isinstance(session_id, str) or not session_id:
+        raise StateError("session_id is required")
+    if not stable_home:
+        raise StateError("stable_home is required")
+    if not bound_by:
+        raise StateError("bound_by is required")
+    if seat_id not in roster.read():
+        raise StateError("seat %r is not declared in the neutral registry" % seat_id)
+    with record_lock("role_session", seat_id):
+        cur = read("role_session", seat_id)
+        if cur is None:
+            if expected_revision is not None:
+                raise StateError("role session for %s does not exist; expected_revision "
+                                 "must be null" % seat_id)
+            rec = {"seat_id": seat_id, "provider": provider, "session_id": session_id,
+                   "session_name": session_name, "stable_home": stable_home,
+                   "status": "active", "previous_session_ids": [], "bound_by": bound_by,
+                   "schema_version": SCHEMA_VERSION, "revision": 1,
+                   "created_at": now(), "updated_at": now()}
+            _validate_one("role_session", rec)
+            _atomic_write(path_for("role_session", seat_id), rec)
+            return rec
+        if expected_revision is None:
+            raise StateError("expected_revision is required; there is no force update")
+        if cur["revision"] != expected_revision:
+            raise StateError("stale write refused: role session %s is at revision %d, "
+                             "caller expected %d" % (seat_id, cur["revision"], expected_revision))
+        previous = list(cur.get("previous_session_ids") or [])
+        if cur.get("session_id") and cur["session_id"] != session_id:
+            previous.append(cur["session_id"])
+        merged = dict(cur, provider=provider, session_id=session_id,
+                     session_name=session_name, stable_home=stable_home,
+                     status="active", previous_session_ids=previous, bound_by=bound_by,
+                     revision=cur["revision"] + 1, updated_at=now())
+        _validate_one("role_session", merged)
+        _atomic_write(path_for("role_session", seat_id), merged)
+        return merged
+
+
+def active_role_session(seat_id):
+    """The seat's current ACTIVE session binding, or None.
+
+    A dormant or never-bound seat legitimately has none; that is an ordinary
+    answer, not an error.
+    """
+    rec = read("role_session", seat_id)
+    if rec is None or rec.get("status") != "active":
+        return None
+    return rec
+
+
+def record_session_outcome(dispatch_id, outcome, summary, recorded_by,
+                           session_id=None, reference=None):
+    """Settle one persistent-session dispatch. Every outcome ends the dispatch.
+
+    Identity, not politeness, is the gate: for every outcome except
+    worker_unreachable, the caller must name the exact session_id this dispatch
+    was bound to, AND that session must still be the seat's current active
+    binding. Anything else is refused and nothing is recorded — a stale or
+    impersonating report must not close a lease it did not earn. Ownership
+    (the claim) is never touched here; a follow-up is a new prepare for the
+    same item, not a second outcome on this one.
+    """
+    if outcome not in SESSION_DISPATCH_OUTCOMES:
+        raise StateError("unknown session dispatch outcome %r — expected one of %s"
+                         % (outcome, "/".join(sorted(SESSION_DISPATCH_OUTCOMES))))
+    if not summary:
+        raise StateError("summary is required")
+    if not recorded_by:
+        raise StateError("recorded_by is required")
+    if outcome != "worker_unreachable" and not session_id:
+        raise StateError("session_id is required for outcome %r" % outcome)
+    with record_lock("session_dispatch", dispatch_id):
+        cur = read("session_dispatch", dispatch_id)
+        if cur is None:
+            raise StateError("session dispatch %s does not exist" % dispatch_id)
+        if cur.get("status") != "dispatched":
+            raise StateError("session dispatch %s is not open (status %r) — every "
+                             "outcome is terminal for that dispatch"
+                             % (dispatch_id, cur.get("status")))
+        if outcome != "worker_unreachable":
+            active = active_role_session(cur.get("seat_id"))
+            if (session_id != cur.get("session_id") or active is None
+                    or active.get("session_id") != session_id):
+                raise StateError(
+                    "session-identity-mismatch: dispatch %s is bound to a different "
+                    "session than the one reporting this outcome" % dispatch_id)
+        recovery_hint = None
+        if outcome == "worker_unreachable":
+            recovery_hint = ('claude --bg --resume %s "<prompt>" — no other flags; '
+                             'extra flags create a copy' % cur.get("session_id"))
+        lease_id = cur.get("execution_lease_id")
+        if lease_id:
+            lease = read("execution_lease", lease_id)
+            if lease is not None and not lease.get("closed_at"):
+                close_execution_lease(lease_id, lease["revision"], recorded_by)
+        merged = dict(cur, status=outcome, outcome=outcome, summary=summary,
+                     reference=reference, reported_session_id=session_id,
+                     outcome_at=now(), recorded_by=recorded_by,
+                     recovery_hint=recovery_hint,
+                     revision=cur["revision"] + 1, updated_at=now())
+        _validate_one("session_dispatch", merged)
+        _atomic_write(path_for("session_dispatch", dispatch_id), merged)
+        return merged
+
+
 def review_context_ref(work_item_id, review_context):
     """The canonical reference for one open review context."""
     review = review_context or {}
@@ -3305,7 +3447,9 @@ def _id_field(kind):
             "coverage": "coverage_id", "correction": "correction_id",
             "operating_mode": "operating_mode_id",
             "execution_lease": "execution_lease_id",
-            "execution_receipt": "execution_receipt_id"}[kind]
+            "execution_receipt": "execution_receipt_id",
+            "role_session": "seat_id",
+            "session_dispatch": "dispatch_id"}[kind]
 
 
 def _validate_one(kind, record):

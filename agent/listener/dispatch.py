@@ -59,6 +59,18 @@ def argv_for(intent):
         if payload.get("allowed_operation"):
             command += ["--operation", payload["allowed_operation"]]
         return command
+    if intent["intent_type"] == contract.PREPARE_SESSION_DISPATCH:
+        return [sys.executable, "-m", "agent.controller", "dispatch-session", work_item_id]
+    if intent["intent_type"] == contract.RECORD_SESSION_OUTCOME:
+        command = [sys.executable, "-m", "agent.controller", "session-outcome", work_item_id,
+                   "--dispatch", payload["dispatch_id"],
+                   "--outcome", payload["outcome"],
+                   "--summary", payload["summary"]]
+        if payload.get("session_id"):
+            command += ["--session-id", payload["session_id"]]
+        if payload.get("reference"):
+            command += ["--reference", payload["reference"]]
+        return command
     raise ValueError("no controller transport for %r" % intent["intent_type"])
 
 
