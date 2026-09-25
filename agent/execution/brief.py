@@ -224,12 +224,21 @@ def assert_no_control_plane_identifier(text, field):
             raise ExecutorBriefViolation("control_plane_identifier", field, token)
 
 
+# A negator DIRECTLY before a concept phrase makes it a statement of absence
+# ("no Jira transition was made"), not an instruction. Adjacency is the whole
+# rule: "don't forget to transition the ticket" and "No problem — transition
+# the ticket" keep a word or a punctuation mark between, and stay refused.
+_NEGATED_PREFIX = re.compile(
+    r"\b(?:no|not|never|without|nor)\s+(?:any\s+|a\s+)?$", re.IGNORECASE)
+
+
 def assert_no_control_plane_concept(text, field):
     """Refuse an instruction to perform an orchestration act."""
     for category, patterns in _COMPILED_CONCEPTS:
         for pattern in patterns:
-            found = pattern.search(text)
-            if found:
+            for found in pattern.finditer(text):
+                if _NEGATED_PREFIX.search(text, 0, found.start()):
+                    continue
                 raise ExecutorBriefViolation(category, field, found.group(0))
 
 

@@ -343,5 +343,40 @@ class ProviderSelectionPhrasing(unittest.TestCase):
             assert_no_control_plane_concept(text, "objective")
 
 
+class NegatedReportPhrasing(unittest.TestCase):
+    """A report of an act NOT done is evidence, not an instruction to do it.
+
+    KAN-367's SELF review was refused because the executor's own report, quoted
+    into the reviewer objective, said "no Jira transition was made". Only a
+    negator directly before the phrase exempts it; a negator elsewhere in the
+    sentence, or cut off by punctuation, must not open a way through.
+    """
+
+    NEGATED = (
+        "Nothing is committed and no Jira transition was made.",
+        "No Jira transition performed; no claim, no wake.",
+        "The executor did not transition the Jira ticket.",
+        "Scope: never transition this ticket from inside a worker.",
+        "Finished without any Jira workflow change.",
+    )
+
+    STILL_INSTRUCTIONS = (
+        "Don't forget to transition the Jira ticket to QA-Test.",
+        "No problem — transition the Jira ticket afterwards.",
+        "No, transition the ticket now.",
+        "Implement KAN-900, then transition the Jira ticket to QA-Test.",
+        "It is not hard: select the next work item when done.",
+    )
+
+    def test_a_negated_report_passes(self):
+        for text in self.NEGATED:
+            assert_no_control_plane_concept(text, "objective")
+
+    def test_a_negator_elsewhere_does_not_exempt_an_instruction(self):
+        for text in self.STILL_INSTRUCTIONS:
+            with self.assertRaises(ExecutorBriefViolation, msg=text):
+                assert_no_control_plane_concept(text, "objective")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
