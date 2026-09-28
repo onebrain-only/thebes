@@ -70,6 +70,8 @@ def argv_for(intent):
             command += ["--session-id", payload["session_id"]]
         if payload.get("reference"):
             command += ["--reference", payload["reference"]]
+        if payload.get("delivery_id"):
+            command += ["--delivery-id", payload["delivery_id"]]
         return command
     raise ValueError("no controller transport for %r" % intent["intent_type"])
 

@@ -343,6 +343,14 @@ class OutcomeTests(unittest.TestCase):
             "execution_lease_id": self.lease["execution_lease_id"],
             "invocation_id": "controller-fixture", "authorization_ref": "authz:fixture",
             "status": "dispatched"})
+        # Hardening 2026-09-28: outcomes are accepted only against a DELIVERED
+        # session_delivery for this dispatch and session, so the fixture records one.
+        real_store.record_session_delivery(self.dispatch["dispatch_id"], {
+            "dispatch_id": self.dispatch["dispatch_id"], "work_item_id": "KAN-900",
+            "seat_id": "frontend-1", "provider": "claude", "session_id": SID,
+            "status": "DELIVERED", "stopped_before_resume": "YES", "resumed_same_sid": "YES",
+            "session_count_before": 1, "session_count_after": 1,
+            "delivered_at": real_store.now()})
 
     def tearDown(self):
         real_store.RUNTIME, real_store.LOCKS = self.saved

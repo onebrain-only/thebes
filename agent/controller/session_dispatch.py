@@ -244,7 +244,8 @@ def render_dispatch_message(dispatch_id, work_item_id, binding, realized, render
 
 
 def session_outcome(work_item_id, dispatch_id, outcome, session_id, summary,
-                    reference=None, *, state_store=store, recorded_by="orchestrator"):
+                    reference=None, *, delivery_id=None, state_store=store,
+                    recorded_by="orchestrator"):
     """Record what a bound session reported, after checking it is that session.
 
     No validation, integration or Jira transition runs here. The claim is
@@ -266,7 +267,7 @@ def session_outcome(work_item_id, dispatch_id, outcome, session_id, summary,
     try:
         record = state_store.record_session_outcome(
             dispatch_id, outcome, summary, recorded_by,
-            session_id=session_id, reference=reference)
+            session_id=session_id, reference=reference, delivery_id=delivery_id)
     except store.StateError as exc:
         result["blocker"] = str(exc)
         return result

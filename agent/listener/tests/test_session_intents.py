@@ -27,7 +27,7 @@ def submit(intent_type, payload, key="k-1"):
 def outcome_payload(**changes):
     payload = {"work_item_id": "KAN-900", "dispatch_id": "dispatch-abc_1.2",
                "outcome": "completed", "summary": "implemented and committed",
-               "session_id": SID, "reference": "abc1234"}
+               "session_id": SID, "reference": "abc1234", "delivery_id": "dispatch-abc_1.2"}
     payload.update(changes)
     return {key: value for key, value in payload.items() if value is not None}
 
@@ -95,7 +95,8 @@ class TransportTests(unittest.TestCase):
         self.assertEqual(["-m", "agent.controller", "session-outcome", "KAN-900",
                           "--dispatch", "dispatch-abc_1.2", "--outcome", "completed",
                           "--summary", "implemented and committed",
-                          "--session-id", SID, "--reference", "abc1234"], argv[1:])
+                          "--session-id", SID, "--reference", "abc1234",
+                          "--delivery-id", "dispatch-abc_1.2"], argv[1:])
         unreachable = dispatch.argv_for(submit(
             contract.RECORD_SESSION_OUTCOME,
             outcome_payload(outcome="worker_unreachable", session_id=None, reference=None)))

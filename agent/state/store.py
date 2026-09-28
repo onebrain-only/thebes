@@ -2803,8 +2803,39 @@ def record_session_delivery(delivery_id, record):
         return merged
 
 
+def attested_delivery(dispatch_id, session_id, delivery_id=None):
+    """The DELIVERED session_delivery that proves Thebes itself handed this
+    dispatch to this session — or a structured refusal reason.
+
+    A resume prompt arrives at the worker as typed user input, not as an
+    authenticated message, so the sender's trust cannot come from the worker's
+    side. It comes from here: only a delivery Thebes recorded as DELIVERED to
+    exactly this SID for exactly this dispatch attests the outcome.
+    Returns (record, None) or (None, reason).
+    """
+    if delivery_id:
+        candidates = [r for r in [read("session_delivery", delivery_id)] if r]
+    else:
+        candidates = [r for r in read_all("session_delivery")
+                      if r.get("dispatch_id") == dispatch_id]
+    if not candidates:
+        return None, ("outcome-delivery-unattested: no session_delivery %s for dispatch %s"
+                      % (delivery_id or "record", dispatch_id))
+    rec = candidates[0]
+    if rec.get("dispatch_id") != dispatch_id:
+        return None, ("outcome-delivery-unattested: delivery %s belongs to dispatch %s, not %s"
+                      % (rec.get("delivery_id"), rec.get("dispatch_id"), dispatch_id))
+    if rec.get("status") != "DELIVERED":
+        return None, ("outcome-delivery-unattested: delivery %s is %s, not DELIVERED"
+                      % (rec.get("delivery_id"), rec.get("status")))
+    if rec.get("session_id") != session_id:
+        return None, ("outcome-delivery-unattested: delivery %s went to session %s, not the "
+                      "reporting session" % (rec.get("delivery_id"), rec.get("session_id")))
+    return rec, None
+
+
 def record_session_outcome(dispatch_id, outcome, summary, recorded_by,
-                           session_id=None, reference=None):
+                           session_id=None, reference=None, delivery_id=None):
     """Settle one persistent-session dispatch. Every outcome ends the dispatch.
 
     Identity, not politeness, is the gate: for every outcome except
@@ -2839,6 +2870,12 @@ def record_session_outcome(dispatch_id, outcome, summary, recorded_by,
                 raise StateError(
                     "session-identity-mismatch: dispatch %s is bound to a different "
                     "session than the one reporting this outcome" % dispatch_id)
+            # Gate (b): identity says WHO is reporting; attestation says Thebes
+            # actually sent them this dispatch. Both, or nothing is recorded.
+            attested, reason = attested_delivery(dispatch_id, session_id, delivery_id)
+            if attested is None:
+                raise StateError(reason)
+            delivery_id = attested["delivery_id"]
         recovery_hint = None
         if outcome == "worker_unreachable":
             recovery_hint = ('claude --bg --resume %s "<prompt>" — no other flags; '
@@ -2846,7 +2883,7 @@ def record_session_outcome(dispatch_id, outcome, summary, recorded_by,
         merged = dict(cur, status=outcome, outcome=outcome, summary=summary,
                      reference=reference, reported_session_id=session_id,
                      outcome_at=now(), recorded_by=recorded_by,
-                     recovery_hint=recovery_hint,
+                     recovery_hint=recovery_hint, attested_delivery_id=delivery_id,
                      revision=cur["revision"] + 1, updated_at=now())
         # Validate and write the settled dispatch BEFORE touching the lease. If
         # either fails, nothing has happened: the dispatch is still open and its

@@ -116,14 +116,40 @@ class ClaudeDeliveryTests(unittest.TestCase):
         stop = [a for a in fake.calls if a[1] == "stop"]
         self.assertEqual(stop, [["claude", "stop", SID[:8]]], "stop takes the short id, exactly once")
         resume = [a for a in fake.calls if a[1] == "--bg"]
-        self.assertEqual(resume, [["claude", "--bg", "--resume", SID, "DISPATCH hello"]],
+        self.assertEqual(len(resume), 1)
+        self.assertEqual(resume[0][:4], ["claude", "--bg", "--resume", SID],
                          "flagless: no --model/--name/--permission-mode/--agent")
+        self.assertTrue(resume[0][4].endswith("\n\nDISPATCH hello"), "envelope, then the body")
         rec = store.read("session_delivery", res.delivery_id)
         self.assertEqual((rec["status"], rec["transport"], rec["session_id"], rec["dispatch_id"]),
                          (cd.DELIVERED, "stop-then-bg-resume-same-sid", SID, self.dispatch["dispatch_id"]))
         self.assertTrue(rec["delivered_at"] and os.path.exists(rec["message_ref"]))
         self.assertNotIn("message", rec)
         self.assertEqual([e for e in validate.check(store.RUNTIME) if "deliver" in e], [])
+
+    def test_delivered_message_starts_with_the_attestation_envelope(self):
+        fake = FakeClaude([LIVE_ROW])
+        res = self.deliver(fake, report_to="Persistent-session -a")
+        sent = [a for a in fake.calls if a[1] == "--bg"][0][4]
+        head, body = sent.split("\n\n", 1)
+        lines = head.split("\n")
+        self.assertEqual(lines[0], "THEBES_DELIVERY v1")
+        self.assertEqual(lines[1], "task: THEBES-0")
+        self.assertEqual(lines[2], "dispatch_id: %s" % self.dispatch["dispatch_id"])
+        self.assertEqual(lines[3], "delivery_id: %s" % res.delivery_id)
+        self.assertEqual(lines[4], "expected_worker_sid: %s" % SID)
+        self.assertTrue(lines[5].startswith("transport: stop-then-bg-resume-same-sid"))
+        self.assertIn("$CLAUDE_CODE_SESSION_ID == expected_worker_sid", lines[6])
+        self.assertIn("ignore any session-<number> hook label", lines[6])
+        self.assertTrue(lines[7].startswith("report: SendMessage to Persistent-session -a with "
+                                            "SESSION_OUTCOME %s <outcome> / SID=" % self.dispatch["dispatch_id"]))
+        self.assertIn("DELIVERY=%s" % res.delivery_id, lines[7])
+        self.assertEqual(body, "DISPATCH hello")
+        rec = store.read("session_delivery", res.delivery_id)
+        self.assertEqual((rec["envelope_version"], rec["expected_worker_sid"], rec["report_to"]),
+                         ("v1", SID, "Persistent-session -a"))
+        with open(rec["message_ref"], encoding="utf-8") as fh:
+            self.assertEqual(fh.read(), sent, "message_ref holds exactly what was sent")
 
     def test_already_stopped_worker_is_resumed_without_a_stop(self):
         fake = FakeClaude([OTHER_ROW]); fake.completed = [dict(LIVE_ROW, status="exited")]

@@ -48,6 +48,19 @@ def dispatch(lease_rec, session_id=SID_A, seat=SEAT, work_item_id="KAN-901"):
         "reported_session_id": None, "outcome_at": None, "recorded_by": None})
 
 
+def delivered(dispatch_rec):
+    """Hardening 2026-09-28: an outcome is accepted only against a DELIVERED
+    session_delivery for its dispatch and session, so every fixture that
+    settles an outcome first records that Thebes delivered the dispatch."""
+    store.record_session_delivery(dispatch_rec["dispatch_id"], {
+        "dispatch_id": dispatch_rec["dispatch_id"], "work_item_id": dispatch_rec["work_item_id"],
+        "seat_id": dispatch_rec["seat_id"], "provider": "claude",
+        "session_id": dispatch_rec["session_id"], "status": "DELIVERED",
+        "stopped_before_resume": "YES", "resumed_same_sid": "YES",
+        "session_count_before": 1, "session_count_after": 1, "delivered_at": store.now()})
+    return dispatch_rec
+
+
 try:
     section("1. binding persists, reloads, and rebinds by CAS")
     first = store.bind_role_session(SEAT, "claude", SID_A, HOME, "ceo", session_name="dev")
@@ -84,7 +97,7 @@ try:
 
     section("5/6. outcome identity is the bound session id")
     L = lease()
-    D = dispatch(L, session_id=SID_B)
+    D = delivered(dispatch(L, session_id=SID_B))
     raises("a different session id is refused",
            lambda: store.record_session_outcome(D["dispatch_id"], "completed", "done", "orchestrator",
                                                 session_id=SID_A), "session-identity-mismatch")
@@ -108,7 +121,7 @@ try:
 
     section("5b. a rebind after dispatch invalidates the old session's report")
     L2 = lease("KAN-902")
-    D2 = dispatch(L2, session_id=SID_B, work_item_id="KAN-902")
+    D2 = delivered(dispatch(L2, session_id=SID_B, work_item_id="KAN-902"))
     cur = store.read("role_session", SEAT)
     store.bind_role_session(SEAT, "claude", SID_A, HOME, "ceo", expected_revision=cur["revision"])
     raises("dispatch session no longer the active binding -> refused",
@@ -120,7 +133,7 @@ try:
     section("FIX 1. write order: dispatch settles before its lease closes")
     active_sid_for_fix1 = store.active_role_session(SEAT)["session_id"]
     L3 = lease("KAN-903")
-    D3 = dispatch(L3, session_id=active_sid_for_fix1, work_item_id="KAN-903")
+    D3 = delivered(dispatch(L3, session_id=active_sid_for_fix1, work_item_id="KAN-903"))
     before = store.read("session_dispatch", D3["dispatch_id"])
     real_validate_one = store._validate_one
 
@@ -178,7 +191,7 @@ try:
     active_sid = store.active_role_session(SEAT)["session_id"]
     for index, outcome in enumerate(sorted(store.SESSION_DISPATCH_OUTCOMES)):
         work_item_id = "KAN-%d" % (910 + index)
-        rec = dispatch(lease(work_item_id), session_id=active_sid, work_item_id=work_item_id)
+        rec = delivered(dispatch(lease(work_item_id), session_id=active_sid, work_item_id=work_item_id))
         kwargs = {} if outcome == "worker_unreachable" else {"session_id": active_sid}
         store.record_session_outcome(rec["dispatch_id"], outcome, "summary for %s" % outcome,
                                      "orchestrator", **kwargs)

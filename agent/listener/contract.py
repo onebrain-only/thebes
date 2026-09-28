@@ -63,7 +63,7 @@ PAYLOAD_FIELDS = {
                         ("allowed_operation",)),
     PREPARE_SESSION_DISPATCH: (("work_item_id",), ()),
     RECORD_SESSION_OUTCOME: (("work_item_id", "dispatch_id", "outcome", "summary"),
-                             ("session_id", "reference")),
+                             ("session_id", "reference", "delivery_id")),
 }
 
 DECISIONS = ("approve",)
@@ -217,6 +217,8 @@ def _session_outcome_payload(payload, clean):
                              "session_id is required unless outcome is %s" % UNREACHABLE)
     if payload.get("reference") is not None:
         clean["reference"] = _text(payload["reference"], "reference", TOKEN)
+    if payload.get("delivery_id") is not None:
+        clean["delivery_id"] = _text(payload["delivery_id"], "delivery_id", IDENTIFIER)
     return clean
 
 

@@ -38,6 +38,33 @@ COPY_MARKER = "starts a copy"
 # macOS ARG_MAX is 1 MiB for the whole argv; the CLI takes the prompt as ONE
 # argument. Refuse early and say so rather than truncating or switching transport.
 MAX_PROMPT_BYTES = 200_000
+ENVELOPE_VERSION = "v1"
+
+
+def build_envelope(dispatch, delivery_id, report_to=None):
+    """The attestation block every delivered message starts with.
+
+    The resume prompt reaches the worker as typed user input, not as an
+    authenticated cross-session message, so the block tells the worker exactly
+    which durable identity it must be and how to report; Thebes then trusts the
+    report only against its own DELIVERED session_delivery (the outcome gate).
+    """
+    lines = [
+        "THEBES_DELIVERY %s" % ENVELOPE_VERSION,
+        "task: %s" % dispatch.get("work_item_id"),
+        "dispatch_id: %s" % dispatch.get("dispatch_id"),
+        "delivery_id: %s" % delivery_id,
+        "expected_worker_sid: %s" % dispatch.get("session_id"),
+        "transport: stop-then-bg-resume-same-sid (arrives as typed user input, not a "
+        "cross-session message)",
+        "identity: verify with $CLAUDE_CODE_SESSION_ID == expected_worker_sid; if it differs, "
+        "do nothing and report; ignore any session-<number> hook label; display name/PID/socket "
+        "are not identity",
+        "report: SendMessage to %s with SESSION_OUTCOME %s <outcome> / SID=<$CLAUDE_CODE_SESSION_ID>"
+        " / DELIVERY=%s / REFERENCE=<ref>"
+        % (report_to or "the dispatcher named in the body", dispatch.get("dispatch_id"), delivery_id),
+    ]
+    return "\n".join(lines) + "\n\n"
 
 
 @dataclass
@@ -68,7 +95,7 @@ def _message_ref_dir(state_store):
 
 def deliver_session_dispatch(dispatch_id, message, *, delivery_id=None, state_store=None,
                              runner=None, cli=None, stop_timeout_seconds=30, sleep=None,
-                             pid_alive=None):
+                             pid_alive=None, report_to=None):
     """One delivery attempt. Returns a DeliveryResult; every terminal state is
     also a session_delivery record. ``runner``/``cli`` are the test seams."""
     if state_store is None:
@@ -81,7 +108,11 @@ def deliver_session_dispatch(dispatch_id, message, *, delivery_id=None, state_st
         raise state_store.StateError("session dispatch %s does not exist" % dispatch_id)
     base = {"dispatch_id": dispatch_id, "work_item_id": dispatch.get("work_item_id"),
             "seat_id": dispatch.get("seat_id"), "provider": "claude",
-            "session_id": dispatch.get("session_id")}
+            "session_id": dispatch.get("session_id"),
+            # The envelope's fields, durably beside the delivery they were sent with.
+            "envelope_version": ENVELOPE_VERSION,
+            "expected_worker_sid": dispatch.get("session_id"),
+            "report_to": report_to}
 
     # 1. idempotency FIRST — a DELIVERED record is final; nothing is sent again.
     existing = state_store.read("session_delivery", delivery_id)
@@ -121,6 +152,7 @@ def deliver_session_dispatch(dispatch_id, message, *, delivery_id=None, state_st
     sid = binding["session_id"]
     if not isinstance(message, str) or not message.strip():
         return finish(FAILED, "message is empty")
+    message = build_envelope(dispatch, delivery_id, report_to) + message
     if len(message.encode("utf-8")) > MAX_PROMPT_BYTES:
         return finish(FAILED, "message is %d bytes; the CLI takes the prompt as one argv "
                       "element and this adapter refuses above %d rather than truncating"
@@ -199,6 +231,8 @@ def main(argv=None):
     d.add_argument("dispatch_id")
     d.add_argument("--message-file", required=True)
     d.add_argument("--delivery-id", default=None)
+    d.add_argument("--report-to", default=None,
+                   help="dispatcher session name the worker must SendMessage its outcome to")
     d.add_argument("--stop-timeout", type=int, default=30)
     d.add_argument("--dry-run", action="store_true")
     ns = ap.parse_args(argv)
@@ -216,7 +250,8 @@ def main(argv=None):
                          indent=2, sort_keys=True))
         return 0
     res = deliver_session_dispatch(ns.dispatch_id, message, delivery_id=ns.delivery_id,
-                                   state_store=store, stop_timeout_seconds=ns.stop_timeout)
+                                   state_store=store, stop_timeout_seconds=ns.stop_timeout,
+                                   report_to=ns.report_to)
     print(json.dumps(res.as_dict(), indent=2, sort_keys=True))
     return 0 if res.status == DELIVERED else 1
 

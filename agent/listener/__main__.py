@@ -124,6 +124,7 @@ def main(argv=None):
     report.add_argument("--summary", required=True)
     report.add_argument("--session-id", default=None)
     report.add_argument("--reference", default=None)
+    report.add_argument("--delivery-id", default=None)
     report.add_argument("--idempotency-key", default=None)
     report.add_argument("--actor", default="ceo")
     report.add_argument("--source", default="listener-cli")
@@ -171,6 +172,8 @@ def main(argv=None):
             payload["session_id"] = args.session_id
         if args.reference:
             payload["reference"] = args.reference
+        if args.delivery_id:
+            payload["delivery_id"] = args.delivery_id
         status, body = _post(args.port, "/intents", {
             "schema_version": contract.SCHEMA_VERSION,
             "intent_type": contract.RECORD_SESSION_OUTCOME,

@@ -80,6 +80,9 @@ def main(argv=None):
     report.add_argument("--summary", required=True)
     report.add_argument("--session-id", default=None)
     report.add_argument("--reference", default=None)
+    report.add_argument("--delivery-id", default=None,
+                        help="the session_delivery the worker is answering; the outcome "
+                             "gate requires a DELIVERED one for this dispatch either way")
     # Maintenance/internal: binds identity, orchestrates nothing.
     bind = sub.add_parser("bind-session",
                           help="bind or rebind one seat to a persistent provider session")
@@ -106,7 +109,8 @@ def main(argv=None):
     try:
         outcome = (dispatch_session(args.work_item_id) if args.command == "dispatch-session"
                    else session_outcome(args.work_item_id, args.dispatch, args.outcome,
-                                        args.session_id, args.summary, args.reference)
+                                        args.session_id, args.summary, args.reference,
+                                        delivery_id=args.delivery_id)
                    if args.command == "session-outcome"
                    else bind_session(args.seat_id, args.provider, args.session_id,
                                      args.stable_home, session_name=args.session_name,
