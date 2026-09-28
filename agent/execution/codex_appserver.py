@@ -11,13 +11,42 @@ raw evidence behind. The wait for a turn is a process blocking on the JSON-RPC
 stream, not a model loop and not a poll: the child pushes notifications and
 this client reads them until ``turn/completed`` for the one turn it started.
 """
+import collections
 import json
-import queue
 import subprocess
 import threading
 import time
 
 CLIENT_INFO = {"name": "thebes-codex-primary", "version": "0.1"}
+
+
+class _Inbox:
+    """A tiny blocking FIFO. Not the stdlib ``queue`` module on purpose:
+    ``agent/state/queue.py`` (capability queues) shadows it whenever
+    ``agent/state`` is first on ``sys.path``, which the state-aware callers
+    of this client make true."""
+
+    def __init__(self):
+        self._items = collections.deque()
+        self._cv = threading.Condition()
+
+    def put(self, item):
+        with self._cv:
+            self._items.append(item)
+            self._cv.notify()
+
+    def get(self, timeout):
+        """The next item, or None if nothing arrived within ``timeout``."""
+        with self._cv:
+            if not self._items:
+                self._cv.wait(timeout)
+            if not self._items:
+                return _EMPTY
+            return self._items.popleft()
+
+
+_EMPTY = object()
+_EOF = None
 
 
 class AppServerError(Exception):
@@ -42,7 +71,7 @@ class CodexAppServerClient:
         stderr = open(stderr_path, "a", encoding="utf-8") if stderr_path else subprocess.DEVNULL
         self._proc = subprocess.Popen(self._args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                       stderr=stderr, text=True, bufsize=1)
-        self._inbox = queue.Queue()
+        self._inbox = _Inbox()
         self._next_id = 0
         self._reader = threading.Thread(target=self._read_loop, daemon=True)
         self._reader.start()
@@ -63,7 +92,7 @@ class CodexAppServerClient:
                 obj = {"_raw": line}
             self._record("in", obj)
             self._inbox.put(obj)
-        self._inbox.put(None)                      # EOF sentinel
+        self._inbox.put(_EOF)                      # EOF sentinel
 
     def send(self, obj):
         self._record("out", obj)
@@ -86,11 +115,10 @@ class CodexAppServerClient:
         self.send({"jsonrpc": "2.0", "id": rid, "method": method, "params": params})
         deadline = time.time() + timeout
         while time.time() < deadline:
-            try:
-                msg = self._inbox.get(timeout=1)
-            except queue.Empty:
+            msg = self._inbox.get(timeout=1)
+            if msg is _EMPTY:
                 continue
-            if msg is None:
+            if msg is _EOF:
                 raise AppServerError(method, {"message": "app-server closed the stream"})
             if msg.get("id") == rid and ("result" in msg or "error" in msg):
                 if "error" in msg:
@@ -123,11 +151,10 @@ class CodexAppServerClient:
         deadline = time.time() + timeout
         messages = []
         while time.time() < deadline:
-            try:
-                msg = self._inbox.get(timeout=1)
-            except queue.Empty:
+            msg = self._inbox.get(timeout=1)
+            if msg is _EMPTY:
                 continue
-            if msg is None:
+            if msg is _EOF:
                 raise AppServerError("turn/completed", {"message": "app-server closed the stream"})
             method = msg.get("method")
             if method and "id" in msg:

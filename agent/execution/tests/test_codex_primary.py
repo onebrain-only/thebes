@@ -185,6 +185,30 @@ class CodexPrimaryTests(unittest.TestCase):
         self.assertEqual(res.code, cp.CODE_WRONG_PROVIDER)
         self.assertEqual(FakeClient.instances, [])
 
+    # -- the real stdio client against a scripted child -----------------------
+    def test_real_client_drives_a_scripted_child_declines_approvals_and_filters_turns(self):
+        """Regression: agent/state/queue.py shadowed the stdlib ``queue`` the
+        client once imported, and the fake-launcher tests never built the real
+        client. This one does, end to end, with a scripted child process."""
+        from agent.execution.codex_appserver import CodexAppServerClient
+        fake = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "fake_appserver.py")
+
+        def launcher(args, log_path, stderr_path):
+            self.assertEqual(args, cp.launch_args(self.catalog))
+            return CodexAppServerClient([sys.executable, fake, self.catalog], log_path, stderr_path)
+
+        res = cp.wake_codex_primary("platform_test", "STANDBY CHECK", binding=self.binding,
+                                    state_store=store, launcher=launcher, timeout_seconds=20)
+        self.assertEqual((res.status, res.turn_id, res.model), ("delivered", TURN, "gpt-6-astra"))
+        self.assertEqual(res.agent_messages, ["decision=decline"],
+                         "only this turn's messages, and the approval was declined")
+        with open(res.log_path, encoding="utf-8") as fh:
+            lines = [json.loads(l) for l in fh]
+        methods = [l["msg"].get("method") for l in lines if l["dir"] == "out"]
+        self.assertEqual(methods.count("turn/start"), 1)
+        self.assertNotIn("thread/start", methods)
+        self.assertEqual(store.read("primary_wake", res.wake_record_id)["turn_ref"], TURN)
+
     def test_cli_dry_run_reads_binding_and_writes_nothing(self):
         payload = os.path.join(self.tmp, "p.txt")
         with open(payload, "w") as fh:
