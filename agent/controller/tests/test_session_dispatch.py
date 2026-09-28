@@ -241,7 +241,9 @@ class PreparationTests(unittest.TestCase):
         self.assertIn("cd /fixture/worktrees/backend-1/KAN-900", message)
         self.assertIn("git branch --show-current      must print exec/backend-1/KAN-900",
                       message)
-        self.assertIn("SESSION_OUTCOME dispatch-fixture <outcome>", message)
+        self.assertIn("report your outcome exactly as the THEBES_DELIVERY block", message)
+        self.assertNotIn("SendMessage", message, "the report path is the Listener command "
+                                                  "in the delivery envelope, not a relay")
         self.assertIn("# Thebes Product Execution Brief", message)
         self.assertEqual(["select next work item", "transition Jira lifecycle",
                           "launch another executor"],
@@ -276,6 +278,25 @@ class PreparationTests(unittest.TestCase):
         for name in ("execute_product_wake", "available_provider_registry",
                      "ClaudeCliTransport", "CodexCliTransport", "subprocess"):
             self.assertNotIn(name, vars(sd))
+
+    def test_deliver_hands_the_packet_over_once_and_returns_without_waiting(self):
+        """Async slice: with deliver=True the packet goes to the bound session
+        through the delivery adapter and the call returns as soon as that one
+        attempt settled — no preflight, execution or outcome wait, no process."""
+        state = State(bindings={"backend-1": binding("backend-1")})
+        handed = []
+
+        def deliverer(dispatch_id, message, state_store=None):
+            handed.append((dispatch_id, message[:40]))
+            return {"status": "DELIVERED", "delivery_id": dispatch_id, "resumed_same_sid": "YES"}
+
+        with mock.patch.object(subprocess, "Popen", _refuse), mock.patch.object(subprocess, "run", _refuse):
+            result = prepare(state, deliver=True, deliverer=deliverer)
+        self.assertEqual("dispatched", result["dispatch_status"], result.get("blocker"))
+        self.assertEqual(handed, [("dispatch-fixture", "DISPATCH dispatch-fixture KAN-900\nPersis")])
+        self.assertEqual(result["delivery"]["status"], "DELIVERED")
+        self.assertEqual(state.events[-1], "create:session_dispatch", "nothing after the record but the hand-over")
+        self.assertIsNone(prepare(State(bindings={"backend-1": binding("backend-1")}))["delivery"])
 
     def test_a_failure_after_the_lease_opened_closes_it(self):
         state = State(bindings={"backend-1": binding("backend-1")}, fail_create=True)
@@ -326,6 +347,12 @@ class OutcomeTests(unittest.TestCase):
     """Against a real store: identity is checked where it is recorded."""
 
     def setUp(self):
+        # Async slice: a recorded outcome schedules a detached Primary
+        # notification; tests capture the launch instead of spawning anything.
+        from agent.execution import primary_notify
+        self.launched = []
+        self._notify_patch = mock.patch.object(primary_notify, "_detach", self.launched.append)
+        self._notify_patch.start()
         self.tmp = tempfile.mkdtemp()
         self.saved = (real_store.RUNTIME, real_store.LOCKS)
         real_store.RUNTIME = os.path.join(self.tmp, "runtime")
@@ -353,6 +380,7 @@ class OutcomeTests(unittest.TestCase):
             "delivered_at": real_store.now()})
 
     def tearDown(self):
+        self._notify_patch.stop()
         real_store.RUNTIME, real_store.LOCKS = self.saved
         self.validate.RUNTIME = self.saved_validate
         shutil.rmtree(self.tmp, ignore_errors=True)

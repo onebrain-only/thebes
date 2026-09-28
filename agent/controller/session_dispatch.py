@@ -85,13 +85,20 @@ def _dispatch_shell(work_item_id):
 def dispatch_session(work_item_id, *, authorization=None, state_store=store,
                      jira_client=jira, seat_registry=roster,
                      intent_resolver=resolve_execution_intent,
-                     workspace_allocator=realize_workspace):
+                     workspace_allocator=realize_workspace, deliver=False,
+                     deliverer=None):
     """Prepare one work item for a bound persistent session and return its packet.
 
     Never selects, constructs or launches a provider. The execution lease this
     opens stays open until ``session_outcome`` records the result.
+
+    With ``deliver=True`` the packet is also handed to the bound session
+    through ``agent.execution.claude_delivery`` (one attempt, durable
+    session_delivery) and the call returns as soon as that attempt has
+    settled — it never waits for preflight, execution or an outcome.
     """
     result = _dispatch_shell(work_item_id)
+    result["delivery"] = None
     result["operating_mode"] = state_store.current_operating_mode()
     authorization = authorization or ProductAuthorization(
         state_store=state_store,
@@ -174,6 +181,11 @@ def dispatch_session(work_item_id, *, authorization=None, state_store=store,
         result.update({"dispatch_status": "dispatched", "dispatch_id": record["dispatch_id"],
                        "dispatch_packet": packet, "session_id": binding["session_id"],
                        "invocation_id": request.invocation_id})
+        if deliver:
+            from agent.execution.claude_delivery import deliver_session_dispatch
+            deliver_fn = deliverer or deliver_session_dispatch
+            delivered = deliver_fn(record["dispatch_id"], message, state_store=state_store)
+            result["delivery"] = delivered.as_dict() if hasattr(delivered, "as_dict") else delivered
         return result
     except _BindingRefused as exc:
         result["blocker"] = exc.blocker
@@ -230,12 +242,9 @@ def render_dispatch_message(dispatch_id, work_item_id, binding, realized, render
         "5. The brief below calls its workspace transport-enforced. For this dispatch "
         "it is not: you enforce it yourself by working only in the directory above.",
         "",
-        "When finished, report with SendMessage to the session that sent you this "
-        "message (its from= address). Start the message with exactly these lines:",
-        "   SESSION_OUTCOME %s <outcome>" % dispatch_id,
-        "   SID=<the value of $CLAUDE_CODE_SESSION_ID>",
-        "   REFERENCE=<commit sha, or none>",
-        "then a short summary. <outcome> is one of: %s." % ", ".join(WORKER_OUTCOMES),
+        "When finished, report your outcome exactly as the THEBES_DELIVERY block at the "
+        "top of this message says (the one report command, run from %s). <outcome> is "
+        "one of: %s." % (binding["stable_home"], ", ".join(WORKER_OUTCOMES)),
         "Then cd back to %s." % binding["stable_home"],
         "",
         "--- brief ---",
@@ -245,16 +254,21 @@ def render_dispatch_message(dispatch_id, work_item_id, binding, realized, render
 
 def session_outcome(work_item_id, dispatch_id, outcome, session_id, summary,
                     reference=None, *, delivery_id=None, state_store=store,
-                    recorded_by="orchestrator"):
+                    recorded_by="orchestrator", notifier=None):
     """Record what a bound session reported, after checking it is that session.
 
     No validation, integration or Jira transition runs here. The claim is
     preserved; a follow-up is a new ``dispatch_session`` for the same item.
+
+    Once recorded, a worker-reported outcome schedules exactly one durable
+    Primary notification (``agent.execution.primary_notify``) and returns
+    without waiting for it. A refused or duplicate outcome schedules nothing.
     """
     result = {"work_item_id": work_item_id, "dispatch_id": dispatch_id,
               "outcome": outcome, "outcome_status": "not-recorded",
               "seat_id": None, "session_id": None, "lease_closure_status": "unchanged",
-              "claim_status": "preserved", "recovery_hint": None, "blocker": None}
+              "claim_status": "preserved", "recovery_hint": None, "blocker": None,
+              "primary_notify": None}
     dispatch = state_store.read("session_dispatch", dispatch_id)
     if dispatch is None:
         result["blocker"] = "dispatch-not-found"
@@ -274,6 +288,15 @@ def session_outcome(work_item_id, dispatch_id, outcome, session_id, summary,
     result.update({"outcome_status": "recorded", "status": record["status"],
                    "lease_closure_status": "closed",
                    "recovery_hint": record.get("recovery_hint")})
+    if outcome in WORKER_OUTCOMES:
+        from agent.execution import primary_notify
+        schedule = notifier or primary_notify.schedule
+        try:
+            result["primary_notify"] = schedule(dispatch_id, record, state_store=state_store)
+        except store.StateError as exc:
+            # The outcome is recorded either way; a notification problem is
+            # reported beside it, never allowed to undo the settlement.
+            result["primary_notify"] = {"status": "failed", "error": str(exc)}
     return result
 
 

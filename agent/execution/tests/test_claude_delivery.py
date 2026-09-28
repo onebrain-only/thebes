@@ -133,7 +133,7 @@ class ClaudeDeliveryTests(unittest.TestCase):
         sent = [a for a in fake.calls if a[1] == "--bg"][0][4]
         head, body = sent.split("\n\n", 1)
         lines = head.split("\n")
-        self.assertEqual(lines[0], "THEBES_DELIVERY v1")
+        self.assertEqual(lines[0], "THEBES_DELIVERY v2")
         self.assertEqual(lines[1], "task: THEBES-0")
         self.assertEqual(lines[2], "dispatch_id: %s" % self.dispatch["dispatch_id"])
         self.assertEqual(lines[3], "delivery_id: %s" % res.delivery_id)
@@ -141,13 +141,22 @@ class ClaudeDeliveryTests(unittest.TestCase):
         self.assertTrue(lines[5].startswith("transport: stop-then-bg-resume-same-sid"))
         self.assertIn("$CLAUDE_CODE_SESSION_ID == expected_worker_sid", lines[6])
         self.assertIn("ignore any session-<number> hook label", lines[6])
-        self.assertTrue(lines[7].startswith("report: SendMessage to Persistent-session -a with "
-                                            "SESSION_OUTCOME %s <outcome> / SID=" % self.dispatch["dispatch_id"]))
-        self.assertIn("DELIVERY=%s" % res.delivery_id, lines[7])
+        # v2: the report line is ONE fully rendered Listener command, run from
+        # stable_home; the worker never SendMessages a Primary.
+        expected_cmd = ('cd %s && python3 -m agent.listener session-outcome THEBES-0 --dispatch %s '
+                        '--delivery-id %s --outcome <completed|blocked|decision_required|'
+                        'clarification_required|failed> --session-id "$CLAUDE_CODE_SESSION_ID" '
+                        '--summary "<one line>" --reference <ref-or-none> --actor worker:po --wait 600'
+                        % (HOME, self.dispatch["dispatch_id"], res.delivery_id))
+        self.assertEqual(lines[7], "report: run exactly once when done: " + expected_cmd)
+        self.assertTrue(lines[8].startswith("report_rules: "))
+        self.assertIn("do not SendMessage a Primary", lines[8])
+        self.assertEqual(lines[9], "dispatcher: Persistent-session -a (for context only; report "
+                                   "through the command above)")
         self.assertEqual(body, "DISPATCH hello")
         rec = store.read("session_delivery", res.delivery_id)
         self.assertEqual((rec["envelope_version"], rec["expected_worker_sid"], rec["report_to"]),
-                         ("v1", SID, "Persistent-session -a"))
+                         ("v2", SID, "Persistent-session -a"))
         with open(rec["message_ref"], encoding="utf-8") as fh:
             self.assertEqual(fh.read(), sent, "message_ref holds exactly what was sent")
 

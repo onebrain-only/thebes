@@ -72,6 +72,9 @@ def main(argv=None):
                           help="prepare one work item for a bound persistent session "
                                "and return its dispatch packet; launches nothing")
     prep.add_argument("work_item_id")
+    prep.add_argument("--deliver", action="store_true",
+                      help="hand the packet to the bound session (one durable delivery "
+                           "attempt) and return immediately; never waits for the worker")
     report = sub.add_parser("session-outcome",
                             help="record what a bound session reported for one dispatch")
     report.add_argument("work_item_id")
@@ -107,7 +110,8 @@ def main(argv=None):
                           "detail": detail}, indent=2, sort_keys=True))
         return 2
     try:
-        outcome = (dispatch_session(args.work_item_id) if args.command == "dispatch-session"
+        outcome = (dispatch_session(args.work_item_id, deliver=args.deliver)
+                   if args.command == "dispatch-session"
                    else session_outcome(args.work_item_id, args.dispatch, args.outcome,
                                         args.session_id, args.summary, args.reference,
                                         delivery_id=args.delivery_id)

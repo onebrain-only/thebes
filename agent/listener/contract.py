@@ -51,6 +51,9 @@ WORK_ITEM_ID = re.compile(r"^[A-Z][A-Z0-9]{1,15}-\d{1,9}$")
 TOKEN = re.compile(r"^[A-Za-z0-9_.:@/-]{1,200}$")
 IDENTIFIER = re.compile(r"^[A-Za-z0-9_.:-]{1,200}$")
 
+WORKER_ACTOR_PREFIX = "worker:"
+WORKER_ACTOR = re.compile(r"^worker:[a-z][a-z0-9-]{0,40}$")
+
 ENVELOPE_FIELDS = ("schema_version", "intent_type", "source", "actor",
                    "idempotency_key", "correlation_id", "payload")
 OPTIONAL_ENVELOPE_FIELDS = ("responds_to",)
@@ -61,7 +64,7 @@ PAYLOAD_FIELDS = {
     DECISION_RESPONSE: (("work_item_id", "original_invocation_id", "decision",
                          "permission", "approval_scope"),
                         ("allowed_operation",)),
-    PREPARE_SESSION_DISPATCH: (("work_item_id",), ()),
+    PREPARE_SESSION_DISPATCH: (("work_item_id",), ("deliver",)),
     RECORD_SESSION_OUTCOME: (("work_item_id", "dispatch_id", "outcome", "summary"),
                              ("session_id", "reference", "delivery_id")),
 }
@@ -137,11 +140,21 @@ def normalize(submitted):
     if intent_type not in INTENT_TYPES:
         raise IntentRejected("unknown-intent-type",
                              "intent_type must be one of: %s" % ", ".join(INTENT_TYPES))
+    actor = _text(submitted.get("actor"), "actor", TOKEN)
+    # A worker may report the outcome of work it was dispatched, and nothing
+    # else: not execute, not validate, not decide, not prepare a dispatch.
+    if actor.startswith(WORKER_ACTOR_PREFIX):
+        if intent_type != RECORD_SESSION_OUTCOME:
+            raise IntentRejected("actor-not-permitted",
+                                 "a %s actor may submit only %s"
+                                 % (WORKER_ACTOR_PREFIX, RECORD_SESSION_OUTCOME))
+        if not WORKER_ACTOR.match(actor):
+            raise IntentRejected("invalid-field", "actor must be worker:<seat-id>")
     envelope = {
         "schema_version": SCHEMA_VERSION,
         "intent_type": intent_type,
         "source": _text(submitted.get("source"), "source", TOKEN),
-        "actor": _text(submitted.get("actor"), "actor", TOKEN),
+        "actor": actor,
         "idempotency_key": _text(submitted.get("idempotency_key"), "idempotency_key",
                                  IDENTIFIER),
         "correlation_id": _text(submitted.get("correlation_id"), "correlation_id",
@@ -171,6 +184,10 @@ def _payload(intent_type, payload):
         raise IntentRejected("missing-field", "payload is missing: %s" % ", ".join(missing))
     clean = {"work_item_id": _text(payload.get("work_item_id"), "work_item_id",
                                    WORK_ITEM_ID, 40)}
+    if intent_type == PREPARE_SESSION_DISPATCH and "deliver" in payload:
+        if payload["deliver"] is not True:
+            raise IntentRejected("invalid-field", "deliver must be true when present")
+        clean["deliver"] = True
     if intent_type in (EXECUTE_WORK_ITEM, VALIDATE_WORK_ITEM, PREPARE_SESSION_DISPATCH):
         return clean
     if intent_type == RECORD_SESSION_OUTCOME:

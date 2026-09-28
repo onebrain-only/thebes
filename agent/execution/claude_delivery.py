@@ -38,10 +38,27 @@ COPY_MARKER = "starts a copy"
 # macOS ARG_MAX is 1 MiB for the whole argv; the CLI takes the prompt as ONE
 # argument. Refuse early and say so rather than truncating or switching transport.
 MAX_PROMPT_BYTES = 200_000
-ENVELOPE_VERSION = "v1"
+ENVELOPE_VERSION = "v2"
+WORKER_OUTCOMES = ("completed", "blocked", "decision_required", "clarification_required",
+                   "failed")
 
 
-def build_envelope(dispatch, delivery_id, report_to=None):
+def report_command(dispatch, delivery_id, stable_home):
+    """The ONE way a worker reports: the Listener's session-outcome front door.
+
+    Fully rendered, run from the worker's stable_home. The worker fills in only
+    the outcome, the one-line summary and the reference. This is the single
+    place a worker is ever handed a Thebes command; the Product brief's
+    firewall keeps refusing it everywhere else.
+    """
+    return ('cd %s && python3 -m agent.listener session-outcome %s --dispatch %s '
+            '--delivery-id %s --outcome <%s> --session-id "$CLAUDE_CODE_SESSION_ID" '
+            '--summary "<one line>" --reference <ref-or-none> --actor worker:%s --wait 600'
+            % (stable_home, dispatch.get("work_item_id"), dispatch.get("dispatch_id"),
+               delivery_id, "|".join(WORKER_OUTCOMES), dispatch.get("seat_id")))
+
+
+def build_envelope(dispatch, delivery_id, report_to=None, stable_home=None):
     """The attestation block every delivered message starts with.
 
     The resume prompt reaches the worker as typed user input, not as an
@@ -60,10 +77,15 @@ def build_envelope(dispatch, delivery_id, report_to=None):
         "identity: verify with $CLAUDE_CODE_SESSION_ID == expected_worker_sid; if it differs, "
         "do nothing and report; ignore any session-<number> hook label; display name/PID/socket "
         "are not identity",
-        "report: SendMessage to %s with SESSION_OUTCOME %s <outcome> / SID=<$CLAUDE_CODE_SESSION_ID>"
-        " / DELIVERY=%s / REFERENCE=<ref>"
-        % (report_to or "the dispatcher named in the body", dispatch.get("dispatch_id"), delivery_id),
+        "report: run exactly once when done: %s"
+        % report_command(dispatch, delivery_id, stable_home or "<stable_home>"),
+        "report_rules: the Listener validates your SID against this delivery and routes the "
+        "outcome to the ACTIVE Primary itself; do not SendMessage a Primary, do not repeat "
+        "the report, do not start or resume any session",
     ]
+    if report_to:
+        lines.append("dispatcher: %s (for context only; report through the command above)"
+                     % report_to)
     return "\n".join(lines) + "\n\n"
 
 
@@ -152,7 +174,7 @@ def deliver_session_dispatch(dispatch_id, message, *, delivery_id=None, state_st
     sid = binding["session_id"]
     if not isinstance(message, str) or not message.strip():
         return finish(FAILED, "message is empty")
-    message = build_envelope(dispatch, delivery_id, report_to) + message
+    message = build_envelope(dispatch, delivery_id, report_to, binding.get("stable_home")) + message
     if len(message.encode("utf-8")) > MAX_PROMPT_BYTES:
         return finish(FAILED, "message is %d bytes; the CLI takes the prompt as one argv "
                       "element and this adapter refuses above %d rather than truncating"

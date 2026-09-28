@@ -99,7 +99,14 @@ KINDS = {
     # transport. Natural key = delivery_id (defaults to the dispatch_id), so a
     # duplicate delivery is idempotent and a failed one is retried in place.
     "session_delivery": ("session-deliveries", "delivery"),
+    # One Primary notification per settled dispatch. Natural key = dispatch_id,
+    # created exactly once under its record lock, so a duplicate or replayed
+    # outcome can never schedule a second wake. Delivery re-reads the canonical
+    # ACTIVE primary_binding at send time, so a cutover in between is honoured.
+    "primary_notification": ("primary-notifications", None),
 }
+
+PRIMARY_NOTIFICATION_STATUSES = frozenset({"scheduled", "delivered", "busy", "failed"})
 
 SESSION_DELIVERY_STATUSES = frozenset({
     "DELIVERED", "CLAUDE_DELIVERY_FAILED", "CLAUDE_DELIVERY_WORKER_UNREACHABLE",
@@ -2847,6 +2854,48 @@ def attested_delivery(dispatch_id, session_id, delivery_id=None):
     return rec, None
 
 
+def create_primary_notification(dispatch_id, record):
+    """The one notification a settled dispatch may ever schedule.
+
+    Returns (record, created). A second call for the same dispatch returns the
+    existing record and created=False: that is how a duplicate outcome, a
+    replay, or a crashed-and-rerun notifier can never wake a Primary twice.
+    """
+    with record_lock("primary_notification", dispatch_id):
+        cur = read("primary_notification", dispatch_id)
+        if cur is not None:
+            return cur, False
+        rec = dict(record, dispatch_id=dispatch_id, status="scheduled",
+                   attempts=0, wake_record_id=None, error=None, delivered_at=None,
+                   schema_version=SCHEMA_VERSION, revision=1,
+                   created_at=now(), updated_at=now())
+        _validate_one("primary_notification", rec)
+        _atomic_write(path_for("primary_notification", dispatch_id), rec)
+        return rec, True
+
+
+def settle_primary_notification(dispatch_id, status, *, provider=None, wake_record_id=None,
+                                error=None):
+    """Record one delivery attempt's result. `delivered` is final; `busy` and
+    `failed` keep the notification durable for a later attempt."""
+    if status not in PRIMARY_NOTIFICATION_STATUSES or status == "scheduled":
+        raise StateError("unknown primary notification settlement %r" % status)
+    with record_lock("primary_notification", dispatch_id):
+        cur = read("primary_notification", dispatch_id)
+        if cur is None:
+            raise StateError("primary notification %s does not exist" % dispatch_id)
+        if cur.get("status") == "delivered":
+            raise StateError("primary notification %s is already delivered" % dispatch_id)
+        merged = dict(cur, status=status, error=error, wake_record_id=wake_record_id,
+                      notified_provider=provider or cur.get("notified_provider"),
+                      attempts=(cur.get("attempts") or 0) + 1,
+                      delivered_at=now() if status == "delivered" else None,
+                      revision=cur["revision"] + 1, updated_at=now())
+        _validate_one("primary_notification", merged)
+        _atomic_write(path_for("primary_notification", dispatch_id), merged)
+        return merged
+
+
 def record_session_outcome(dispatch_id, outcome, summary, recorded_by,
                            session_id=None, reference=None, delivery_id=None):
     """Settle one persistent-session dispatch. Every outcome ends the dispatch.
@@ -3671,7 +3720,8 @@ def _id_field(kind):
             "session_dispatch": "dispatch_id",
             "primary_binding": "provider",
             "primary_wake": "primary_wake_id",
-            "session_delivery": "delivery_id"}[kind]
+            "session_delivery": "delivery_id",
+            "primary_notification": "dispatch_id"}[kind]
 
 
 def _validate_one(kind, record):

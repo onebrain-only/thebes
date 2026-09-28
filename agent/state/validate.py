@@ -77,6 +77,7 @@ SESSION_DELIVERY_STATUSES = ("DELIVERED", "CLAUDE_DELIVERY_FAILED",
                              "CLAUDE_DELIVERY_WORKER_UNREACHABLE",
                              "CLAUDE_DELIVERY_SESSION_MISMATCH")
 SESSION_DELIVERY_TRANSPORT = "stop-then-bg-resume-same-sid"
+PRIMARY_NOTIFICATION_STATUSES = ("scheduled", "delivered", "busy", "failed")
 
 # ---- Wave 6 orchestration ---------------------------------------------------
 #
@@ -1575,6 +1576,32 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
                 errs.append("%s: a session delivery carries a message_ref, never the "
                             "message body (%r)" % (where, f))
 
+    elif kind == "primary_notification":
+        _req(rec, ["dispatch_id", "work_item_id", "seat_id", "worker_session_id", "outcome",
+                   "status", "attempts"], errs, where)
+        if not str(rec.get("dispatch_id") or "").startswith("dispatch-"):
+            errs.append("%s: primary notification dispatch_id must start with dispatch-" % where)
+        if rec.get("seat_id") not in seatset:
+            errs.append("%s: primary notification seat %r is not declared" % (where, rec.get("seat_id")))
+        if rec.get("outcome") not in SESSION_DISPATCH_OUTCOMES or rec.get("outcome") == "worker_unreachable":
+            errs.append("%s: primary notification outcome must be a worker-reported outcome" % where)
+        if rec.get("status") not in PRIMARY_NOTIFICATION_STATUSES:
+            errs.append("%s: primary notification status must be one of %s"
+                        % (where, "/".join(PRIMARY_NOTIFICATION_STATUSES)))
+        if not isinstance(rec.get("attempts"), int) or isinstance(rec.get("attempts"), bool):
+            errs.append("%s: primary notification attempts must be an int" % where)
+        if rec.get("status") == "delivered" and not (rec.get("delivered_at") and rec.get("notified_provider")):
+            errs.append("%s: a delivered primary notification names its provider and delivered_at" % where)
+        if rec.get("status") in ("busy", "failed") and not rec.get("error"):
+            errs.append("%s: a %s primary notification carries an error" % (where, rec.get("status")))
+        if rec.get("notified_provider") not in (None,) + tuple(ROLE_SESSION_PROVIDERS):
+            errs.append("%s: primary notification provider must be one of %s"
+                        % (where, "/".join(ROLE_SESSION_PROVIDERS)))
+        for f in ("prompt", "message", "body", "transcript"):
+            if f in rec:
+                errs.append("%s: a primary notification carries references, never a body (%r)"
+                            % (where, f))
+
     elif kind == "session_dispatch":
         _req(rec, ["dispatch_id", "work_item_id", "seat_id", "provider", "session_id",
                    "worktree_path", "branch", "execution_lease_id", "invocation_id",
@@ -1811,7 +1838,8 @@ def check(runtime=None):
              "session_dispatch": "session-dispatches",
              "primary_binding": "primary-bindings",
              "primary_wake": "primary-wakes",
-             "session_delivery": "session-deliveries"}
+             "session_delivery": "session-deliveries",
+             "primary_notification": "primary-notifications"}
     seen_ids = {}
     active_primaries = []
     edges = []
@@ -1851,7 +1879,8 @@ def check(runtime=None):
                    "session_dispatch": "dispatch_id",
                    "primary_binding": "provider",
                    "primary_wake": "primary_wake_id",
-                   "session_delivery": "delivery_id"}[kind]
+                   "session_delivery": "delivery_id",
+                   "primary_notification": "dispatch_id"}[kind]
             rid = rec.get(idf)
             if rid != fn[:-5]:
                 errs.append("%s: filename does not match %s %r" % (p, idf, rid))

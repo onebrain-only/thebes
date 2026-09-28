@@ -109,6 +109,8 @@ def main(argv=None):
                           help="submit one PREPARE_SESSION_DISPATCH intent: prepare a "
                                "work item for its bound persistent session")
     prep.add_argument("work_item_id")
+    prep.add_argument("--deliver", action="store_true",
+                      help="also hand the packet to the bound session and return at once")
     prep.add_argument("--idempotency-key", default=None,
                       help="resubmitting with the same key is harmless by design")
     prep.add_argument("--actor", default="ceo")
@@ -156,12 +158,15 @@ def main(argv=None):
     elif args.command == "session-dispatch":
         key = args.idempotency_key or "session-dispatch-%s-%s" % (args.work_item_id,
                                                                   uuid.uuid4())
+        payload = {"work_item_id": args.work_item_id}
+        if args.deliver:
+            payload["deliver"] = True
         status, body = _post(args.port, "/intents", {
             "schema_version": contract.SCHEMA_VERSION,
             "intent_type": contract.PREPARE_SESSION_DISPATCH,
             "source": args.source, "actor": args.actor,
             "idempotency_key": key, "correlation_id": key,
-            "payload": {"work_item_id": args.work_item_id}})
+            "payload": payload})
     elif args.command == "session-outcome":
         # The dispatch id makes a repeated report of the same outcome the same
         # intent; a different outcome for one dispatch is refused by the store.
