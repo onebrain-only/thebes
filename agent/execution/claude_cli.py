@@ -20,10 +20,21 @@ job labels and sockets are not identities and are never used to choose one.
 The ``runner`` seam lets tests inject a fake; production uses subprocess.run.
 """
 import json
+import os
 import subprocess
 import time
 
 STOP_SETTLE_POLL_SECONDS = 1.0
+
+
+def _pid_alive(pid):
+    try:
+        os.kill(int(pid), 0)
+    except (ProcessLookupError, ValueError, TypeError):
+        return False
+    except PermissionError:
+        return True
+    return True
 
 
 class ClaudeCliError(Exception):
@@ -74,13 +85,21 @@ class ClaudeCli:
                                  % (short_id, (completed.stderr or completed.stdout or "").strip()))
         return (completed.stdout or "").strip()
 
-    def wait_stopped(self, session_id, timeout_seconds, sleep=time.sleep):
-        """Bounded wait for the SID to leave the live list. Returns True when it
-        has; False at the deadline. A handful of read-only listings, not a
-        loop that lives on."""
+    def wait_stopped(self, session_id, timeout_seconds, sleep=time.sleep, pid=None,
+                     pid_alive=None):
+        """Bounded wait for the SID to leave the live list AND its process to
+        exit. Returns True when both hold; False at the deadline.
+
+        Both, not either: the listing drops the job before the process has
+        finished shutting down, and a resume issued in that window is judged
+        "already running" by the CLI, which then starts a COPY under a new id
+        (observed 2026-09-28, delivery dispatch-54f3e7e7). A handful of
+        read-only checks, not a loop that lives on."""
+        pid_alive = pid_alive or _pid_alive
         deadline = time.monotonic() + timeout_seconds
         while True:
-            if self.find_by_sid(self.agents(), session_id) is None:
+            gone = self.find_by_sid(self.agents(), session_id) is None
+            if gone and (pid is None or not pid_alive(pid)):
                 return True
             if time.monotonic() >= deadline:
                 return False

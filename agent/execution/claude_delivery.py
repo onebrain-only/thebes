@@ -67,7 +67,8 @@ def _message_ref_dir(state_store):
 
 
 def deliver_session_dispatch(dispatch_id, message, *, delivery_id=None, state_store=None,
-                             runner=None, cli=None, stop_timeout_seconds=30, sleep=None):
+                             runner=None, cli=None, stop_timeout_seconds=30, sleep=None,
+                             pid_alive=None):
     """One delivery attempt. Returns a DeliveryResult; every terminal state is
     also a session_delivery record. ``runner``/``cli`` are the test seams."""
     if state_store is None:
@@ -95,6 +96,7 @@ def deliver_session_dispatch(dispatch_id, message, *, delivery_id=None, state_st
 
     def finish(status, error=None, **fields):
         rec = dict(base, status=status, error=error, message_ref=fields.pop("message_ref", None),
+                   resume_output=fields.pop("resume_output", None),
                    stopped_before_resume=fields.pop("stopped_before_resume", "NO"),
                    resumed_same_sid=fields.pop("resumed_same_sid", "NO"),
                    pid_before=fields.pop("pid_before", None), pid_after=fields.pop("pid_after", None),
@@ -142,7 +144,12 @@ def deliver_session_dispatch(dispatch_id, message, *, delivery_id=None, state_st
         stopped = "NO"
         if row is not None:
             cli.stop(row.get("id") or sid[:8])
-            if not cli.wait_stopped(sid, stop_timeout_seconds, **({"sleep": sleep} if sleep else {})):
+            wait_kw = {"pid": pid_before}
+            if sleep:
+                wait_kw["sleep"] = sleep
+            if pid_alive:
+                wait_kw["pid_alive"] = pid_alive
+            if not cli.wait_stopped(sid, stop_timeout_seconds, **wait_kw):
                 return finish(FAILED, "session %s did not leave the live list within %ss after stop"
                               % (sid, stop_timeout_seconds), message_ref=message_ref,
                               pid_before=pid_before, session_count_before=count_before)
@@ -169,10 +176,11 @@ def deliver_session_dispatch(dispatch_id, message, *, delivery_id=None, state_st
                     except ClaudeCliError: pass
             return finish(FAILED, "resume did not come back as the same SID (copy=%s, present=%s, "
                           "new_ids=%s)" % (COPY_MARKER in text, row_after is not None, new_ids),
-                          message_ref=message_ref, pid_before=pid_before, stopped_before_resume=stopped,
+                          message_ref=message_ref, resume_output=text[:1000],
+                          pid_before=pid_before, stopped_before_resume=stopped,
                           session_count_before=count_before, session_count_after=len(after),
                           recovery_hint='claude --bg --resume %s "<prompt>" — no other flags' % sid)
-        return finish(DELIVERED, message_ref=message_ref, pid_before=pid_before,
+        return finish(DELIVERED, message_ref=message_ref, resume_output=text[:1000], pid_before=pid_before,
                       pid_after=row_after.get("pid"), stopped_before_resume=stopped,
                       resumed_same_sid="YES", session_count_before=count_before,
                       session_count_after=len(after))

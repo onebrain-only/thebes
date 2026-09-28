@@ -103,7 +103,8 @@ class ClaudeDeliveryTests(unittest.TestCase):
     def deliver(self, fake, **kw):
         did = kw.pop("dispatch_id", self.dispatch["dispatch_id"])
         return cd.deliver_session_dispatch(did, "DISPATCH hello", state_store=store,
-                                           runner=fake, sleep=lambda s: None, **kw)
+                                           runner=fake, sleep=lambda s: None,
+                                           pid_alive=lambda pid: False, **kw)
 
     # -- happy paths ----------------------------------------------------------
     def test_live_worker_is_stopped_by_short_id_then_resumed_flagless_by_full_sid(self):
@@ -191,6 +192,26 @@ class ClaudeDeliveryTests(unittest.TestCase):
         self.assertEqual([a[2] for a in fake.calls if a[1] == "stop"], [SID[:8], OTHER[:8]],
                          "original stopped for delivery, then the copy this call created")
         self.assertFalse(any(r["sessionId"] == OTHER for r in fake.live))
+
+    def test_resume_waits_for_the_old_process_to_exit_not_just_the_listing(self):
+        """Regression for the live copy of 2026-09-28: the listing dropped the job
+        while pid 24025 was still shutting down, the CLI judged the session
+        'already running' and started a copy under a new id."""
+        fake = FakeClaude([LIVE_ROW])
+        alive = {"n": 3}                              # pid stays up for 3 checks
+
+        def pid_alive(pid):
+            self.assertEqual(pid, 68684)
+            alive["n"] -= 1
+            return alive["n"] > 0
+        res = cd.deliver_session_dispatch(self.dispatch["dispatch_id"], "DISPATCH hello",
+                                          state_store=store, runner=fake, sleep=lambda s: None,
+                                          pid_alive=pid_alive)
+        self.assertEqual(res.status, cd.DELIVERED)
+        self.assertEqual(alive["n"], 0, "resume happened only after the pid was gone")
+        self.assertGreaterEqual(fake.kinds().count("agents"), 4)
+        rec = store.read("session_delivery", res.delivery_id)
+        self.assertIn("woke session", rec["resume_output"], "resume output is durable evidence")
 
     def test_no_retry_inside_one_call(self):
         fake = FakeClaude([LIVE_ROW], resume_behaviour="fail")
