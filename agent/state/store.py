@@ -2811,17 +2811,30 @@ def attested_delivery(dispatch_id, session_id, delivery_id=None):
     authenticated message, so the sender's trust cannot come from the worker's
     side. It comes from here: only a delivery Thebes recorded as DELIVERED to
     exactly this SID for exactly this dispatch attests the outcome.
-    Returns (record, None) or (None, reason).
+    Exact, never first-match: a named delivery_id must itself satisfy every
+    condition; with none named, exactly one record may match ALL of them
+    (this dispatch, DELIVERED, this SID) — zero is unattested, two or more is
+    ambiguous. A FAILED or UNREACHABLE attempt never satisfies it, wherever it
+    sorts. Returns (record, None) or (None, reason).
     """
-    if delivery_id:
-        candidates = [r for r in [read("session_delivery", delivery_id)] if r]
-    else:
-        candidates = [r for r in read_all("session_delivery")
-                      if r.get("dispatch_id") == dispatch_id]
-    if not candidates:
+    if not delivery_id:
+        matches = [r for r in read_all("session_delivery")
+                   if r.get("dispatch_id") == dispatch_id
+                   and r.get("status") == "DELIVERED"
+                   and r.get("session_id") == session_id]
+        if not matches:
+            return None, ("outcome-delivery-unattested: no DELIVERED session_delivery for "
+                          "dispatch %s to session %s" % (dispatch_id, session_id))
+        if len(matches) > 1:
+            return None, ("outcome-delivery-ambiguous: %d DELIVERED session_deliveries for "
+                          "dispatch %s to session %s (%s) — name the delivery_id"
+                          % (len(matches), dispatch_id, session_id,
+                             ", ".join(sorted(r["delivery_id"] for r in matches))))
+        return matches[0], None
+    rec = read("session_delivery", delivery_id)
+    if rec is None:
         return None, ("outcome-delivery-unattested: no session_delivery %s for dispatch %s"
-                      % (delivery_id or "record", dispatch_id))
-    rec = candidates[0]
+                      % (delivery_id, dispatch_id))
     if rec.get("dispatch_id") != dispatch_id:
         return None, ("outcome-delivery-unattested: delivery %s belongs to dispatch %s, not %s"
                       % (rec.get("delivery_id"), rec.get("dispatch_id"), dispatch_id))

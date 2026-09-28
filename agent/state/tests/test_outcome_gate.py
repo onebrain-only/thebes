@@ -92,7 +92,7 @@ try:
     for status in ("CLAUDE_DELIVERY_FAILED", "CLAUDE_DELIVERY_WORKER_UNREACHABLE"):
         d = dispatch(); delivery(d, status=status)
         raises("%s is not DELIVERED" % status, lambda: store.record_session_outcome(
-            d["dispatch_id"], "completed", "x", "orchestrator", session_id=SID), "not DELIVERED")
+            d["dispatch_id"], "completed", "x", "orchestrator", session_id=SID), "no DELIVERED session_delivery for dispatch")
         untouched(d, status)
 
     section("4. wrong SID + DELIVERED -> rejected (identity check first)")
@@ -102,7 +102,7 @@ try:
     untouched(d, "wrong SID")
     d = dispatch(); delivery(d, sid=OTHER)
     raises("delivery went to another session", lambda: store.record_session_outcome(
-        d["dispatch_id"], "completed", "x", "orchestrator", session_id=SID), "not the reporting session")
+        d["dispatch_id"], "completed", "x", "orchestrator", session_id=SID), "no DELIVERED session_delivery for dispatch")
     untouched(d, "delivery to other SID")
 
     section("5. delivery belongs to a different dispatch -> rejected")
@@ -121,6 +121,53 @@ try:
     ok("without a delivery_id the dispatch's own DELIVERED record attests",
        store.record_session_outcome(d["dispatch_id"], "completed", "x", "orchestrator",
                                     session_id=SID)["attested_delivery_id"] == d["dispatch_id"])
+
+    section("8. omitted delivery_id: exact DELIVERED match only, never first-match")
+    d = dispatch()
+    delivery(d, status="CLAUDE_DELIVERY_FAILED", delivery_id="delivery-a-failed")
+    delivery(d, delivery_id="delivery-b-delivered")
+    ok("the FAILED record sorts first", sorted(
+        r["delivery_id"] for r in store.read_all("session_delivery")
+        if r["dispatch_id"] == d["dispatch_id"])[0] == "delivery-a-failed")
+    rec = store.record_session_outcome(d["dispatch_id"], "completed", "x", "orchestrator", session_id=SID)
+    ok("[FAILED, DELIVERED] -> accepted via the DELIVERED one",
+       rec["status"] == "completed" and rec["attested_delivery_id"] == "delivery-b-delivered")
+
+    d = dispatch(); delivery(d, status="CLAUDE_DELIVERY_FAILED")
+    raises("only FAILED -> rejected", lambda: store.record_session_outcome(
+        d["dispatch_id"], "completed", "x", "orchestrator", session_id=SID),
+        "no DELIVERED session_delivery for dispatch")
+    untouched(d, "only FAILED")
+
+    d = dispatch(); delivery(d, sid=OTHER)
+    raises("DELIVERED to another SID only -> rejected", lambda: store.record_session_outcome(
+        d["dispatch_id"], "completed", "x", "orchestrator", session_id=SID),
+        "no DELIVERED session_delivery for dispatch")
+    untouched(d, "DELIVERED to other SID")
+
+    a = dispatch(); b = dispatch(); delivery(a)
+    raises("DELIVERED for another dispatch only -> rejected", lambda: store.record_session_outcome(
+        b["dispatch_id"], "completed", "x", "orchestrator", session_id=SID),
+        "no DELIVERED session_delivery for dispatch")
+    untouched(b, "DELIVERED for other dispatch")
+
+    d = dispatch()
+    delivery(d, delivery_id="delivery-twin-1"); delivery(d, delivery_id="delivery-twin-2")
+    raises("two DELIVERED for the same dispatch+SID -> ambiguous", lambda: store.record_session_outcome(
+        d["dispatch_id"], "completed", "x", "orchestrator", session_id=SID), "outcome-delivery-ambiguous")
+    untouched(d, "ambiguous")
+    ok("naming one of the twins resolves the ambiguity",
+       store.record_session_outcome(d["dispatch_id"], "completed", "x", "orchestrator", session_id=SID,
+                                    delivery_id="delivery-twin-2")["attested_delivery_id"] == "delivery-twin-2")
+
+    d = dispatch()
+    delivery(d, status="CLAUDE_DELIVERY_FAILED", delivery_id="delivery-explicit-failed")
+    delivery(d, delivery_id="delivery-explicit-ok")
+    raises("explicit id pointing at FAILED is rejected though a DELIVERED one exists",
+           lambda: store.record_session_outcome(d["dispatch_id"], "completed", "x", "orchestrator",
+                                                session_id=SID, delivery_id="delivery-explicit-failed"),
+           "not DELIVERED")
+    untouched(d, "explicit FAILED id")
 
     section("7. worker_unreachable keeps its exemption")
     d = dispatch()
