@@ -94,7 +94,18 @@ KINDS = {
     # Immutable evidence that one external event was delivered to (or refused
     # by) a Primary session: the turn it produced, or why it did not.
     "primary_wake": ("primary-wakes", "pwake"),
+    # Durable evidence that one session_dispatch packet was (or was not)
+    # delivered to its bound Claude session over the proven stop-then-resume
+    # transport. Natural key = delivery_id (defaults to the dispatch_id), so a
+    # duplicate delivery is idempotent and a failed one is retried in place.
+    "session_delivery": ("session-deliveries", "delivery"),
 }
+
+SESSION_DELIVERY_STATUSES = frozenset({
+    "DELIVERED", "CLAUDE_DELIVERY_FAILED", "CLAUDE_DELIVERY_WORKER_UNREACHABLE",
+    "CLAUDE_DELIVERY_SESSION_MISMATCH",
+})
+SESSION_DELIVERY_TRANSPORT = "stop-then-bg-resume-same-sid"
 
 PRIMARY_BINDING_STATUSES = frozenset({"ACTIVE", "STANDBY", "RETIRED"})
 PRIMARY_WAKE_STATUSES = frozenset({"delivered", "busy", "failed"})
@@ -2760,6 +2771,38 @@ def record_primary_wake(record):
     return create("primary_wake", rec)
 
 
+def record_session_delivery(delivery_id, record):
+    """Write one delivery attempt. A DELIVERED record is final and never
+    rewritten; a failed/unreachable one may be retried in place, keeping the
+    earlier attempts under previous_attempts so the lineage stays one id."""
+    rec = dict(record, delivery_id=delivery_id,
+               transport=SESSION_DELIVERY_TRANSPORT)
+    with record_lock("session_delivery", delivery_id):
+        cur = read("session_delivery", delivery_id)
+        if cur is None:
+            rec.setdefault("previous_attempts", [])
+            rec["schema_version"] = SCHEMA_VERSION
+            rec["revision"] = 1
+            rec["created_at"] = rec.get("created_at") or now()
+            rec["updated_at"] = rec["created_at"]
+            _validate_one("session_delivery", rec)
+            _atomic_write(path_for("session_delivery", delivery_id), rec)
+            return rec
+        if cur.get("status") == "DELIVERED":
+            raise StateError("session delivery %s is already DELIVERED and is final"
+                             % delivery_id)
+        previous = list(cur.get("previous_attempts") or [])
+        previous.append({k: cur.get(k) for k in ("status", "error", "delivered_at",
+                                                  "pid_before", "pid_after", "updated_at")})
+        merged = dict(cur, **rec)
+        merged.update(previous_attempts=previous, revision=cur["revision"] + 1,
+                      updated_at=now(), created_at=cur["created_at"],
+                      schema_version=SCHEMA_VERSION)
+        _validate_one("session_delivery", merged)
+        _atomic_write(path_for("session_delivery", delivery_id), merged)
+        return merged
+
+
 def record_session_outcome(dispatch_id, outcome, summary, recorded_by,
                            session_id=None, reference=None):
     """Settle one persistent-session dispatch. Every outcome ends the dispatch.
@@ -3577,7 +3620,8 @@ def _id_field(kind):
             "role_session": "seat_id",
             "session_dispatch": "dispatch_id",
             "primary_binding": "provider",
-            "primary_wake": "primary_wake_id"}[kind]
+            "primary_wake": "primary_wake_id",
+            "session_delivery": "delivery_id"}[kind]
 
 
 def _validate_one(kind, record):

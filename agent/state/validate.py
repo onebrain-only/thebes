@@ -73,6 +73,10 @@ SESSION_DISPATCH_OUTCOMES = ("completed", "blocked", "decision_required",
                             "clarification_required", "failed", "worker_unreachable")
 PRIMARY_BINDING_STATUSES = ("ACTIVE", "STANDBY", "RETIRED")
 PRIMARY_WAKE_STATUSES = ("delivered", "busy", "failed")
+SESSION_DELIVERY_STATUSES = ("DELIVERED", "CLAUDE_DELIVERY_FAILED",
+                             "CLAUDE_DELIVERY_WORKER_UNREACHABLE",
+                             "CLAUDE_DELIVERY_SESSION_MISMATCH")
+SESSION_DELIVERY_TRANSPORT = "stop-then-bg-resume-same-sid"
 
 # ---- Wave 6 orchestration ---------------------------------------------------
 #
@@ -1533,6 +1537,44 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
             errs.append("%s: a %s primary wake must carry a structured error"
                         % (where, rec.get("status")))
 
+    elif kind == "session_delivery":
+        _req(rec, ["delivery_id", "dispatch_id", "work_item_id", "seat_id", "provider",
+                   "session_id", "status", "transport", "stopped_before_resume",
+                   "resumed_same_sid", "session_count_before", "session_count_after"],
+             errs, where)
+        if not str(rec.get("dispatch_id") or "").startswith("dispatch-"):
+            errs.append("%s: session delivery dispatch_id must start with dispatch-" % where)
+        if rec.get("seat_id") not in seatset:
+            errs.append("%s: session delivery seat %r is not declared" % (where, rec.get("seat_id")))
+        if rec.get("provider") != "claude":
+            errs.append("%s: session delivery provider must be claude — this transport "
+                        "is the Claude CLI" % where)
+        if not isinstance(rec.get("session_id"), str) or not SESSION_UUID.match(rec["session_id"]):
+            errs.append("%s: session delivery session_id must be the durable UUID, never a "
+                        "display name, pid or socket" % where)
+        if rec.get("status") not in SESSION_DELIVERY_STATUSES:
+            errs.append("%s: session delivery status must be one of %s"
+                        % (where, "/".join(SESSION_DELIVERY_STATUSES)))
+        if rec.get("transport") != SESSION_DELIVERY_TRANSPORT:
+            errs.append("%s: session delivery transport must be %r — no other transport "
+                        "is supported" % (where, SESSION_DELIVERY_TRANSPORT))
+        for f in ("stopped_before_resume", "resumed_same_sid"):
+            if rec.get(f) not in ("YES", "NO"):
+                errs.append("%s: %s must be YES or NO" % (where, f))
+        if rec.get("status") == "DELIVERED":
+            if rec.get("resumed_same_sid") != "YES" or not rec.get("delivered_at"):
+                errs.append("%s: a DELIVERED session delivery must have resumed the same "
+                            "SID and carry delivered_at" % where)
+        elif not rec.get("error"):
+            errs.append("%s: a %s session delivery must carry an error"
+                        % (where, rec.get("status")))
+        if not isinstance(rec.get("previous_attempts") or [], list):
+            errs.append("%s: previous_attempts must be a list" % where)
+        for f in ("prompt", "message", "body", "transcript"):
+            if f in rec:
+                errs.append("%s: a session delivery carries a message_ref, never the "
+                            "message body (%r)" % (where, f))
+
     elif kind == "session_dispatch":
         _req(rec, ["dispatch_id", "work_item_id", "seat_id", "provider", "session_id",
                    "worktree_path", "branch", "execution_lease_id", "invocation_id",
@@ -1768,7 +1810,8 @@ def check(runtime=None):
              "role_session": "role-sessions",
              "session_dispatch": "session-dispatches",
              "primary_binding": "primary-bindings",
-             "primary_wake": "primary-wakes"}
+             "primary_wake": "primary-wakes",
+             "session_delivery": "session-deliveries"}
     seen_ids = {}
     active_primaries = []
     edges = []
@@ -1807,7 +1850,8 @@ def check(runtime=None):
                    "role_session": "seat_id",
                    "session_dispatch": "dispatch_id",
                    "primary_binding": "provider",
-                   "primary_wake": "primary_wake_id"}[kind]
+                   "primary_wake": "primary_wake_id",
+                   "session_delivery": "delivery_id"}[kind]
             rid = rec.get(idf)
             if rid != fn[:-5]:
                 errs.append("%s: filename does not match %s %r" % (p, idf, rid))
