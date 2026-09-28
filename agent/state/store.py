@@ -85,7 +85,19 @@ KINDS = {
     # same authorization/claim/workspace machinery and stops before any provider
     # wake, so a durably-bound worker session can be told to do the work itself.
     "session_dispatch": ("session-dispatches", "dispatch"),
+    # The durable identity of a Primary coordinator session per provider.
+    # Natural key = provider: at most one ACTIVE binding system-wide (see
+    # set_primary_active), a STANDBY one may exist beside it, and rebinding is
+    # a CAS update that keeps history. A wake to a STANDBY Primary is not a
+    # cutover; only set_primary_active changes who is ACTIVE.
+    "primary_binding": ("primary-bindings", None),
+    # Immutable evidence that one external event was delivered to (or refused
+    # by) a Primary session: the turn it produced, or why it did not.
+    "primary_wake": ("primary-wakes", "pwake"),
 }
+
+PRIMARY_BINDING_STATUSES = frozenset({"ACTIVE", "STANDBY", "RETIRED"})
+PRIMARY_WAKE_STATUSES = frozenset({"delivered", "busy", "failed"})
 
 # Providers a role_session may be bound to. The persistent-session dispatch
 # path is Claude-only in this slice (see agent/controller/session_dispatch.py);
@@ -2640,6 +2652,114 @@ def active_role_session(seat_id):
     return rec
 
 
+def bind_primary(provider, session_ref, status, changed_by, reason_ref, stable_home,
+                 expected_revision=None):
+    """Create or CAS-rebind the Primary coordinator binding for one provider.
+
+    Identity is the session_ref (a Claude session id or a Codex thread id).
+    A rebind keeps the previous ref in previous_session_refs. Binding as
+    ACTIVE goes through set_primary_active so the single-ACTIVE guard runs
+    under the execution-domain lock; this function refuses status ACTIVE for a
+    provider that is not already the ACTIVE one, so a binding can never
+    create a second ACTIVE Primary by accident.
+    """
+    if provider not in ROLE_SESSION_PROVIDERS:
+        raise StateError("unknown provider %r — expected one of %s"
+                         % (provider, "/".join(sorted(ROLE_SESSION_PROVIDERS))))
+    if status not in PRIMARY_BINDING_STATUSES:
+        raise StateError("unknown primary status %r — expected one of %s"
+                         % (status, "/".join(sorted(PRIMARY_BINDING_STATUSES))))
+    if not isinstance(session_ref, str) or not session_ref:
+        raise StateError("session_ref is required")
+    if not stable_home or not changed_by or not reason_ref:
+        raise StateError("stable_home, changed_by and reason_ref are required")
+    with _Lock("execution-domain"):
+        with record_lock("primary_binding", provider):
+            cur = read("primary_binding", provider)
+            if status == "ACTIVE":
+                active = active_primary()
+                if active is None or active.get("provider") != provider:
+                    raise StateError("primary-active-requires-transition: bind %s as STANDBY, "
+                                     "then set_primary_active() — the guard runs there"
+                                     % provider)
+            if cur is None:
+                if expected_revision is not None:
+                    raise StateError("primary binding for %s does not exist; expected_revision "
+                                     "must be null" % provider)
+                rec = {"provider": provider, "session_ref": session_ref, "status": status,
+                       "generation": 0, "stable_home": stable_home,
+                       "changed_by": changed_by, "reason_ref": reason_ref,
+                       "previous_session_refs": [], "schema_version": SCHEMA_VERSION,
+                       "revision": 1, "created_at": now(), "updated_at": now()}
+                _validate_one("primary_binding", rec)
+                _atomic_write(path_for("primary_binding", provider), rec)
+                return rec
+            if expected_revision is None:
+                raise StateError("expected_revision is required; there is no force update")
+            if cur["revision"] != expected_revision:
+                raise StateError("stale write refused: primary binding %s is at revision %d, "
+                                 "caller expected %d" % (provider, cur["revision"], expected_revision))
+            previous = list(cur.get("previous_session_refs") or [])
+            if cur.get("session_ref") and cur["session_ref"] != session_ref:
+                previous.append(cur["session_ref"])
+            merged = dict(cur, session_ref=session_ref, status=status, stable_home=stable_home,
+                          changed_by=changed_by, reason_ref=reason_ref,
+                          previous_session_refs=previous,
+                          revision=cur["revision"] + 1, updated_at=now())
+            _validate_one("primary_binding", merged)
+            _atomic_write(path_for("primary_binding", provider), merged)
+            return merged
+
+
+def active_primary():
+    """The single ACTIVE Primary binding, or None. Two would be a corrupt
+    state and are refused rather than picked between."""
+    active = [r for r in read_all("primary_binding") if r.get("status") == "ACTIVE"]
+    if len(active) > 1:
+        raise StateError("corrupt primary state: %d ACTIVE bindings (%s)"
+                         % (len(active), ", ".join(sorted(r["provider"] for r in active))))
+    return active[0] if active else None
+
+
+def set_primary_active(provider, changed_by, reason_ref):
+    """Make one provider's Primary ACTIVE and demote the current one to STANDBY
+    in the same locked section. This is the ONLY cutover primitive; nothing
+    else may write status ACTIVE. Generation is monotonic across providers."""
+    if not changed_by or not reason_ref:
+        raise StateError("changed_by and reason_ref are required")
+    with _Lock("execution-domain"):
+        target = read("primary_binding", provider)
+        if target is None:
+            raise StateError("primary binding for %s does not exist" % provider)
+        if target.get("status") == "RETIRED":
+            raise StateError("primary-not-standby-or-active: %s is RETIRED" % provider)
+        current = active_primary()
+        if current is not None and current.get("provider") == provider:
+            return current
+        generation = max([r.get("generation") or 0 for r in read_all("primary_binding")] + [0]) + 1
+        if current is not None:
+            demoted = dict(current, status="STANDBY", changed_by=changed_by,
+                           reason_ref=reason_ref, revision=current["revision"] + 1,
+                           updated_at=now())
+            _validate_one("primary_binding", demoted)
+            _atomic_write(path_for("primary_binding", current["provider"]), demoted)
+        promoted = dict(target, status="ACTIVE", generation=generation, changed_by=changed_by,
+                        reason_ref=reason_ref, revision=target["revision"] + 1,
+                        updated_at=now())
+        _validate_one("primary_binding", promoted)
+        _atomic_write(path_for("primary_binding", provider), promoted)
+        return promoted
+
+
+def record_primary_wake(record):
+    """Durable evidence of one Primary wake. Written once, at completion, and
+    never updated: a wake either delivered a turn, found the thread busy, or
+    failed, and the record says which."""
+    rec = dict(record)
+    rec.setdefault("completed_at", now())
+    return create("primary_wake", rec)
+
+
 def record_session_outcome(dispatch_id, outcome, summary, recorded_by,
                            session_id=None, reference=None):
     """Settle one persistent-session dispatch. Every outcome ends the dispatch.
@@ -3455,7 +3575,9 @@ def _id_field(kind):
             "execution_lease": "execution_lease_id",
             "execution_receipt": "execution_receipt_id",
             "role_session": "seat_id",
-            "session_dispatch": "dispatch_id"}[kind]
+            "session_dispatch": "dispatch_id",
+            "primary_binding": "provider",
+            "primary_wake": "primary_wake_id"}[kind]
 
 
 def _validate_one(kind, record):

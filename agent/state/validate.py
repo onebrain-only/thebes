@@ -71,6 +71,8 @@ SESSION_UUID = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 SESSION_DISPATCH_OUTCOMES = ("completed", "blocked", "decision_required",
                             "clarification_required", "failed", "worker_unreachable")
+PRIMARY_BINDING_STATUSES = ("ACTIVE", "STANDBY", "RETIRED")
+PRIMARY_WAKE_STATUSES = ("delivered", "busy", "failed")
 
 # ---- Wave 6 orchestration ---------------------------------------------------
 #
@@ -1479,6 +1481,58 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
             errs.append("%s: role session bound_by %r is not a known authority or seat"
                         % (where, rec.get("bound_by")))
 
+    elif kind == "primary_binding":
+        _req(rec, ["provider", "session_ref", "status", "stable_home", "changed_by",
+                   "reason_ref"], errs, where)
+        if rec.get("provider") not in ROLE_SESSION_PROVIDERS:
+            errs.append("%s: primary binding provider must be one of %s"
+                        % (where, "/".join(ROLE_SESSION_PROVIDERS)))
+        if rec.get("status") not in PRIMARY_BINDING_STATUSES:
+            errs.append("%s: primary binding status must be one of %s"
+                        % (where, "/".join(PRIMARY_BINDING_STATUSES)))
+        if not isinstance(rec.get("session_ref"), str) or not SESSION_UUID.match(rec["session_ref"]):
+            errs.append("%s: primary binding session_ref must be a UUID (Claude session id "
+                        "or Codex thread id) — never a name, PID or socket" % where)
+        gen = rec.get("generation")
+        if not isinstance(gen, int) or isinstance(gen, bool) or gen < 0:
+            errs.append("%s: primary binding generation must be a non-negative int" % where)
+        if rec.get("status") == "ACTIVE" and not gen:
+            errs.append("%s: an ACTIVE primary binding needs generation >= 1 — it is set "
+                        "only by the ACTIVE transition" % where)
+        if not isinstance(rec.get("stable_home"), str) or not os.path.isabs(rec.get("stable_home") or ""):
+            errs.append("%s: primary binding stable_home must be an absolute path" % where)
+        previous = rec.get("previous_session_refs")
+        if previous is None:
+            previous = []
+        if not isinstance(previous, list) or any(
+                not isinstance(p, str) or not p for p in previous):
+            errs.append("%s: previous_session_refs must be a list of session refs" % where)
+        if rec.get("changed_by") not in seatset and rec.get("changed_by") not in ("ceo", "orchestrator"):
+            errs.append("%s: primary binding changed_by %r is not a known authority or seat"
+                        % (where, rec.get("changed_by")))
+        _reflen(rec, ["reason_ref"], errs, where)
+
+    elif kind == "primary_wake":
+        _req(rec, ["primary_wake_id", "provider", "session_ref", "generation", "event_kind",
+                   "status", "started_at", "completed_at"], errs, where)
+        if not str(rec.get("primary_wake_id") or "").startswith("pwake-"):
+            errs.append("%s: primary_wake_id must start with pwake-" % where)
+        if rec.get("provider") not in ROLE_SESSION_PROVIDERS:
+            errs.append("%s: primary wake provider must be one of %s"
+                        % (where, "/".join(ROLE_SESSION_PROVIDERS)))
+        if rec.get("status") not in PRIMARY_WAKE_STATUSES:
+            errs.append("%s: primary wake status must be one of %s"
+                        % (where, "/".join(PRIMARY_WAKE_STATUSES)))
+        if not isinstance(rec.get("generation"), int) or isinstance(rec.get("generation"), bool):
+            errs.append("%s: primary wake generation must be an int" % where)
+        if not re.match(r"^[a-z][a-z0-9_-]*$", str(rec.get("event_kind") or "")):
+            errs.append("%s: primary wake event_kind must be a lower-case token" % where)
+        if rec.get("status") == "delivered" and not rec.get("turn_ref"):
+            errs.append("%s: a delivered primary wake must name the turn it produced" % where)
+        if rec.get("status") in ("busy", "failed") and not rec.get("error"):
+            errs.append("%s: a %s primary wake must carry a structured error"
+                        % (where, rec.get("status")))
+
     elif kind == "session_dispatch":
         _req(rec, ["dispatch_id", "work_item_id", "seat_id", "provider", "session_id",
                    "worktree_path", "branch", "execution_lease_id", "invocation_id",
@@ -1712,8 +1766,11 @@ def check(runtime=None):
              "execution_replacement": "execution-replacements",
              "product_authorization": "product-authorizations",
              "role_session": "role-sessions",
-             "session_dispatch": "session-dispatches"}
+             "session_dispatch": "session-dispatches",
+             "primary_binding": "primary-bindings",
+             "primary_wake": "primary-wakes"}
     seen_ids = {}
+    active_primaries = []
     edges = []
     active_iv = []
     active_pol = []
@@ -1748,7 +1805,9 @@ def check(runtime=None):
                    "execution_replacement": "execution_replacement_id",
                    "product_authorization": "product_authorization_id",
                    "role_session": "seat_id",
-                   "session_dispatch": "dispatch_id"}[kind]
+                   "session_dispatch": "dispatch_id",
+                   "primary_binding": "provider",
+                   "primary_wake": "primary_wake_id"}[kind]
             rid = rec.get(idf)
             if rid != fn[:-5]:
                 errs.append("%s: filename does not match %s %r" % (p, idf, rid))
@@ -1762,6 +1821,13 @@ def check(runtime=None):
                 active_iv.append(rec)
             if kind == "policy" and not rec.get("cleared_at"):
                 active_pol.append(rec)
+            if kind == "primary_binding" and rec.get("status") == "ACTIVE":
+                active_primaries.append(rec.get("provider"))
+    # Exactly one ACTIVE Primary at a time: a second is a cutover that never
+    # went through set_primary_active, and is refused rather than tolerated.
+    if len(active_primaries) > 1:
+        errs.append("primary binding: %d ACTIVE Primaries (%s) — at most one is permitted"
+                    % (len(active_primaries), ", ".join(sorted(active_primaries))))
     # At most one ACTIVE intervention per (kind, scope, target): a second would make
     # clearing ambiguous — which one did RESUME clear?
     seen_iv = {}
