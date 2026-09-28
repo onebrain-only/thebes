@@ -104,7 +104,12 @@ KINDS = {
     # outcome can never schedule a second wake. Delivery re-reads the canonical
     # ACTIVE primary_binding at send time, so a cutover in between is honoured.
     "primary_notification": ("primary-notifications", None),
+    # One user command to the ACTIVE Primary through the Listener front door,
+    # and its result. The command text lives in a text_ref file, never here.
+    "primary_command": ("primary-commands", "pcmd"),
 }
+
+PRIMARY_COMMAND_STATUSES = frozenset({"accepted", "delivered", "busy", "failed", "refused"})
 
 PRIMARY_NOTIFICATION_STATUSES = frozenset({"scheduled", "delivered", "busy", "failed"})
 
@@ -187,6 +192,38 @@ class _Lock:
 
 def record_lock(kind, rid):
     return _Lock("%s-%s" % (kind, rid))
+
+
+class PrimaryWriterBusy(Exception):
+    """Another Thebes process is already writing to the ACTIVE Primary."""
+
+
+class primary_writer:
+    """Non-blocking, Thebes-wide single writer for the ACTIVE Primary session.
+
+    A user command and a worker-outcome notification both end in one turn on
+    the same Primary thread. Only one may be in flight: the second is refused
+    at once with PrimaryWriterBusy, never queued behind and never waited on.
+    Released by the kernel if the holder dies. This is Thebes's own lock; it
+    does not see (and cannot override) a writer outside Thebes such as Codex
+    Desktop, which the adapter reports separately as CODEX_PRIMARY_THREAD_BUSY.
+    """
+
+    def __enter__(self):
+        os.makedirs(LOCKS, exist_ok=True)
+        self.fh = open(os.path.join(LOCKS, "primary-writer.lock"), "w")
+        try:
+            fcntl.flock(self.fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            self.fh.close()
+            raise PrimaryWriterBusy("primary-writer-busy: another Thebes turn to the "
+                                    "ACTIVE Primary is in flight")
+        return self
+
+    def __exit__(self, *exc):
+        fcntl.flock(self.fh, fcntl.LOCK_UN)
+        self.fh.close()
+        return False
 
 
 def graph_lock(product_id):
@@ -3721,7 +3758,8 @@ def _id_field(kind):
             "primary_binding": "provider",
             "primary_wake": "primary_wake_id",
             "session_delivery": "delivery_id",
-            "primary_notification": "dispatch_id"}[kind]
+            "primary_notification": "dispatch_id",
+            "primary_command": "primary_command_id"}[kind]
 
 
 def _validate_one(kind, record):

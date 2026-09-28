@@ -78,6 +78,7 @@ SESSION_DELIVERY_STATUSES = ("DELIVERED", "CLAUDE_DELIVERY_FAILED",
                              "CLAUDE_DELIVERY_SESSION_MISMATCH")
 SESSION_DELIVERY_TRANSPORT = "stop-then-bg-resume-same-sid"
 PRIMARY_NOTIFICATION_STATUSES = ("scheduled", "delivered", "busy", "failed")
+PRIMARY_COMMAND_STATUSES = ("accepted", "delivered", "busy", "failed", "refused")
 
 # ---- Wave 6 orchestration ---------------------------------------------------
 #
@@ -1576,6 +1577,27 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
                 errs.append("%s: a session delivery carries a message_ref, never the "
                             "message body (%r)" % (where, f))
 
+    elif kind == "primary_command":
+        _req(rec, ["primary_command_id", "status", "submitted_by", "text_ref"], errs, where)
+        if not str(rec.get("primary_command_id") or "").startswith("pcmd-"):
+            errs.append("%s: primary_command_id must start with pcmd-" % where)
+        if rec.get("status") not in PRIMARY_COMMAND_STATUSES:
+            errs.append("%s: primary command status must be one of %s"
+                        % (where, "/".join(PRIMARY_COMMAND_STATUSES)))
+        if str(rec.get("submitted_by") or "").startswith("worker:"):
+            errs.append("%s: a worker may never command the Primary" % where)
+        if rec.get("provider") not in (None,) + tuple(ROLE_SESSION_PROVIDERS):
+            errs.append("%s: primary command provider must be one of %s"
+                        % (where, "/".join(ROLE_SESSION_PROVIDERS)))
+        if rec.get("status") == "delivered" and not rec.get("turn_ref"):
+            errs.append("%s: a delivered primary command names its turn" % where)
+        if rec.get("status") in ("busy", "failed", "refused") and not rec.get("error"):
+            errs.append("%s: a %s primary command carries an error" % (where, rec.get("status")))
+        for f in ("prompt", "message", "body", "text", "transcript"):
+            if f in rec:
+                errs.append("%s: a primary command carries text_ref, never the text (%r)"
+                            % (where, f))
+
     elif kind == "primary_notification":
         _req(rec, ["dispatch_id", "work_item_id", "seat_id", "worker_session_id", "outcome",
                    "status", "attempts"], errs, where)
@@ -1839,7 +1861,8 @@ def check(runtime=None):
              "primary_binding": "primary-bindings",
              "primary_wake": "primary-wakes",
              "session_delivery": "session-deliveries",
-             "primary_notification": "primary-notifications"}
+             "primary_notification": "primary-notifications",
+             "primary_command": "primary-commands"}
     seen_ids = {}
     active_primaries = []
     edges = []
@@ -1880,7 +1903,8 @@ def check(runtime=None):
                    "primary_binding": "provider",
                    "primary_wake": "primary_wake_id",
                    "session_delivery": "delivery_id",
-                   "primary_notification": "dispatch_id"}[kind]
+                   "primary_notification": "dispatch_id",
+                   "primary_command": "primary_command_id"}[kind]
             rid = rec.get(idf)
             if rid != fn[:-5]:
                 errs.append("%s: filename does not match %s %r" % (p, idf, rid))

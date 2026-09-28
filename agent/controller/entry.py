@@ -31,7 +31,7 @@ INTENT_ENV = "THEBES_LISTENER_INTENT_ID"
 # recovery `integrate` path are deliberately absent: they orchestrate nothing,
 # and Phase 4 is about the execution front door, not about every command.
 ORCHESTRATING_COMMANDS = ("execute", "resume", "decide", "validate",
-                          "dispatch-session", "session-outcome")
+                          "dispatch-session", "session-outcome", "primary-command")
 
 FRONT_DOOR_REFUSAL = "direct-controller-entry-retired"
 

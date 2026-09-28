@@ -43,6 +43,13 @@ def argv_for(intent):
     path by which intake text becomes an executable instruction.
     """
     payload = intent["payload"]
+    if intent["intent_type"] == contract.PRIMARY_COMMAND:
+        # The text travels as ONE argv element to a fixed entry point; it is
+        # never a shell string and never interpreted as a command line.
+        return [sys.executable, "-m", "agent.controller", "primary-command",
+                "--submitted-by", intent["actor"], "--command-id",
+                "pcmd-" + intent["intent_id"][len("intent-"):len("intent-") + 32],
+                "--text", payload["text"]]
     work_item_id = payload["work_item_id"]
     if not contract.WORK_ITEM_ID.match(work_item_id):
         raise ValueError("work item id was not contract-validated")

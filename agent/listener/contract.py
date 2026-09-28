@@ -37,8 +37,13 @@ VALIDATE_WORK_ITEM = "VALIDATE_WORK_ITEM"
 # binding, so naming one here grants nothing by itself.
 PREPARE_SESSION_DISPATCH = "PREPARE_SESSION_DISPATCH"
 RECORD_SESSION_OUTCOME = "RECORD_SESSION_OUTCOME"
+# The user's front door to the ACTIVE Primary: free text, one turn, one durable
+# record. It names no work item and grants nothing; the Primary decides what to
+# do with it under its own rules. A worker actor may never submit it.
+PRIMARY_COMMAND = "PRIMARY_COMMAND"
 INTENT_TYPES = (EXECUTE_WORK_ITEM, DECISION_RESPONSE, VALIDATE_WORK_ITEM,
-                PREPARE_SESSION_DISPATCH, RECORD_SESSION_OUTCOME)
+                PREPARE_SESSION_DISPATCH, RECORD_SESSION_OUTCOME, PRIMARY_COMMAND)
+PRIMARY_COMMAND_MAX_TEXT = 16_000
 
 # Bounded intake. A body larger than this is refused before it is parsed.
 MAX_BODY_BYTES = 64 * 1024
@@ -67,6 +72,7 @@ PAYLOAD_FIELDS = {
     PREPARE_SESSION_DISPATCH: (("work_item_id",), ("deliver",)),
     RECORD_SESSION_OUTCOME: (("work_item_id", "dispatch_id", "outcome", "summary"),
                              ("session_id", "reference", "delivery_id")),
+    PRIMARY_COMMAND: (("text",), ()),
 }
 
 DECISIONS = ("approve",)
@@ -182,6 +188,11 @@ def _payload(intent_type, payload):
     missing = sorted(field for field in required if field not in payload)
     if missing:
         raise IntentRejected("missing-field", "payload is missing: %s" % ", ".join(missing))
+    if intent_type == PRIMARY_COMMAND:
+        text = _text(payload.get("text"), "text", maximum=PRIMARY_COMMAND_MAX_TEXT)
+        if CONTROL_CHARS.search(text):
+            raise IntentRejected("invalid-field", "text may not contain control characters")
+        return {"text": text}
     clean = {"work_item_id": _text(payload.get("work_item_id"), "work_item_id",
                                    WORK_ITEM_ID, 40)}
     if intent_type == PREPARE_SESSION_DISPATCH and "deliver" in payload:

@@ -51,7 +51,7 @@ def run_controller(args, environment=None):
 class FrontDoorClassification(unittest.TestCase):
     def test_only_the_orchestrating_commands_are_gated(self):
         self.assertEqual(("execute", "resume", "decide", "validate",
-                          "dispatch-session", "session-outcome"),
+                          "dispatch-session", "session-outcome", "primary-command"),
                          entry.ORCHESTRATING_COMMANDS)
         for internal in ("integrate", "plan-sprint", "plan-backlog", "authority-manifest",
                          "bind-session"):

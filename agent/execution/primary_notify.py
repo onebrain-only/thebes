@@ -111,7 +111,17 @@ def deliver(dispatch_id, *, state_store=store, codex_waker=None, claude_cli=None
     if provider == "codex":
         from agent.execution.codex_primary import wake_codex_primary
         waker = codex_waker or wake_codex_primary
-        res = waker(EVENT_KIND, text, binding=active, state_store=state_store)
+        # The same Thebes-wide single writer a user command takes: a
+        # notification never races a command onto the Primary thread.
+        try:
+            with state_store.primary_writer():
+                res = waker(EVENT_KIND, text, binding=active, state_store=state_store)
+        except state_store.PrimaryWriterBusy as exc:
+            settled = state_store.settle_primary_notification(
+                dispatch_id, "busy", provider="codex",
+                error={"code": "PRIMARY_WRITER_BUSY", "message": str(exc)})
+            return {"status": "busy", "provider": "codex", "wake_record_id": None,
+                    "error": settled["error"]}
         status = {"delivered": "delivered", "busy": "busy"}.get(res.status, "failed")
         settled = state_store.settle_primary_notification(
             dispatch_id, status, provider="codex", wake_record_id=res.wake_record_id,

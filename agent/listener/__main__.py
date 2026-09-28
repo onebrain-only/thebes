@@ -133,6 +133,16 @@ def main(argv=None):
     report.add_argument("--wait", type=float, nargs="?", const=1800.0, default=None,
                         metavar="SECONDS",
                         help="block until the intent settles, then print its result")
+    ask = sub.add_parser("primary-command",
+                         help="send one command to the ACTIVE Primary; --wait returns its "
+                              "reply (that one turn only, never a worker)")
+    ask.add_argument("text")
+    ask.add_argument("--idempotency-key", default=None)
+    ask.add_argument("--actor", default="ceo")
+    ask.add_argument("--source", default="listener-cli")
+    ask.add_argument("--wait", type=float, nargs="?", const=900.0, default=None,
+                     metavar="SECONDS",
+                     help="block until the Primary's turn settles, then print its result")
     show = sub.add_parser("show", help="one intent and its durable result")
     show.add_argument("intent_id")
     args = parser.parse_args(argv)
@@ -167,6 +177,14 @@ def main(argv=None):
             "source": args.source, "actor": args.actor,
             "idempotency_key": key, "correlation_id": key,
             "payload": payload})
+    elif args.command == "primary-command":
+        key = args.idempotency_key or "primary-command-%s" % uuid.uuid4()
+        status, body = _post(args.port, "/intents", {
+            "schema_version": contract.SCHEMA_VERSION,
+            "intent_type": contract.PRIMARY_COMMAND,
+            "source": args.source, "actor": args.actor,
+            "idempotency_key": key, "correlation_id": key,
+            "payload": {"text": args.text}})
     elif args.command == "session-outcome":
         # The dispatch id makes a repeated report of the same outcome the same
         # intent; a different outcome for one dispatch is refused by the store.

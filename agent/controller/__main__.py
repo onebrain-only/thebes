@@ -86,6 +86,13 @@ def main(argv=None):
     report.add_argument("--delivery-id", default=None,
                         help="the session_delivery the worker is answering; the outcome "
                              "gate requires a DELIVERED one for this dispatch either way")
+    # The user's front door to the ACTIVE Primary (Listener PRIMARY_COMMAND).
+    command = sub.add_parser("primary-command",
+                             help="deliver one user command to the ACTIVE Primary as one "
+                                  "turn and return that turn's result")
+    command.add_argument("--text", required=True)
+    command.add_argument("--submitted-by", required=True)
+    command.add_argument("--command-id", default=None)
     # Maintenance/internal: binds identity, orchestrates nothing.
     bind = sub.add_parser("bind-session",
                           help="bind or rebind one seat to a persistent provider session")
@@ -95,7 +102,7 @@ def main(argv=None):
     bind.add_argument("--stable-home", required=True)
     bind.add_argument("--session-name", default=None)
     bind.add_argument("--bound-by", default="ceo")
-    for orchestrating in (run, again, call, check, prep, report):
+    for orchestrating in (run, again, call, check, prep, report, command):
         orchestrating.add_argument(
             "--maintenance-reason", default=None,
             help="bypass the Listener front door for recovery, debugging or a "
@@ -110,7 +117,8 @@ def main(argv=None):
                           "detail": detail}, indent=2, sort_keys=True))
         return 2
     try:
-        outcome = (dispatch_session(args.work_item_id, deliver=args.deliver)
+        outcome = (_primary_command(args) if args.command == "primary-command"
+                   else dispatch_session(args.work_item_id, deliver=args.deliver)
                    if args.command == "dispatch-session"
                    else session_outcome(args.work_item_id, args.dispatch, args.outcome,
                                         args.session_id, args.summary, args.reference,
@@ -158,7 +166,19 @@ def main(argv=None):
         return 0 if outcome.get("outcome_status") == "recorded" else 1
     if args.command == "bind-session":
         return 0 if outcome.get("binding_status") in ("bound", "rebound") else 1
+    if args.command == "primary-command":
+        return 0 if outcome.get("status") == "delivered" else 1
     return 1
+
+
+def _primary_command(args):
+    from agent.execution.primary_command import run_primary_command
+    rec = run_primary_command(args.text, args.submitted_by, command_id=args.command_id)
+    return {"work_item_id": None, "primary_command_id": rec["primary_command_id"],
+            "status": rec["status"], "provider": rec.get("provider"),
+            "session_ref": rec.get("session_ref"), "turn_ref": rec.get("turn_ref"),
+            "response_summary": rec.get("response_summary"), "error": rec.get("error"),
+            "blocker": None if rec["status"] == "delivered" else (rec.get("error") or {}).get("code")}
 
 
 if __name__ == "__main__":

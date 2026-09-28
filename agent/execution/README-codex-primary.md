@@ -78,3 +78,28 @@ python3 -m agent.execution.codex_primary wake --event <kind> --payload-file <pat
 ```
 
 `bind` accepts only `STANDBY`/`RETIRED`; ACTIVE is a transition, not a bind.
+
+## Primary ownership and the user front door (2026-09-29)
+
+**Thebes is the runtime owner of the ACTIVE Codex Primary thread.** A Codex thread has exactly
+one writer. While Codex Desktop has the thread loaded, Desktop's own app-server holds the writer
+lock and every Thebes turn on that thread is `CODEX_PRIMARY_THREAD_BUSY` (verified: the lock on
+`01a0e382-…` was held by Desktop's app-server, pid 2745). Thebes can start a turn only when
+Desktop does not hold the thread. Cutover therefore requires Codex Desktop to be closed.
+
+**User → Primary:** `python3 -m agent.listener primary-command "<text>" --wait` submits a
+`PRIMARY_COMMAND` intent. The Listener runs it once: a durable `primary_command` record (text in
+a `text_ref` file), the canonical ACTIVE binding re-read, ONE turn on the bound thread through the
+same codex_primary adapter, and the result (`delivered` with turn id and reply, or `busy` /
+`failed` / `refused`). It waits for that one turn only, never for a worker. A Claude ACTIVE
+Primary is refused (`primary-command-claude-direct`: talk to it directly). A `worker:` actor is
+refused at intake.
+
+**One writer inside Thebes:** user commands and worker-outcome notifications both take the
+non-blocking `primary_writer` lock; a second concurrent writer is refused as
+`PRIMARY_WRITER_BUSY`, never queued or waited on.
+
+**Pending notification after cutover:** a `busy` notification is kept durably. Once Desktop is
+closed, deliver it exactly once with
+`python3 -m agent.execution.primary_notify deliver <dispatch_id>`; a delivered notification is
+never sent again.
