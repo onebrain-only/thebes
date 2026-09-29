@@ -207,8 +207,7 @@ def drain(thread_id, *, state_store=store, factory=None, turn_timeout=TURN_TIMEO
                 if pending:
                     client, _ = connect(state_store=state_store, factory=factory)
                     try:
-                        client.request("thread/resume", {"threadId": thread_id,
-                                                         "excludeTurns": True}, timeout=120)
+                        _resume_if_needed(client, thread_id)
                         for ev in pending:
                             (delivered if _run_one(client, ev, state_store, turn_timeout)
                              else failed).append(ev["event_id"])
@@ -219,6 +218,25 @@ def drain(thread_id, *, state_store=store, factory=None, turn_timeout=TURN_TIMEO
         # Released. Anything queued while we held the lock is ours to drain.
         if not _queued(thread_id, state_store):
             return {"status": "drained", "delivered": delivered, "failed": failed}
+
+
+NO_ROLLOUT = "no rollout found"
+
+
+def _resume_if_needed(client, thread_id):
+    """Load the thread on this shared server if it is not already loaded.
+
+    A thread started on the shared server but with no turn yet has no rollout
+    on disk, so thread/resume answers "no rollout found" — it is already live
+    in this same server process (registered conversations are only ever
+    started here), and turn/start addresses it directly. Any other resume
+    error still fails closed."""
+    from agent.execution.codex_appserver import AppServerError
+    try:
+        client.request("thread/resume", {"threadId": thread_id, "excludeTurns": True}, timeout=120)
+    except AppServerError as exc:
+        if NO_ROLLOUT not in str(exc.error.get("message") or ""):
+            raise
 
 
 def _run_one(client, ev, state_store, turn_timeout):

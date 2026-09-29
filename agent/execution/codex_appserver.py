@@ -78,6 +78,8 @@ class CodexAppServerClient:
 
     # -- wire ---------------------------------------------------------------
     def _record(self, direction, obj):
+        if self._log.closed:                  # a late frame after close() is not an error
+            return
         self._log.write(json.dumps({"ts": time.time(), "dir": direction, "msg": obj}) + "\n")
         self._log.flush()
 

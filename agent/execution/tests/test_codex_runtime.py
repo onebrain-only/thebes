@@ -211,6 +211,36 @@ class CodexRuntimeTests(unittest.TestCase):
         texts = [s["input"][0]["text"] for s in self.turn_starts() if s["threadId"] == THREAD_A]
         self.assertEqual(texts, ["first on A", "second on A"])
 
+    # -- fresh thread: no rollout yet --------------------------------------------
+    def test_a_fresh_thread_without_rollout_still_gets_its_turn_other_resume_errors_fail(self):
+        """Live regression 2026-09-29: a thread started on the shared server has
+        no rollout until its first turn, so thread/resume says 'no rollout found'
+        although the thread is loaded in that same server."""
+        from agent.execution.codex_appserver import AppServerError
+        resume_error = {"message": "no rollout found for thread id %s" % THREAD_A}
+
+        class FreshThread(FakeClient):
+            def request(self, method, params, timeout=60):
+                if method == "thread/resume":
+                    FakeClient.log.append((method, params))
+                    raise AppServerError(method, dict(resume_error))
+                return super().request(method, params, timeout)
+
+        self.patches[-1].stop()
+        try:
+            with mock.patch.object(cr, "connect", lambda **kw: (FreshThread(), "gpt-6-astra")):
+                ev, _ = cr.enqueue(THREAD_A, "user_prompt", "hello fresh thread", state_store=store)
+                self.assertEqual(cr.drain(THREAD_A, state_store=store)["status"], "drained")
+                self.assertEqual(store.read("codex_turn_event", ev["event_id"])["status"], "delivered")
+                resume_error["message"] = "thread is archived"
+                ev2, _ = cr.enqueue(THREAD_A, "user_prompt", "second", state_store=store)
+                with self.assertRaises(AppServerError):
+                    cr.drain(THREAD_A, state_store=store)
+                self.assertEqual(store.read("codex_turn_event", ev2["event_id"])["status"], "queued",
+                                 "any other resume error fails closed and keeps the event queued")
+        finally:
+            self.patches[-1].start()
+
     # -- registry / fail-closed -------------------------------------------------
     def test_unregistered_or_desktop_thread_is_refused_everywhere(self):
         with self.assertRaises(cr.RuntimeError_) as cm:
