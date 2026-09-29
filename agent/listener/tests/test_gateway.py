@@ -112,7 +112,7 @@ class GatewayTests(unittest.TestCase):
                 seen["body"] = json.loads(req.data.decode()); seen["url"] = req.full_url
                 return Resp(json.dumps({"intent_id": "intent-1"}).encode())
             return Resp(json.dumps({"intent": {"lifecycle_state": "COMPLETED"},
-                                    "result": {"outcome": {"result": {
+                                    "result": {"controller_result": {"result": {
                                         "primary_command_id": "pcmd-1", "status": "busy"}}}}).encode())
 
         from unittest import mock

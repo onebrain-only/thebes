@@ -110,7 +110,7 @@ def listener_submit(message, listener_url=LISTENER_URL, wait=ANSWER_WAIT_SECONDS
         except OSError:
             pass
     result = (answer or {}).get("result") or {}
-    controller = (result.get("outcome") or {}).get("result") or {}
+    controller = (result.get("controller_result") or {}).get("result") or {}
     return 202, {"intent_id": intent_id,
                  "lifecycle_state": ((answer or {}).get("intent") or {}).get("lifecycle_state"),
                  "primary_command_id": controller.get("primary_command_id"),
