@@ -109,7 +109,8 @@ KINDS = {
     "primary_command": ("primary-commands", "pcmd"),
 }
 
-PRIMARY_COMMAND_STATUSES = frozenset({"accepted", "delivered", "busy", "failed", "refused"})
+PRIMARY_COMMAND_STATUSES = frozenset({"accepted", "queued", "delivered", "busy", "failed",
+                                      "refused"})
 
 PRIMARY_NOTIFICATION_STATUSES = frozenset({"scheduled", "delivered", "busy", "failed"})
 

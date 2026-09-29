@@ -103,3 +103,12 @@ non-blocking `primary_writer` lock; a second concurrent writer is refused as
 closed, deliver it exactly once with
 `python3 -m agent.execution.primary_notify deliver <dispatch_id>`; a delivered notification is
 never sent again.
+
+**Serialized queue (2026-09-29):** a user command that meets another Thebes writer is recorded
+`queued`, not refused. The writer that holds the lock, right after its own turn is delivered and
+while still holding it, drains queued commands and kept (`busy`) notifications oldest first, one
+turn each, stopping at the first that is not delivered. The trigger is a Thebes turn completing;
+nothing polls. Limit: a thread held by Codex Desktop is outside Thebes, so its release is not an
+event Thebes can observe. A kept notification such as KAN-369's is delivered by the next Thebes
+turn that succeeds (for example the next `primary-command` once Desktop no longer holds the
+thread), or by one explicit `primary_notify deliver <dispatch_id>`.

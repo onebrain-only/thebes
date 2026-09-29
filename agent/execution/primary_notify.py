@@ -116,6 +116,15 @@ def deliver(dispatch_id, *, state_store=store, codex_waker=None, claude_cli=None
         try:
             with state_store.primary_writer():
                 res = waker(EVENT_KIND, text, binding=active, state_store=state_store)
+                if res.status == "delivered":
+                    state_store.settle_primary_notification(
+                        dispatch_id, "delivered", provider="codex",
+                        wake_record_id=res.wake_record_id)
+                    from agent.execution.primary_command import drain_pending
+                    drain_pending(state_store=state_store, codex_waker=waker, active=active)
+                    n = state_store.read("primary_notification", dispatch_id)
+                    return {"status": "delivered", "provider": "codex",
+                            "wake_record_id": n.get("wake_record_id"), "error": None}
         except state_store.PrimaryWriterBusy as exc:
             settled = state_store.settle_primary_notification(
                 dispatch_id, "busy", provider="codex",

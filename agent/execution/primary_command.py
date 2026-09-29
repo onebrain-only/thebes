@@ -73,19 +73,65 @@ def run_primary_command(text, submitted_by, *, state_store=store, codex_waker=No
         return settle("refused", error={
             "code": "primary-command-claude-direct",
             "message": "the ACTIVE Primary is a live Claude session; talk to it directly"}, **base)
+    from agent.execution.codex_primary import wake_codex_primary
+    waker = codex_waker or wake_codex_primary
     try:
         with state_store.primary_writer():
-            from agent.execution.codex_primary import wake_codex_primary
-            waker = codex_waker or wake_codex_primary
             res = waker(EVENT_KIND, text, binding=active, state_store=state_store,
                         timeout_seconds=timeout_seconds)
-    except state_store.PrimaryWriterBusy as exc:
-        return settle("busy", error={"code": "PRIMARY_WRITER_BUSY", "message": str(exc)}, **base)
-    status = {"delivered": "delivered", "busy": "busy"}.get(res.status, "failed")
-    return settle(status, turn_ref=res.turn_id, response_summary=res.response_summary,
-                  wake_record_id=res.wake_record_id,
-                  error=None if status == "delivered" else {"code": res.code, "message": res.error},
-                  **base)
+            status = {"delivered": "delivered", "busy": "busy"}.get(res.status, "failed")
+            done = settle(status, turn_ref=res.turn_id, response_summary=res.response_summary,
+                          wake_record_id=res.wake_record_id,
+                          error=None if status == "delivered"
+                          else {"code": res.code, "message": res.error}, **base)
+            if status == "delivered":
+                drain_pending(state_store=state_store, codex_waker=waker, active=active)
+            return done
+    except state_store.PrimaryWriterBusy:
+        # Another Thebes turn is in flight. Queue durably; that writer drains
+        # the queue itself when its turn completes (the release is the event).
+        return settle("queued", **base)
+
+
+def drain_pending(*, state_store=store, codex_waker, active):
+    """Run by the CURRENT writer, still holding the writer lock, right after its
+    own turn was delivered: that delivery is proof the thread is free. Delivers
+    queued user commands and kept (busy) worker-outcome notifications, oldest
+    first, one turn each, and stops at the first one that is not delivered. No
+    loop waits on anything; nothing runs unless a Thebes turn just succeeded.
+    """
+    from agent.execution import primary_notify
+    pending = ([("command", r) for r in state_store.read_all("primary_command")
+                if r.get("status") == "queued"]
+               # Only KEPT notifications: a `scheduled` one already has its own
+               # detached delivery on the way and must not be raced.
+               + [("notification", r) for r in state_store.read_all("primary_notification")
+                  if r.get("status") == "busy"])
+    pending.sort(key=lambda item: item[1].get("created_at") or "")
+    delivered = []
+    for kind, rec in pending:
+        if kind == "command":
+            with open(rec["text_ref"], encoding="utf-8") as fh:
+                text = fh.read()
+            res = codex_waker(EVENT_KIND, text, binding=active, state_store=state_store)
+            ok = res.status == "delivered"
+            state_store.update("primary_command", rec["primary_command_id"], rec["revision"], {
+                "status": "delivered" if ok else ("busy" if res.status == "busy" else "failed"),
+                "turn_ref": res.turn_id, "response_summary": res.response_summary,
+                "wake_record_id": res.wake_record_id, "completed_at": state_store.now(),
+                "error": None if ok else {"code": res.code, "message": res.error}})
+        else:
+            res = codex_waker(primary_notify.EVENT_KIND, primary_notify.render(rec),
+                              binding=active, state_store=state_store)
+            ok = res.status == "delivered"
+            state_store.settle_primary_notification(
+                rec["dispatch_id"], "delivered" if ok else ("busy" if res.status == "busy" else "failed"),
+                provider="codex", wake_record_id=res.wake_record_id,
+                error=None if ok else {"code": res.code, "message": res.error})
+        if not ok:
+            break
+        delivered.append((kind, rec.get("primary_command_id") or rec.get("dispatch_id")))
+    return delivered
 
 
 def main(argv=None):

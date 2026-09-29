@@ -78,7 +78,7 @@ SESSION_DELIVERY_STATUSES = ("DELIVERED", "CLAUDE_DELIVERY_FAILED",
                              "CLAUDE_DELIVERY_SESSION_MISMATCH")
 SESSION_DELIVERY_TRANSPORT = "stop-then-bg-resume-same-sid"
 PRIMARY_NOTIFICATION_STATUSES = ("scheduled", "delivered", "busy", "failed")
-PRIMARY_COMMAND_STATUSES = ("accepted", "delivered", "busy", "failed", "refused")
+PRIMARY_COMMAND_STATUSES = ("accepted", "queued", "delivered", "busy", "failed", "refused")
 
 # ---- Wave 6 orchestration ---------------------------------------------------
 #

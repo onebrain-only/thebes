@@ -110,7 +110,7 @@ class PrimaryCommandTests(unittest.TestCase):
         t.start(); self.assertTrue(gate["entered"].wait(5))
         try:
             second = pc.run_primary_command("second", "ceo", state_store=store, codex_waker=_refuse)
-            self.assertEqual((second["status"], second["error"]["code"]), ("busy", "PRIMARY_WRITER_BUSY"))
+            self.assertEqual(second["status"], "queued", "a concurrent command is queued, never waited on")
             # a worker-outcome notification converges on the SAME writer and is refused too
             n, _ = store.create_primary_notification("dispatch-fixture-1", {
                 "work_item_id": "KAN-369", "seat_id": "frontend-2",
@@ -123,13 +123,46 @@ class PrimaryCommandTests(unittest.TestCase):
         finally:
             gate["release"].set(); t.join(5)
         self.assertEqual(first["rec"]["status"], "delivered")
-        # once the writer is free, the kept notification delivers through the same adapter, once
+        # The first writer drained on release, in order, through the SAME waker it held:
+        # the queued command, then the kept notification. Nothing polled.
+        self.assertEqual(store.read("primary_command", second["primary_command_id"])["status"], "delivered")
+        n = store.read("primary_notification", "dispatch-fixture-1")
+        self.assertEqual((n["status"], n["notified_provider"]), ("delivered", "codex"))
         w = FakeWaker()
-        self.assertEqual(pn.deliver("dispatch-fixture-1", state_store=store, codex_waker=w)["status"],
-                         "delivered")
         self.assertEqual(pn.deliver("dispatch-fixture-1", state_store=store, codex_waker=w).get("already"),
                          True)
-        self.assertEqual(len(w.calls), 1)
+        self.assertEqual(w.calls, [], "a delivered notification is never sent twice")
+
+    def test_a_delivered_turn_drains_a_desktop_busy_notification_and_stops_at_external_busy(self):
+        """The KAN-369 shape: a notification kept busy because Desktop held the
+        thread. The next Thebes turn that is delivered proves the thread free and
+        drains it; if the thread is held again, the drain stops without looping."""
+        self.codex_active()
+        for i in (1, 2):
+            store.create_primary_notification("dispatch-kept-%d" % i, {
+                "work_item_id": "KAN-369", "seat_id": "frontend-2",
+                "worker_session_id": "7263350b-8d19-4555-bca2-9d1132ec6ffe",
+                "delivery_id": "dispatch-kept-%d" % i, "outcome": "completed",
+                "reference": "d043ac8", "summary_ref": "done"})
+            store.settle_primary_notification("dispatch-kept-%d" % i, "busy", provider="codex",
+                                              error={"code": "CODEX_PRIMARY_THREAD_BUSY", "message": "x"})
+
+        class OneThenBusy(FakeWaker):
+            def __call__(self, *a, **k):
+                res = super().__call__(*a, **k)
+                self.status = "busy"
+                return res
+
+        w = OneThenBusy()
+        pc.run_primary_command("status?", "ceo", state_store=store, codex_waker=w)
+        self.assertEqual(len(w.calls), 2, "the command, then one drain attempt that met busy, then stop")
+        self.assertEqual([store.read("primary_notification", "dispatch-kept-%d" % i)["status"] for i in (1, 2)],
+                         ["busy", "busy"])
+        w2 = FakeWaker()
+        pc.run_primary_command("again", "ceo", state_store=store, codex_waker=w2)
+        self.assertEqual([c[0] for c in w2.calls], ["user_command", "worker_outcome", "worker_outcome"])
+        self.assertEqual([store.read("primary_notification", "dispatch-kept-%d" % i)["status"] for i in (1, 2)],
+                         ["delivered", "delivered"])
 
     # -- Listener contract / transport ----------------------------------------
     def test_contract_accepts_a_user_command_and_refuses_a_worker(self):
