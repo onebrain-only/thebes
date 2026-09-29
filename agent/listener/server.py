@@ -29,6 +29,8 @@ without anyone poking it.
 
 import json
 import threading
+import time
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from agent.core import lifecycle
@@ -75,6 +77,20 @@ class Worker(threading.Thread):
     def signal(self):
         with self._wake:
             self._wake.notify_all()
+
+    def wait_for_settlement(self, intent_id, timeout):
+        """Wait for one durable intent by condition signal, never by polling."""
+        deadline = time.monotonic() + timeout
+        with self._wake:
+            while True:
+                answer = lifecycle.resolve(intent_id)
+                state = (answer or {}).get("lifecycle_state")
+                if state and state not in ("RECEIVED", "DISPATCHING", "DISPATCHED", "IN_FLIGHT"):
+                    return answer
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return answer
+                self._wake.wait(remaining)
 
     def stop(self):
         with self._wake:
@@ -192,8 +208,22 @@ class Handler(BaseHTTPRequestHandler):
                  "reconciliation": answer["reconciliation"],
                  "received_at": answer["received_at"]}
                 for answer in lifecycle.resolve_all()]})
-        if self.path.startswith("/intents/"):
-            intent_id = self.path[len("/intents/"):]
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path.startswith("/intents/") and parsed.path.endswith("/wait"):
+            intent_id = parsed.path[len("/intents/"):-len("/wait")]
+            try:
+                timeout = min(30.0, max(0.0, float(
+                    urllib.parse.parse_qs(parsed.query).get("timeout", ["20"])[0])))
+            except ValueError:
+                return self._reply(400, {"reason": "invalid-timeout"})
+            answer = type(self).worker.wait_for_settlement(intent_id, timeout)
+            if answer is None:
+                return self._reply(404, {"reason": "unknown-intent", "intent_id": intent_id})
+            return self._reply(200, {"intent": answer,
+                                     "transport_record": store.read_intent(intent_id),
+                                     "result": store.read_result(intent_id)})
+        if parsed.path.startswith("/intents/"):
+            intent_id = parsed.path[len("/intents/"):]
             answer = lifecycle.resolve(intent_id)
             if answer is None:
                 return self._reply(404, {"reason": "unknown-intent", "intent_id": intent_id})
