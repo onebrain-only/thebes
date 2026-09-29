@@ -123,7 +123,9 @@ never started per message. Desktop-owned threads are never registered or touched
 ```
 python3 -m agent.execution.codex_runtime start                      # start once / reuse; fails closed if inconsistent
 python3 -m agent.execution.codex_runtime status                     # runtime record + registered conversations
-python3 -m agent.execution.codex_runtime new-conversation --label X # thread/start on the shared runtime, registered
+python3 -m agent.execution.codex_runtime new-conversation --label X --prompt "<first turn>"
+                                     # thread/start + its first turn on ONE connection (a thread with
+                                     # no turn is dropped when its creating connection closes)
 python3 -m agent.execution.codex_runtime prompt <thread_id> "<text>" # one user turn; prints the event incl. turn_ref
 python3 -m agent.execution.codex_runtime events <thread_id>          # every queued/delivered turn with turn_ref
 ```

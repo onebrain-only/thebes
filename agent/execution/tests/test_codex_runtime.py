@@ -211,35 +211,63 @@ class CodexRuntimeTests(unittest.TestCase):
         texts = [s["input"][0]["text"] for s in self.turn_starts() if s["threadId"] == THREAD_A]
         self.assertEqual(texts, ["first on A", "second on A"])
 
-    # -- fresh thread: no rollout yet --------------------------------------------
-    def test_a_fresh_thread_without_rollout_still_gets_its_turn_other_resume_errors_fail(self):
-        """Live regression 2026-09-29: a thread started on the shared server has
-        no rollout until its first turn, so thread/resume says 'no rollout found'
-        although the thread is loaded in that same server."""
-        from agent.execution.codex_appserver import AppServerError
-        resume_error = {"message": "no rollout found for thread id %s" % THREAD_A}
+    # -- conversation creation runs its first turn on the creating connection ----
+    def test_new_conversation_runs_its_first_turn_on_the_same_connection(self):
+        """Live finding 2026-09-29: a thread with no turn is dropped when the
+        connection that started it closes ('no rollout found' / 'thread not
+        found' on the next connection). Creation therefore runs the first turn
+        before closing, on that one client."""
+        clients = []
 
-        class FreshThread(FakeClient):
+        class Starts(FakeClient):
+            def request(self, method, params, timeout=60):
+                if method == "thread/start":
+                    FakeClient.log.append((method, params))
+                    return {"thread": {"id": "0ccccccc-0000-7000-8000-00000000000c"}}
+                return super().request(method, params, timeout)
+
+            def close(self):
+                clients.append("closed")
+                return 0
+
+        self.patches[-1].stop()
+        try:
+            one = Starts()
+            with mock.patch.object(cr, "connect", lambda **kw: (one, "gpt-6-astra")):
+                out = cr.create_conversation("roundtrip", "ceo", "first turn text", state_store=store)
+        finally:
+            self.patches[-1].start()
+        self.assertEqual([m for m, _ in FakeClient.log], ["thread/start", "turn/start"],
+                         "thread/start then its first turn/start, no resume, one connection")
+        self.assertEqual(clients, ["closed"])
+        self.assertEqual(out["conversation"]["thread_id"], "0ccccccc-0000-7000-8000-00000000000c")
+        self.assertEqual((out["first_event"]["status"], out["first_event"]["turn_ref"]),
+                         ("delivered", "turn-1"))
+        start = [p for m, p in FakeClient.log if m == "turn/start"][0]
+        self.assertEqual(start["input"], [{"type": "text", "text": "first turn text"}])
+        with self.assertRaises(cr.RuntimeError_) as cm:
+            cr.create_conversation("x", "ceo", "   ", state_store=store)
+        self.assertEqual(cm.exception.code, "first-prompt-required")
+
+    def test_a_resume_failure_fails_closed_and_keeps_the_event_queued(self):
+        from agent.execution.codex_appserver import AppServerError
+
+        class ResumeFails(FakeClient):
             def request(self, method, params, timeout=60):
                 if method == "thread/resume":
-                    FakeClient.log.append((method, params))
-                    raise AppServerError(method, dict(resume_error))
+                    raise AppServerError(method, {"message": "no rollout found for thread id x"})
                 return super().request(method, params, timeout)
 
         self.patches[-1].stop()
         try:
-            with mock.patch.object(cr, "connect", lambda **kw: (FreshThread(), "gpt-6-astra")):
-                ev, _ = cr.enqueue(THREAD_A, "user_prompt", "hello fresh thread", state_store=store)
-                self.assertEqual(cr.drain(THREAD_A, state_store=store)["status"], "drained")
-                self.assertEqual(store.read("codex_turn_event", ev["event_id"])["status"], "delivered")
-                resume_error["message"] = "thread is archived"
-                ev2, _ = cr.enqueue(THREAD_A, "user_prompt", "second", state_store=store)
+            with mock.patch.object(cr, "connect", lambda **kw: (ResumeFails(), "gpt-6-astra")):
+                ev, _ = cr.enqueue(THREAD_A, "user_prompt", "hello", state_store=store)
                 with self.assertRaises(AppServerError):
                     cr.drain(THREAD_A, state_store=store)
-                self.assertEqual(store.read("codex_turn_event", ev2["event_id"])["status"], "queued",
-                                 "any other resume error fails closed and keeps the event queued")
         finally:
             self.patches[-1].start()
+        self.assertEqual(store.read("codex_turn_event", ev["event_id"])["status"], "queued")
+        self.assertEqual(self.turn_starts(), [], "no turn/start after a failed resume")
 
     # -- registry / fail-closed -------------------------------------------------
     def test_unregistered_or_desktop_thread_is_refused_everywhere(self):
@@ -256,7 +284,7 @@ class CodexRuntimeTests(unittest.TestCase):
         self.assertEqual((result["blocker"], result["dispatch_status"]),
                          ("thread-not-in-shared-runtime", "not-prepared"))
         with self.assertRaises(cr.RuntimeError_):
-            cr.create_conversation("x", "worker:po", state_store=store)
+            cr.create_conversation("x", "worker:po", "hi", state_store=store)
 
     def test_connect_fails_closed_without_a_running_shared_runtime(self):
         self.patches[-1].stop()

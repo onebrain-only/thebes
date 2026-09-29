@@ -28,7 +28,7 @@ completes (and re-checks after releasing, so none is stranded). No polling, no
 global Primary lock, no primary_binding.
 
     python3 -m agent.execution.codex_runtime start | status
-    python3 -m agent.execution.codex_runtime new-conversation --label <label>
+    python3 -m agent.execution.codex_runtime new-conversation --label <label> --prompt "<first turn>"
     python3 -m agent.execution.codex_runtime prompt <thread_id> "<text>"
     python3 -m agent.execution.codex_runtime drain <thread_id>
     python3 -m agent.execution.codex_runtime events <thread_id>
@@ -133,19 +133,34 @@ def connect(*, state_store=store, factory=None):
 
 
 # ---------------------------------------------------------------- registry
-def create_conversation(label, created_by, *, state_store=store, factory=None):
-    """thread/start on the shared runtime, then register the new thread."""
+def create_conversation(label, created_by, first_prompt, *, state_store=store, factory=None,
+                        turn_timeout=TURN_TIMEOUT_SECONDS):
+    """thread/start on the shared runtime, register it, and run its FIRST turn
+    on that same connection.
+
+    Live finding 2026-09-29: the app-server drops a thread that has no turn
+    yet when the connection that started it closes — there is no rollout on
+    disk, so a later connection gets "no rollout found" / "thread not found".
+    Running the first turn before closing persists the thread; from then on
+    any connection can resume it.
+    """
     if str(created_by).startswith("worker:"):
         raise RuntimeError_("actor-not-permitted", "a worker may not create a conversation")
+    if not (first_prompt or "").strip():
+        raise RuntimeError_("first-prompt-required", "a conversation starts with its first turn")
     client, model = connect(state_store=state_store, factory=factory)
     try:
         started = client.request("thread/start", {"model": model, "cwd": ROOT})
+        thread_id = (started.get("thread") or {}).get("id")
+        conv = state_store.create("codex_conversation", {
+            "thread_id": thread_id, "runtime_id": RUNTIME_ID, "label": label,
+            "registered_by": created_by, "status": "active"}, rid=thread_id)
+        ev, _ = enqueue(thread_id, "user_prompt", first_prompt, state_store=state_store)
+        with state_store.thread_writer(thread_id):
+            _run_one(client, ev, state_store, turn_timeout)
     finally:
         client.close()
-    thread_id = (started.get("thread") or {}).get("id")
-    return state_store.create("codex_conversation", {
-        "thread_id": thread_id, "runtime_id": RUNTIME_ID, "label": label,
-        "registered_by": created_by, "status": "active"}, rid=thread_id)
+    return {"conversation": conv, "first_event": state_store.read("codex_turn_event", ev["event_id"])}
 
 
 def require_conversation(thread_id, state_store=store):
@@ -220,23 +235,11 @@ def drain(thread_id, *, state_store=store, factory=None, turn_timeout=TURN_TIMEO
             return {"status": "drained", "delivered": delivered, "failed": failed}
 
 
-NO_ROLLOUT = "no rollout found"
-
-
 def _resume_if_needed(client, thread_id):
-    """Load the thread on this shared server if it is not already loaded.
-
-    A thread started on the shared server but with no turn yet has no rollout
-    on disk, so thread/resume answers "no rollout found" — it is already live
-    in this same server process (registered conversations are only ever
-    started here), and turn/start addresses it directly. Any other resume
-    error still fails closed."""
-    from agent.execution.codex_appserver import AppServerError
-    try:
-        client.request("thread/resume", {"threadId": thread_id, "excludeTurns": True}, timeout=120)
-    except AppServerError as exc:
-        if NO_ROLLOUT not in str(exc.error.get("message") or ""):
-            raise
+    """Load a persisted conversation on this connection. Every registered
+    conversation had its first turn at creation, so a resume failure is real
+    and fails closed (the event stays queued)."""
+    client.request("thread/resume", {"threadId": thread_id, "excludeTurns": True}, timeout=120)
 
 
 def _run_one(client, ev, state_store, turn_timeout):
@@ -316,6 +319,8 @@ def main(argv=None):
     sub.add_parser("start"); sub.add_parser("status")
     nc = sub.add_parser("new-conversation"); nc.add_argument("--label", required=True)
     nc.add_argument("--created-by", default="ceo")
+    nc.add_argument("--prompt", required=True,
+                    help="the conversation's first turn, run on the creating connection")
     pr = sub.add_parser("prompt"); pr.add_argument("thread_id"); pr.add_argument("text")
     dr = sub.add_parser("drain"); dr.add_argument("thread_id")
     ev = sub.add_parser("events"); ev.add_argument("thread_id")
@@ -327,7 +332,7 @@ def main(argv=None):
             out = {"runtime": store.read("codex_runtime", RUNTIME_ID),
                    "conversations": store.read_all("codex_conversation")}
         elif ns.cmd == "new-conversation":
-            out = create_conversation(ns.label, ns.created_by)
+            out = create_conversation(ns.label, ns.created_by, ns.prompt)
         elif ns.cmd == "prompt":
             rec, _ = enqueue(ns.thread_id, "user_prompt", ns.text)
             result = drain(ns.thread_id)
