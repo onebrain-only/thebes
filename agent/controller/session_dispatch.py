@@ -86,7 +86,7 @@ def dispatch_session(work_item_id, *, authorization=None, state_store=store,
                      jira_client=jira, seat_registry=roster,
                      intent_resolver=resolve_execution_intent,
                      workspace_allocator=realize_workspace, deliver=False,
-                     deliverer=None):
+                     deliverer=None, origin_thread_id=None):
     """Prepare one work item for a bound persistent session and return its packet.
 
     Never selects, constructs or launches a provider. The execution lease this
@@ -99,6 +99,16 @@ def dispatch_session(work_item_id, *, authorization=None, state_store=store,
     """
     result = _dispatch_shell(work_item_id)
     result["delivery"] = None
+    result["origin_thread_id"] = origin_thread_id
+    if origin_thread_id is not None:
+        # Fail closed before any claim: a reply can only be routed to a live
+        # conversation on the shared Thebes runtime, never to a Desktop thread.
+        from agent.execution.codex_runtime import RuntimeError_, require_conversation
+        try:
+            require_conversation(origin_thread_id, state_store)
+        except RuntimeError_ as exc:
+            result["blocker"] = exc.code
+            return result
     result["operating_mode"] = state_store.current_operating_mode()
     authorization = authorization or ProductAuthorization(
         state_store=state_store,
@@ -155,7 +165,7 @@ def dispatch_session(work_item_id, *, authorization=None, state_store=store,
         dispatch_id = state_store.new_id("session_dispatch")
         message = render_dispatch_message(dispatch_id, work_item_id, binding, realized,
                                           rendered)
-        record = state_store.create("session_dispatch", {
+        fields = {
             "work_item_id": work_item_id, "seat_id": seat_id,
             "provider": binding["provider"], "session_id": binding["session_id"],
             "worktree_path": realized["path"], "branch": realized["branch"],
@@ -164,7 +174,14 @@ def dispatch_session(work_item_id, *, authorization=None, state_store=store,
             "authorization_ref": auth["reference"], "status": "dispatched",
             "outcome": None, "summary": None, "reference": None,
             "reported_session_id": None, "outcome_at": None, "recorded_by": None,
-        }, rid=dispatch_id)
+        }
+        if origin_thread_id is not None:
+            fields.update({"origin_provider": "codex", "origin_thread_id": origin_thread_id,
+                           "reply_to_thread_id": origin_thread_id,
+                           "target_provider": "claude",
+                           "target_session_id": binding["session_id"],
+                           "delivery_id": dispatch_id})
+        record = state_store.create("session_dispatch", fields, rid=dispatch_id)
         packet = {
             "dispatch_id": record["dispatch_id"], "work_item_id": work_item_id,
             "seat_id": seat_id, "provider": binding["provider"],
@@ -288,7 +305,16 @@ def session_outcome(work_item_id, dispatch_id, outcome, session_id, summary,
     result.update({"outcome_status": "recorded", "status": record["status"],
                    "lease_closure_status": "closed",
                    "recovery_hint": record.get("recovery_hint")})
-    if outcome in WORKER_OUTCOMES:
+    if outcome in WORKER_OUTCOMES and record.get("origin_provider") == "codex":
+        # Codex-origin dispatch: reply to exactly the conversation that
+        # dispatched, on the shared runtime — never via the global Primary.
+        from agent.execution import codex_runtime
+        router = notifier or codex_runtime.schedule_worker_result
+        try:
+            result["origin_reply"] = router(record, state_store=state_store)
+        except (store.StateError, codex_runtime.RuntimeError_) as exc:
+            result["origin_reply"] = {"status": "failed", "error": str(exc)}
+    elif outcome in WORKER_OUTCOMES:
         from agent.execution import primary_notify
         schedule = notifier or primary_notify.schedule
         try:

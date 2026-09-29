@@ -70,6 +70,8 @@ def argv_for(intent):
         command = [sys.executable, "-m", "agent.controller", "dispatch-session", work_item_id]
         if payload.get("deliver") is True:
             command.append("--deliver")
+        if payload.get("origin_thread_id"):
+            command += ["--origin-thread", payload["origin_thread_id"]]
         return command
     if intent["intent_type"] == contract.RECORD_SESSION_OUTCOME:
         command = [sys.executable, "-m", "agent.controller", "session-outcome", work_item_id,

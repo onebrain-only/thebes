@@ -23,6 +23,7 @@ waiting loses nothing, because the answer is durable and `show` returns it.
 
 import argparse
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -171,6 +172,11 @@ def main(argv=None):
         payload = {"work_item_id": args.work_item_id}
         if args.deliver:
             payload["deliver"] = True
+        # A Codex conversation dispatching from its own tool shell carries its
+        # thread id in the environment Codex set; it is read here, never typed,
+        # so the reply goes back to the conversation that actually dispatched.
+        if os.environ.get("CODEX_THREAD_ID"):
+            payload["origin_thread_id"] = os.environ["CODEX_THREAD_ID"]
         status, body = _post(args.port, "/intents", {
             "schema_version": contract.SCHEMA_VERSION,
             "intent_type": contract.PREPARE_SESSION_DISPATCH,

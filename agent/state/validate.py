@@ -1654,6 +1654,58 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
                 errs.append("%s: a worker_unreachable outcome requires a recovery_hint"
                             % where)
         _reflen(rec, ["authorization_ref"], errs, where)
+        # Codex-origin dispatch: the reply goes back to the conversation that
+        # dispatched, captured from its own environment — never chosen by the
+        # worker, and always the same thread it came from.
+        if rec.get("origin_provider") is not None:
+            if rec.get("origin_provider") != "codex":
+                errs.append("%s: origin_provider must be codex when present" % where)
+            if not SESSION_UUID.match(str(rec.get("origin_thread_id") or "")):
+                errs.append("%s: a codex-origin dispatch needs its origin_thread_id" % where)
+            if rec.get("reply_to_thread_id") != rec.get("origin_thread_id"):
+                errs.append("%s: reply_to_thread_id must be the origin thread" % where)
+            if (rec.get("target_provider") != "claude"
+                    or rec.get("target_session_id") != rec.get("session_id")):
+                errs.append("%s: target must be the dispatch's bound Claude session" % where)
+            if rec.get("delivery_id") != rec.get("dispatch_id"):
+                errs.append("%s: a codex-origin dispatch's delivery_id is its dispatch_id"
+                            % where)
+
+    elif kind == "codex_runtime":
+        _req(rec, ["runtime_id", "socket_path", "status"], errs, where)
+        if rec.get("status") not in ("running", "stopped"):
+            errs.append("%s: codex runtime status must be running or stopped" % where)
+        if not os.path.isabs(str(rec.get("socket_path") or "")):
+            errs.append("%s: codex runtime socket_path must be absolute" % where)
+
+    elif kind == "codex_conversation":
+        _req(rec, ["thread_id", "runtime_id", "status", "registered_by"], errs, where)
+        if not SESSION_UUID.match(str(rec.get("thread_id") or "")):
+            errs.append("%s: conversation thread_id must be a thread uuid" % where)
+        if rec.get("status") not in ("active", "retired"):
+            errs.append("%s: conversation status must be active or retired" % where)
+        if str(rec.get("registered_by") or "").startswith("worker:"):
+            errs.append("%s: a worker may never create a conversation" % where)
+
+    elif kind == "codex_turn_event":
+        _req(rec, ["event_id", "thread_id", "event_kind", "status", "text_ref"], errs, where)
+        if not str(rec.get("event_id") or "").startswith("cevt-"):
+            errs.append("%s: event_id must start with cevt-" % where)
+        if rec.get("event_kind") not in ("user_prompt", "worker_result"):
+            errs.append("%s: event_kind must be user_prompt or worker_result" % where)
+        if rec.get("status") not in ("queued", "running", "delivered", "failed"):
+            errs.append("%s: unknown codex turn event status %r" % (where, rec.get("status")))
+        if rec.get("event_kind") == "worker_result" and not str(
+                rec.get("dispatch_id") or "").startswith("dispatch-"):
+            errs.append("%s: a worker_result event names its dispatch" % where)
+        if rec.get("status") == "delivered" and not rec.get("turn_ref"):
+            errs.append("%s: a delivered codex turn event names its turn" % where)
+        if rec.get("status") == "failed" and not rec.get("error"):
+            errs.append("%s: a failed codex turn event carries an error" % where)
+        for f in ("prompt", "message", "body", "text"):
+            if f in rec:
+                errs.append("%s: a codex turn event carries text_ref, never the text (%r)"
+                            % (where, f))
 
     elif kind == "policy":
         _req(rec, ["policy_id", "policy_kind", "scope", "activated_by", "reason_ref"],
@@ -1862,7 +1914,10 @@ def check(runtime=None):
              "primary_wake": "primary-wakes",
              "session_delivery": "session-deliveries",
              "primary_notification": "primary-notifications",
-             "primary_command": "primary-commands"}
+             "primary_command": "primary-commands",
+             "codex_runtime": "codex-runtimes",
+             "codex_conversation": "codex-conversations",
+             "codex_turn_event": "codex-turn-events"}
     seen_ids = {}
     active_primaries = []
     edges = []
@@ -1904,7 +1959,10 @@ def check(runtime=None):
                    "primary_wake": "primary_wake_id",
                    "session_delivery": "delivery_id",
                    "primary_notification": "dispatch_id",
-                   "primary_command": "primary_command_id"}[kind]
+                   "primary_command": "primary_command_id",
+                   "codex_runtime": "runtime_id",
+                   "codex_conversation": "thread_id",
+                   "codex_turn_event": "event_id"}[kind]
             rid = rec.get(idf)
             if rid != fn[:-5]:
                 errs.append("%s: filename does not match %s %r" % (p, idf, rid))

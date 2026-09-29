@@ -112,3 +112,36 @@ nothing polls. Limit: a thread held by Codex Desktop is outside Thebes, so its r
 event Thebes can observe. A kept notification such as KAN-369's is delivered by the next Thebes
 turn that succeeds (for example the next `primary-command` once Desktop no longer holds the
 thread), or by one explicit `primary_notify deliver <dispatch_id>`.
+
+## Shared Codex app-server and per-conversation reply routing (2026-09-30)
+
+One Thebes-owned `codex app-server --listen unix://agent/state/runtime/codex/shared.sock`
+(same ChatGPT-route process-local override as above) is shared by many Thebes-managed Codex
+conversations. Clients connect over WebSocket on that Unix socket and disconnect; the server is
+never started per message. Desktop-owned threads are never registered or touched.
+
+```
+python3 -m agent.execution.codex_runtime start                      # start once / reuse; fails closed if inconsistent
+python3 -m agent.execution.codex_runtime status                     # runtime record + registered conversations
+python3 -m agent.execution.codex_runtime new-conversation --label X # thread/start on the shared runtime, registered
+python3 -m agent.execution.codex_runtime prompt <thread_id> "<text>" # one user turn; prints the event incl. turn_ref
+python3 -m agent.execution.codex_runtime events <thread_id>          # every queued/delivered turn with turn_ref
+```
+
+**Dispatch from a conversation.** Inside a registered conversation, Codex runs
+`python3 -m agent.listener session-dispatch <KEY> --deliver` from its own tool shell. The Listener
+CLI reads `CODEX_THREAD_ID` from that environment (never typed, never chosen by the worker); the
+Controller refuses it unless it is an active conversation on the shared runtime, then records
+`origin_provider=codex, origin_thread_id, reply_to_thread_id, target_provider=claude,
+target_session_id, delivery_id` on the dispatch. The worker's envelope names the reply thread.
+
+**Reply.** The worker reports through the Listener; the existing gate (exact SID + DELIVERED
+delivery) accepts it once. `session_outcome` enqueues ONE `worker_result` turn event for the
+origin thread (id `cevt-result-<dispatch uuid>`, so a repeat can never add a second) and detaches
+`codex_runtime drain <thread>`, which runs `thread/resume` + `turn/start(threadId=origin,
+input=<THEBES_WORKER_RESULT prompt>)` on the shared runtime. Codex-origin dispatches never use
+the global primary_binding.
+
+**Serialization is per thread** (`thread_writer(<thread_id>)`, non-blocking): different threads
+run concurrently; a second writer on the same thread is refused, its event stays queued, and the
+current writer drains it right after its own turn and re-checks after releasing. No polling.

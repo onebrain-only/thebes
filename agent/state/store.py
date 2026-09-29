@@ -107,7 +107,21 @@ KINDS = {
     # One user command to the ACTIVE Primary through the Listener front door,
     # and its result. The command text lives in a text_ref file, never here.
     "primary_command": ("primary-commands", "pcmd"),
+    # The ONE Thebes-owned, long-lived `codex app-server --listen unix://PATH`
+    # shared by many Codex conversations. Natural key = runtime_id ("shared").
+    "codex_runtime": ("codex-runtimes", None),
+    # A Codex conversation (thread) that lives on the shared runtime. Natural
+    # key = thread_id. Only threads Thebes started there are registered; a
+    # Desktop-owned thread never is.
+    "codex_conversation": ("codex-conversations", None),
+    # One turn to deliver to one registered conversation: a user prompt or a
+    # worker result. Per-thread durable queue; a worker result's id is derived
+    # from its dispatch, so one dispatch can never produce two result turns.
+    "codex_turn_event": ("codex-turn-events", "cevt"),
 }
+
+CODEX_TURN_EVENT_KINDS = frozenset({"user_prompt", "worker_result"})
+CODEX_TURN_EVENT_STATUSES = frozenset({"queued", "running", "delivered", "failed"})
 
 PRIMARY_COMMAND_STATUSES = frozenset({"accepted", "queued", "delivered", "busy", "failed",
                                       "refused"})
@@ -193,6 +207,34 @@ class _Lock:
 
 def record_lock(kind, rid):
     return _Lock("%s-%s" % (kind, rid))
+
+
+class ThreadWriterBusy(Exception):
+    """Another Thebes process is already driving turns on this Codex thread."""
+
+
+class thread_writer:
+    """Non-blocking single writer PER Codex thread. Thread A and thread B never
+    contend; a second writer on the same thread is refused at once (its event
+    stays queued and the current holder drains it). Kernel-released on death."""
+
+    def __init__(self, thread_id):
+        self.name = "codex-thread-%s" % thread_id
+
+    def __enter__(self):
+        os.makedirs(LOCKS, exist_ok=True)
+        self.fh = open(os.path.join(LOCKS, self.name + ".lock"), "w")
+        try:
+            fcntl.flock(self.fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            self.fh.close()
+            raise ThreadWriterBusy("thread-writer-busy: %s" % self.name)
+        return self
+
+    def __exit__(self, *exc):
+        fcntl.flock(self.fh, fcntl.LOCK_UN)
+        self.fh.close()
+        return False
 
 
 class PrimaryWriterBusy(Exception):
@@ -3760,7 +3802,10 @@ def _id_field(kind):
             "primary_wake": "primary_wake_id",
             "session_delivery": "delivery_id",
             "primary_notification": "dispatch_id",
-            "primary_command": "primary_command_id"}[kind]
+            "primary_command": "primary_command_id",
+            "codex_runtime": "runtime_id",
+            "codex_conversation": "thread_id",
+            "codex_turn_event": "event_id"}[kind]
 
 
 def _validate_one(kind, record):

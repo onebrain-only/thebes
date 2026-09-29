@@ -69,7 +69,7 @@ PAYLOAD_FIELDS = {
     DECISION_RESPONSE: (("work_item_id", "original_invocation_id", "decision",
                          "permission", "approval_scope"),
                         ("allowed_operation",)),
-    PREPARE_SESSION_DISPATCH: (("work_item_id",), ("deliver",)),
+    PREPARE_SESSION_DISPATCH: (("work_item_id",), ("deliver", "origin_thread_id")),
     RECORD_SESSION_OUTCOME: (("work_item_id", "dispatch_id", "outcome", "summary"),
                              ("session_id", "reference", "delivery_id")),
     PRIMARY_COMMAND: (("text",), ()),
@@ -199,6 +199,9 @@ def _payload(intent_type, payload):
         if payload["deliver"] is not True:
             raise IntentRejected("invalid-field", "deliver must be true when present")
         clean["deliver"] = True
+    if intent_type == PREPARE_SESSION_DISPATCH and payload.get("origin_thread_id") is not None:
+        clean["origin_thread_id"] = _text(payload["origin_thread_id"], "origin_thread_id",
+                                          SESSION_UUID, 36)
     if intent_type in (EXECUTE_WORK_ITEM, VALIDATE_WORK_ITEM, PREPARE_SESSION_DISPATCH):
         return clean
     if intent_type == RECORD_SESSION_OUTCOME:

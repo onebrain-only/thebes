@@ -75,6 +75,9 @@ def main(argv=None):
     prep.add_argument("--deliver", action="store_true",
                       help="hand the packet to the bound session (one durable delivery "
                            "attempt) and return immediately; never waits for the worker")
+    prep.add_argument("--origin-thread", default=None,
+                      help="set by the Listener from the dispatching Codex conversation's "
+                           "CODEX_THREAD_ID; must be registered on the shared runtime")
     report = sub.add_parser("session-outcome",
                             help="record what a bound session reported for one dispatch")
     report.add_argument("work_item_id")
@@ -118,7 +121,8 @@ def main(argv=None):
         return 2
     try:
         outcome = (_primary_command(args) if args.command == "primary-command"
-                   else dispatch_session(args.work_item_id, deliver=args.deliver)
+                   else dispatch_session(args.work_item_id, deliver=args.deliver,
+                                         origin_thread_id=args.origin_thread)
                    if args.command == "dispatch-session"
                    else session_outcome(args.work_item_id, args.dispatch, args.outcome,
                                         args.session_id, args.summary, args.reference,

@@ -83,6 +83,9 @@ def build_envelope(dispatch, delivery_id, report_to=None, stable_home=None):
         "outcome to the ACTIVE Primary itself; do not SendMessage a Primary, do not repeat "
         "the report, do not start or resume any session",
     ]
+    if dispatch.get("origin_provider") == "codex":
+        lines.append("reply_to: Thebes routes your outcome to Codex conversation %s, which "
+                     "dispatched this; you never contact it" % dispatch.get("reply_to_thread_id"))
     if report_to:
         lines.append("dispatcher: %s (for context only; report through the command above)"
                      % report_to)
