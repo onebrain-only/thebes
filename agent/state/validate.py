@@ -71,6 +71,10 @@ SESSION_UUID = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 SESSION_DISPATCH_OUTCOMES = ("completed", "blocked", "decision_required",
                             "clarification_required", "failed", "worker_unreachable")
+CONVERSATION_RESULT_OUTCOMES = ("completed", "blocked", "decision_required",
+                                "clarification_required", "failed")
+CONVERSATION_DISPATCH_STATUSES = ("delivering", "delivered", "delivery_failed",
+                                  "withdrawn") + CONVERSATION_RESULT_OUTCOMES
 PRIMARY_BINDING_STATUSES = ("ACTIVE", "STANDBY", "RETIRED")
 PRIMARY_WAKE_STATUSES = ("delivered", "busy", "failed")
 SESSION_DELIVERY_STATUSES = ("DELIVERED", "CLAUDE_DELIVERY_FAILED",
@@ -1544,8 +1548,15 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
                    "session_id", "status", "transport", "stopped_before_resume",
                    "resumed_same_sid", "session_count_before", "session_count_after"],
              errs, where)
-        if not str(rec.get("dispatch_id") or "").startswith("dispatch-"):
-            errs.append("%s: session delivery dispatch_id must start with dispatch-" % where)
+        # A Product dispatch (dispatch-) names its Jira item; a conversation
+        # dispatch (cdispatch-) has none and says so with work_item_id null.
+        did = str(rec.get("dispatch_id") or "")
+        if did.startswith("cdispatch-"):
+            if rec.get("work_item_id") is not None:
+                errs.append("%s: a conversation delivery has no work_item_id" % where)
+        elif not did.startswith("dispatch-"):
+            errs.append("%s: session delivery dispatch_id must start with dispatch- or "
+                        "cdispatch-" % where)
         if rec.get("seat_id") not in seatset:
             errs.append("%s: session delivery seat %r is not declared" % (where, rec.get("seat_id")))
         if rec.get("provider") != "claude":
@@ -1696,7 +1707,7 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
         if rec.get("status") not in ("queued", "running", "delivered", "failed"):
             errs.append("%s: unknown codex turn event status %r" % (where, rec.get("status")))
         if rec.get("event_kind") == "worker_result" and not str(
-                rec.get("dispatch_id") or "").startswith("dispatch-"):
+                rec.get("dispatch_id") or "").startswith(("dispatch-", "cdispatch-")):
             errs.append("%s: a worker_result event names its dispatch" % where)
         if rec.get("status") == "delivered" and not rec.get("turn_ref"):
             errs.append("%s: a delivered codex turn event names its turn" % where)
@@ -1706,6 +1717,43 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
             if f in rec:
                 errs.append("%s: a codex turn event carries text_ref, never the text (%r)"
                             % (where, f))
+
+    elif kind == "conversation_dispatch":
+        _req(rec, ["dispatch_id", "origin_provider", "origin_thread_id", "target_provider",
+                   "target_session_id", "target_seat_id", "delivery_id", "capability_sha256",
+                   "prompt_ref", "status"], errs, where)
+        if not str(rec.get("dispatch_id") or "").startswith("cdispatch-"):
+            errs.append("%s: conversation dispatch_id must start with cdispatch-" % where)
+        if rec.get("origin_provider") != "codex" or not SESSION_UUID.match(
+                str(rec.get("origin_thread_id") or "")):
+            errs.append("%s: origin is a codex thread uuid, captured from its environment" % where)
+        if rec.get("target_provider") != "claude" or not SESSION_UUID.match(
+                str(rec.get("target_session_id") or "")):
+            errs.append("%s: target is a durable claude session uuid" % where)
+        if rec.get("target_seat_id") not in seatset:
+            errs.append("%s: conversation dispatch seat %r is not declared"
+                        % (where, rec.get("target_seat_id")))
+        if rec.get("delivery_id") != rec.get("dispatch_id"):
+            errs.append("%s: a conversation dispatch's delivery_id is its dispatch_id" % where)
+        if not re.match(r"^[0-9a-f]{64}$", str(rec.get("capability_sha256") or "")):
+            errs.append("%s: capability_sha256 must be a sha256 hex digest" % where)
+        status = rec.get("status")
+        if status not in CONVERSATION_DISPATCH_STATUSES:
+            errs.append("%s: unknown conversation dispatch status %r" % (where, status))
+        elif status in CONVERSATION_RESULT_OUTCOMES:
+            _req(rec, ["outcome", "result_ref", "result_sha256", "outcome_at",
+                       "attested_delivery_id"], errs, where)
+            if rec.get("outcome") != status:
+                errs.append("%s: conversation outcome must match its terminal status" % where)
+            if rec.get("reported_session_id") != rec.get("target_session_id"):
+                errs.append("%s: a conversation result is reported by its own target session"
+                            % where)
+        elif status == "delivery_failed" and not rec.get("error"):
+            errs.append("%s: a delivery_failed conversation dispatch carries an error" % where)
+        for f in ("capability", "prompt", "message", "body", "text", "result"):
+            if f in rec:
+                errs.append("%s: a conversation dispatch carries refs and a capability hash, "
+                            "never %r" % (where, f))
 
     elif kind == "policy":
         _req(rec, ["policy_id", "policy_kind", "scope", "activated_by", "reason_ref"],
@@ -1917,7 +1965,8 @@ def check(runtime=None):
              "primary_command": "primary-commands",
              "codex_runtime": "codex-runtimes",
              "codex_conversation": "codex-conversations",
-             "codex_turn_event": "codex-turn-events"}
+             "codex_turn_event": "codex-turn-events",
+             "conversation_dispatch": "conversation-dispatches"}
     seen_ids = {}
     active_primaries = []
     edges = []
@@ -1962,7 +2011,8 @@ def check(runtime=None):
                    "primary_command": "primary_command_id",
                    "codex_runtime": "runtime_id",
                    "codex_conversation": "thread_id",
-                   "codex_turn_event": "event_id"}[kind]
+                   "codex_turn_event": "event_id",
+                   "conversation_dispatch": "dispatch_id"}[kind]
             rid = rec.get(idf)
             if rid != fn[:-5]:
                 errs.append("%s: filename does not match %s %r" % (p, idf, rid))

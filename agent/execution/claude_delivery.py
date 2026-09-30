@@ -140,16 +140,43 @@ def deliver_session_dispatch(dispatch_id, message, *, delivery_id=None, state_st
             "report_to": report_to}
 
     # 1. idempotency FIRST — a DELIVERED record is final; nothing is sent again.
-    existing = state_store.read("session_delivery", delivery_id)
-    if existing is not None and existing.get("status") == DELIVERED:
-        return DeliveryResult(DELIVERED, delivery_id, dispatch_id, existing["session_id"],
-                              pid_before=existing.get("pid_before"), pid_after=existing.get("pid_after"),
-                              stopped_before_resume=existing.get("stopped_before_resume", "NO"),
-                              resumed_same_sid="YES",
-                              session_count_before=existing.get("session_count_before"),
-                              session_count_after=existing.get("session_count_after"),
-                              idempotent_replay=True, record_revision=existing.get("revision"))
+    replay = replay_if_delivered(state_store, delivery_id, dispatch_id)
+    if replay is not None:
+        return replay
+    finish = _finisher(state_store, delivery_id, dispatch_id, base)
 
+    # 2. identity: provider claude, and the dispatch's SID is the seat's ACTIVE binding.
+    binding = state_store.active_role_session(dispatch.get("seat_id"))
+    if (dispatch.get("provider") != "claude" or binding is None
+            or binding.get("provider") != "claude"
+            or binding.get("session_id") != dispatch.get("session_id")):
+        return finish(MISMATCH, "dispatch %s names session %r; seat %s active binding is %r"
+                      % (dispatch_id, dispatch.get("session_id"), dispatch.get("seat_id"),
+                         (binding or {}).get("session_id")))
+    if not isinstance(message, str) or not message.strip():
+        return finish(FAILED, "message is empty")
+    message = build_envelope(dispatch, delivery_id, report_to, binding.get("stable_home")) + message
+    return resume_same_sid(finish, cli, state_store, delivery_id, binding["session_id"], message,
+                           binding.get("stable_home"), stop_timeout_seconds=stop_timeout_seconds,
+                           sleep=sleep, pid_alive=pid_alive)
+
+
+def replay_if_delivered(state_store, delivery_id, dispatch_id):
+    """A DELIVERED session_delivery is final: return it as a replay, else None."""
+    existing = state_store.read("session_delivery", delivery_id)
+    if existing is None or existing.get("status") != DELIVERED:
+        return None
+    return DeliveryResult(DELIVERED, delivery_id, dispatch_id, existing["session_id"],
+                          pid_before=existing.get("pid_before"), pid_after=existing.get("pid_after"),
+                          stopped_before_resume=existing.get("stopped_before_resume", "NO"),
+                          resumed_same_sid="YES",
+                          session_count_before=existing.get("session_count_before"),
+                          session_count_after=existing.get("session_count_after"),
+                          idempotent_replay=True, record_revision=existing.get("revision"))
+
+
+def _finisher(state_store, delivery_id, dispatch_id, base):
+    """Return finish(status, error, **fields): one durable session_delivery per attempt."""
     def finish(status, error=None, **fields):
         rec = dict(base, status=status, error=error, message_ref=fields.pop("message_ref", None),
                    resume_output=fields.pop("resume_output", None),
@@ -165,26 +192,40 @@ def deliver_session_dispatch(dispatch_id, message, *, delivery_id=None, state_st
                               rec["pid_before"], rec["pid_after"], rec["stopped_before_resume"],
                               rec["resumed_same_sid"], rec["session_count_before"],
                               rec["session_count_after"], record_revision=written.get("revision"))
+    return finish
 
-    # 2. identity: provider claude, and the dispatch's SID is the seat's ACTIVE binding.
-    binding = state_store.active_role_session(dispatch.get("seat_id"))
-    if (dispatch.get("provider") != "claude" or binding is None
-            or binding.get("provider") != "claude"
-            or binding.get("session_id") != dispatch.get("session_id")):
-        return finish(MISMATCH, "dispatch %s names session %r; seat %s active binding is %r"
-                      % (dispatch_id, dispatch.get("session_id"), dispatch.get("seat_id"),
-                         (binding or {}).get("session_id")))
-    sid = binding["session_id"]
+
+def deliver_prompt(delivery_id, dispatch_id, base, sid, stable_home, message, *, state_store,
+                   message_ref_text=None, runner=None, cli=None, stop_timeout_seconds=30,
+                   sleep=None, pid_alive=None):
+    """The same-SID transport for a caller that has ALREADY verified identity
+    and rendered its own envelope (the general conversation path). One attempt,
+    one durable session_delivery; a DELIVERED one is replayed, never resent.
+    ``message_ref_text`` is what is kept on disk when it must differ from what
+    is sent (a redacted capability)."""
+    replay = replay_if_delivered(state_store, delivery_id, dispatch_id)
+    if replay is not None:
+        return replay
+    finish = _finisher(state_store, delivery_id, dispatch_id, dict(base, session_id=sid))
     if not isinstance(message, str) or not message.strip():
         return finish(FAILED, "message is empty")
-    message = build_envelope(dispatch, delivery_id, report_to, binding.get("stable_home")) + message
+    return resume_same_sid(finish, cli or ClaudeCli(runner=runner), state_store, delivery_id, sid,
+                           message, stable_home, message_ref_text=message_ref_text,
+                           stop_timeout_seconds=stop_timeout_seconds, sleep=sleep,
+                           pid_alive=pid_alive)
+
+
+def resume_same_sid(finish, cli, state_store, delivery_id, sid, message, stable_home, *,
+                    message_ref_text=None, stop_timeout_seconds=30, sleep=None, pid_alive=None):
+    """Stop-if-live → flagless ``--bg --resume <SID>`` → verify the same SID.
+    A session whose process has exited is resumed, never replaced."""
     if len(message.encode("utf-8")) > MAX_PROMPT_BYTES:
         return finish(FAILED, "message is %d bytes; the CLI takes the prompt as one argv "
                       "element and this adapter refuses above %d rather than truncating"
                       % (len(message.encode("utf-8")), MAX_PROMPT_BYTES))
     message_ref = os.path.join(_message_ref_dir(state_store), "%s.txt" % delivery_id)
     with open(message_ref, "w", encoding="utf-8") as fh:
-        fh.write(message)
+        fh.write(message if message_ref_text is None else message_ref_text)
 
     # 3. resolve by durable SID only.
     try:
@@ -199,7 +240,11 @@ def deliver_session_dispatch(dispatch_id, message, *, delivery_id=None, state_st
                                         "never start a replacement here")
         pid_before = (row or {}).get("pid")
         stopped = "NO"
-        if row is not None:
+        # `claude agents --json` also lists blocked background sessions with
+        # no process. `claude stop` cannot stop those and refuses after a wait;
+        # resume their durable SID directly. Only a row with a live PID needs
+        # the stop/settle handshake.
+        if row is not None and pid_before is not None:
             cli.stop(row.get("id") or sid[:8])
             wait_kw = {"pid": pid_before}
             if sleep:
@@ -213,7 +258,7 @@ def deliver_session_dispatch(dispatch_id, message, *, delivery_id=None, state_st
             stopped = "YES"
         # 4. flagless same-SID resume with the packet message as the new turn.
         try:
-            text = cli.bg_resume(sid, message, cwd=binding.get("stable_home"))
+            text = cli.bg_resume(sid, message, cwd=stable_home)
         except ClaudeCliError as exc:
             return finish(FAILED, "resume failed after stop: %s" % exc, message_ref=message_ref,
                           pid_before=pid_before, stopped_before_resume=stopped,

@@ -119,6 +119,11 @@ def main(argv=None):
     prep.add_argument("--wait", type=float, nargs="?", const=1800.0, default=None,
                       metavar="SECONDS",
                       help="block until the intent settles, then print its result")
+    conversation = sub.add_parser("conversation-dispatch",
+                                  help="send a prompt from this Codex thread to a bound Claude session")
+    conversation.add_argument("--to", required=True, dest="target_session_id")
+    conversation.add_argument("--prompt")
+    conversation.add_argument("--prompt-file")
     report = sub.add_parser("session-outcome",
                             help="submit one RECORD_SESSION_OUTCOME intent")
     report.add_argument("work_item_id")
@@ -183,6 +188,27 @@ def main(argv=None):
             "source": args.source, "actor": args.actor,
             "idempotency_key": key, "correlation_id": key,
             "payload": payload})
+    elif args.command == "conversation-dispatch":
+        thread_id = os.environ.get("CODEX_THREAD_ID")
+        if not thread_id:
+            print(json.dumps({"reason": "origin-thread-missing",
+                              "detail": "run from a Codex tool shell"}))
+            return 1
+        if (args.prompt is None) == (args.prompt_file is None):
+            parser.error("give exactly one of --prompt or --prompt-file")
+        if args.prompt_file:
+            with open(args.prompt_file, encoding="utf-8") as fh:
+                prompt = fh.read()
+        else:
+            prompt = args.prompt
+        key = "conversation-dispatch-%s" % uuid.uuid4()
+        status, body = _post(args.port, "/intents", {
+            "schema_version": contract.SCHEMA_VERSION,
+            "intent_type": contract.CONVERSATION_DISPATCH,
+            "source": "codex-conversation", "actor": "codex",
+            "idempotency_key": key, "correlation_id": key,
+            "payload": {"origin_thread_id": thread_id,
+                        "target_session_id": args.target_session_id, "prompt": prompt}})
     elif args.command == "primary-command":
         key = args.idempotency_key or "primary-command-%s" % uuid.uuid4()
         status, body = _post(args.port, "/intents", {

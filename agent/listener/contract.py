@@ -1,11 +1,9 @@
 """The Phase-3 Listener intent contract.
 
 One small, transport-neutral envelope. It is deliberately NOT a command
-language: `intent_type` is allow-listed, every payload is schema-checked field
-by field, and there is no field anywhere that carries a shell command, a file
-path, a provider, a seat, a workspace, or a lifecycle decision. A caller can
-name work that already exists and answer a decision Thebes already asked for.
-Nothing else crosses this boundary.
+language: `intent_type` is allow-listed and every payload is schema-checked.
+The conversation dispatch family carries an explicit prompt and registered
+thread/session IDs; the execution gate verifies them before delivery.
 
 The envelope carries no authority of its own. `actor` records the claimed
 employee answering a decision and is checked against the organization authority
@@ -41,8 +39,10 @@ RECORD_SESSION_OUTCOME = "RECORD_SESSION_OUTCOME"
 # record. It names no work item and grants nothing; the Primary decides what to
 # do with it under its own rules. A worker actor may never submit it.
 PRIMARY_COMMAND = "PRIMARY_COMMAND"
+CONVERSATION_DISPATCH = "CONVERSATION_DISPATCH"
 INTENT_TYPES = (EXECUTE_WORK_ITEM, DECISION_RESPONSE, VALIDATE_WORK_ITEM,
-                PREPARE_SESSION_DISPATCH, RECORD_SESSION_OUTCOME, PRIMARY_COMMAND)
+                PREPARE_SESSION_DISPATCH, RECORD_SESSION_OUTCOME, PRIMARY_COMMAND,
+                CONVERSATION_DISPATCH)
 PRIMARY_COMMAND_MAX_TEXT = 16_000
 
 # Bounded intake. A body larger than this is refused before it is parsed.
@@ -73,6 +73,7 @@ PAYLOAD_FIELDS = {
     RECORD_SESSION_OUTCOME: (("work_item_id", "dispatch_id", "outcome", "summary"),
                              ("session_id", "reference", "delivery_id")),
     PRIMARY_COMMAND: (("text",), ()),
+    CONVERSATION_DISPATCH: (("origin_thread_id", "target_session_id", "prompt"), ()),
 }
 
 DECISIONS = ("approve",)
@@ -193,6 +194,15 @@ def _payload(intent_type, payload):
         if CONTROL_CHARS.search(text):
             raise IntentRejected("invalid-field", "text may not contain control characters")
         return {"text": text}
+    if intent_type == CONVERSATION_DISPATCH:
+        prompt = _text(payload.get("prompt"), "prompt", maximum=PRIMARY_COMMAND_MAX_TEXT)
+        if CONTROL_CHARS.search(prompt):
+            raise IntentRejected("invalid-field", "prompt may not contain control characters")
+        return {"origin_thread_id": _text(payload.get("origin_thread_id"),
+                                            "origin_thread_id", SESSION_UUID, 36),
+                "target_session_id": _text(payload.get("target_session_id"),
+                                             "target_session_id", SESSION_UUID, 36),
+                "prompt": prompt}
     clean = {"work_item_id": _text(payload.get("work_item_id"), "work_item_id",
                                    WORK_ITEM_ID, 40)}
     if intent_type == PREPARE_SESSION_DISPATCH and "deliver" in payload:

@@ -147,3 +147,48 @@ the global primary_binding.
 **Serialization is per thread** (`thread_writer(<thread_id>)`, non-blocking): different threads
 run concurrently; a second writer on the same thread is refused, its event stays queued, and the
 current writer drains it right after its own turn and re-checks after releasing. No polling.
+Enqueue is one critical section (check, text write, create) so a concurrent duplicate can never
+overwrite a created event's text, and queued turns carry `seq` so FIFO holds inside one second.
+A detached drain appends to `agent/state/runtime/codex/drain.log`.
+
+## Free-text conversation dispatch (2026-09-30)
+
+`agent/execution/conversation_dispatch.py`: a Codex conversation hands an explicit prompt to one
+persistent Claude session and gets the explicit result back as a real turn on **the same thread**.
+Not Product: no Jira item, claim or lease. Record `conversation_dispatch` (dir
+`conversation-dispatches`, prefix `cdispatch-`); prompt/result text live in `*_ref` files and the
+worker capability only as `capability_sha256`.
+
+```
+# run the existing Listener once, outside the Codex sandbox
+python3 -m agent.listener serve
+# from a registered conversation's own tool shell (origin = $CODEX_THREAD_ID; there is no flag for it)
+python3 -m agent.listener conversation-dispatch --to <CLAUDE_SID> --prompt-file <path>
+# from the target Claude session, exactly as its envelope renders it
+THEBES_DISPATCH_CAPABILITY=<cap> python3 -m agent.execution.conversation_dispatch \
+    submit <cdispatch-id> --outcome <completed|blocked|decision_required|clarification_required|failed> \
+    --result-file <path>
+python3 -m agent.execution.conversation_dispatch withdraw <cdispatch-id>   # origin thread only
+python3 -m agent.execution.conversation_dispatch status [<cdispatch-id>]
+```
+
+- **dispatch** enters through the durable Listener inbox. The Listener's worker runs outside the
+  Codex tool sandbox so its detached Claude delivery can reach the background service. Codex
+  receives the intake acknowledgement and ends its turn; the worker does not wait for Claude's
+  result. The `conversation_dispatch` gate refuses unless `CODEX_THREAD_ID` is an active conversation on the running shared
+  runtime and `--to` is the durable SID of exactly one active Claude `role_session` (its
+  `stable_home` is where `--resume` runs). Under a per-SID lock it refuses a target with any open
+  conversation or Product dispatch (`target-session-busy` — delivery stops a live session, which
+  would kill in-flight work), records the dispatch, and delivers `envelope + prompt` with the same
+  stop → `claude --bg --resume <SID>` → verify transport as Product (`claude_delivery.deliver_prompt`;
+  an exited session is resumed, a missing one is `delivery_failed`, never replaced). The child
+  `claude` gets the environment without `CODEX_THREAD_ID`/`CLAUDE_CODE_SESSION_ID`/`CLAUDECODE`.
+  The Listener worker detaches delivery and returns immediately; the capability is never shown to Codex and is redacted in the
+  stored `message_ref`.
+- **submit** is accepted once, under the dispatch lock: capability hash (constant-time) + exact
+  `CLAUDE_CODE_SESSION_ID` + a DELIVERED `session_delivery` for this dispatch. An identical repeat
+  returns `already-recorded`; a different second result is `result-already-recorded`. Thebes then
+  renders `THEBES_CONVERSATION_RESULT` (ids, outcome, the worker text verbatim) and queues it on the
+  STORED origin thread as `cevt-cresult-<uuid>` — one event per dispatch — and detaches
+  `codex_runtime drain <thread>`.
+- **withdraw** closes an open dispatch whose worker will never report; a later submit is refused.

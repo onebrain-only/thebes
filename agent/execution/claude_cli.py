@@ -42,14 +42,16 @@ class ClaudeCliError(Exception):
 
 
 class ClaudeCli:
-    def __init__(self, runner=None, binary="claude"):
+    def __init__(self, runner=None, binary="claude", env=None):
         self._run = runner or subprocess.run
         self._binary = binary
+        self._env = env                     # None inherits the caller's environment
 
     def _exec(self, args, cwd=None, timeout=120):
+        kw = {} if self._env is None else {"env": self._env}
         try:
             completed = self._run([self._binary] + list(args), capture_output=True,
-                                  text=True, timeout=timeout, check=False, cwd=cwd)
+                                  text=True, timeout=timeout, check=False, cwd=cwd, **kw)
         except FileNotFoundError as exc:
             raise ClaudeCliError("claude CLI is unavailable: %s" % exc)
         except subprocess.TimeoutExpired as exc:

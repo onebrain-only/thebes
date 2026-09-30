@@ -38,13 +38,18 @@ import json
 import os
 import subprocess
 import sys
+import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 
 from agent.state import store                                        # noqa: E402
 
-RUNTIME_ID = "shared"
+# The Desktop app and its app-server use the default ~/.codex home. Keep the
+# Thebes-owned threads in a separate Codex home so Desktop cannot acquire
+# their single-writer ownership. The old "shared" runtime/threads remain
+# historical state but are not accepted by this runtime.
+RUNTIME_ID = "thebes"
 TURN_TIMEOUT_SECONDS = 900
 
 
@@ -59,7 +64,28 @@ class RuntimeError_(Exception):
 def socket_path(state_store=store):
     d = os.path.join(state_store.RUNTIME, "codex")
     os.makedirs(d, exist_ok=True)
-    return os.path.join(d, "shared.sock")
+    return os.path.join(d, "thebes.sock")
+
+
+def isolated_codex_home():
+    """A separate persistent thread store with the existing ChatGPT login.
+
+    The auth symlink keeps token refresh in the user's normal credential store;
+    no credential is copied into the repository or placed in a model prompt.
+    Refuse an unexpected pre-existing auth path instead of overwriting it.
+    """
+    home = os.path.join(os.path.expanduser("~"), ".thebes-codex")
+    os.makedirs(home, mode=0o700, exist_ok=True)
+    source = os.path.join(os.path.expanduser("~"), ".codex", "auth.json")
+    target = os.path.join(home, "auth.json")
+    if not os.path.isfile(source):
+        raise RuntimeError_("codex-auth-unavailable", "ChatGPT auth file is unavailable")
+    if os.path.lexists(target):
+        if not os.path.islink(target) or os.path.realpath(target) != os.path.realpath(source):
+            raise RuntimeError_("codex-auth-conflict", "isolated home has another auth path")
+    else:
+        os.symlink(source, target)
+    return home
 
 
 def _pid_alive(pid):
@@ -102,6 +128,7 @@ def ensure_runtime(*, state_store=store, spawn=None, alive=None, wait=None):
         if not wait(path):
             raise RuntimeError_("codex-runtime-start-failed", "socket never accepted: %s" % path)
         rec = {"runtime_id": RUNTIME_ID, "socket_path": path, "pid": pid, "status": "running",
+               "codex_home": os.path.join(os.path.expanduser("~"), ".thebes-codex"),
                "catalog_path": catalog, "launch_args": args, "started_at": state_store.now()}
         if cur is None:
             return state_store.create("codex_runtime", rec, rid=RUNTIME_ID)
@@ -109,9 +136,11 @@ def ensure_runtime(*, state_store=store, spawn=None, alive=None, wait=None):
 
 
 def _spawn(args):
+    home = isolated_codex_home()
     log = open(os.path.join(os.path.dirname(args[3][len("unix://"):]), "shared.log"), "a")
-    proc = subprocess.Popen(args, cwd=ROOT, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
-                            start_new_session=True)
+    env = dict(os.environ, CODEX_HOME=home)
+    proc = subprocess.Popen(args, cwd=ROOT, env=env, stdin=subprocess.DEVNULL,
+                            stdout=log, stderr=log, start_new_session=True)
     return proc.pid
 
 
@@ -150,7 +179,9 @@ def create_conversation(label, created_by, first_prompt, *, state_store=store, f
         raise RuntimeError_("first-prompt-required", "a conversation starts with its first turn")
     client, model = connect(state_store=state_store, factory=factory)
     try:
-        started = client.request("thread/start", {"model": model, "cwd": ROOT})
+        started = client.request("thread/start", {"model": model, "cwd": ROOT,
+                                                  "sandbox": "workspace-write",
+                                                  "approvalPolicy": "never"})
         thread_id = (started.get("thread") or {}).get("id")
         conv = state_store.create("codex_conversation", {
             "thread_id": thread_id, "runtime_id": RUNTIME_ID, "label": label,
@@ -160,6 +191,10 @@ def create_conversation(label, created_by, first_prompt, *, state_store=store, f
             _run_one(client, ev, state_store, turn_timeout)
     finally:
         client.close()
+    # A Claude result can arrive while this first turn still owns the thread
+    # lock. Its detached drain then sees "held" and exits. Drain once after
+    # releasing the lock so that such a result cannot be stranded.
+    drain(thread_id, state_store=state_store, factory=factory, turn_timeout=turn_timeout)
     return {"conversation": conv, "first_event": state_store.read("codex_turn_event", ev["event_id"])}
 
 
@@ -183,27 +218,31 @@ def enqueue(thread_id, event_kind, text, *, dispatch_id=None, event_id=None, sta
     An existing event with the same id is returned untouched (idempotent)."""
     require_conversation(thread_id, state_store)
     event_id = event_id or state_store.new_id("codex_turn_event")
-    existing = state_store.read("codex_turn_event", event_id)
-    if existing is not None:
-        return existing, False
-    path = _text_path(state_store, event_id)
-    with open(path, "w", encoding="utf-8") as fh:
-        fh.write(text)
-    try:
+    # Check, text write and create are ONE critical section. Without it two
+    # concurrent enqueues of the same derived id both pass the existence check
+    # and the loser's text overwrites the winner's text_ref after the winner's
+    # record exists. (A lock distinct from create()'s own record lock: flock
+    # does not nest across file descriptors.)
+    with state_store._Lock("codex-turn-event-enqueue-%s" % event_id):
+        existing = state_store.read("codex_turn_event", event_id)
+        if existing is not None:
+            return existing, False
+        path = _text_path(state_store, event_id)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(text)
         rec = state_store.create("codex_turn_event", {
             "event_id": event_id, "thread_id": thread_id, "event_kind": event_kind,
             "dispatch_id": dispatch_id, "status": "queued", "text_ref": path,
-            "turn_ref": None, "response_summary": None, "error": None,
-            "completed_at": None}, rid=event_id)
-    except store.StateError:
-        return state_store.read("codex_turn_event", event_id), False
+            # created_at has one-second resolution; seq keeps FIFO inside a second.
+            "seq": time.time_ns(), "turn_ref": None, "response_summary": None,
+            "error": None, "completed_at": None}, rid=event_id)
     return rec, True
 
 
 def _queued(thread_id, state_store):
     return sorted((r for r in state_store.read_all("codex_turn_event")
                    if r.get("thread_id") == thread_id and r.get("status") == "queued"),
-                  key=lambda r: r.get("created_at") or "")
+                  key=lambda r: (r.get("created_at") or "", r.get("seq") or 0))
 
 
 def drain(thread_id, *, state_store=store, factory=None, turn_timeout=TURN_TIMEOUT_SECONDS):
@@ -239,7 +278,9 @@ def _resume_if_needed(client, thread_id):
     """Load a persisted conversation on this connection. Every registered
     conversation had its first turn at creation, so a resume failure is real
     and fails closed (the event stays queued)."""
-    client.request("thread/resume", {"threadId": thread_id, "excludeTurns": True}, timeout=120)
+    client.request("thread/resume", {"threadId": thread_id, "excludeTurns": True,
+                                     "sandbox": "workspace-write",
+                                     "approvalPolicy": "never"}, timeout=120)
 
 
 def _run_one(client, ev, state_store, turn_timeout):
@@ -250,7 +291,10 @@ def _run_one(client, ev, state_store, turn_timeout):
         text = fh.read()
     try:
         started = client.request("turn/start", {"threadId": ev["thread_id"],
-                                                "input": [{"type": "text", "text": text}]},
+                                                "input": [{"type": "text", "text": text}],
+                                                "sandboxPolicy": {"type": "workspaceWrite",
+                                                                  "networkAccess": True},
+                                                "approvalPolicy": "never"},
                                  timeout=120)
         turn_id = (started.get("turn") or {}).get("id")
         done, messages = client.await_turn(turn_id, turn_timeout)
@@ -306,9 +350,12 @@ def schedule_worker_result(dispatch, *, state_store=store, launcher=None):
 
 
 def _detach_drain(thread_id):
-    subprocess.Popen([sys.executable, "-m", "agent.execution.codex_runtime", "drain", thread_id],
-                     cwd=ROOT, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                     stderr=subprocess.DEVNULL, start_new_session=True)
+    # Appended, not discarded: a drain that fails before any event status
+    # changes (runtime down, resume refused) must leave a trace.
+    with open(os.path.join(os.path.dirname(socket_path()), "drain.log"), "a") as log:
+        subprocess.Popen([sys.executable, "-m", "agent.execution.codex_runtime", "drain",
+                          thread_id], cwd=ROOT, stdin=subprocess.DEVNULL, stdout=log,
+                         stderr=log, start_new_session=True)
 
 
 # ---------------------------------------------------------------- CLI

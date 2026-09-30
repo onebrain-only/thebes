@@ -21,7 +21,7 @@ SCOPE
 
 Stdlib only. No DELETE: records are retired or withdrawn, never removed.
 """
-import fcntl, hashlib, json, os, re, sys, uuid
+import fcntl, hashlib, hmac, json, os, re, sys, uuid
 from datetime import datetime, timezone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -118,7 +118,18 @@ KINDS = {
     # worker result. Per-thread durable queue; a worker result's id is derived
     # from its dispatch, so one dispatch can never produce two result turns.
     "codex_turn_event": ("codex-turn-events", "cevt"),
+    # A free-text dispatch from a registered Codex conversation to one durable
+    # Claude session, outside Product (no Jira, no lease). Its result returns
+    # as one turn on exactly the origin thread. The worker's capability is kept
+    # only as a hash; prompt and result live in *_ref files, never here.
+    "conversation_dispatch": ("conversation-dispatches", "cdispatch"),
 }
+
+CONVERSATION_DISPATCH_OPEN = frozenset({"delivering", "delivered"})
+CONVERSATION_RESULT_OUTCOMES = frozenset({
+    "completed", "blocked", "decision_required", "clarification_required", "failed"})
+CONVERSATION_DISPATCH_STATUSES = (CONVERSATION_DISPATCH_OPEN | CONVERSATION_RESULT_OUTCOMES
+                                  | frozenset({"delivery_failed", "withdrawn"}))
 
 CODEX_TURN_EVENT_KINDS = frozenset({"user_prompt", "worker_result"})
 CODEX_TURN_EVENT_STATUSES = frozenset({"queued", "running", "delivered", "failed"})
@@ -3043,6 +3054,98 @@ def record_session_outcome(dispatch_id, outcome, summary, recorded_by,
         return merged
 
 
+def capability_sha256(capability):
+    """The only form in which a conversation-dispatch capability is ever stored."""
+    return hashlib.sha256(str(capability).encode("utf-8")).hexdigest()
+
+
+def _conversation_write(cur, changes):
+    merged = dict(cur, **changes)
+    merged.update(revision=cur["revision"] + 1, updated_at=now())
+    _validate_one("conversation_dispatch", merged)
+    _atomic_write(path_for("conversation_dispatch", cur["dispatch_id"]), merged)
+    return merged
+
+
+def settle_conversation_delivery(dispatch_id, delivery_status, error=None):
+    """delivering → delivered | delivery_failed, once. A dispatch the worker has
+    already settled (it may report the moment it is resumed) is left as is."""
+    with record_lock("conversation_dispatch", dispatch_id):
+        cur = read("conversation_dispatch", dispatch_id)
+        if cur is None:
+            raise StateError("conversation dispatch %s does not exist" % dispatch_id)
+        if cur.get("status") != "delivering":
+            return cur
+        ok = delivery_status == "DELIVERED"
+        return _conversation_write(cur, {"status": "delivered" if ok else "delivery_failed",
+                                         "delivery_status": delivery_status,
+                                         "error": None if ok else (error or delivery_status)})
+
+
+def record_conversation_result(dispatch_id, outcome, session_id, capability, result_text):
+    """The ONE terminal result a conversation dispatch may carry.
+
+    Every gate runs under the dispatch's record lock: the presented capability
+    hashes to the stored hash (constant-time compare), the reporting SID is
+    exactly the target, and a DELIVERED session_delivery attests that Thebes
+    sent THIS dispatch to THAT SID. The capability authorizes this one result
+    and nothing else. Returns (record, created): an identical repeat returns the
+    settled record with created=False; a different second result is refused.
+    """
+    if outcome not in CONVERSATION_RESULT_OUTCOMES:
+        raise StateError("unknown conversation result outcome %r — expected one of %s"
+                         % (outcome, "/".join(sorted(CONVERSATION_RESULT_OUTCOMES))))
+    if not isinstance(result_text, str) or not result_text.strip():
+        raise StateError("result-required: the worker supplies explicit result text")
+    digest = hashlib.sha256(result_text.encode("utf-8")).hexdigest()
+    with record_lock("conversation_dispatch", dispatch_id):
+        cur = read("conversation_dispatch", dispatch_id)
+        if cur is None:
+            raise StateError("conversation-dispatch-not-found: %s" % dispatch_id)
+        if not capability or not hmac.compare_digest(capability_sha256(capability),
+                                                     str(cur.get("capability_sha256") or "")):
+            raise StateError("capability-invalid: not the capability issued for %s" % dispatch_id)
+        if session_id != cur.get("target_session_id"):
+            raise StateError("session-identity-mismatch: %s was delivered to a different session "
+                             "than the one reporting" % dispatch_id)
+        if cur.get("status") in CONVERSATION_RESULT_OUTCOMES:
+            if cur.get("outcome") == outcome and cur.get("result_sha256") == digest:
+                return cur, False
+            raise StateError("result-already-recorded: %s settled as %s; a dispatch carries one "
+                             "terminal result" % (dispatch_id, cur.get("status")))
+        if cur.get("status") not in CONVERSATION_DISPATCH_OPEN:
+            raise StateError("dispatch-not-open: %s is %s" % (dispatch_id, cur.get("status")))
+        attested, reason = attested_delivery(dispatch_id, session_id, cur.get("delivery_id"))
+        if attested is None:
+            raise StateError(reason)
+        ref_dir = os.path.join(RUNTIME, "conversation-results")
+        os.makedirs(ref_dir, exist_ok=True)
+        ref = os.path.join(ref_dir, "%s.txt" % dispatch_id)
+        tmp = ref + ".tmp.%d" % os.getpid()
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.write(result_text)
+        os.replace(tmp, ref)
+        return _conversation_write(cur, {
+            "status": outcome, "outcome": outcome, "result_ref": ref, "result_sha256": digest,
+            "reported_session_id": session_id, "attested_delivery_id": attested["delivery_id"],
+            "delivery_status": "DELIVERED", "outcome_at": now()}), True
+
+
+def withdraw_conversation_dispatch(dispatch_id, origin_thread_id):
+    """The origin conversation withdraws its own OPEN dispatch (a worker that
+    will never report). Terminal: a later result is refused and no turn follows."""
+    with record_lock("conversation_dispatch", dispatch_id):
+        cur = read("conversation_dispatch", dispatch_id)
+        if cur is None:
+            raise StateError("conversation-dispatch-not-found: %s" % dispatch_id)
+        if not origin_thread_id or cur.get("origin_thread_id") != origin_thread_id:
+            raise StateError("not-origin-thread: only the conversation that dispatched %s may "
+                             "withdraw it" % dispatch_id)
+        if cur.get("status") not in CONVERSATION_DISPATCH_OPEN:
+            raise StateError("dispatch-not-open: %s is %s" % (dispatch_id, cur.get("status")))
+        return _conversation_write(cur, {"status": "withdrawn", "withdrawn_at": now()})
+
+
 def review_context_ref(work_item_id, review_context):
     """The canonical reference for one open review context."""
     review = review_context or {}
@@ -3805,7 +3908,8 @@ def _id_field(kind):
             "primary_command": "primary_command_id",
             "codex_runtime": "runtime_id",
             "codex_conversation": "thread_id",
-            "codex_turn_event": "event_id"}[kind]
+            "codex_turn_event": "event_id",
+            "conversation_dispatch": "dispatch_id"}[kind]
 
 
 def _validate_one(kind, record):

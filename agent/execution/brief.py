@@ -76,6 +76,7 @@ CONTROL_PLANE_TOKENS = (
     "open_execution_lease",
     "close_execution_lease",
     "record_execution_receipt",
+    "CONVERSATION_DISPATCH",
     "ClaudeCliTransport",
     "CodexCliTransport",
     "ClaudeProvider(",

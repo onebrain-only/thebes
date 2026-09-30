@@ -38,11 +38,14 @@ DEFAULT_TIMEOUT_SECONDS = 60 * 60
 def argv_for(intent):
     """The exact controller command line for one intent.
 
-    Always a list, never a string, and never passed to a shell. Every element
-    is either a fixed literal or a contract-validated token, so there is no
-    path by which intake text becomes an executable instruction.
+    Always a list, never a string, and never passed to a shell. Free text is
+    one argv element to a fixed entry point, never an executable instruction.
     """
     payload = intent["payload"]
+    if intent["intent_type"] == contract.CONVERSATION_DISPATCH:
+        return [sys.executable, "-m", "agent.execution.conversation_dispatch",
+                "dispatch", "--to", payload["target_session_id"], "--prompt",
+                payload["prompt"]]
     if intent["intent_type"] == contract.PRIMARY_COMMAND:
         # The text travels as ONE argv element to a fixed entry point; it is
         # never a shell string and never interpreted as a command line.
@@ -97,8 +100,11 @@ def controller_environment(intent, environ=None):
     intake caused this run, and the Controller still re-derives every
     authorization, claim and lifecycle fact from canonical sources regardless.
     """
-    return dict(environ if environ is not None else os.environ,
-                **{INTENT_ENV: intent["intent_id"]})
+    result = dict(environ if environ is not None else os.environ,
+                  **{INTENT_ENV: intent["intent_id"]})
+    if intent["intent_type"] == contract.CONVERSATION_DISPATCH:
+        result["CODEX_THREAD_ID"] = intent["payload"]["origin_thread_id"]
+    return result
 
 
 def run_controller(intent, timeout=DEFAULT_TIMEOUT_SECONDS, root=ROOT):

@@ -73,7 +73,7 @@ class CodexRuntimeTests(unittest.TestCase):
         validate.RUNTIME = store.RUNTIME
         store.bind_role_session(SEAT, "claude", SID, HOME, "ceo", session_name="thebes-po-c")
         for t in (THREAD_A, THREAD_B):
-            store.create("codex_conversation", {"thread_id": t, "runtime_id": "shared",
+            store.create("codex_conversation", {"thread_id": t, "runtime_id": cr.RUNTIME_ID,
                                                 "label": t[:9], "registered_by": "ceo",
                                                 "status": "active"}, rid=t)
         FakeClient.log = []
@@ -248,6 +248,35 @@ class CodexRuntimeTests(unittest.TestCase):
         with self.assertRaises(cr.RuntimeError_) as cm:
             cr.create_conversation("x", "ceo", "   ", state_store=store)
         self.assertEqual(cm.exception.code, "first-prompt-required")
+
+    def test_result_queued_during_first_turn_is_drained_after_it_releases_writer(self):
+        thread_id = "0ccccccc-0000-7000-8000-00000000000c"
+
+        class Starts(FakeClient):
+            def request(self, method, params, timeout=60):
+                if method == "thread/start":
+                    FakeClient.log.append((method, params))
+                    return {"thread": {"id": thread_id}}
+                return super().request(method, params, timeout)
+
+            def await_turn(self, turn_id, timeout):
+                if turn_id == "turn-1":
+                    cr.enqueue(thread_id, "worker_result", "Claude result",
+                               dispatch_id="dispatch-11111111-1111-4111-8111-111111111111",
+                               state_store=store)
+                return super().await_turn(turn_id, timeout)
+
+        self.patches[-1].stop()
+        try:
+            with mock.patch.object(cr, "connect", lambda **kw: (Starts(), "gpt-6-astra")):
+                cr.create_conversation("roundtrip", "ceo", "first turn", state_store=store)
+        finally:
+            self.patches[-1].start()
+        starts = [p for method, p in FakeClient.log if method == "turn/start"]
+        self.assertEqual([(p["threadId"], p["input"][0]["text"]) for p in starts],
+                         [(thread_id, "first turn"), (thread_id, "Claude result")])
+        events = [e for e in store.read_all("codex_turn_event") if e["thread_id"] == thread_id]
+        self.assertEqual(sorted(e["status"] for e in events), ["delivered", "delivered"])
 
     def test_a_resume_failure_fails_closed_and_keeps_the_event_queued(self):
         from agent.execution.codex_appserver import AppServerError
