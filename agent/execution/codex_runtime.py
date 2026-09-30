@@ -34,11 +34,14 @@ global Primary lock, no primary_binding.
     python3 -m agent.execution.codex_runtime events <thread_id>
 """
 import argparse
+import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import time
+import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
@@ -51,6 +54,8 @@ from agent.state import store                                        # noqa: E40
 # historical state but are not accepted by this runtime.
 RUNTIME_ID = "thebes"
 TURN_TIMEOUT_SECONDS = 900
+BOOTSTRAP_VERSION = "thebes-conversation-v1"
+THREAD_ID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
 
 class RuntimeError_(Exception):
@@ -162,8 +167,86 @@ def connect(*, state_store=store, factory=None):
 
 
 # ---------------------------------------------------------------- registry
+def bootstrap_prompt(thread_id, state_store=store):
+    """The first, private turn on a new thread. It names the real local route."""
+    workers = sorted((r["seat_id"], r["session_id"])
+                     for r in state_store.read_all("role_session")
+                     if r.get("provider") == "claude" and r.get("status") == "active")
+    choices = "\n".join("- %s: %s" % pair for pair in workers) or "- none"
+    return "\n".join([
+        "THEBES_CONVERSATION_BOOTSTRAP %s" % BOOTSTRAP_VERSION,
+        "Your exact Codex thread_id is %s on the shared Thebes-owned runtime %s."
+        % (thread_id, RUNTIME_ID),
+        "You are a persistent managed conversation. To delegate, write an explicit, "
+        "self-contained prompt and select the appropriate persistent Claude session below:",
+        choices,
+        "Run: python3 -m agent.listener conversation-dispatch --to <CLAUDE_SESSION_ID> "
+        "--prompt '<YOUR_COMPLETE_PROMPT>'",
+        "Read the accepted intake response, finish your own turn immediately, and go idle. "
+        "Claude works independently and submits its own result. Thebes resolves the dispatch "
+        "to this exact origin_thread_id and sends the result as a new prompt turn here.",
+        "Do not poll, relay through another worker, ask the user to copy text, or ask what "
+        "channel to use for Claude. Use the Listener command above.",
+        "For a self-check run: python3 -m agent.execution.codex_runtime conversation-status "
+        "%s" % thread_id,
+        "This is a bootstrap acknowledgement turn. Reply with exactly: THEBES_BOOTSTRAP_READY %s"
+        % thread_id,
+    ])
+
+
+def listener_ready():
+    """The local dispatch front door must be available before a thread is exposed."""
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:8787/health", timeout=2) as response:
+            body = json.load(response)
+            return (response.status == 200 and body.get("status") == "ok"
+                    and "CONVERSATION_DISPATCH" in body.get("intent_types", []))
+    except (OSError, ValueError):
+        return False
+
+
+def conversation_status(thread_id, *, state_store=store, route_ready=None):
+    """Read the actual registration, bootstrap event and current runtime binding."""
+    conv = state_store.read("codex_conversation", thread_id or "none")
+    runtime = state_store.read("codex_runtime", RUNTIME_ID)
+    registered = bool(conv and conv.get("thread_id") == thread_id)
+    bound = bool(registered and runtime and runtime.get("status") == "running"
+                 and conv.get("runtime_id") == runtime.get("runtime_id") == RUNTIME_ID
+                 and conv.get("runtime_socket_path") == runtime.get("socket_path"))
+    bootstrap = False
+    if registered and conv.get("bootstrap_event_id"):
+        ev = state_store.read("codex_turn_event", conv["bootstrap_event_id"])
+        if ev and ev.get("thread_id") == thread_id and ev.get("event_kind") == "bootstrap" \
+                and ev.get("status") == "delivered" and ev.get("turn_ref"):
+            try:
+                with open(ev["text_ref"], "rb") as fh:
+                    digest = hashlib.sha256(fh.read()).hexdigest()
+                bootstrap = (digest == conv.get("bootstrap_sha256") and
+                             "THEBES_BOOTSTRAP_READY %s" % thread_id in
+                             (ev.get("response_summary") or ""))
+            except OSError:
+                bootstrap = False
+    route = bool(bound and bootstrap and (listener_ready() if route_ready is None else route_ready))
+    managed = bool(registered and conv.get("status") == "active" and route)
+    return {"THREAD_ID": thread_id, "MANAGED": managed,
+            "THREAD_CREATED": registered, "THREAD_REGISTERED": registered,
+            "RUNTIME_ID": conv.get("runtime_id") if conv else None,
+            "RUNTIME_BOUND": bound, "BOOTSTRAP_LOADED": bootstrap,
+            "RETURN_ROUTING_READY": route}
+
+
+def _retire_initializing(thread_id, state_store):
+    """Never leave a failed creation eligible for dispatch or opening."""
+    if not thread_id:
+        return
+    conv = state_store.read("codex_conversation", thread_id)
+    if conv and conv.get("status") == "initializing":
+        state_store.update("codex_conversation", thread_id, conv["revision"],
+                           {"status": "retired"})
+
+
 def create_conversation(label, created_by, first_prompt, *, state_store=store, factory=None,
-                        turn_timeout=TURN_TIMEOUT_SECONDS):
+                        turn_timeout=TURN_TIMEOUT_SECONDS, route_ready=None):
     """thread/start on the shared runtime, register it, and run its FIRST turn
     on that same connection.
 
@@ -177,25 +260,67 @@ def create_conversation(label, created_by, first_prompt, *, state_store=store, f
         raise RuntimeError_("actor-not-permitted", "a worker may not create a conversation")
     if not (first_prompt or "").strip():
         raise RuntimeError_("first-prompt-required", "a conversation starts with its first turn")
+    runtime = state_store.read("codex_runtime", RUNTIME_ID)
     client, model = connect(state_store=state_store, factory=factory)
+    thread_id = None
+    conv = None
     try:
         started = client.request("thread/start", {"model": model, "cwd": ROOT,
                                                   "sandbox": "workspace-write",
                                                   "approvalPolicy": "never"})
         thread_id = (started.get("thread") or {}).get("id")
+        if not THREAD_ID.fullmatch(str(thread_id or "")):
+            raise RuntimeError_("thread-id-invalid", "app-server returned no valid thread_id")
+        current_runtime = state_store.read("codex_runtime", RUNTIME_ID)
+        if not runtime or not current_runtime or current_runtime.get("socket_path") != runtime.get("socket_path"):
+            raise RuntimeError_("runtime-changed", "shared runtime changed during thread creation")
         conv = state_store.create("codex_conversation", {
             "thread_id": thread_id, "runtime_id": RUNTIME_ID, "label": label,
-            "registered_by": created_by, "status": "active"}, rid=thread_id)
-        ev, _ = enqueue(thread_id, "user_prompt", first_prompt, state_store=state_store)
+            "runtime_socket_path": runtime["socket_path"],
+            "registered_by": created_by, "status": "initializing",
+            "bootstrap_event_id": None, "bootstrap_sha256": None}, rid=thread_id)
+        bootstrap_text = bootstrap_prompt(thread_id, state_store)
+        bootstrap_ev, _ = _create_event(thread_id, "bootstrap", bootstrap_text,
+                                         state_store=state_store)
+        conv = state_store.update("codex_conversation", thread_id, conv["revision"], {
+            "bootstrap_event_id": bootstrap_ev["event_id"],
+            "bootstrap_sha256": hashlib.sha256(bootstrap_text.encode("utf-8")).hexdigest()})
         with state_store.thread_writer(thread_id):
-            _run_one(client, ev, state_store, turn_timeout)
+            if not _run_one(client, bootstrap_ev, state_store, turn_timeout):
+                raise RuntimeError_("bootstrap-turn-failed", "bootstrap turn did not complete")
+    except Exception as exc:
+        _retire_initializing(thread_id, state_store)
+        if isinstance(exc, RuntimeError_):
+            raise
+        raise RuntimeError_("conversation-create-failed", str(exc)) from exc
     finally:
         client.close()
+    # A new connection must be able to resume the persisted exact thread.
+    try:
+        check_client, _ = connect(state_store=state_store, factory=factory)
+        try:
+            _resume_if_needed(check_client, thread_id)
+        finally:
+            check_client.close()
+        state = conversation_status(thread_id, state_store=state_store, route_ready=route_ready)
+        if not all(state[k] for k in ("THREAD_CREATED", "THREAD_REGISTERED", "RUNTIME_BOUND",
+                                        "BOOTSTRAP_LOADED", "RETURN_ROUTING_READY")):
+            raise RuntimeError_("conversation-not-ready", json.dumps(state, sort_keys=True))
+    except Exception as exc:
+        _retire_initializing(thread_id, state_store)
+        if isinstance(exc, RuntimeError_):
+            raise
+        raise RuntimeError_("conversation-create-failed", str(exc)) from exc
+    conv = state_store.update("codex_conversation", thread_id, conv["revision"], {"status": "active"})
+    ev, _ = enqueue(thread_id, "user_prompt", first_prompt, state_store=state_store)
+    first = drain(thread_id, state_store=state_store, factory=factory, turn_timeout=turn_timeout)
+    if ev["event_id"] not in first["delivered"]:
+        raise RuntimeError_("first-turn-failed", "first user turn did not complete")
     # A Claude result can arrive while this first turn still owns the thread
     # lock. Its detached drain then sees "held" and exits. Drain once after
     # releasing the lock so that such a result cannot be stranded.
-    drain(thread_id, state_store=state_store, factory=factory, turn_timeout=turn_timeout)
-    return {"conversation": conv, "first_event": state_store.read("codex_turn_event", ev["event_id"])}
+    return {"conversation": conv, "first_event": state_store.read("codex_turn_event", ev["event_id"]),
+            "status": conversation_status(thread_id, state_store=state_store, route_ready=route_ready)}
 
 
 def require_conversation(thread_id, state_store=store):
@@ -217,6 +342,12 @@ def enqueue(thread_id, event_kind, text, *, dispatch_id=None, event_id=None, sta
     """Durably queue one turn for a registered thread. Returns (record, created).
     An existing event with the same id is returned untouched (idempotent)."""
     require_conversation(thread_id, state_store)
+    return _create_event(thread_id, event_kind, text, dispatch_id=dispatch_id,
+                         event_id=event_id, state_store=state_store)
+
+
+def _create_event(thread_id, event_kind, text, *, dispatch_id=None, event_id=None,
+                  state_store=store):
     event_id = event_id or state_store.new_id("codex_turn_event")
     # Check, text write and create are ONE critical section. Without it two
     # concurrent enqueues of the same derived id both pass the existence check
@@ -371,6 +502,7 @@ def main(argv=None):
     pr = sub.add_parser("prompt"); pr.add_argument("thread_id"); pr.add_argument("text")
     dr = sub.add_parser("drain"); dr.add_argument("thread_id")
     ev = sub.add_parser("events"); ev.add_argument("thread_id")
+    cs = sub.add_parser("conversation-status"); cs.add_argument("thread_id")
     ns = ap.parse_args(argv)
     try:
         if ns.cmd == "start":
@@ -380,6 +512,8 @@ def main(argv=None):
                    "conversations": store.read_all("codex_conversation")}
         elif ns.cmd == "new-conversation":
             out = create_conversation(ns.label, ns.created_by, ns.prompt)
+        elif ns.cmd == "conversation-status":
+            out = conversation_status(ns.thread_id)
         elif ns.cmd == "prompt":
             rec, _ = enqueue(ns.thread_id, "user_prompt", ns.text)
             result = drain(ns.thread_id)

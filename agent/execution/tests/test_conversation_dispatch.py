@@ -186,6 +186,47 @@ class ConversationDispatchTests(unittest.TestCase):
         self.assertEqual(self.launched, [], "dispatch returns without waiting or draining")
         self.assertEqual(self.clean(), [])
 
+    def test_fresh_managed_conversation_knows_route_and_receives_its_own_claude_result(self):
+        thread_id = "0ccccccc-0000-7000-8000-00000000000c"
+        runtime = store.read("codex_runtime", cr.RUNTIME_ID)
+        store.update("codex_runtime", cr.RUNTIME_ID, runtime["revision"],
+                     {"socket_path": cr.socket_path(store)})
+
+        class Starts(FakeClient):
+            def request(self, method, params, timeout=60):
+                if method == "thread/start":
+                    FakeClient.log.append((method, params))
+                    return {"thread": {"id": thread_id}}
+                return super().request(method, params, timeout)
+
+            def await_turn(self, turn_id, timeout):
+                if turn_id == "turn-1":
+                    return {"id": turn_id, "status": "completed"}, [{
+                        "text": "THEBES_BOOTSTRAP_READY %s" % thread_id}]
+                return super().await_turn(turn_id, timeout)
+
+        self.patches[-1].stop()
+        try:
+            with mock.patch.object(cr, "connect", lambda **kw: (Starts(), "gpt-6-astra")):
+                created = cr.create_conversation("new-worker-route", "ceo", "Delegate a task",
+                                                 state_store=store, route_ready=True)
+        finally:
+            self.patches[-1].start()
+        self.assertTrue(created["status"]["MANAGED"])
+        boot = self.turn_starts()[0]["input"][0]["text"]
+        self.assertIn("python3 -m agent.listener conversation-dispatch", boot)
+        self.assertIn("Do not poll", boot)
+        self.assertIn(SID_X, boot)
+        out, fake = self.send(thread_id, SID_X, prompt="Return NEW_THREAD_ONLY")
+        reply = self.report(out, fake, result="NEW_THREAD_ONLY")
+        self.assertEqual(reply["origin_reply"]["thread_id"], thread_id)
+        cr.drain(thread_id, state_store=store)
+        result_turn = self.turn_starts()[-1]
+        self.assertEqual(result_turn["threadId"], thread_id)
+        self.assertIn("NEW_THREAD_ONLY", result_turn["input"][0]["text"])
+        self.assertEqual(store.read("codex_turn_event", reply["origin_reply"]["event_id"])
+                         ["status"], "delivered")
+
     def test_detached_dispatch_returns_before_claude_delivery_then_child_delivers(self):
         spawned = []
         out = cd.dispatch("A's explicit task", SID_X, env={"CODEX_THREAD_ID": THREAD_A},

@@ -1693,8 +1693,8 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
         _req(rec, ["thread_id", "runtime_id", "status", "registered_by"], errs, where)
         if not SESSION_UUID.match(str(rec.get("thread_id") or "")):
             errs.append("%s: conversation thread_id must be a thread uuid" % where)
-        if rec.get("status") not in ("active", "retired"):
-            errs.append("%s: conversation status must be active or retired" % where)
+        if rec.get("status") not in ("initializing", "active", "retired"):
+            errs.append("%s: conversation status must be initializing, active or retired" % where)
         if str(rec.get("registered_by") or "").startswith("worker:"):
             errs.append("%s: a worker may never create a conversation" % where)
 
@@ -1702,8 +1702,8 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
         _req(rec, ["event_id", "thread_id", "event_kind", "status", "text_ref"], errs, where)
         if not str(rec.get("event_id") or "").startswith("cevt-"):
             errs.append("%s: event_id must start with cevt-" % where)
-        if rec.get("event_kind") not in ("user_prompt", "worker_result"):
-            errs.append("%s: event_kind must be user_prompt or worker_result" % where)
+        if rec.get("event_kind") not in ("bootstrap", "user_prompt", "worker_result"):
+            errs.append("%s: event_kind must be bootstrap, user_prompt or worker_result" % where)
         if rec.get("status") not in ("queued", "running", "delivered", "failed"):
             errs.append("%s: unknown codex turn event status %r" % (where, rec.get("status")))
         if rec.get("event_kind") == "worker_result" and not str(

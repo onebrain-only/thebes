@@ -124,11 +124,24 @@ never started per message. Desktop-owned threads are never registered or touched
 python3 -m agent.execution.codex_runtime start                      # start once / reuse; fails closed if inconsistent
 python3 -m agent.execution.codex_runtime status                     # runtime record + registered conversations
 python3 -m agent.execution.codex_runtime new-conversation --label X --prompt "<first turn>"
-                                     # thread/start + its first turn on ONE connection (a thread with
-                                     # no turn is dropped when its creating connection closes)
+                                     # thread/start -> private bootstrap turn -> fresh-connection
+                                     # resume check -> active registration -> first user turn
+python3 -m agent.execution.codex_runtime conversation-status <thread_id>
+                                     # managed/runtime/bootstrap/return-route readiness
 python3 -m agent.execution.codex_runtime prompt <thread_id> "<text>" # one user turn; prints the event incl. turn_ref
 python3 -m agent.execution.codex_runtime events <thread_id>          # every queued/delivered turn with turn_ref
 ```
+
+`new-conversation` is the Thebes creation entry point. It captures the app-server's exact
+`thread_id` and first writes it as `initializing` on runtime `thebes`. The private bootstrap
+turn gives that thread the Listener command, the active persistent Claude session IDs, the
+finish-after-dispatch rule, and the exact-origin return rule. A delivered bootstrap reply,
+successful resume on a fresh app-server connection, matching runtime socket and healthy
+Listener are required before the registry becomes `active` and before the first user prompt
+runs. Failure retires the incomplete registration and returns an error; it never opens a
+Desktop-owned fallback. `conversation-status` checks the stored bootstrap event and live
+Listener readiness for any thread ID. Older conversations without this bootstrap can continue
+their existing routing, but the status check identifies them as not yet bootstrapped.
 
 **Dispatch from a conversation.** Inside a registered conversation, Codex runs
 `python3 -m agent.listener session-dispatch <KEY> --deliver` from its own tool shell. The Listener

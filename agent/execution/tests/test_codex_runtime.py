@@ -230,21 +230,44 @@ class CodexRuntimeTests(unittest.TestCase):
                 clients.append("closed")
                 return 0
 
+            def await_turn(self, turn_id, timeout):
+                if turn_id == "turn-1":
+                    return {"id": turn_id, "status": "completed"}, [{
+                        "text": "THEBES_BOOTSTRAP_READY 0ccccccc-0000-7000-8000-00000000000c"}]
+                return super().await_turn(turn_id, timeout)
+
+        store.create("codex_runtime", {"runtime_id": cr.RUNTIME_ID,
+                     "status": "running", "socket_path": cr.socket_path(store)}, rid=cr.RUNTIME_ID)
         self.patches[-1].stop()
         try:
             one = Starts()
-            with mock.patch.object(cr, "connect", lambda **kw: (one, "gpt-6-astra")):
-                out = cr.create_conversation("roundtrip", "ceo", "first turn text", state_store=store)
+            with mock.patch.object(cr, "connect", lambda **kw: (one if not clients else Starts(), "gpt-6-astra")):
+                out = cr.create_conversation("roundtrip", "ceo", "first turn text",
+                                             state_store=store, route_ready=True)
         finally:
             self.patches[-1].start()
-        self.assertEqual([m for m, _ in FakeClient.log], ["thread/start", "turn/start"],
-                         "thread/start then its first turn/start, no resume, one connection")
-        self.assertEqual(clients, ["closed"])
+        self.assertEqual([m for m, _ in FakeClient.log],
+                         ["thread/start", "turn/start", "thread/resume", "thread/resume", "turn/start"],
+                         "bootstrap persists the thread before its first user turn")
+        self.assertEqual(len(clients), 3)
         self.assertEqual(out["conversation"]["thread_id"], "0ccccccc-0000-7000-8000-00000000000c")
+        registered = store.read("codex_conversation", out["conversation"]["thread_id"])
+        self.assertEqual(registered["runtime_id"], cr.RUNTIME_ID)
+        self.assertEqual(registered["runtime_socket_path"], cr.socket_path(store))
+        self.assertEqual(registered["status"], "active")
         self.assertEqual((out["first_event"]["status"], out["first_event"]["turn_ref"]),
-                         ("delivered", "turn-1"))
-        start = [p for m, p in FakeClient.log if m == "turn/start"][0]
+                         ("delivered", "turn-2"))
+        start = [p for m, p in FakeClient.log if m == "turn/start"][1]
         self.assertEqual(start["input"], [{"type": "text", "text": "first turn text"}])
+        self.assertTrue(out["status"]["MANAGED"])
+        self.assertTrue(out["status"]["BOOTSTRAP_LOADED"])
+        self.assertTrue(out["status"]["RETURN_ROUTING_READY"])
+        bootstrap = store.read("codex_turn_event", registered["bootstrap_event_id"])
+        with open(bootstrap["text_ref"], encoding="utf-8") as fh:
+            instructions = fh.read()
+        self.assertIn("python3 -m agent.listener conversation-dispatch", instructions)
+        self.assertIn("Do not poll", instructions)
+        self.assertIn(SID, instructions)
         with self.assertRaises(cr.RuntimeError_) as cm:
             cr.create_conversation("x", "ceo", "   ", state_store=store)
         self.assertEqual(cm.exception.code, "first-prompt-required")
@@ -261,22 +284,76 @@ class CodexRuntimeTests(unittest.TestCase):
 
             def await_turn(self, turn_id, timeout):
                 if turn_id == "turn-1":
+                    return {"id": turn_id, "status": "completed"}, [{"text":
+                        "THEBES_BOOTSTRAP_READY %s" % thread_id}]
+                if turn_id == "turn-2":
                     cr.enqueue(thread_id, "worker_result", "Claude result",
                                dispatch_id="dispatch-11111111-1111-4111-8111-111111111111",
                                state_store=store)
                 return super().await_turn(turn_id, timeout)
 
+        store.create("codex_runtime", {"runtime_id": cr.RUNTIME_ID,
+                     "status": "running", "socket_path": cr.socket_path(store)}, rid=cr.RUNTIME_ID)
         self.patches[-1].stop()
         try:
             with mock.patch.object(cr, "connect", lambda **kw: (Starts(), "gpt-6-astra")):
-                cr.create_conversation("roundtrip", "ceo", "first turn", state_store=store)
+                cr.create_conversation("roundtrip", "ceo", "first turn", state_store=store,
+                                       route_ready=True)
         finally:
             self.patches[-1].start()
         starts = [p for method, p in FakeClient.log if method == "turn/start"]
         self.assertEqual([(p["threadId"], p["input"][0]["text"]) for p in starts],
-                         [(thread_id, "first turn"), (thread_id, "Claude result")])
+                         [(thread_id, cr.bootstrap_prompt(thread_id, store)),
+                          (thread_id, "first turn"), (thread_id, "Claude result")])
         events = [e for e in store.read_all("codex_turn_event") if e["thread_id"] == thread_id]
-        self.assertEqual(sorted(e["status"] for e in events), ["delivered", "delivered"])
+        self.assertEqual(sorted(e["status"] for e in events), ["delivered"] * 3)
+
+    def test_failed_registration_never_runs_bootstrap_or_opens_user_turn(self):
+        thread_id = "0ddddddd-0000-7000-8000-00000000000d"
+        class Starts(FakeClient):
+            def request(self, method, params, timeout=60):
+                FakeClient.log.append((method, params))
+                if method == "thread/start":
+                    return {"thread": {"id": thread_id}}
+                return {}
+        store.create("codex_runtime", {"runtime_id": cr.RUNTIME_ID,
+                     "status": "running", "socket_path": cr.socket_path(store)}, rid=cr.RUNTIME_ID)
+        original = store.create
+        def fail_registry(kind, *args, **kwargs):
+            if kind == "codex_conversation":
+                raise store.StateError("registration failed")
+            return original(kind, *args, **kwargs)
+        with mock.patch.object(cr, "connect", lambda **kw: (Starts(), "gpt-6-astra")), \
+             mock.patch.object(store, "create", fail_registry):
+            with self.assertRaises(cr.RuntimeError_) as error:
+                cr.create_conversation("must-not-open", "ceo", "user turn",
+                                       state_store=store, route_ready=True)
+        self.assertEqual(error.exception.code, "conversation-create-failed")
+        self.assertEqual([m for m, _ in FakeClient.log], ["thread/start"])
+        self.assertIsNone(store.read("codex_conversation", thread_id))
+        self.assertFalse(cr.conversation_status(thread_id, state_store=store,
+                                                 route_ready=True)["MANAGED"])
+
+    def test_bootstrap_or_listener_failure_retires_thread_before_user_turn(self):
+        thread_id = "0eeeeeee-0000-7000-8000-00000000000e"
+        class Starts(FakeClient):
+            def request(self, method, params, timeout=60):
+                if method == "thread/start":
+                    return {"thread": {"id": thread_id}}
+                return super().request(method, params, timeout)
+            def await_turn(self, turn_id, timeout):
+                return {"id": turn_id, "status": "completed"}, [{"text":
+                    "THEBES_BOOTSTRAP_READY %s" % thread_id}]
+        store.create("codex_runtime", {"runtime_id": cr.RUNTIME_ID,
+                     "status": "running", "socket_path": cr.socket_path(store)}, rid=cr.RUNTIME_ID)
+        with mock.patch.object(cr, "connect", lambda **kw: (Starts(), "gpt-6-astra")):
+            with self.assertRaises(cr.RuntimeError_) as error:
+                cr.create_conversation("no-route", "ceo", "user turn",
+                                       state_store=store, route_ready=False)
+        self.assertEqual(error.exception.code, "conversation-not-ready")
+        self.assertEqual(store.read("codex_conversation", thread_id)["status"], "retired")
+        self.assertEqual([p["input"][0]["text"] for m, p in FakeClient.log
+                          if m == "turn/start"], [cr.bootstrap_prompt(thread_id, store)])
 
     def test_a_resume_failure_fails_closed_and_keeps_the_event_queued(self):
         from agent.execution.codex_appserver import AppServerError
@@ -300,6 +377,11 @@ class CodexRuntimeTests(unittest.TestCase):
 
     # -- registry / fail-closed -------------------------------------------------
     def test_unregistered_or_desktop_thread_is_refused_everywhere(self):
+        status = cr.conversation_status(DESKTOP, state_store=store, route_ready=True)
+        self.assertEqual((status["THREAD_ID"], status["MANAGED"], status["RUNTIME_ID"],
+                          status["RUNTIME_BOUND"], status["BOOTSTRAP_LOADED"],
+                          status["RETURN_ROUTING_READY"]),
+                         (DESKTOP, False, None, False, False, False))
         with self.assertRaises(cr.RuntimeError_) as cm:
             cr.enqueue(DESKTOP, "user_prompt", "hi", state_store=store)
         self.assertEqual(cm.exception.code, "thread-not-in-shared-runtime")
