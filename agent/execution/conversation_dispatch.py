@@ -115,6 +115,29 @@ def submit_command(dispatch_id, capability):
             % (ROOT, CAPABILITY_ENV, capability, dispatch_id, "|".join(OUTCOMES)))
 
 
+def team_block(record):
+    """What a TEAM island is told beyond the worker envelope: run seats as
+    subagents, reserve each one first, return ONE report. Absent for a seat."""
+    from agent.state import teams
+    team_id = record.get("target_seat_id")
+    if not teams.is_team(team_id):
+        return []
+    name = teams.read()[team_id]["display_name"]
+    return [
+        "team: you are team %s (%s), an execution island. You do the work by running Thebes "
+        "seats as subagents inside THIS session (the Agent tool, subagent_type=<seat>, e.g. "
+        "frontend-3, backend-3, po, qa, cto); route with the route-to-seat skill." % (name, team_id),
+        "seat_pool: seats are shared across teams, one team at a time. BEFORE spawning a seat run "
+        "exactly: cd %s && python3 -m agent.execution.team_pool reserve <seat> --dispatch %s . "
+        "A refusal 'seat-held' names the holder and free_alternatives of the same capability: pick "
+        "one of those, never wait and never spawn an unreserved seat. Every reservation is released "
+        "automatically when you report; release a seat early with `team_pool release`."
+        % (ROOT, record["dispatch_id"]),
+        "report_shape: one report for the whole request — what each seat did, evidence (paths, "
+        "commands, output), what is blocked or needs a decision, nothing else.",
+    ]
+
+
 def build_envelope(record, capability):
     return "\n".join([
         "THEBES_CONVERSATION_DISPATCH %s" % ENVELOPE_VERSION,
@@ -133,6 +156,7 @@ def build_envelope(record, capability):
         "else; never repeat it elsewhere, never report twice, never contact Codex, never "
         "start or resume a session. Thebes returns your result to the Codex conversation "
         "that dispatched this.",
+    ] + team_block(record) + [
         "",
         "--- task ---",
         "",
@@ -173,8 +197,12 @@ def dispatch(prompt, target_session_id, *, env=None, state_store=store, cli=None
     with state_store._Lock("claude-target-%s" % target_session_id):
         busy = open_work_for(target_session_id, state_store)
         if busy:
-            raise Refused("target-session-busy", "%s has open dispatches %s; wait for their "
-                          "results or withdraw them" % (target_session_id, ", ".join(busy)))
+            from agent.execution.team_pool import free_teams
+            free = ", ".join("%s (%s)" % (t["team_id"], t["session_id"])
+                             for t in free_teams(state_store)) or "none"
+            raise Refused("target-session-busy", "%s has open dispatches %s; send this to a "
+                          "free team instead: %s — or wait for their results"
+                          % (target_session_id, ", ".join(busy), free))
         dispatch_id = state_store.new_id("conversation_dispatch")
         capability = secrets.token_urlsafe(32)
         prompt_ref = _ref_path(state_store, "conversation-prompts", dispatch_id)

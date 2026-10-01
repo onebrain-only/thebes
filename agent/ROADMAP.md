@@ -1209,6 +1209,22 @@ CEO sets it through `/config`; Thebes does not edit `~/.claude.json`. Resuming w
 extra `--remote-control` flag is rejected: extra flags on `--resume` were observed to start
 a copy (`WORKFLOWS.md` §4).
 
+### Step 1b — Teams (execution islands) and the seat pool, 2026-10-01
+
+CEO redirection after P1b, recorded as D-032: the execution group is **five generic
+islands** (teams Karnak, Habu, Luxor, Ramesseum, Deir el-Bahari), each one persistent
+Claude session that runs seats as subagents and returns one report; seats are a shared,
+time-exclusive pool (`seat_reservation`); one Codex conversation controls all islands,
+one request per free team. Built: `agent/state/registry/teams.json`, `agent/state/teams.py`,
+`store.reserve_seat` / `release_seat_reservations`, `agent/execution/team_pool.py`, the team
+block in the dispatch envelope, teams in the Codex bootstrap, a busy refusal that names
+free teams, firewall tokens (L-015), `test_team_pool.py`. Validator: a team may bind a
+session and receive conversation deliveries, never Product session dispatches.
+
+**P1c (next, live):** two islands open (Karnak, Luxor); two requests from one Codex
+Desktop conversation run in parallel; Karnak reserves `frontend-1`, Luxor is refused it
+and takes `frontend-2`; two reports return to the same conversation.
+
 ### Not in scope
 
 A ChatGPT web Custom GPT (send-only; it cannot satisfy the success definition). Any new

@@ -481,3 +481,33 @@ interface; a Jev failure or an absent key is `decision-gate-unavailable` and the
 question routes to the CEO exactly as it does today. The confidence threshold and the
 question schemas are tracked configuration, not prompt text. D-002's rule stands:
 Jev never selects Product work and never wakes anything.
+
+## D-032 — Teams are execution islands; seats are a shared pool, exclusive in time
+
+**Status:** ACTIVE (2026-10-01)
+**Decision:** A **team** is one persistent Claude session that receives a request from the
+Codex Listener, runs the seats it needs as subagents inside itself, and returns one
+report. Teams are generic, not per project, so one request that crosses the design system
+and the app runs in one island when the work has a dependency. Five teams exist, named
+after temples (`agent/state/registry/teams.json`: Karnak, Habu, Luxor, Ramesseum, Deir
+el-Bahari), as seats are named after deities. Seats remain the single shared pool: a seat
+runs in at most one team at a time, enforced by a `seat_reservation` taken before the
+subagent is spawned and released when the team's dispatch settles; a team refused a held
+seat takes a free seat of the same capability rather than waiting. One Codex Listener
+conversation controls every team; one request goes to one free team, so several requests
+run in parallel from one conversation.
+**Why:** CEO ruling 2026-10-01. The previous shape — one persistent session per seat,
+Codex choosing the seat — meant every new agent needed its own session and nobody could
+run a dependent two-project change as one piece of work. A team is the Orchestrator
+behaviour `CLAUDE.md` already defines (route, dispatch seats, verify, answer), given a
+durable session and an address.
+**Consequences:** A team is not a seat and not a Role: it holds no capability, claims no
+Product work, and appears in no queue. Product work a team runs still goes through
+claim → lease → validation under the seat that does it. Teams cannot be created by
+Thebes (the Claude Code classifier refuses `claude --bg` from inside a session); the CEO
+creates each island once. A team cannot reserve on another team's behalf and a seat
+session cannot reserve at all — identity is the session id through its binding. D-002's
+serial-by-default rule is unchanged: parallelism is one request per team, bounded by the
+number of islands the CEO chose to open.
+**Evidence:** `agent/execution/team_pool.py`, `store.reserve_seat`,
+`agent/execution/tests/test_team_pool.py`.

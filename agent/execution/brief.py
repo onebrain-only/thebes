@@ -105,6 +105,10 @@ CONTROL_PLANE_TOKENS = (
     "agent.execution.codex_runtime",
     "agent.execution.conversation_dispatch",
     "attach-conversation",
+    # The team seat pool (2026-10-01): reserving a seat is an orchestration
+    # act a Product executor must never be told to perform (L-015).
+    "agent.execution.team_pool",
+    "reserve_seat",
     "app-server-control.sock",
     "claude --resume",
     "claude -p",

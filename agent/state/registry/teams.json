@@ -1,0 +1,12 @@
+{
+  "record_type": "team_registry",
+  "schema_version": 1,
+  "note": "CEO 2026-10-01. A team is an execution island: ONE persistent Claude session that runs seats as subagents inside itself. Teams are generic, not per project — one request may cross the design system and the app in one island when the work has a dependency. Seats are a shared pool: a seat runs in at most one team at a time (seat_reservation), and a team borrows a free seat rather than waiting. One Codex Listener conversation controls every team. Teams are named after temples, as seats are named after deities (NAMING.csv).",
+  "teams": {
+    "karnak":         {"number": 1, "display_name": "Karnak"},
+    "habu":           {"number": 2, "display_name": "Habu"},
+    "luxor":          {"number": 3, "display_name": "Luxor"},
+    "ramesseum":      {"number": 4, "display_name": "Ramesseum"},
+    "deir-el-bahari": {"number": 5, "display_name": "Deir el-Bahari"}
+  }
+}

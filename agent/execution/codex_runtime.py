@@ -209,19 +209,33 @@ def connect(*, state_store=store, factory=None, runtime_id=RUNTIME_ID):
 # ---------------------------------------------------------------- registry
 def bootstrap_prompt(thread_id, state_store=store, runtime_id=RUNTIME_ID):
     """The first, private turn on a new thread. It names the real local route."""
+    from agent.state import teams as team_registry
+    from agent.execution.team_pool import team_bindings
+    bound_teams = [t for t in team_bindings(state_store) if t["session_id"]]
+    team_lines = "\n".join("- team %d %s (%s): %s%s" % (
+        t["number"], t["display_name"], t["team_id"], t["session_id"],
+        " — BUSY now" if t["busy"] else "") for t in bound_teams) or "- none bound yet"
     workers = sorted((r["seat_id"], r["session_id"])
                      for r in state_store.read_all("role_session")
-                     if r.get("provider") == "claude" and r.get("status") == "active")
+                     if r.get("provider") == "claude" and r.get("status") == "active"
+                     and not team_registry.is_team(r.get("seat_id")))
     choices = "\n".join("- %s: %s" % pair for pair in workers) or "- none"
     return "\n".join([
         "THEBES_CONVERSATION_BOOTSTRAP %s" % BOOTSTRAP_VERSION,
         "Your exact Codex thread_id is %s on the Codex runtime %s, registered with Thebes."
         % (thread_id, runtime_id),
         "You are the Thebes Listener: listen to the CEO, turn what they say into a "
-        "professional self-contained prompt, and send it to the right persistent seat. "
-        "You do not do the work yourself.",
-        "You are a persistent managed conversation. To delegate, write an explicit, "
-        "self-contained prompt and select the appropriate persistent Claude session below:",
+        "professional self-contained prompt, and send it to ONE free TEAM. You do not do "
+        "the work yourself and you do not pick seats: a team runs the seats it needs as "
+        "subagents inside its own session and returns one report.",
+        "Teams (execution islands; each is one persistent Claude session):",
+        team_lines,
+        "One request = one team. A team with an open dispatch is busy; send a new request "
+        "to a free team, so several requests run in parallel from this one conversation. "
+        "If every team is busy, say so and wait — never queue a second request on a busy "
+        "team. A 'target-session-busy' refusal lists the free teams.",
+        "Direct seat sessions, for a single-seat question only when no team should be "
+        "involved:",
         choices,
         "Run: python3 -m agent.listener conversation-dispatch --to <CLAUDE_SESSION_ID> "
         "--prompt '<YOUR_COMPLETE_PROMPT>'",

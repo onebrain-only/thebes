@@ -34,6 +34,7 @@ sys.path.insert(0, STATE)
 import policy                                          # noqa: E402
 import board                                           # noqa: E402
 import roster                                          # noqa: E402
+import teams                                           # noqa: E402
 
 CAPABILITIES = {"frontend", "backend", "qa", "content", "devops", "analyst",
                 "ux-engineer", "product-designer", "po", "pm", "cto", "cpo", "cxo"}
@@ -218,6 +219,13 @@ def seats():
     try:
         return set(roster.read(SEATS_JSON))
     except roster.RegistryError:
+        return set()
+
+
+def team_ids():
+    try:
+        return set(teams.read())
+    except teams.TeamRegistryError:
         return set()
 
 
@@ -1469,8 +1477,11 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
     elif kind == "role_session":
         _req(rec, ["seat_id", "provider", "session_id", "stable_home", "status",
                    "bound_by"], errs, where)
-        if rec.get("seat_id") not in seatset:
-            errs.append("%s: role session seat %r is not declared" % (where, rec.get("seat_id")))
+        if rec.get("seat_id") not in seatset and rec.get("seat_id") not in team_ids():
+            errs.append("%s: role session %r is neither a declared seat nor a declared team"
+                        % (where, rec.get("seat_id")))
+        if rec.get("seat_id") in team_ids() and rec.get("provider") != "claude":
+            errs.append("%s: a team island is a Claude session" % where)
         if rec.get("provider") not in ROLE_SESSION_PROVIDERS:
             errs.append("%s: role session provider must be one of %s"
                         % (where, "/".join(ROLE_SESSION_PROVIDERS)))
@@ -1557,8 +1568,12 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
         elif not did.startswith("dispatch-"):
             errs.append("%s: session delivery dispatch_id must start with dispatch- or "
                         "cdispatch-" % where)
-        if rec.get("seat_id") not in seatset:
-            errs.append("%s: session delivery seat %r is not declared" % (where, rec.get("seat_id")))
+        if rec.get("seat_id") not in seatset and rec.get("seat_id") not in team_ids():
+            errs.append("%s: session delivery target %r is neither a declared seat nor a "
+                        "declared team" % (where, rec.get("seat_id")))
+        if rec.get("seat_id") in team_ids() and not did.startswith("cdispatch-"):
+            errs.append("%s: a team receives conversation dispatches only, never Product "
+                        "session dispatches" % where)
         if rec.get("provider") != "claude":
             errs.append("%s: session delivery provider must be claude — this transport "
                         "is the Claude CLI" % where)
@@ -1682,6 +1697,24 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
                 errs.append("%s: a codex-origin dispatch's delivery_id is its dispatch_id"
                             % where)
 
+    elif kind == "seat_reservation":
+        _req(rec, ["seat_reservation_id", "seat_id", "team_id", "dispatch_id", "status"],
+             errs, where)
+        if not str(rec.get("seat_reservation_id") or "").startswith("sres-"):
+            errs.append("%s: seat_reservation_id must start with sres-" % where)
+        if rec.get("seat_id") not in seatset:
+            errs.append("%s: reserved seat %r is not declared" % (where, rec.get("seat_id")))
+        if rec.get("team_id") not in team_ids():
+            errs.append("%s: reserving team %r is not declared" % (where, rec.get("team_id")))
+        if not str(rec.get("dispatch_id") or "").startswith("cdispatch-"):
+            errs.append("%s: a seat is reserved for one conversation dispatch" % where)
+        if rec.get("status") not in ("active", "released"):
+            errs.append("%s: seat reservation status must be active or released" % where)
+        if rec.get("status") == "released" and not rec.get("released_at"):
+            errs.append("%s: a released reservation carries released_at" % where)
+        if rec.get("status") == "active" and rec.get("released_at"):
+            errs.append("%s: an active reservation carries no released_at" % where)
+
     elif kind == "codex_runtime":
         _req(rec, ["runtime_id", "socket_path", "status"], errs, where)
         if rec.get("status") not in ("running", "stopped"):
@@ -1730,9 +1763,9 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
         if rec.get("target_provider") != "claude" or not SESSION_UUID.match(
                 str(rec.get("target_session_id") or "")):
             errs.append("%s: target is a durable claude session uuid" % where)
-        if rec.get("target_seat_id") not in seatset:
-            errs.append("%s: conversation dispatch seat %r is not declared"
-                        % (where, rec.get("target_seat_id")))
+        if rec.get("target_seat_id") not in seatset and rec.get("target_seat_id") not in team_ids():
+            errs.append("%s: conversation dispatch target %r is neither a declared seat nor "
+                        "a declared team" % (where, rec.get("target_seat_id")))
         if rec.get("delivery_id") != rec.get("dispatch_id"):
             errs.append("%s: a conversation dispatch's delivery_id is its dispatch_id" % where)
         if not re.match(r"^[0-9a-f]{64}$", str(rec.get("capability_sha256") or "")):
@@ -1966,8 +1999,10 @@ def check(runtime=None):
              "codex_runtime": "codex-runtimes",
              "codex_conversation": "codex-conversations",
              "codex_turn_event": "codex-turn-events",
-             "conversation_dispatch": "conversation-dispatches"}
+             "conversation_dispatch": "conversation-dispatches",
+             "seat_reservation": "seat-reservations"}
     seen_ids = {}
+    active_seat_holds = {}
     active_primaries = []
     edges = []
     active_iv = []
@@ -2012,8 +2047,15 @@ def check(runtime=None):
                    "codex_runtime": "runtime_id",
                    "codex_conversation": "thread_id",
                    "codex_turn_event": "event_id",
-                   "conversation_dispatch": "dispatch_id"}[kind]
+                   "conversation_dispatch": "dispatch_id",
+                   "seat_reservation": "seat_reservation_id"}[kind]
             rid = rec.get(idf)
+            if kind == "seat_reservation" and rec.get("status") == "active":
+                prior = active_seat_holds.get(rec.get("seat_id"))
+                if prior:
+                    errs.append("%s: seat %r is held twice (also %s) — one ACTIVE "
+                                "reservation per seat" % (p, rec.get("seat_id"), prior))
+                active_seat_holds[rec.get("seat_id")] = p
             if rid != fn[:-5]:
                 errs.append("%s: filename does not match %s %r" % (p, idf, rid))
             if (kind, rid) in seen_ids:

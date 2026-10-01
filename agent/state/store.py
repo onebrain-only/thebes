@@ -123,6 +123,10 @@ KINDS = {
     # as one turn on exactly the origin thread. The worker's capability is kept
     # only as a hash; prompt and result live in *_ref files, never here.
     "conversation_dispatch": ("conversation-dispatches", "cdispatch"),
+    # A seat held by one team (execution island) for the life of one open
+    # conversation dispatch. At most one ACTIVE reservation per seat: the pool
+    # is shared, exclusive in time. Released when the dispatch settles.
+    "seat_reservation": ("seat-reservations", "sres"),
 }
 
 CONVERSATION_DISPATCH_OPEN = frozenset({"delivering", "delivered"})
@@ -2716,8 +2720,10 @@ def bind_role_session(seat_id, provider, session_id, stable_home, bound_by,
         raise StateError("stable_home is required")
     if not bound_by:
         raise StateError("bound_by is required")
-    if seat_id not in roster.read():
-        raise StateError("seat %r is not declared in the neutral registry" % seat_id)
+    import teams                                        # noqa: E402
+    if seat_id not in roster.read() and not teams.is_team(seat_id):
+        raise StateError("seat %r is not declared in the neutral registry (nor is it a "
+                         "declared team)" % seat_id)
     with record_lock("role_session", seat_id):
         cur = read("role_session", seat_id)
         if cur is None:
@@ -3125,10 +3131,15 @@ def record_conversation_result(dispatch_id, outcome, session_id, capability, res
         with open(tmp, "w", encoding="utf-8") as fh:
             fh.write(result_text)
         os.replace(tmp, ref)
-        return _conversation_write(cur, {
+        settled = _conversation_write(cur, {
             "status": outcome, "outcome": outcome, "result_ref": ref, "result_sha256": digest,
             "reported_session_id": session_id, "attested_delivery_id": attested["delivery_id"],
-            "delivery_status": "DELIVERED", "outcome_at": now()}), True
+            "delivery_status": "DELIVERED", "outcome_at": now()})
+    # A settled dispatch frees every seat its team was holding. Outside the
+    # dispatch lock: reservations have their own per-seat locks, and a release
+    # that fails must not un-settle a recorded result.
+    release_seat_reservations(dispatch_id, "dispatch-%s" % outcome)
+    return settled, True
 
 
 def withdraw_conversation_dispatch(dispatch_id, origin_thread_id):
@@ -3143,7 +3154,71 @@ def withdraw_conversation_dispatch(dispatch_id, origin_thread_id):
                              "withdraw it" % dispatch_id)
         if cur.get("status") not in CONVERSATION_DISPATCH_OPEN:
             raise StateError("dispatch-not-open: %s is %s" % (dispatch_id, cur.get("status")))
-        return _conversation_write(cur, {"status": "withdrawn", "withdrawn_at": now()})
+        withdrawn = _conversation_write(cur, {"status": "withdrawn", "withdrawn_at": now()})
+    release_seat_reservations(dispatch_id, "dispatch-withdrawn")
+    return withdrawn
+
+
+# ---------------------------------------------------------------- seat pool
+def active_seat_reservation(seat_id):
+    """The one ACTIVE reservation holding this seat, or None."""
+    for rec in read_all("seat_reservation"):
+        if rec.get("seat_id") == seat_id and rec.get("status") == "active":
+            return rec
+    return None
+
+
+def reserve_seat(seat_id, team_id, dispatch_id):
+    """A team takes one seat for one OPEN dispatch of its own.
+
+    One ACTIVE reservation per seat, decided under the seat's lock. The same
+    team re-reserving for the same dispatch is idempotent; another team is
+    refused with the holder named, so it can pick a free seat of the same
+    capability instead of waiting. A seat is only ever held for a dispatch that
+    is open AND addressed to this team's own session.
+    """
+    import roster, teams                                # noqa: E402
+    if seat_id not in roster.read():
+        raise StateError("seat %r is not declared in the neutral registry" % seat_id)
+    if not teams.is_team(team_id):
+        raise StateError("%r is not a declared team" % team_id)
+    dispatch = read("conversation_dispatch", dispatch_id)
+    if dispatch is None or dispatch.get("status") not in CONVERSATION_DISPATCH_OPEN:
+        raise StateError("dispatch-not-open: a seat is reserved only for an open dispatch")
+    if dispatch.get("target_seat_id") != team_id:
+        raise StateError("not-your-dispatch: %s is addressed to %r, not %r"
+                         % (dispatch_id, dispatch.get("target_seat_id"), team_id))
+    with _Lock("seat-reservation-%s" % seat_id):
+        held = active_seat_reservation(seat_id)
+        if held is not None:
+            if held.get("team_id") == team_id and held.get("dispatch_id") == dispatch_id:
+                return held, False
+            raise StateError("seat-held: %s is held by team %s for %s"
+                             % (seat_id, held.get("team_id"), held.get("dispatch_id")))
+        rec = create("seat_reservation", {
+            "seat_id": seat_id, "team_id": team_id, "dispatch_id": dispatch_id,
+            "status": "active", "released_at": None, "release_reason": None})
+        return rec, True
+
+
+def release_seat_reservations(dispatch_id, reason, seat_id=None):
+    """Release every ACTIVE reservation a dispatch holds (or one seat of it).
+    Records are kept, never deleted — a release is a status, not an erasure."""
+    released = []
+    for rec in read_all("seat_reservation"):
+        if rec.get("dispatch_id") != dispatch_id or rec.get("status") != "active":
+            continue
+        if seat_id is not None and rec.get("seat_id") != seat_id:
+            continue
+        with _Lock("seat-reservation-%s" % rec["seat_id"]):
+            cur = read("seat_reservation", rec["seat_reservation_id"])
+            if cur is None or cur.get("status") != "active":
+                continue
+            released.append(update("seat_reservation", cur["seat_reservation_id"],
+                                   cur["revision"], {"status": "released",
+                                                     "released_at": now(),
+                                                     "release_reason": reason}))
+    return released
 
 
 def review_context_ref(work_item_id, review_context):
@@ -3909,7 +3984,8 @@ def _id_field(kind):
             "codex_runtime": "runtime_id",
             "codex_conversation": "thread_id",
             "codex_turn_event": "event_id",
-            "conversation_dispatch": "dispatch_id"}[kind]
+            "conversation_dispatch": "dispatch_id",
+            "seat_reservation": "seat_reservation_id"}[kind]
 
 
 def _validate_one(kind, record):
