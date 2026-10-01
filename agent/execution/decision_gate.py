@@ -97,21 +97,42 @@ class FakeGate:
                 "gate": self.gate_id, "evidence": "weight %d, others %d" % (best[1], others)}
 
 
+def read_key(provider, env=None):
+    """The gate's API key: a 0600 file outside the repo first (sessions started
+    by Thebes do not inherit a terminal's variables), then the variable."""
+    env = os.environ if env is None else env
+    path = os.path.expanduser(provider.get("key_file") or "")
+    if path and os.path.isfile(path):
+        with open(path, encoding="utf-8") as fh:
+            key = fh.read().strip()
+        if key:
+            return key
+    return (env.get(provider.get("key_env") or JEV_KEY_ENV) or "").strip()
+
+
 class JevGate:
-    """TypeSafe Jev: ONE typed Choice over the decision classes. No text."""
+    """TypeSafe Jev: ONE typed Choice over the decision classes. No text.
+
+    The route is configuration (D-031): `jev_provider` in decision_gate.json
+    names the base URL, model id and key location, so direct TypeSafe,
+    OpenRouter and the Vercel AI Gateway are one edit apart."""
     gate_id = "jev"
 
     def __init__(self, cfg, env=None, opener=None):
         self.env = os.environ if env is None else env
         self.opener = opener or urllib.request.urlopen
+        self.provider = dict({"url": JEV_URL, "model": "jev-latest", "key_env": JEV_KEY_ENV},
+                             **(cfg.get("jev_provider") or {}))
 
     def classify(self, text):
-        key = self.env.get(JEV_KEY_ENV)
+        key = read_key(self.provider, self.env)
         if not key:
-            raise Refused("decision-gate-unavailable", "%s is not set" % JEV_KEY_ENV)
+            raise Refused("decision-gate-unavailable",
+                          "no API key in %s or $%s" % (self.provider.get("key_file"),
+                                                       self.provider.get("key_env")))
         classes = decision_classes()
         body = json.dumps({
-            "model": "jev-latest",
+            "model": self.provider["model"],
             "state": {"question": text},
             "questions": {"decision_class": {
                 "type": "choice",
@@ -119,7 +140,7 @@ class JevGate:
                 "criteria": {cls: "accountable role: %s" % rule["accountable_role"]
                              for cls, rule in classes.items()}}},
         }).encode("utf-8")
-        req = urllib.request.Request(JEV_URL, data=body, method="POST", headers={
+        req = urllib.request.Request(self.provider["url"], data=body, method="POST", headers={
             "Content-Type": "application/json", "Authorization": "Bearer %s" % key})
         try:
             with self.opener(req, timeout=30) as resp:

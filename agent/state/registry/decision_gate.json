@@ -2,8 +2,15 @@
   "record_type": "decision_gate_config",
   "schema_version": 1,
   "note": "D-031: the gate classifies a worker's decision_required / blocked / clarification_required into one decision class of authority.json and scores confidence; the accountable role still writes the decision. `gate` selects the implementation: `fake` (deterministic keyword table below, for P2) or `jev` (TypeSafe Jev over POST /v1/systemone with TYPESAFE_API_KEY, P3). Below `threshold` the question escalates to the CEO through the origin conversation. An unavailable gate escalates the same way.",
-  "gate": "fake",
+  "gate": "jev",
   "threshold": 0.7,
+  "jev_provider": {
+    "note": "CEO chose OpenRouter 2026-10-01 (no waitlist; same /v1/systemone body as direct). To switch route edit this block only: direct = https://api.typesafe.ai/v1/systemone, model jev-latest, key_env TYPESAFE_API_KEY; Vercel = https://ai-gateway.vercel.sh/typesafe/v1/systemone with an AI Gateway key. The key itself is never in the repo.",
+    "url": "https://openrouter.ai/api/v1/systemone",
+    "model": "typesafe/jev-1.13",
+    "key_file": "~/.thebes/openrouter.key",
+    "key_env": "OPENROUTER_API_KEY"
+  },
   "fake_keywords": {
     "product_scope":          ["scope", "feature", "should we build", "in scope", "out of scope", "product decision", "mvp"],
     "roadmap_priority":       ["priority", "prioriti", "which first", "backlog order", "roadmap"],

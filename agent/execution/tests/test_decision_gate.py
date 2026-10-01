@@ -49,7 +49,15 @@ class DecisionGateTests(unittest.TestCase):
         store.create("codex_conversation", {"thread_id": THREAD, "runtime_id": cr.RUNTIME_ID,
                                             "registered_by": "ceo", "status": "active"}, rid=THREAD)
         self.delivered, self.resumed, self.launched = [], [], []
+        # Hermetic: the live config may select the real Jev gate (and a real key
+        # file); a test must never reach the network or spend money.
+        live = dg.config()
         self.patches = [mock.patch.object(subprocess, n, _refuse) for n in ("run", "Popen")]
+        self.patches.append(mock.patch.object(
+            dg, "config", lambda path=dg.CONFIG_PATH: dict(live, gate="fake")))
+        self.patches.append(mock.patch.object(
+            dg.urllib.request, "urlopen",
+            lambda *a, **k: (_ for _ in ()).throw(AssertionError("no network in tests"))))
         self.patches.append(mock.patch.object(cr, "_detach_drain", self.launched.append))
         for p in self.patches:
             p.start()
@@ -131,13 +139,17 @@ class DecisionGateTests(unittest.TestCase):
             return Resp({"answers": {"decision_class": {"choice": "technical_architecture",
                                                          "confidence": 0.93,
                                                          "probabilities": {"technical_architecture": 0.93}}}})
+        # key_file is blanked so this test can never read (or print) a real key.
         cfg = dict(dg.config(), gate="jev")
-        gate = dg.JevGate(cfg, env={dg.JEV_KEY_ENV: "sk-test"}, opener=opener)
+        cfg["jev_provider"] = dict(cfg["jev_provider"], key_file="")
+        gate = dg.JevGate(cfg, env={"OPENROUTER_API_KEY": "sk-test"}, opener=opener)
         v = gate.classify("Should we move to a junction table?")
         self.assertEqual((v["decision_class"], v["confidence"], v["gate"]),
                          ("technical_architecture", 0.93, "jev"))
         url, auth, body = calls[0]
-        self.assertEqual((url, auth), (dg.JEV_URL, "Bearer sk-test"))
+        self.assertEqual((url, auth), ("https://openrouter.ai/api/v1/systemone",
+                                       "Bearer sk-test"))
+        self.assertEqual(body["model"], "typesafe/jev-1.13")
         self.assertEqual(body["questions"]["decision_class"]["type"], "choice")
         self.assertIn("work_acceptance", body["questions"]["decision_class"]["criteria"])
         self.assertEqual(body["state"], {"question": "Should we move to a junction table?"})
