@@ -1191,6 +1191,24 @@ polling; no Jira, no Product file touched.
    to the CEO is Codex's paraphrase. Acceptable for P1; P2 decides whether the Listener
    also gets the typed outcome.
 
+### P1b — PASSED live with both Desktop apps open, 2026-10-01 12:38 UTC
+
+The CEO's own success definition, met as stated: Codex Desktop open, Claude Desktop open.
+A Codex Desktop conversation opened over SSH to this machine (`thebes-local`) lives on the
+user's own `codex app-server daemon`; Thebes attaches to that daemon as one more client
+(`codex_runtime attach-conversation`, `3500c4b`), so there is one writer and no
+`CODEX_PRIMARY_THREAD_BUSY`. Thread `01a0f777-d0e4-…` received the bootstrap live, the
+CEO typed in Desktop, Codex dispatched and went idle, `frontend-1` (visible in Claude
+Desktop after `/rc`) replied, and "hi back" appeared in the same open Codex conversation.
+
+**Remaining gap — Remote Control does not survive delivery.** Delivery is stop → `--bg
+--resume`, which starts a new process without Remote Control, so the seat drops out of
+Claude Desktop. Installed Claude Code 2.1.285 carries a global config key
+`remoteControlAtStartup` (string present in the binary; not found in published docs). The
+CEO sets it through `/config`; Thebes does not edit `~/.claude.json`. Resuming with an
+extra `--remote-control` flag is rejected: extra flags on `--resume` were observed to start
+a copy (`WORKFLOWS.md` §4).
+
 ### Not in scope
 
 A ChatGPT web Custom GPT (send-only; it cannot satisfy the success definition). Any new
