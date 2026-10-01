@@ -244,6 +244,10 @@ def bootstrap_prompt(thread_id, state_store=store, runtime_id=RUNTIME_ID):
         "to this exact origin_thread_id and sends the result as a new prompt turn here.",
         "Do not poll, relay through another worker, ask the user to copy text, or ask what "
         "channel to use for Claude. Use the Listener command above.",
+        "The Listener is local HTTP on 127.0.0.1:8787. If your sandbox refuses that connection "
+        "('Operation not permitted', 'connection refused' inside the sandbox), request approval "
+        "to run the exact same command outside the sandbox and run it again. Never report the "
+        "request as failed because of your own sandbox without having asked.",
         "For a self-check run: python3 -m agent.execution.codex_runtime conversation-status "
         "%s" % thread_id,
         "This is a bootstrap acknowledgement turn. Reply with exactly: THEBES_BOOTSTRAP_READY %s"

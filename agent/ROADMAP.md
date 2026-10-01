@@ -1221,9 +1221,16 @@ block in the dispatch envelope, teams in the Codex bootstrap, a busy refusal tha
 free teams, firewall tokens (L-015), `test_team_pool.py`. Validator: a team may bind a
 session and receive conversation deliveries, never Product session dispatches.
 
-**P1c (next, live):** two islands open (Karnak, Luxor); two requests from one Codex
-Desktop conversation run in parallel; Karnak reserves `frontend-1`, Luxor is refused it
-and takes `frontend-2`; two reports return to the same conversation.
+**P1c — PASSED live, 2026-10-01 16:16–16:22 UTC.** Islands `karnak` (`1ee27200…`) and
+`luxor` (`698a2e83…`) bound; Codex Desktop conversation `01a0f777…` re-bootstrapped to
+list teams. CEO requests: Karnak reserved `frontend-1` + `po` (16:16:35) then
+`frontend-1` (16:18:30), ran them as subagents, released on completion. Forced parallel
+proof from the controller: A to Karnak (holds `frontend-1` from 16:20:13, 60 s sleep),
+B to Luxor 25 s later — Luxor was refused `frontend-1` (`seat-held`, Karnak named) and
+took `frontend-2` (16:20:37); Luxor finished first; both reports landed as separate turns
+on the same Codex conversation; all reservations released `dispatch-completed`. Sandbox
+finding: Codex Desktop blocks `127.0.0.1:8787` unless it asks for approval; the bootstrap
+now instructs it to ask. The CEO set Remote Control at startup through `/config`.
 
 ### Not in scope
 
