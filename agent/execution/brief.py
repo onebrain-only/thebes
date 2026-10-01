@@ -109,6 +109,11 @@ CONTROL_PLANE_TOKENS = (
     # act a Product executor must never be told to perform (L-015).
     "agent.execution.team_pool",
     "reserve_seat",
+    # The decision gate (2026-10-01): answering or routing a decision request
+    # is control plane (L-015).
+    "agent.execution.decision_gate",
+    "THEBES_DECISION_REQUEST",
+    "decision_request_id",
     "app-server-control.sock",
     "claude --resume",
     "claude -p",

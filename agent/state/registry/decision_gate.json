@@ -1,0 +1,21 @@
+{
+  "record_type": "decision_gate_config",
+  "schema_version": 1,
+  "note": "D-031: the gate classifies a worker's decision_required / blocked / clarification_required into one decision class of authority.json and scores confidence; the accountable role still writes the decision. `gate` selects the implementation: `fake` (deterministic keyword table below, for P2) or `jev` (TypeSafe Jev over POST /v1/systemone with TYPESAFE_API_KEY, P3). Below `threshold` the question escalates to the CEO through the origin conversation. An unavailable gate escalates the same way.",
+  "gate": "fake",
+  "threshold": 0.7,
+  "fake_keywords": {
+    "product_scope":          ["scope", "feature", "should we build", "in scope", "out of scope", "product decision", "mvp"],
+    "roadmap_priority":       ["priority", "prioriti", "which first", "backlog order", "roadmap"],
+    "work_acceptance":        ["acceptance criteria", "acceptance criterion", "definition of done", "is this done", "accept this"],
+    "technical_architecture": ["architecture", "schema", "stack", "which package", "dependency", "pattern", "design the table", "data model", "api shape"],
+    "security_exception":     ["security", "rls", "permission", "secret", "credential", "auth bypass"],
+    "release_operation":      ["release", "deploy", "push to main", "canary", "merge to main", "ship"],
+    "production_operation":   ["production", "apply_migration", "apply the migration", "prod database"],
+    "experience_direction":   ["design system", "ux", "color", "colour", "layout", "experience", "look and feel", "spacing"],
+    "quality_gate":           ["test strategy", "qa route", "which tests", "test coverage"],
+    "content_direction":      ["copy", "wording", "arabic", "translation", "string", "label text"],
+    "company_investment":     ["budget", "invest", "subscription cost", "pay for", "pricing plan"],
+    "legal_external_commitment": ["legal", "contract", "terms of service", "vendor agreement"]
+  }
+}

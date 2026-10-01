@@ -1232,6 +1232,31 @@ on the same Codex conversation; all reservations released `dispatch-completed`. 
 finding: Codex Desktop blocks `127.0.0.1:8787` unless it asks for approval; the bootstrap
 now instructs it to ask. The CEO set Remote Control at startup through `/config`.
 
+### Step 2 — the decision group, built 2026-10-01
+
+`agent/execution/decision_gate.py` + `agent/state/registry/decision_gate.json` +
+`decision_request` records. A `decision_required` / `blocked` / `clarification_required`
+outcome from an island or seat no longer returns to Codex: the gate (FakeGate keyword table
+for P2; JevGate typed Choice for P3) names the decision class and the accountable role from
+`authority.json`, the question is delivered to that role's bound session as one
+`THEBES_DECISION_REQUEST` turn, the owner answers once (identity + capability), and the
+**same** asker is resumed with a `THEBES_DECISION_ANSWER` dispatch on the same origin thread
+— so Codex hears only the final `completed`. Escalation to the CEO through the origin
+conversation, marked `ESCALATED TO THE CEO`, when: the owner is the CEO, confidence is below
+the threshold, the gate is unavailable or malformed, the owner has no bound session, or
+delivery fails. `task_owner` classes go straight back to the asker. 7 tests. Firewall tokens
+added (L-015).
+
+**Known limitation, recorded (CEO observation 2026-10-01):** every delivery stops and
+restarts the target Claude process, so Claude Desktop shows the island as archived or with a
+connection error while a turn is being delivered, even with Remote Control at startup on.
+A delivery that does not restart the process needs a Claude Code transport that does not
+exist today; parked, not fixed.
+
+**P2 (next, live):** Karnak reports `decision_required` on an acceptance question → `po`
+receives and answers → Karnak continues → Codex sees one `completed`. Then P3 with
+`gate: jev` and a real key.
+
 ### Not in scope
 
 A ChatGPT web Custom GPT (send-only; it cannot satisfy the success definition). Any new

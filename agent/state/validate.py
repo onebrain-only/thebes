@@ -1715,6 +1715,33 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
         if rec.get("status") == "active" and rec.get("released_at"):
             errs.append("%s: an active reservation carries no released_at" % where)
 
+    elif kind == "decision_request":
+        _req(rec, ["decision_request_id", "origin_dispatch_id", "origin_thread_id",
+                   "origin_outcome", "asker_seat_id", "asker_session_id", "question_ref",
+                   "route", "capability_sha256", "status"], errs, where)
+        if not str(rec.get("decision_request_id") or "").startswith("dreq-"):
+            errs.append("%s: decision_request_id must start with dreq-" % where)
+        if rec.get("origin_outcome") not in ("decision_required", "blocked",
+                                             "clarification_required"):
+            errs.append("%s: a decision request answers a decision outcome" % where)
+        if rec.get("route") not in ("owner", "task-owner", "escalate"):
+            errs.append("%s: route must be owner, task-owner or escalate" % where)
+        if rec.get("status") not in ("open", "answered", "escalated"):
+            errs.append("%s: decision request status must be open, answered or escalated"
+                        % where)
+        if rec.get("route") == "owner" and (
+                rec.get("owner_seat") not in seatset
+                or not SESSION_UUID.match(str(rec.get("owner_session_id") or ""))):
+            errs.append("%s: an owner-routed request names a declared owner seat and its "
+                        "session" % where)
+        if (rec.get("status") == "answered" and rec.get("route") == "owner"
+                and not rec.get("answer_ref")):
+            errs.append("%s: an answered owner request carries answer_ref" % where)
+        for f in ("question", "answer", "text"):
+            if f in rec:
+                errs.append("%s: a decision request carries refs, never the text (%r)"
+                            % (where, f))
+
     elif kind == "codex_runtime":
         _req(rec, ["runtime_id", "socket_path", "status"], errs, where)
         if rec.get("status") not in ("running", "stopped"):
@@ -2000,7 +2027,8 @@ def check(runtime=None):
              "codex_conversation": "codex-conversations",
              "codex_turn_event": "codex-turn-events",
              "conversation_dispatch": "conversation-dispatches",
-             "seat_reservation": "seat-reservations"}
+             "seat_reservation": "seat-reservations",
+             "decision_request": "decision-requests"}
     seen_ids = {}
     active_seat_holds = {}
     active_primaries = []
@@ -2048,7 +2076,8 @@ def check(runtime=None):
                    "codex_conversation": "thread_id",
                    "codex_turn_event": "event_id",
                    "conversation_dispatch": "dispatch_id",
-                   "seat_reservation": "seat_reservation_id"}[kind]
+                   "seat_reservation": "seat_reservation_id",
+                   "decision_request": "decision_request_id"}[kind]
             rid = rec.get(idf)
             if kind == "seat_reservation" and rec.get("status") == "active":
                 prior = active_seat_holds.get(rec.get("seat_id"))

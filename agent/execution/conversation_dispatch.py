@@ -309,9 +309,16 @@ def result_event_id(dispatch_id):
 
 def render_result(record, result_text):
     """The explicit prompt Thebes constructs for the origin thread."""
+    escalated = record.get("outcome") in DECISION_OUTCOMES
     return "\n".join([
         "THEBES_CONVERSATION_RESULT (the Claude session you dispatched from THIS conversation "
         "has reported)",
+    ] + ([
+        "ESCALATED TO THE CEO: this is a decision the decision group could not settle "
+        "(the owner is the CEO, or the gate was unsure or unavailable). Put the question to the "
+        "CEO; when they answer, send the answer to the SAME session as a new dispatch so it "
+        "continues the same task.",
+    ] if escalated else []) + [
         "dispatch_id: %s" % record["dispatch_id"],
         "delivery_id: %s" % record.get("attested_delivery_id"),
         "worker_seat: %s" % record.get("target_seat_id"),
@@ -340,7 +347,11 @@ def schedule_result(record, *, state_store=store, launcher=None):
             "event_id": ev["event_id"], "thread_id": record["origin_thread_id"]}
 
 
-def submit(dispatch_id, outcome, result_text, *, env=None, state_store=store, launcher=None):
+DECISION_OUTCOMES = ("decision_required", "blocked", "clarification_required")
+
+
+def submit(dispatch_id, outcome, result_text, *, env=None, state_store=store, launcher=None,
+           decision_router=None):
     """The worker's single self-report. Identity is CLAUDE_CODE_SESSION_ID and
     the capability, both from ``env``; the result text is explicit."""
     env = os.environ if env is None else env
@@ -353,10 +364,30 @@ def submit(dispatch_id, outcome, result_text, *, env=None, state_store=store, la
             result_text)
     except state_store.StateError as exc:
         raise Refused(str(exc).split(":", 1)[0], str(exc))
+    # A decision outcome goes to the decision group (D-031), not to Codex. The
+    # gate owns the exception: an escalation returns the question to the origin
+    # conversation exactly as before. `created` guards the loop: a repeated
+    # report never routes twice.
+    decision = None
+    if created and outcome in DECISION_OUTCOMES:
+        from agent.execution import decision_gate
+        try:
+            decision = (decision_router or decision_gate.route)(record, state_store=state_store)
+        except Exception as exc:                  # never lose the question
+            decision = {"route": "escalate", "reason": "decision-routing-raised",
+                        "error": str(exc)[:300]}
+    if decision is not None and decision.get("route") != "escalate":
+        return {"status": "recorded", "dispatch_id": dispatch_id, "outcome": record["outcome"],
+                "decision": {k: decision.get(k) for k in ("route", "decision_class",
+                                                          "accountable_role", "confidence",
+                                                          "owner_seat", "decision_request_id")}}
     # Settled. Queueing is idempotent, so an identical repeat (or a re-run
     # after a crash between settling and queueing) completes it exactly once.
     try:
         reply = schedule_result(record, state_store=state_store, launcher=launcher)
+        if decision is not None:
+            reply["escalated"] = {k: decision.get(k) for k in ("reason", "decision_class",
+                                                               "accountable_role", "confidence")}
     except (codex_runtime.RuntimeError_, state_store.StateError, OSError) as exc:
         reply = {"status": "failed", "error": str(exc)}
     current = state_store.read("conversation_dispatch", dispatch_id)

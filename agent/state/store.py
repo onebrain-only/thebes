@@ -127,6 +127,10 @@ KINDS = {
     # conversation dispatch. At most one ACTIVE reservation per seat: the pool
     # is shared, exclusive in time. Released when the dispatch settles.
     "seat_reservation": ("seat-reservations", "sres"),
+    # One question a worker could not decide, routed by the decision gate to
+    # its accountable role (D-031). Question and answer live in *_ref files;
+    # the owner's capability only as a hash. Terminal: answered | escalated.
+    "decision_request": ("decision-requests", "dreq"),
 }
 
 CONVERSATION_DISPATCH_OPEN = frozenset({"delivering", "delivered"})
@@ -3985,7 +3989,8 @@ def _id_field(kind):
             "codex_conversation": "thread_id",
             "codex_turn_event": "event_id",
             "conversation_dispatch": "dispatch_id",
-            "seat_reservation": "seat_reservation_id"}[kind]
+            "seat_reservation": "seat_reservation_id",
+            "decision_request": "decision_request_id"}[kind]
 
 
 def _validate_one(kind, record):
