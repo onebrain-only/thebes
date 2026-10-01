@@ -1253,9 +1253,18 @@ connection error while a turn is being delivered, even with Remote Control at st
 A delivery that does not restart the process needs a Claude Code transport that does not
 exist today; parked, not fixed.
 
-**P2 (next, live):** Karnak reports `decision_required` on an acceptance question → `po`
-receives and answers → Karnak continues → Codex sees one `completed`. Then P3 with
-`gate: jev` and a real key.
+**P2 — PASSED live, 2026-10-01, on the third run.** Run 1: the fake gate tied "scope"
+against "acceptance criteria", chose `cpo` (unbound) and escalated to Codex marked
+`ESCALATED TO THE CEO` — the safety net worked; the gate now weights phrases over words and
+treats a tie as low confidence. Run 2: `po` was woken but the delivery record (`dreq-` id)
+was refused by the validator, so the request escalated after delivery and `po`'s answer was
+refused `decision-request-not-open` — fixed (validator accepts `dreq-` deliveries) and
+covered by a test. Run 3: Karnak (`cdispatch-d291df4c…`) → `decision_required` →
+`dreq-a9ccc979` routed `work_acceptance` → `po` (session resumed from exited) → answered →
+continuation `cdispatch-6dfa206d…` resumed Karnak → `completed` → one turn on the Codex
+conversation. The `decision_required` itself never reached Codex.
+
+**P3 (next):** `gate: jev` with `TYPESAFE_API_KEY`; the same loop with a typed Choice.
 
 ### Not in scope
 

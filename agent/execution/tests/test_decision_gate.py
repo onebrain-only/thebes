@@ -236,6 +236,17 @@ class DecisionGateTests(unittest.TestCase):
                          ("escalated", "owner-delivery-failed"))
         self.assertEqual(self.clean(), [])
 
+    def test_a_decision_delivery_record_validates(self):
+        """Live P2 run 2 failed here: the delivery record for a dreq- id was refused by
+        the validator AFTER the owner had already been resumed. The record must be legal."""
+        rec = store.record_session_delivery("dreq-11111111-1111-4111-8111-111111111111", {
+            "dispatch_id": "dreq-11111111-1111-4111-8111-111111111111", "work_item_id": None,
+            "seat_id": "po", "provider": "claude", "session_id": PO, "status": "DELIVERED",
+            "stopped_before_resume": "YES", "resumed_same_sid": "YES",
+            "session_count_before": 1, "session_count_after": 1, "delivered_at": store.now()})
+        self.assertEqual(rec["status"], "DELIVERED")
+        self.assertEqual([e for e in validate.check(store.RUNTIME) if "session_deliver" in e], [])
+
     def test_a_completed_outcome_never_touches_the_gate(self):
         did, cap = self.settled("completed", "")
         called = []

@@ -80,14 +80,21 @@ class FakeGate:
 
     def classify(self, text):
         low = (text or "").lower()
-        hits = {cls: sum(1 for kw in kws if kw in low) for cls, kws in self.table.items()}
+        # A phrase outweighs a word: "acceptance criteria" is a stronger signal
+        # than "scope" appearing somewhere in a long report (seen live, P2).
+        hits = {cls: sum(len(kw.split()) for kw in kws if kw in low)
+                for cls, kws in self.table.items()}
         best = max(hits.items(), key=lambda kv: kv[1]) if hits else (None, 0)
         if best[1] == 0:
             return {"decision_class": "task_local_technical", "confidence": 0.4,
                     "gate": self.gate_id, "evidence": "no keyword matched"}
+        tied = [c for c, v in hits.items() if v == best[1] and c != best[0]]
+        if tied:
+            return {"decision_class": best[0], "confidence": 0.5, "gate": self.gate_id,
+                    "evidence": "tie between %s and %s" % (best[0], ", ".join(tied))}
         others = sum(v for k, v in hits.items() if k != best[0])
         return {"decision_class": best[0], "confidence": 0.9 if others == 0 else 0.75,
-                "gate": self.gate_id, "evidence": "%d keyword hit(s)" % best[1]}
+                "gate": self.gate_id, "evidence": "weight %d, others %d" % (best[1], others)}
 
 
 class JevGate:

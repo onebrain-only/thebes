@@ -1562,12 +1562,13 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
         # A Product dispatch (dispatch-) names its Jira item; a conversation
         # dispatch (cdispatch-) has none and says so with work_item_id null.
         did = str(rec.get("dispatch_id") or "")
-        if did.startswith("cdispatch-"):
+        if did.startswith(("cdispatch-", "dreq-")):
             if rec.get("work_item_id") is not None:
-                errs.append("%s: a conversation delivery has no work_item_id" % where)
+                errs.append("%s: a conversation or decision delivery has no work_item_id"
+                            % where)
         elif not did.startswith("dispatch-"):
-            errs.append("%s: session delivery dispatch_id must start with dispatch- or "
-                        "cdispatch-" % where)
+            errs.append("%s: session delivery dispatch_id must start with dispatch-, "
+                        "cdispatch- or dreq-" % where)
         if rec.get("seat_id") not in seatset and rec.get("seat_id") not in team_ids():
             errs.append("%s: session delivery target %r is neither a declared seat nor a "
                         "declared team" % (where, rec.get("seat_id")))
