@@ -1089,3 +1089,112 @@ retest bounded; deterministic regression preferred over repeated exploration; ex
 navigation no longer the default; secrets outside Git; Core/Listener/controller boundaries
 intact; QA integrations grant no execution authority; documentation describes local and
 future-CI operation.
+
+## 2026-09-30 — KAN-368 Ready continuation
+
+The CEO directed Codex to inspect the live Jira Ready queue, order Claude to work its
+pending ticket, and follow through until completion. Jira returned one Ready ticket:
+KAN-368. Its existing `frontend-1` owner and Claude session continue; this selection
+does not authorize another ticket or a replacement worker. The PO's 2026-09-27 Jira
+correction adds only the minimal `lib/widgets/app_button.dart` onTap null-check change
+to the existing test-file scope.
+
+PRODUCT_EXECUTION_AUTHORIZED: NO
+Selected ticket: KAN-368
+Authorization reference: CEO 2026-09-30 Ready-queue instruction; sole Ready ticket KAN-368, same frontend-1 continuation.
+
+Closure, 2026-09-30: KAN-368 passed SELF review, both owned commits landed on
+Canary as `d97fad5` and `33f1f7d`, and a fresh Jira read returned Done (10007).
+The exact-ticket execution authorization above is consumed. The five pre-existing
+deleted assets in the Canary checkout were restored to their original staged and
+unstaged state after integration.
+
+## 2026-10-01 — Three-group operating milestone (Listener / Decision gate / Execution)
+
+**Status: AUTHORIZED, NOT STARTED.** Authorized by the CEO on 2026-10-01 under D-030;
+it supersedes the D-026 freeze for this milestone only. Shape and gate rulings: D-031.
+
+### What the CEO asked for, in the repo's names
+
+Three **groups**, explicitly not layers: the Listener may reach execution directly, and
+the decision group enters only when a decision is needed.
+
+| CEO's word | What it is in Thebes today | Gap |
+| --- | --- | --- |
+| **Listener** — any chat; listen, form a professional prompt, send | The **Primary** (Conversation Intelligence): `primary_binding`, `bootstrap_prompt`, `conversation-dispatch`, `PRIMARY_COMMAND` + gateway | Implemented for Codex threads on the shared runtime; Claude is STANDBY only; the bootstrap is a prompt, not a tracked skill |
+| **Decision group** — orchestrator + cto/cpo/cxo…, runs Jev | `authority.json` decision classes; `decision_required` → accountable role → **same worker resumed** (`primary_notify.NEXT_STEP`) | Routing lives as prose in the Primary's head; no deterministic classifier; no confidence gate; no CEO escalation threshold |
+| **Execution** — execute, ask for a decision, report done | Bound `role_session` Claude seats; outcomes `completed/blocked/decision_required/clarification_required/failed`; `session_outcome` | Every outcome returns to the **origin conversation**; a `decision_required` has no direct path to the decision group |
+
+**Definition of success (CEO):** A sends to B and goes idle; B works alone; B's result
+**wakes A** as a new turn; delivery is durable and exactly-once; the model behind A is
+swappable without touching B. The Codex ↔ Claude path already meets this
+(`cdispatch-b7ddac1e…`, 2026-09-30). The ChatGPT web/desktop app cannot be woken and is
+out of scope as a Listener runtime; "ChatGPT" in this milestone means the Codex app on the
+ChatGPT account, which the shared runtime already owns.
+
+### Proofs — the milestone is scoped by these and nothing else
+
+| # | Proof | Pass when |
+| --- | --- | --- |
+| P1 | **Codex Listener round-trip, live, current code.** Start Listener + shared runtime; new Thebes conversation; CEO text → bootstrap prompt → `conversation-dispatch` to a bound Claude seat → Claude works → `submit --outcome completed` → result arrives as a new turn on the same Codex thread with Codex idle in between | Observed live and recorded; every failure found is named here as a defect, not fixed in place |
+| P2 | **Decision outcome reaches the decision group.** The same loop, but the worker returns `decision_required`. The outcome is routed to the accountable role per `authority.json` (through the Jev adapter with a **fake Jev**), the role's answer resumes the **same** worker, and the Listener hears only the final `completed` | No new ticket, no new worker, no Listener involvement between the question and the answer |
+| P3 | **Jev live.** P2 repeated with `TYPESAFE_API_KEY` set; the adapter's Choice/Score/Noul questions return typed answers; a below-threshold confidence escalates to the CEO; an unavailable Jev degrades to today's CEO path | Recorded typed answers with confidence; the escalation and the degradation both exercised |
+| P4 | **Listener model swap.** The Listener role runs on a Claude session (STANDBY → ACTIVE through `set_primary_active`) with no change to execution or the decision group | Same round-trip as P1 with a Claude Primary |
+| P5 | **Fresh-machine bootstrap.** A documented sequence brings up Listener, shared runtime, bound seats and the gateway from a clean clone | Followed verbatim on this machine after a runtime reset |
+
+### Steps
+
+0. Transition to `SYSTEM_MAINTENANCE` before any code change (0 leases open at
+   authorization; mode is `PRODUCT_EXECUTION`). Return on closure.
+1. Run P1 on the code as it is. Record every defect found (expected: the Claude
+   background daemon failure seen on `cdispatch-cab93b9e…`, Listener not auto-started,
+   bootstrap prompt not versioned as a skill).
+2. Add the **decision routing seam**: `session_outcome` / `conversation_dispatch.submit`
+   route `decision_required`, `blocked` and `clarification_required` to a decision
+   dispatcher instead of the origin thread; `completed`/`failed` keep going to the origin.
+   The dispatcher wakes the accountable seat with a bounded brief and resumes the same
+   worker with the answer. Record type: `decision_request` (durable, one per outcome).
+3. Add the **Jev adapter** (`agent/execution/decision_gate.py`): one interface, a fake
+   implementation for tests, the real `POST /v1/systemone` behind it; tracked question
+   schemas; confidence threshold in tracked config; `decision-gate-unavailable` fallback.
+   Firewall tokens extended so no executor brief can name it (L-015).
+4. Run P2 (fake), then P3 (live) once the CEO supplies a key.
+5. Promote the Listener bootstrap from prompt text to a tracked skill
+   (`agent/skills/listener/`), provider-neutral, rendered into the Codex bootstrap turn and
+   the Claude Primary resume envelope alike. Run P4.
+6. Write `agent/BOOTSTRAP.md` (P5). Close with a recorded decision against this table.
+
+### P1 — PASSED live, 2026-10-01 10:11–10:16 UTC
+
+Mode `SYSTEM_MAINTENANCE` (rev 79, 0 leases). Listener on `127.0.0.1:8787`; shared
+runtime `thebes` pid 36646 on `~/.thebes-codex` with the CEO's ChatGPT login (Codex CLI
+0.159.3, installed that morning). CEO text → Codex conversation `01a0f6f4-93de-…`
+(bootstrap `THEBES_BOOTSTRAP_READY`, first turn "Dispatch accepted by frontend-1 … Going
+idle") → `cdispatch-9aa36a63…` DELIVERED to `frontend-1` session `c515fbd4-…` (stopped,
+resumed same SID) → worker `submit --outcome completed` → `cevt-cresult-9aa36a63…` drained
+as turn `01a0f6f5-09ce-…` on the same Codex thread while Codex was idle. Codex's reply
+quoted the worker's answer (728 Dart files, exact command). Delivery exactly once; no
+polling; no Jira, no Product file touched.
+
+**Defects found, not fixed (step 1 says record):**
+1. **Worker seats cannot be created by Thebes from inside a Claude session.** `claude --bg`
+   was refused by the Claude Code permission classifier ("Create Unsafe Agents"). The CEO
+   started the session by hand. Bootstrap (P5) must list seat creation as a human step or
+   name the permission rule that allows it.
+2. **Bindings from another machine stay `active`.** `frontend-1/2` and `po` were bound to
+   sessions under `/Users/moatazmustapha/…`; none existed here, yet the Codex bootstrap
+   offered all three as dispatch targets. A binding whose session is absent from
+   `claude agents --all` should render as unreachable, not as a choice.
+3. **Nothing starts the Listener or the runtime.** Both were down at the start of the
+   session and started by hand. P5 territory.
+4. The result Codex received is the worker's full text; the Listener's own "done" message
+   to the CEO is Codex's paraphrase. Acceptable for P1; P2 decides whether the Listener
+   also gets the typed outcome.
+
+### Not in scope
+
+A ChatGPT web Custom GPT (send-only; it cannot satisfy the success definition). Any new
+seat, agent or Role. Autonomous ticket selection. RAG. Changing SELF/QA/PEER, claims,
+leases or Jira authority.
+
+PRODUCT_EXECUTION_AUTHORIZED: NO

@@ -444,3 +444,40 @@ remain valid in the provider and workflow contexts where they actually mean runt
 or implementation.
 **Evidence:** `CONTEXT.md`, `agent/EMPLOYEE_MODEL.md`,
 `agent/state/registry/roles.json`, `agent/organization/`.
+
+## D-030 — The infrastructure freeze of D-026 is lifted for one evidence-backed milestone
+
+**Status:** ACTIVE (2026-10-01). Supersedes the "baseline FROZEN" consequence of D-026;
+D-026's rule that Thebes changes need real evidence stands and is satisfied here.
+**Decision:** The CEO ruled on 2026-10-01 that the 2026-09-15 freeze was recorded by
+mistake. One bounded maintenance milestone is authorized: the three-group operating
+model in `agent/ROADMAP.md` "2026-10-01 — Three-group operating milestone". No other
+infrastructure work is authorized by this decision.
+**Why:** The evidence D-026 asked for exists. Live operation on 2026-09-28..30 produced
+the Primary binding, the shared Codex runtime, conversation dispatch and worker-outcome
+routing — all written under the freeze as "fixes" because the Product pulled on them.
+That is a milestone being built without a name, which is worse than naming it.
+**Consequences:** The milestone is scoped by its proofs, not by ideas. It adds no seat,
+no agent and no layer. It runs in `SYSTEM_MAINTENANCE` for every code change and returns
+to `PRODUCT_EXECUTION` on closure. D-002, D-003, D-005, D-014 and D-017 are unchanged.
+
+## D-031 — Jev is a decision gate, never a seat; a provider never replaces a Role
+
+**Status:** ACTIVE (2026-10-01)
+**Decision:** TypeSafe's Jev (a System-One model returning typed Choice/Score/Noul
+answers with calibrated confidence; it generates no text) is integrated as a
+deterministic gate in front of the accountable decision owners named by
+`agent/state/registry/authority.json`. Jev classifies a `decision_required`,
+`blocked` or `clarification_required` outcome — decision class, accountable role,
+act-autonomously-or-escalate — and scores confidence. The accountable seat still writes
+the decision; below the threshold the question goes to the CEO. Jev holds no seat, no
+Role, no authority and no write path into Persistent State, Jira or Git.
+**Why:** CEO ruling 2026-10-01: *"the gate — model or provider doesn't replace the
+seat."* This is D-004 (Role ≠ Seat), D-014 (providers sit behind Thebes) and D-028
+(providers are replaceable mechanisms) applied to a model that decides rather than
+writes. A model that could own a decision class would be a seat nobody constituted.
+**Consequences:** Jev is called through a Thebes-owned adapter behind a fake-able
+interface; a Jev failure or an absent key is `decision-gate-unavailable` and the
+question routes to the CEO exactly as it does today. The confidence threshold and the
+question schemas are tracked configuration, not prompt text. D-002's rule stands:
+Jev never selects Product work and never wakes anything.
