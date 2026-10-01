@@ -99,6 +99,13 @@ CONTROL_PLANE_TOKENS = (
     # its own dispatch.
     "PREPARE_SESSION_DISPATCH",
     "RECORD_SESSION_OUTCOME",
+    # The Codex conversation router (2026-09-30) and the daemon attach path
+    # (2026-10-01): registering, waking or draining a Listener conversation is
+    # control plane. Added in the milestone that created the attach (L-015).
+    "agent.execution.codex_runtime",
+    "agent.execution.conversation_dispatch",
+    "attach-conversation",
+    "app-server-control.sock",
     "claude --resume",
     "claude -p",
     "--session-id",

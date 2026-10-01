@@ -122,6 +122,58 @@ class CodexRuntimeTests(unittest.TestCase):
     def turn_starts(self):
         return [p for m, p in FakeClient.log if m == "turn/start"]
 
+    # -- the user's Codex daemon (Desktop over SSH) ----------------------------
+    def attach(self, thread_id=DESKTOP, alive=True):
+        class Ready(FakeClient):
+            def await_turn(self, turn_id, timeout):
+                return {"id": turn_id, "status": "completed"}, [{
+                    "text": "THEBES_BOOTSTRAP_READY %s" % thread_id}]
+        with mock.patch.object(cr, "connect", lambda **kw: (Ready(), None)):
+            return cr.attach_conversation(thread_id, "desktop", "ceo", state_store=store,
+                                          route_ready=True, alive=lambda path: alive)
+
+    def test_attach_registers_a_desktop_thread_on_the_daemon_with_a_visible_bootstrap(self):
+        out = self.attach()
+        conv = out["conversation"]
+        self.assertEqual((conv["runtime_id"], conv["status"]), (cr.DAEMON_RUNTIME_ID, "active"))
+        self.assertEqual(conv["runtime_socket_path"], cr.daemon_socket_path())
+        self.assertTrue(out["status"]["MANAGED"])
+        calls = [m for m, _ in FakeClient.log]
+        self.assertEqual(calls, ["thread/resume", "turn/start"],
+                         "resume first (fail closed on a foreign id), then ONE bootstrap turn")
+        text = self.turn_starts()[0]["input"][0]["text"]
+        self.assertIn("THEBES_CONVERSATION_BOOTSTRAP", text)
+        self.assertIn(cr.DAEMON_RUNTIME_ID, text)
+        self.assertIn(SID, text, "the Listener is told which bound seats it may dispatch to")
+        self.assertEqual([e for e in validate.check(store.RUNTIME) if "codex" in e], [])
+
+    def test_attach_refuses_without_a_daemon_a_worker_or_a_second_time(self):
+        with self.assertRaises(cr.RuntimeError_) as ctx:
+            self.attach(alive=False)
+        self.assertEqual(ctx.exception.code, "codex-daemon-not-running")
+        self.assertIsNone(store.read("codex_conversation", DESKTOP))
+        with self.assertRaises(cr.RuntimeError_) as ctx:
+            cr.attach_conversation(DESKTOP, "x", "worker:frontend-1", state_store=store,
+                                   route_ready=True, alive=lambda p: True)
+        self.assertEqual(ctx.exception.code, "actor-not-permitted")
+        self.attach()
+        with self.assertRaises(cr.RuntimeError_) as ctx:
+            self.attach()
+        self.assertEqual(ctx.exception.code, "conversation-already-attached")
+
+    def test_a_daemon_conversation_result_is_drained_through_the_daemon(self):
+        self.attach()
+        seen = []
+        with mock.patch.object(cr, "connect",
+                               lambda **kw: (seen.append(kw.get("runtime_id")) or
+                                             (self.client(), None))):
+            d = self.dispatch(DESKTOP)
+            self.assertEqual(self.outcome(d)["origin_reply"]["thread_id"], DESKTOP)
+            self.assertEqual(cr.drain(DESKTOP, state_store=store)["status"], "drained")
+        self.assertEqual(seen, [cr.DAEMON_RUNTIME_ID],
+                         "the result goes back through the server Desktop is attached to")
+        self.assertEqual(self.turn_starts()[-1]["threadId"], DESKTOP)
+
     # -- A/B exact routing ----------------------------------------------------
     def test_each_outcome_wakes_exactly_the_conversation_that_dispatched_it(self):
         a, b = self.dispatch(THREAD_A), self.dispatch(THREAD_B)

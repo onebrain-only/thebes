@@ -152,13 +152,18 @@ def dispatch(prompt, target_session_id, *, env=None, state_store=store, cli=None
     if not thread_id:
         raise Refused("origin-thread-missing", "run from a Codex tool shell: CODEX_THREAD_ID "
                       "is the only source of the origin thread")
-    runtime = state_store.read("codex_runtime", codex_runtime.RUNTIME_ID)
-    if not runtime or runtime.get("status") != "running":
-        raise Refused("codex-runtime-not-running", "the shared runtime is not running")
     try:
-        codex_runtime.require_conversation(thread_id, state_store)
+        conv = codex_runtime.require_conversation(thread_id, state_store)
     except codex_runtime.RuntimeError_ as exc:
         raise Refused(exc.code, str(exc))
+    if conv.get("runtime_id") == codex_runtime.DAEMON_RUNTIME_ID:
+        if not codex_runtime.daemon_alive():
+            raise Refused("codex-daemon-not-running", "the Codex daemon holding %s is not "
+                          "reachable, so the result could not be returned" % thread_id)
+    else:
+        runtime = state_store.read("codex_runtime", codex_runtime.RUNTIME_ID)
+        if not runtime or runtime.get("status") != "running":
+            raise Refused("codex-runtime-not-running", "the shared runtime is not running")
     prompt = _bounded_text(prompt, MAX_PROMPT_BYTES, "prompt")
     binding = target_binding(target_session_id, state_store)
 

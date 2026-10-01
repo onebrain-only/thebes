@@ -53,6 +53,13 @@ from agent.state import store                                        # noqa: E40
 # their single-writer ownership. The old "shared" runtime/threads remain
 # historical state but are not accepted by this runtime.
 RUNTIME_ID = "thebes"
+# The user's own Codex app-server daemon (`codex app-server daemon`). Codex
+# Desktop attaches to it when a conversation is opened over SSH to this machine,
+# so a thread there is visible AND writable from Thebes at the same time: both
+# are clients of ONE server, which is the single writer. Proven live 2026-10-01
+# (thread 01a0f765…: an outside turn appeared in the open Desktop conversation).
+DAEMON_RUNTIME_ID = "codex-daemon"
+RUNTIME_IDS = (RUNTIME_ID, DAEMON_RUNTIME_ID)
 TURN_TIMEOUT_SECONDS = 900
 BOOTSTRAP_VERSION = "thebes-conversation-v1"
 THREAD_ID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
@@ -149,9 +156,42 @@ def _spawn(args):
     return proc.pid
 
 
-def connect(*, state_store=store, factory=None):
-    """A preflighted client on the RUNNING shared runtime, or a refusal."""
+def daemon_socket_path():
+    """The control socket of the user's Codex app-server daemon. Thebes never
+    starts, stops or configures that daemon; it only connects as a client."""
+    return os.environ.get("THEBES_CODEX_DAEMON_SOCKET") or os.path.join(
+        os.path.expanduser("~"), ".codex", "app-server-control", "app-server-control.sock")
+
+
+def daemon_alive(alive=None):
+    from agent.execution import codex_ws
+    return bool((alive or codex_ws.socket_alive)(daemon_socket_path()))
+
+
+def connect(*, state_store=store, factory=None, runtime_id=RUNTIME_ID):
+    """A preflighted client on the RUNNING shared runtime, or a refusal.
+
+    ``runtime_id=DAEMON_RUNTIME_ID`` connects to the user's Codex daemon
+    instead. Its config is the user's, not ours, so the only preflight is the
+    one that matters for routing: a ChatGPT-account login. No model is forced;
+    the thread keeps the model the user chose in Desktop."""
     from agent.execution import codex_ws, codex_primary
+    if runtime_id == DAEMON_RUNTIME_ID:
+        path = daemon_socket_path()
+        log = os.path.join(socket_path(state_store).rsplit(os.sep, 1)[0], "daemon-clients.jsonl")
+        client = (factory or codex_ws.CodexWsClient)(path, log)
+        try:
+            client.initialize()
+            account = (client.request("account/read", {"refreshToken": False}) or {}).get(
+                "account") or {}
+        except Exception as exc:
+            client.close()
+            raise RuntimeError_("codex-daemon-unreachable", "%s: %s" % (path, exc))
+        if account.get("type") != "chatgpt":
+            client.close()
+            raise RuntimeError_(codex_primary.CODE_NOT_CHATGPT,
+                                "daemon account type is %r, not chatgpt" % account.get("type"))
+        return client, None
     rec = state_store.read("codex_runtime", RUNTIME_ID)
     if not rec or rec.get("status") != "running" or rec.get("socket_path") != socket_path(state_store):
         raise RuntimeError_("codex-runtime-not-running", "start it with `codex_runtime start`")
@@ -167,7 +207,7 @@ def connect(*, state_store=store, factory=None):
 
 
 # ---------------------------------------------------------------- registry
-def bootstrap_prompt(thread_id, state_store=store):
+def bootstrap_prompt(thread_id, state_store=store, runtime_id=RUNTIME_ID):
     """The first, private turn on a new thread. It names the real local route."""
     workers = sorted((r["seat_id"], r["session_id"])
                      for r in state_store.read_all("role_session")
@@ -175,8 +215,11 @@ def bootstrap_prompt(thread_id, state_store=store):
     choices = "\n".join("- %s: %s" % pair for pair in workers) or "- none"
     return "\n".join([
         "THEBES_CONVERSATION_BOOTSTRAP %s" % BOOTSTRAP_VERSION,
-        "Your exact Codex thread_id is %s on the shared Thebes-owned runtime %s."
-        % (thread_id, RUNTIME_ID),
+        "Your exact Codex thread_id is %s on the Codex runtime %s, registered with Thebes."
+        % (thread_id, runtime_id),
+        "You are the Thebes Listener: listen to the CEO, turn what they say into a "
+        "professional self-contained prompt, and send it to the right persistent seat. "
+        "You do not do the work yourself.",
         "You are a persistent managed conversation. To delegate, write an explicit, "
         "self-contained prompt and select the appropriate persistent Claude session below:",
         choices,
@@ -205,14 +248,18 @@ def listener_ready():
         return False
 
 
-def conversation_status(thread_id, *, state_store=store, route_ready=None):
+def conversation_status(thread_id, *, state_store=store, route_ready=None, alive=None):
     """Read the actual registration, bootstrap event and current runtime binding."""
     conv = state_store.read("codex_conversation", thread_id or "none")
     runtime = state_store.read("codex_runtime", RUNTIME_ID)
     registered = bool(conv and conv.get("thread_id") == thread_id)
-    bound = bool(registered and runtime and runtime.get("status") == "running"
-                 and conv.get("runtime_id") == runtime.get("runtime_id") == RUNTIME_ID
-                 and conv.get("runtime_socket_path") == runtime.get("socket_path"))
+    if registered and conv.get("runtime_id") == DAEMON_RUNTIME_ID:
+        bound = bool(conv.get("runtime_socket_path") == daemon_socket_path()
+                     and daemon_alive(alive))
+    else:
+        bound = bool(registered and runtime and runtime.get("status") == "running"
+                     and conv.get("runtime_id") == runtime.get("runtime_id") == RUNTIME_ID
+                     and conv.get("runtime_socket_path") == runtime.get("socket_path"))
     bootstrap = False
     if registered and conv.get("bootstrap_event_id"):
         ev = state_store.read("codex_turn_event", conv["bootstrap_event_id"])
@@ -323,11 +370,70 @@ def create_conversation(label, created_by, first_prompt, *, state_store=store, f
             "status": conversation_status(thread_id, state_store=state_store, route_ready=route_ready)}
 
 
+def attach_conversation(thread_id, label, created_by, *, state_store=store, factory=None,
+                        turn_timeout=TURN_TIMEOUT_SECONDS, route_ready=None, alive=None):
+    """Register a conversation the USER opened in Codex Desktop (over SSH, so it
+    lives on their Codex daemon) and load the Listener bootstrap into it.
+
+    Thebes did not create this thread and never will own the daemon; it becomes
+    one more client of the same server Desktop is attached to. The bootstrap is a
+    real, visible turn in the user's conversation — that is the Listener being
+    taught its route, not a hidden side channel."""
+    if str(created_by).startswith("worker:"):
+        raise RuntimeError_("actor-not-permitted", "a worker may not attach a conversation")
+    if not THREAD_ID.fullmatch(str(thread_id or "")):
+        raise RuntimeError_("thread-id-invalid", "a Codex thread id is a UUID")
+    if not daemon_alive(alive):
+        raise RuntimeError_("codex-daemon-not-running",
+                            "no Codex app-server daemon at %s; open a Codex Desktop "
+                            "conversation over SSH to this machine first" % daemon_socket_path())
+    existing = state_store.read("codex_conversation", thread_id)
+    if existing and existing.get("status") == "active":
+        raise RuntimeError_("conversation-already-attached", thread_id)
+    client, _ = connect(state_store=state_store, factory=factory, runtime_id=DAEMON_RUNTIME_ID)
+    conv = None
+    try:
+        # Fails closed if the daemon does not hold this thread (wrong id, or a
+        # Desktop conversation that is not on the SSH host).
+        _resume_if_needed(client, thread_id)
+        fields = {"thread_id": thread_id, "runtime_id": DAEMON_RUNTIME_ID, "label": label,
+                  "runtime_socket_path": daemon_socket_path(), "registered_by": created_by,
+                  "status": "initializing", "bootstrap_event_id": None,
+                  "bootstrap_sha256": None}
+        conv = (state_store.update("codex_conversation", thread_id, existing["revision"], fields)
+                if existing else state_store.create("codex_conversation", fields, rid=thread_id))
+        text = bootstrap_prompt(thread_id, state_store, DAEMON_RUNTIME_ID)
+        ev, _ = _create_event(thread_id, "bootstrap", text, state_store=state_store)
+        conv = state_store.update("codex_conversation", thread_id, conv["revision"], {
+            "bootstrap_event_id": ev["event_id"],
+            "bootstrap_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest()})
+        with state_store.thread_writer(thread_id):
+            if not _run_one(client, ev, state_store, turn_timeout):
+                raise RuntimeError_("bootstrap-turn-failed", "bootstrap turn did not complete")
+    except Exception as exc:
+        _retire_initializing(thread_id, state_store)
+        if isinstance(exc, RuntimeError_):
+            raise
+        raise RuntimeError_("conversation-attach-failed", str(exc)) from exc
+    finally:
+        client.close()
+    state = conversation_status(thread_id, state_store=state_store, route_ready=route_ready,
+                                alive=alive)
+    if not all(state[k] for k in ("THREAD_REGISTERED", "RUNTIME_BOUND", "BOOTSTRAP_LOADED",
+                                  "RETURN_ROUTING_READY")):
+        _retire_initializing(thread_id, state_store)
+        raise RuntimeError_("conversation-not-ready", json.dumps(state, sort_keys=True))
+    conv = state_store.update("codex_conversation", thread_id, conv["revision"],
+                              {"status": "active"})
+    return {"conversation": conv, "status": conversation_status(
+        thread_id, state_store=state_store, route_ready=route_ready, alive=alive)}
+
+
 def require_conversation(thread_id, state_store=store):
     conv = state_store.read("codex_conversation", thread_id or "none")
-    if conv is None or conv.get("status") != "active" or conv.get("runtime_id") != RUNTIME_ID:
+    if conv is None or conv.get("status") != "active" or conv.get("runtime_id") not in RUNTIME_IDS:
         raise RuntimeError_("thread-not-in-shared-runtime",
-                            "%s is not an active conversation on the shared runtime" % thread_id)
+                            "%s is not an active conversation registered with Thebes" % thread_id)
     return conv
 
 
@@ -383,14 +489,16 @@ def drain(thread_id, *, state_store=store, factory=None, turn_timeout=TURN_TIMEO
     `held` means another Thebes writer is on this thread and will drain these
     itself when its current turn completes.
     """
-    require_conversation(thread_id, state_store)
+    conv = require_conversation(thread_id, state_store)
     delivered, failed = [], []
     while True:
         try:
             with state_store.thread_writer(thread_id):
                 pending = _queued(thread_id, state_store)
                 if pending:
-                    client, _ = connect(state_store=state_store, factory=factory)
+                    kw = ({"runtime_id": DAEMON_RUNTIME_ID}
+                          if conv.get("runtime_id") == DAEMON_RUNTIME_ID else {})
+                    client, _ = connect(state_store=state_store, factory=factory, **kw)
                     try:
                         _resume_if_needed(client, thread_id)
                         for ev in pending:
@@ -499,6 +607,11 @@ def main(argv=None):
     nc.add_argument("--created-by", default="ceo")
     nc.add_argument("--prompt", required=True,
                     help="the conversation's first turn, run on the creating connection")
+    at = sub.add_parser("attach-conversation",
+                        help="register a Codex Desktop conversation opened over SSH to this "
+                             "machine (it lives on the user's Codex daemon) as a Listener")
+    at.add_argument("thread_id"); at.add_argument("--label", required=True)
+    at.add_argument("--created-by", default="ceo")
     pr = sub.add_parser("prompt"); pr.add_argument("thread_id"); pr.add_argument("text")
     dr = sub.add_parser("drain"); dr.add_argument("thread_id")
     ev = sub.add_parser("events"); ev.add_argument("thread_id")
@@ -512,6 +625,8 @@ def main(argv=None):
                    "conversations": store.read_all("codex_conversation")}
         elif ns.cmd == "new-conversation":
             out = create_conversation(ns.label, ns.created_by, ns.prompt)
+        elif ns.cmd == "attach-conversation":
+            out = attach_conversation(ns.thread_id, ns.label, ns.created_by)
         elif ns.cmd == "conversation-status":
             out = conversation_status(ns.thread_id)
         elif ns.cmd == "prompt":
