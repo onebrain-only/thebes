@@ -1321,9 +1321,14 @@ four hard stops stay the CEO's. `next_ticket` and `design_or_governance` left th
 deny-list; `governance_files` joined it; unsure / CEO-class / unbound-seat all route to the
 orchestrator when it is bound.
 
-**P3c (next, live):** the same three "needs your decision" items (KAN-281 type ramp,
-KAN-195 key rotation, KAN-261 design-source requests) put to the orchestrator; expected:
-decided by `cxo`/`cto`/`devops` roles with no return to the CEO, except any hard stop.
+**P3c — PASSED live, 2026-10-01 ~19:05 UTC** (`cdispatch-53696095…`). The orchestrator
+reserved `cxo`, `cto` and `po` together, decided all three items and returned nothing to
+the CEO except one hard stop: KAN-281 decided by `cxo` applying the CEO's own 2026-09-20
+ruling (comment 11183) — it found the item was never "awaiting the CEO" and corrected its
+earlier report; KAN-261 decided by `cxo` (accept all 15, no hard stop); KAN-195 decided by
+`po` with AC1 named as a secrets hard stop and Play submission as an external-send hard
+stop. It also made no Jira writes and said so — a reasonable default, and the next question
+for the CEO is whether decided items should be recorded on the tickets automatically.
 
 ### Not in scope
 
