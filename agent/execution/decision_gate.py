@@ -315,8 +315,10 @@ def request_envelope(req, capability, question):
         "you_are: the Thebes ORCHESTRATOR (D-034). Run the accountable seat `%s` as a subagent "
         "in THIS session (Agent tool, subagent_type=%s) after reserving it: cd %s && python3 -m "
         "agent.execution.team_pool reserve %s --dispatch %s . Its decision is the answer; you "
-        "may add a second seat only if the question genuinely spans two roles."
-        % (req["owner_seat"], req["owner_seat"], ROOT, req["owner_seat"], req["origin_dispatch_id"]),
+        "may add a second seat only if the question genuinely spans two roles. The reservation "
+        "is released when you answer."
+        % (req["owner_seat"], req["owner_seat"], ROOT, req["owner_seat"],
+           req["decision_request_id"]),
     ] if req.get("via") == "orchestrator" else []) + [
         "what_to_do: decide this question within the Role's authority (agent/roles/%s.md). Give "
         "the decision, the reason, and what the asker should do next. If it is genuinely not "
@@ -409,11 +411,12 @@ def route(record, *, state_store=store, env=None, cfg=None, deliver=None, resume
     return dict(resolved, decision_request_id=rid, delivery=sent)
 
 
-def _deliver_to_owner(req, message, *, state_store=store):
+def _deliver_to_owner(req, message, *, state_store=store, delivery_id=None):
     from agent.execution import claude_delivery
     from agent.execution.claude_cli import ClaudeCli
     from agent.state import teams
     target_seat = teams.ORCHESTRATOR_ID if req.get("via") == "orchestrator" else req["owner_seat"]
+    delivery_id = delivery_id or req["decision_request_id"]
     base = {"dispatch_id": req["decision_request_id"], "work_item_id": None,
             "seat_id": target_seat, "provider": "claude",
             "envelope_version": "decision-v1", "expected_worker_sid": req["owner_session_id"],
@@ -422,7 +425,7 @@ def _deliver_to_owner(req, message, *, state_store=store):
         "stable_home")
     env = {k: v for k, v in os.environ.items() if k not in SCRUBBED_ENV}
     res = claude_delivery.deliver_prompt(
-        req["decision_request_id"], req["decision_request_id"], base, req["owner_session_id"],
+        delivery_id, req["decision_request_id"], base, req["owner_session_id"],
         home, message, state_store=state_store, cli=ClaudeCli(env=env))
     if res.status != claude_delivery.DELIVERED:
         raise Refused("owner-delivery-failed", res.error or res.status)
@@ -444,6 +447,32 @@ def _resume_asker(req, answer_text, *, state_store=store, resume=None):
     state_store.update("decision_request", cur["decision_request_id"], cur["revision"],
                        {"status": "answered", "continuation_dispatch_id": out.get("dispatch_id")})
     return out
+
+
+def redeliver(request_id, *, state_store=store, deliver=None):
+    """Re-send an OPEN owner request whose owner lost its turn (seen live:
+    'API Error: Connection lost mid-response' ended the orchestrator's turn
+    before it answered). A fresh capability is issued — the old one is
+    invalidated by replacing its hash — and the same envelope is delivered to
+    the same owner session. Bounded by the caller (D-033: retry once)."""
+    req = state_store.read("decision_request", request_id)
+    if req is None:
+        raise Refused("decision-request-not-found", request_id)
+    if req["status"] != "open" or req["route"] != "owner":
+        raise Refused("decision-request-not-open", "%s is %s/%s" % (request_id, req["status"],
+                                                                     req["route"]))
+    with open(req["question_ref"], encoding="utf-8") as fh:
+        question = fh.read()
+    capability = secrets.token_urlsafe(32)
+    req = state_store.update("decision_request", request_id, req["revision"], {
+        "capability_sha256": state_store.capability_sha256(capability),
+        "redelivered_at": state_store.now()})
+    # A new delivery id: the first delivery is DELIVERED and final by design.
+    delivery_id = "%s-redeliver-%s" % (request_id, secrets.token_hex(3))
+    sender = deliver or (lambda r, m, state_store: _deliver_to_owner(
+        r, m, state_store=state_store, delivery_id=delivery_id))
+    sent = sender(req, request_envelope(req, capability, question), state_store=state_store)
+    return {"status": "redelivered", "decision_request_id": request_id, "delivery": sent}
 
 
 def answer(request_id, answer_text, *, env=None, state_store=store, resume=None):
@@ -475,6 +504,7 @@ def answer(request_id, answer_text, *, env=None, state_store=store, resume=None)
             "answer_ref": ref, "answered_by_session_id": env.get("CLAUDE_CODE_SESSION_ID")})
     except state_store.StateError as exc:
         raise Refused("decision-request-not-open", "lost the race: %s" % exc)
+    state_store.release_seat_reservations(request_id, "decision-answered")
     cont = _resume_asker(req, answer_text, state_store=state_store, resume=resume)
     return {"status": "answered", "decision_request_id": request_id, "continuation": cont}
 
@@ -487,6 +517,8 @@ def main(argv=None):
     c = sub.add_parser("classify"); c.add_argument("text")
     a = sub.add_parser("answer"); a.add_argument("request_id")
     a.add_argument("--answer"); a.add_argument("--answer-file")
+    rd = sub.add_parser("redeliver", help="re-send an open owner request whose owner lost its turn")
+    rd.add_argument("request_id")
     s = sub.add_parser("status"); s.add_argument("request_id", nargs="?")
     ns = ap.parse_args(argv)
     try:
@@ -501,6 +533,8 @@ def main(argv=None):
                 with open(ns.answer_file, encoding="utf-8") as fh:
                     text = fh.read()
             out = answer(ns.request_id, text)
+        elif ns.cmd == "redeliver":
+            out = redeliver(ns.request_id)
         elif ns.request_id:
             out = store.read("decision_request", ns.request_id)
         else:

@@ -308,7 +308,19 @@ class DecisionGateTests(unittest.TestCase):
         self.assertEqual(req["owner_session_id"], ORCH)
         self.assertIn("you_are: the Thebes ORCHESTRATOR", message)
         self.assertIn("subagent_type=po", message)
-        self.assertIn("team_pool reserve po --dispatch %s" % did, message)
+        rid = req["decision_request_id"]
+        self.assertIn("team_pool reserve po --dispatch %s" % rid, message,
+                      "the orchestrator reserves against ITS request, not the asker's dispatch")
+        # Live P3b: reserving against the asker's dispatch was refused. Against the
+        # request it succeeds for the orchestrator and for nobody else.
+        from agent.execution import team_pool as tp
+        self.assertEqual(tp.reserve("po", rid, env={"CLAUDE_CODE_SESSION_ID": ORCH},
+                                    state_store=store)["status"], "reserved")
+        with self.assertRaises(tp.Refused) as ctx:
+            tp.reserve("po", rid, env={"CLAUDE_CODE_SESSION_ID": KARNAK}, state_store=store)
+        self.assertEqual(ctx.exception.code, "not-your-dispatch",
+                         "another island cannot reserve against the orchestrator's request")
+        self.assertIsNotNone(store.active_seat_reservation("po"))
         # the orchestrator session answers; po's own session is not the identity
         dcap = message.split("%s=" % dg.CAPABILITY_ENV, 1)[1].split()[0]
         with self.assertRaises(dg.Refused):
@@ -320,7 +332,34 @@ class DecisionGateTests(unittest.TestCase):
                         state_store=store, resume=self.resume)
         self.assertEqual(out["status"], "answered")
         self.assertEqual(self.resumed[0][0]["asker_session_id"], KARNAK)
+        self.assertIsNone(store.active_seat_reservation("po"), "released on answer")
         self.assertEqual(self.clean(), [])
+
+    def test_an_open_owner_request_can_be_redelivered_once_with_a_fresh_capability(self):
+        """Live: the orchestrator's turn died ('Connection lost mid-response') before it
+        answered; the request stayed open with no way to re-send it."""
+        ORCH = "0eeeeeee-2222-7000-8000-00000000000e"
+        store.bind_role_session("orchestrator", "claude", ORCH, HOME, "ceo")
+        did, cap = self.settled("decision_required", "")
+        self.submit(did, cap, "decision_required", "Which acceptance criteria apply to KAN-9?",
+                    router=self.router)
+        req, first = self.delivered[0]
+        old_cap = first.split("%s=" % dg.CAPABILITY_ENV, 1)[1].split()[0]
+        out = dg.redeliver(req["decision_request_id"], state_store=store, deliver=self.deliver)
+        self.assertEqual(out["status"], "redelivered")
+        req2, second = self.delivered[1]
+        new_cap = second.split("%s=" % dg.CAPABILITY_ENV, 1)[1].split()[0]
+        self.assertNotEqual(old_cap, new_cap)
+        with self.assertRaises(dg.Refused) as ctx:
+            dg.answer(req["decision_request_id"], "x", env={"CLAUDE_CODE_SESSION_ID": ORCH,
+                                                             dg.CAPABILITY_ENV: old_cap},
+                      state_store=store, resume=self.resume)
+        self.assertEqual(ctx.exception.code, "capability-invalid", "the old capability is dead")
+        self.assertEqual(dg.answer(req["decision_request_id"], "Use AC3.",
+                                   env={"CLAUDE_CODE_SESSION_ID": ORCH, dg.CAPABILITY_ENV: new_cap},
+                                   state_store=store, resume=self.resume)["status"], "answered")
+        with self.assertRaises(dg.Refused):
+            dg.redeliver(req["decision_request_id"], state_store=store, deliver=self.deliver)
 
     def test_bootstrap_tells_codex_about_the_orchestrator_and_when_to_use_it(self):
         text = cr.bootstrap_prompt(THREAD, store)

@@ -1299,9 +1299,21 @@ the same second → committed, cleaned up, reported `completed`. No owner, no or
 no CEO, no Claude session woken; one Jev call (~$0.00003). The Codex conversation received
 only the final report.
 
-**P3b-orchestrator (next, live):** bind an orchestrator session; Codex asks "what do we
-have in the board?" and gets one answer without a team; Karnak asks an acceptance question
-and the orchestrator's `po` subagent answers it.
+**P3b-orchestrator (Claude side) — PASSED live, 2026-10-01 18:29–18:4x UTC.** Orchestrator
+session `c49d2414…` bound. Karnak (`cdispatch-2b0f7a0c…`) → `decision_required` → Jev
+`work_acceptance` 1.0 → `dreq-561294bd` routed **via the orchestrator** → it reserved `po`
+(held `('po','orchestrator')`), ran `po` as a subagent, answered → reservation released on
+answer → continuation `cdispatch-f7c782d1…` resumed Karnak → `completed` → one Codex turn.
+
+Two defects found and fixed on the way: (1) the orchestrator's envelope told it to reserve
+against the asker's dispatch, which `reserve_seat` refuses (`not-your-dispatch`) — the
+orchestrator now reserves against its own `dreq-` request and the reservation releases on
+answer; (2) the orchestrator's first turn died (`API Error: Connection lost mid-response`)
+before it answered and nothing could re-send the request — `decision_gate redeliver` issues a
+fresh capability (the old one dies) and re-delivers the same envelope once. 14 tests.
+
+**P3b-orchestrator (Codex side) — pending the CEO typing "what do we have in the board?"
+in the Desktop conversation after the bootstrap refresh.**
 
 ### Not in scope
 

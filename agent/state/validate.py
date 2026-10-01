@@ -1707,8 +1707,9 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
             errs.append("%s: reserved seat %r is not declared" % (where, rec.get("seat_id")))
         if rec.get("team_id") not in team_ids():
             errs.append("%s: reserving team %r is not declared" % (where, rec.get("team_id")))
-        if not str(rec.get("dispatch_id") or "").startswith("cdispatch-"):
-            errs.append("%s: a seat is reserved for one conversation dispatch" % where)
+        if not str(rec.get("dispatch_id") or "").startswith(("cdispatch-", "dreq-")):
+            errs.append("%s: a seat is reserved for one conversation dispatch or one decision "
+                        "request" % where)
         if rec.get("status") not in ("active", "released"):
             errs.append("%s: seat reservation status must be active or released" % where)
         if rec.get("status") == "released" and not rec.get("released_at"):

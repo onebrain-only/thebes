@@ -3186,12 +3186,24 @@ def reserve_seat(seat_id, team_id, dispatch_id):
         raise StateError("seat %r is not declared in the neutral registry" % seat_id)
     if not teams.is_team(team_id):
         raise StateError("%r is not a declared team" % team_id)
-    dispatch = read("conversation_dispatch", dispatch_id)
-    if dispatch is None or dispatch.get("status") not in CONVERSATION_DISPATCH_OPEN:
-        raise StateError("dispatch-not-open: a seat is reserved only for an open dispatch")
-    if dispatch.get("target_seat_id") != team_id:
-        raise StateError("not-your-dispatch: %s is addressed to %r, not %r"
-                         % (dispatch_id, dispatch.get("target_seat_id"), team_id))
+    if str(dispatch_id).startswith("dreq-"):
+        # The orchestrator reserves the accountable seat for a decision request
+        # it owns (D-034): open, owner-routed, addressed to its own session.
+        req = read("decision_request", dispatch_id)
+        mine = active_role_session(team_id) or {}
+        if req is None or req.get("status") != "open" or req.get("route") != "owner":
+            raise StateError("dispatch-not-open: a seat is reserved only for an open owner "
+                             "decision request")
+        if req.get("owner_session_id") != mine.get("session_id"):
+            raise StateError("not-your-dispatch: %s is addressed to another session"
+                             % dispatch_id)
+    else:
+        dispatch = read("conversation_dispatch", dispatch_id)
+        if dispatch is None or dispatch.get("status") not in CONVERSATION_DISPATCH_OPEN:
+            raise StateError("dispatch-not-open: a seat is reserved only for an open dispatch")
+        if dispatch.get("target_seat_id") != team_id:
+            raise StateError("not-your-dispatch: %s is addressed to %r, not %r"
+                             % (dispatch_id, dispatch.get("target_seat_id"), team_id))
     with _Lock("seat-reservation-%s" % seat_id):
         held = active_seat_reservation(seat_id)
         if held is not None:
