@@ -12,8 +12,7 @@
       "destructive_git":         ["--force", "force push", "force-push", "reset --hard", "branch -d", "re:\\b(delete|remove|drop)\\b.{0,40}\\bbranch", "re:\\bbranch\\b.{0,40}\\b(delete|remove|drop)"],
       "push_canary":             ["push to canary", "push canary", "deploy to canary", "origin canary"],
       "production":              ["production", "apply_migration", "apply the migration", "run the migration", "prod database", "live database"],
-      "next_ticket":             ["next ticket", "next jira", "next task", "pick up kan-", "start kan-", "move to done", "transition to done", "mark done"],
-      "design_or_governance":    ["add a dependency", "new dependency", "add package", "add a package", "re:\\bnew\\b.{0,20}\\bpackage", "schema design", "change the schema", "role file", "decisions.md", "contract.md"],
+      "governance_files":        ["role file", "decisions.md", "contract.md", "manifesto.md", "authority.json"],
       "money_or_secrets":        ["spend", "pay for", "budget", "api key", "secret", "credential", "token", "permission", "settings.json"],
       "external_send":           ["send an email", "send email", "slack", "publish", "post to", "notify the user"],
       "other_repository":        ["another repo", "other repository", "different repo"]

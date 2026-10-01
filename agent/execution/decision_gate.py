@@ -267,20 +267,26 @@ def classify_and_resolve(text, *, cfg=None, env=None, state_store=store):
                 "decision_class": None, "accountable_role": None, "confidence": None}
     role = decision_classes()[verdict["decision_class"]]["accountable_role"]
     out = dict(verdict, accountable_role=role, owner_seat=None, owner_session_id=None)
-    if verdict["confidence"] < float(cfg.get("threshold", 0.7)):
-        return dict(out, route="escalate", reason="confidence-below-threshold")
-    if role == CEO:
-        return dict(out, route="escalate", reason="ceo-owned-decision")
-    if role == TASK_OWNER:
+    if role == TASK_OWNER and verdict["confidence"] >= float(cfg.get("threshold", 0.7)):
         return dict(out, route="task-owner")
-    seat = owner_seat_for_role(role)
-    # D-034: the accountable seat answers INSIDE the orchestrator session (as a
-    # subagent). Fallback: the seat's own bound session; then the CEO.
     from agent.state import teams
     orch = state_store.active_role_session(teams.ORCHESTRATOR_ID)
-    if orch is not None and orch.get("provider") == "claude":
+    orch_ok = orch is not None and orch.get("provider") == "claude"
+    # D-035: the CEO delegated every decision to the orchestrator except the
+    # D-033 hard-stop list (checked before this function runs). So an unsure
+    # gate, a CEO-class question or an unbound seat all go to the orchestrator,
+    # which decides who answers; only an UNBOUND orchestrator escalates.
+    unsure = verdict["confidence"] < float(cfg.get("threshold", 0.7))
+    seat = None if role in (CEO, TASK_OWNER) else owner_seat_for_role(role)
+    if orch_ok:
         return dict(out, route="owner", owner_seat=seat, owner_session_id=orch["session_id"],
-                    owner_stable_home=orch.get("stable_home"), via="orchestrator")
+                    owner_stable_home=orch.get("stable_home"), via="orchestrator",
+                    reason=("gate-unsure" if unsure else
+                            "ceo-class-delegated" if role == CEO else None))
+    if unsure:
+        return dict(out, route="escalate", reason="orchestrator-unbound:gate-unsure")
+    if role == CEO:
+        return dict(out, route="escalate", reason="orchestrator-unbound:ceo-class")
     binding = state_store.active_role_session(seat) if seat else None
     if binding is None or binding.get("provider") != "claude":
         return dict(out, route="escalate", reason="decision-owner-unbound", owner_seat=seat)
@@ -312,13 +318,24 @@ def request_envelope(req, capability, question):
         "expected_owner_sid: %s — verify $CLAUDE_CODE_SESSION_ID matches; if not, do nothing."
         % req["owner_session_id"],
     ] + ([
-        "you_are: the Thebes ORCHESTRATOR (D-034). Run the accountable seat `%s` as a subagent "
-        "in THIS session (Agent tool, subagent_type=%s) after reserving it: cd %s && python3 -m "
-        "agent.execution.team_pool reserve %s --dispatch %s . Its decision is the answer; you "
-        "may add a second seat only if the question genuinely spans two roles. The reservation "
-        "is released when you answer."
-        % (req["owner_seat"], req["owner_seat"], ROOT, req["owner_seat"],
-           req["decision_request_id"]),
+        ("you_are: the Thebes ORCHESTRATOR (D-034). Run the accountable seat `%s` as a subagent "
+         "in THIS session (Agent tool, subagent_type=%s) after reserving it: cd %s && python3 -m "
+         "agent.execution.team_pool reserve %s --dispatch %s . Its decision is the answer; you "
+         "may add a second seat only if the question genuinely spans two roles. The reservation "
+         "is released when you answer."
+         % (req["owner_seat"], req["owner_seat"], ROOT, req["owner_seat"],
+            req["decision_request_id"])) if req.get("owner_seat") else
+        ("you_are: the Thebes ORCHESTRATOR (D-034). The gate could not name one owner "
+         "(%s). YOU decide which leadership seat answers — cpo (scope, product), cto "
+         "(technical), cxo (experience), pm (priority, next work), po (acceptance, tickets), "
+         "qa, devops, analyst, content-manager — reserve it (cd %s && python3 -m "
+         "agent.execution.team_pool reserve <seat> --dispatch %s), run it as a subagent, and "
+         "answer." % (req.get("escalation_reason") or "unsure", ROOT, req["decision_request_id"])),
+        "delegation (D-035): the CEO has delegated EVERY decision to you. Never answer 'this "
+        "needs the CEO', 'ask the CEO', or 'awaiting CEO decision'. Decide within the roles and "
+        "say who decided. The ONLY exceptions are the hard stops Thebes already enforces before "
+        "reaching you: merging or pushing main, production data, spending money or touching "
+        "secrets, sending anything outside the company.",
     ] if req.get("via") == "orchestrator" else []) + [
         "what_to_do: decide this question within the Role's authority (agent/roles/%s.md). Give "
         "the decision, the reason, and what the asker should do next. If it is genuinely not "

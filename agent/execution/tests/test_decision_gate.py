@@ -118,12 +118,20 @@ class DecisionGateTests(unittest.TestCase):
         self.assertEqual((r["accountable_role"], r["route"]), ("cto", "owner"))
         r = dg.classify_and_resolve("What budget can we invest in this vendor?", state_store=store)
         self.assertEqual((r["accountable_role"], r["route"], r["reason"]),
-                         ("ceo", "escalate", "ceo-owned-decision"))
+                         ("ceo", "escalate", "orchestrator-unbound:ceo-class"))
         r = dg.classify_and_resolve("Which colour should the toast use?", state_store=store)
         self.assertEqual((r["accountable_role"], r["route"], r["reason"]),
                          ("cxo", "escalate", "decision-owner-unbound"), "cxo has no session")
         r = dg.classify_and_resolve("The build has a weird error I cannot explain", state_store=store)
-        self.assertEqual((r["route"], r["reason"]), ("escalate", "confidence-below-threshold"))
+        self.assertEqual((r["route"], r["reason"]), ("escalate", "orchestrator-unbound:gate-unsure"))
+        # D-035: with the orchestrator bound, none of those three reach the CEO.
+        ORCH = "0eeeeeee-2222-7000-8000-00000000000e"
+        store.bind_role_session("orchestrator", "claude", ORCH, HOME, "ceo")
+        for q, reason in [("What budget can we invest in this vendor?", "ceo-class-delegated"),
+                          ("Which colour should the toast use?", None),
+                          ("The build has a weird error I cannot explain", "gate-unsure")]:
+            r = dg.classify_and_resolve(q, state_store=store)
+            self.assertEqual((r["route"], r["via"], r.get("reason")), ("owner", "orchestrator", reason), q)
 
     def test_jev_gate_sends_one_typed_choice_and_degrades_to_escalation(self):
         calls = []
@@ -264,13 +272,15 @@ class DecisionGateTests(unittest.TestCase):
     def test_deny_list_runs_before_any_gate_and_regexes_catch_phrasing(self):
         for q, cat in [("Can I push this to main now?", "merge_or_push_main"),
                        ("Should I delete the old branch exec/karnak/KAN-8?", "destructive_git"),
-                       ("Shall I pick up the next ticket KAN-370?", "next_ticket"),
                        ("May I apply the migration to production?", "production"),
-                       ("Can I add a new package for charts?", "design_or_governance"),
+                       ("Can I edit DECISIONS.md to add a rule?", "governance_files"),
                        ("OK to push to canary?", "push_canary")]:
             self.assertEqual(dg.ceo_only_hit(q), cat, q)
         self.assertIsNone(dg.ceo_only_hit("May I commit the test file?"))
         self.assertIsNone(dg.ceo_only_hit("May I install a package already in the lock file?"))
+        # D-035: the next ticket and a new dependency are the orchestrator's now, not the CEO's.
+        self.assertIsNone(dg.ceo_only_hit("Shall I pick up the next ticket KAN-370?"))
+        self.assertIsNone(dg.ceo_only_hit("Can I add a new package for charts?"))
 
     def test_a_routine_permission_is_approved_by_policy_and_the_worker_resumes_at_once(self):
         did, cap = self.settled("decision_required", "")

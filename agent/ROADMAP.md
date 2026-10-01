@@ -1312,8 +1312,18 @@ answer; (2) the orchestrator's first turn died (`API Error: Connection lost mid-
 before it answered and nothing could re-send the request — `decision_gate redeliver` issues a
 fresh capability (the old one dies) and re-delivers the same envelope once. 14 tests.
 
-**P3b-orchestrator (Codex side) — pending the CEO typing "what do we have in the board?"
-in the Desktop conversation after the bootstrap refresh.**
+**P3b-orchestrator (Codex side) — PASSED live, 2026-10-01 ~18:54 UTC.** The CEO typed
+"What do we have in the board right now?" naming no role; Codex dispatched to the
+orchestrator (not a team); the orchestrator ran `po` and returned one answer (22 open /
+345 Done, overdue items, recent completions). The answer listed three items "needing your
+decision" — which produced **D-035**: every decision is delegated to the orchestrator,
+four hard stops stay the CEO's. `next_ticket` and `design_or_governance` left the
+deny-list; `governance_files` joined it; unsure / CEO-class / unbound-seat all route to the
+orchestrator when it is bound.
+
+**P3c (next, live):** the same three "needs your decision" items (KAN-281 type ramp,
+KAN-195 key rotation, KAN-261 design-source requests) put to the orchestrator; expected:
+decided by `cxo`/`cto`/`devops` roles with no return to the CEO, except any hard stop.
 
 ### Not in scope
 

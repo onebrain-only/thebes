@@ -222,6 +222,11 @@ def bootstrap_prompt(thread_id, state_store=store, runtime_id=RUNTIME_ID):
         "the CEO's question with the context you have.",
         "Do NOT route work through it: work goes straight to a team, and a team's result "
         "comes straight back here. Call the orchestrator only when you need it.",
+        "D-035: the CEO has delegated every decision to the orchestrator. If a report says "
+        "something 'needs the CEO's decision' or lists items 'awaiting the CEO', do not put "
+        "it to the CEO — send it to the orchestrator as a question and relay its decision. "
+        "The only things the CEO still decides are the hard stops Thebes enforces itself: "
+        "merging or pushing main, production data, money and secrets, sending outside.",
     ] if orch else ["The ORCHESTRATOR is not bound yet: answer-type questions must wait or go "
                     "to the CEO."])
     bound_teams = [t for t in team_bindings(state_store) if t["session_id"]]

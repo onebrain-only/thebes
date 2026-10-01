@@ -566,3 +566,31 @@ restarting processes, and the CEO wants to ask "what do we have?" without naming
 **Consequences:** The orchestrator binds like a team and shares the seat pool; it handles
 one question at a time (a second orchestrator may be added when that bites). When it is
 unbound, a decision falls back to the accountable seat's own session, then to the CEO.
+
+## D-035 — Every decision is delegated to the orchestrator; four hard stops remain the CEO's
+
+**Status:** ACTIVE (2026-10-01, CEO: option (أ) — "أقلل الرجوع ليا بأكبر شكل ممكن")
+**Decision:** The CEO delegates every decision to the orchestrator and the roles it runs:
+scope, priority, **the next ticket to start**, acceptance, architecture, **adding a
+dependency or changing a schema design**, experience, content, releases to Canary
+preparation, test strategy. A gate that is unsure, a CEO-class question, or an unbound
+seat all go to the orchestrator, which decides who answers; a worker or role may never
+answer "this needs the CEO". Exactly four hard stops remain the CEO's, enforced in plain
+code before anything reaches a model: (1) merging or pushing `main` and destructive git
+(P-030); (2) production data and migrations; (3) spending money, secrets, credentials,
+permissions; (4) sending anything outside the company. Editing governance files
+(`DECISIONS.md`, `CONTRACT.md`, `MANIFESTO.md`, role files, `authority.json`) stays a CEO
+act, because the orchestrator must not rewrite the rule it is judged by.
+**Why:** The CEO's goal is work that continues to done with the fewest returns to him.
+The first live orchestrator answer listed three items "needing your decision"; under this
+rule those go to `cpo`/`cto`/`cxo` inside the orchestrator instead.
+**Supersedes:** D-003's "no autonomous next ticket" as a CEO gate — selection of the next
+ticket is now `pm`/`po` Role Work inside the orchestrator, still through the canonical
+Ready → claim path and still one ticket per team at a time. D-033's deny-list loses
+`next_ticket` and `design_or_governance` (dependencies, schema design); `governance_files`
+is added. The authority registry's four `ceo` classes are read as "orchestrator decides,
+CEO informed" except where a hard stop applies.
+**Consequences:** `agent/state/registry/decision_gate.json` deny-list; `decision_gate.
+classify_and_resolve` routes unsure/CEO-class/unbound-seat to the orchestrator; the
+orchestrator and Codex bootstraps carry the delegation text. The CEO can narrow this at
+any time by adding a pattern to `ceo_only`.

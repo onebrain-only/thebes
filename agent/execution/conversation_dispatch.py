@@ -136,6 +136,12 @@ def team_block(record):
             "agent.execution.team_pool reserve <seat> --dispatch %s ; a 'seat-held' refusal "
             "means wait for that seat (leadership seats have no alternative) and say so in the "
             "answer if it cannot be reached." % (ROOT, record["dispatch_id"]),
+            "delegation (D-035): the CEO has delegated EVERY decision to you — scope, priority, "
+            "the next ticket, acceptance, architecture, dependencies. Never return 'needs the "
+            "CEO's decision' or a list of items awaiting the CEO: decide them through the "
+            "accountable seats (cpo/pm/po/cto/cxo) and report what was decided and by whom. The "
+            "only hard stops are enforced by Thebes before anything reaches you: merging or "
+            "pushing main, production data, money and secrets, sending outside the company.",
             "answer_shape: the answer, who decided it (which seat), the evidence, and what the "
             "asker should do next. Short. Nothing else.",
         ]
