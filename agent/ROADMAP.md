@@ -1264,7 +1264,37 @@ covered by a test. Run 3: Karnak (`cdispatch-d291df4c…`) → `decision_require
 continuation `cdispatch-6dfa206d…` resumed Karnak → `completed` → one turn on the Codex
 conversation. The `decision_required` itself never reached Codex.
 
-**P3 (next):** `gate: jev` with `TYPESAFE_API_KEY`; the same loop with a typed Choice.
+**P3 — PASSED live, 2026-10-01, Jev over OpenRouter** (`typesafe/jev-1.13`, key in a 0600
+file outside the repo). KAN-368 acceptance question → `work_acceptance` 0.99; on eight
+varied questions Jev named the right owner 7 times, the keyword gate 3. On the live loop Jev
+scored the "add tests now or follow-up?" question 0.41 (`work_acceptance` 0.43 vs
+`definition_of_done` 0.33) and escalated to the CEO — correct: the question was genuinely
+split. One call: 730 input tokens, $0.00003.
+
+### Step 3 — the orchestrator and routine approvals (D-033, D-034), built 2026-10-01
+
+**The CEO's goal restated:** work continues to done without obstacles and with less token
+usage. Two changes serve it:
+
+1. **Routine approvals never wake anyone.** A worker's permission request runs the D-033
+   deny-list in plain code first (merge/push `main`, destructive git, push Canary, production,
+   next ticket, dependencies/governance, money/secrets, external sends, other repos — regex
+   where phrasing varies); a hit goes to the CEO whatever any score says. Otherwise one typed
+   Jev Choice over the routine actions; a confident match resumes the same worker at once
+   with `APPROVED by policy`. Live on eight requests: commit 0.84, run checks 0.78, retry 0.86
+   approved; PR-into-main, next-ticket, new-package caught by the deny-list; an acceptance
+   question and a delete-branch request correctly not routine.
+2. **One orchestrator session (D-034)** bound as `orchestrator`: Codex dispatches questions
+   to it ("what do we have?"); it runs the leadership seats as subagents (seat pool), may
+   combine roles, answers data questions itself, and returns one answer. A worker's owned
+   question is delivered to the orchestrator (which runs the accountable seat as a subagent);
+   fallback is the seat's own session, then the CEO. It is a service either side calls, never a
+   layer: Codex → team → result stays direct.
+
+**P3b (next, live):** bind an orchestrator session; Codex asks "what do we have in the
+board?" and gets one answer without a team; Karnak asks "may I commit?" and continues within
+seconds with no session woken; Karnak asks an acceptance question and the orchestrator's `po`
+subagent answers it.
 
 ### Not in scope
 

@@ -36,12 +36,32 @@ def read(path=TEAMS_JSON):
             raise TeamRegistryError("invalid team entry %r" % team_id)
         if not isinstance(entry.get("number"), int) or not entry.get("display_name"):
             raise TeamRegistryError("team %r needs an integer number and a display_name" % team_id)
-        teams[team_id] = {"number": entry["number"], "display_name": entry["display_name"]}
+        kind = entry.get("kind", "team")
+        if kind not in ("team", "orchestrator"):
+            raise TeamRegistryError("team %r has unknown kind %r" % (team_id, kind))
+        teams[team_id] = {"number": entry["number"], "display_name": entry["display_name"],
+                          "kind": kind}
     return teams
 
 
 def is_team(team_id, path=TEAMS_JSON):
+    """A declared island of either kind (delivery team or the orchestrator)."""
     try:
         return team_id in read(path)
     except TeamRegistryError:
         return False
+
+
+def is_orchestrator(team_id, path=TEAMS_JSON):
+    try:
+        return read(path).get(team_id, {}).get("kind") == "orchestrator"
+    except TeamRegistryError:
+        return False
+
+
+def delivery_teams(path=TEAMS_JSON):
+    """The islands Codex may send WORK to — never the orchestrator."""
+    return {t: e for t, e in read(path).items() if e["kind"] == "team"}
+
+
+ORCHESTRATOR_ID = "orchestrator"

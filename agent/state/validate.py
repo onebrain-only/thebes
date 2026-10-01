@@ -1572,9 +1572,9 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
         if rec.get("seat_id") not in seatset and rec.get("seat_id") not in team_ids():
             errs.append("%s: session delivery target %r is neither a declared seat nor a "
                         "declared team" % (where, rec.get("seat_id")))
-        if rec.get("seat_id") in team_ids() and not did.startswith("cdispatch-"):
-            errs.append("%s: a team receives conversation dispatches only, never Product "
-                        "session dispatches" % where)
+        if rec.get("seat_id") in team_ids() and not did.startswith(("cdispatch-", "dreq-")):
+            errs.append("%s: a team receives conversation dispatches and decision requests "
+                        "only, never Product session dispatches" % where)
         if rec.get("provider") != "claude":
             errs.append("%s: session delivery provider must be claude — this transport "
                         "is the Claude CLI" % where)
@@ -1725,8 +1725,10 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
         if rec.get("origin_outcome") not in ("decision_required", "blocked",
                                              "clarification_required"):
             errs.append("%s: a decision request answers a decision outcome" % where)
-        if rec.get("route") not in ("owner", "task-owner", "escalate"):
-            errs.append("%s: route must be owner, task-owner or escalate" % where)
+        if rec.get("route") not in ("owner", "task-owner", "escalate", "approved"):
+            errs.append("%s: route must be owner, task-owner, escalate or approved" % where)
+        if rec.get("route") == "approved" and not rec.get("approved_action"):
+            errs.append("%s: an approved request names the routine action (D-033)" % where)
         if rec.get("status") not in ("open", "answered", "escalated"):
             errs.append("%s: decision request status must be open, answered or escalated"
                         % where)

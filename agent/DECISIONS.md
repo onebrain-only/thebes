@@ -511,3 +511,58 @@ serial-by-default rule is unchanged: parallelism is one request per team, bounde
 number of islands the CEO chose to open.
 **Evidence:** `agent/execution/team_pool.py`, `store.reserve_seat`,
 `agent/execution/tests/test_team_pool.py`.
+
+## D-033 — Routine actions Jev may approve alone; actions that are always the CEO's
+
+**Status:** ACTIVE (2026-10-01, CEO: "all approved")
+**Decision:** When a worker stops to ask for permission, a deny-list in plain code runs
+FIRST; anything on it goes to the CEO regardless of any model's confidence. Only then is
+Jev asked one typed Choice: is this request one of the allowed routine actions? A
+confident match is approved by policy and the same worker is resumed at once; anything
+else goes to the accountable role or the CEO (D-031). Every approval is a durable
+`decision_request` with the gate's confidence.
+
+| Jev may approve alone (when confident) | Always the CEO's, enforced before Jev is asked |
+|---|---|
+| create or switch a working branch; commit on it | merge or push to `main`; `push --force`; `reset --hard`; delete a branch |
+| run tests, lint, format, analyze | push to Canary (Canary is the release, P-030) |
+| run code generation (one `devops` slot at a time) | production database, migrations, anything touching production data |
+| install a package already in the lock file | starting the next Jira ticket (D-003); moving any ticket to Done outside its route |
+| read-only queries: database, Jira, git history | adding a dependency; changing schema design; changing role files or decisions |
+| post a findings comment on a Jira ticket | spending money; secrets, credentials, permissions, settings |
+| file a follow-up ticket in Backlog | sending anything outside: email, Slack, publishing a page |
+| move its own ticket into its own execution status | anything in another repository |
+| open a pull request (never merge) | |
+| retry a failed test or delivery, once | |
+| resume the same worker with an answer | |
+| choose between options the acceptance criteria already allow | |
+| release a finished worktree; clean its own temp files | |
+
+**Why:** The CEO's goal for Thebes: work continues to done without obstacles and with
+less token usage. A worker that stops for "may I commit?" and waits for a human, or wakes
+a Claude session to be told yes, spends minutes and tokens on a decision with one safe
+answer. A typed yes from Jev costs ~$0.00003 and under a second. The deny-list exists
+because confidence is not authority: no score lets a model push `main`.
+**Consequences:** D-031's "a provider never replaces the seat" stands — Jev approves
+actions the rules already permit; it decides nothing new. The deny-list is tracked
+configuration (`agent/state/registry/decision_gate.json`) and tested. D-003 and P-030 are
+unchanged.
+
+## D-034 — The orchestrator is one Claude session, called only when a side chooses to ask
+
+**Status:** ACTIVE (2026-10-01)
+**Decision:** The orchestrator is ONE persistent Claude session (`orchestrator` binding)
+that runs the leadership seats — `cpo`, `cto`, `cxo`, `analyst`, `pm`, `po`, `qa`,
+`devops`, `content-manager` — as subagents and returns one answer. It is a service either
+side calls, never a layer: Codex → team → result and team → Codex stay direct. Codex
+dispatches to it when the CEO wants an answer rather than work ("what do we have?");
+a team or seat reaches it through `decision_required` / `blocked` /
+`clarification_required`. It decides who answers (route-to-seat), may combine several
+roles for one question, and may answer a data question itself. Jev is used only for
+closed choices (who owns this; is this routine; yes/no) and never as the front door.
+**Why:** Jev returns typed values and cannot run a subagent or write an answer, so no
+agent runs "on Jev". One session, not one per leader: nothing is gained by five
+restarting processes, and the CEO wants to ask "what do we have?" without naming a role.
+**Consequences:** The orchestrator binds like a team and shares the seat pool; it handles
+one question at a time (a second orchestrator may be added when that bites). When it is
+unbound, a decision falls back to the accountable seat's own session, then to the CEO.

@@ -123,6 +123,22 @@ def team_block(record):
     if not teams.is_team(team_id):
         return []
     name = teams.read()[team_id]["display_name"]
+    if teams.is_orchestrator(team_id):
+        return [
+            "orchestrator: you are the Thebes ORCHESTRATOR (D-034), one session that answers "
+            "questions and makes routed decisions. You do not do Product work. Decide who owns "
+            "the question with the route-to-seat skill and run that leadership seat as a "
+            "subagent in THIS session (Agent tool, subagent_type=cpo|cto|cxo|analyst|pm|po|qa|"
+            "devops|content-manager); a question may need several seats — run each, combine "
+            "into ONE answer. A data question you can settle by reading a file, Persistent "
+            "State (agent/state/store.py) or a read-only query, answer yourself without a seat.",
+            "seat_pool: BEFORE spawning a seat run exactly: cd %s && python3 -m "
+            "agent.execution.team_pool reserve <seat> --dispatch %s ; a 'seat-held' refusal "
+            "means wait for that seat (leadership seats have no alternative) and say so in the "
+            "answer if it cannot be reached." % (ROOT, record["dispatch_id"]),
+            "answer_shape: the answer, who decided it (which seat), the evidence, and what the "
+            "asker should do next. Short. Nothing else.",
+        ]
     return [
         "team: you are team %s (%s), an execution island. You do the work by running Thebes "
         "seats as subagents inside THIS session (the Agent tool, subagent_type=<seat>, e.g. "

@@ -229,7 +229,8 @@ class DecisionGateTests(unittest.TestCase):
         did, cap = self.settled("blocked", "")
         out = self.submit(did, cap, "blocked", "We need budget approval to pay for the vendor.",
                           router=self.router)
-        self.assertEqual(out["origin_reply"]["escalated"]["reason"], "ceo-owned-decision")
+        self.assertEqual(out["origin_reply"]["escalated"]["reason"],
+                         "ceo-only:money_or_secrets", "the D-033 deny-list fires before any gate")
         self.assertEqual(self.launched, [THREAD], "the question reached the Codex thread")
         ev = store.read("codex_turn_event", out["origin_reply"]["event_id"])
         with open(ev["text_ref"], encoding="utf-8") as fh:
@@ -258,6 +259,78 @@ class DecisionGateTests(unittest.TestCase):
             "session_count_before": 1, "session_count_after": 1, "delivered_at": store.now()})
         self.assertEqual(rec["status"], "DELIVERED")
         self.assertEqual([e for e in validate.check(store.RUNTIME) if "session_deliver" in e], [])
+
+    # -- D-033 approvals ---------------------------------------------------------
+    def test_deny_list_runs_before_any_gate_and_regexes_catch_phrasing(self):
+        for q, cat in [("Can I push this to main now?", "merge_or_push_main"),
+                       ("Should I delete the old branch exec/karnak/KAN-8?", "destructive_git"),
+                       ("Shall I pick up the next ticket KAN-370?", "next_ticket"),
+                       ("May I apply the migration to production?", "production"),
+                       ("Can I add a new package for charts?", "design_or_governance"),
+                       ("OK to push to canary?", "push_canary")]:
+            self.assertEqual(dg.ceo_only_hit(q), cat, q)
+        self.assertIsNone(dg.ceo_only_hit("May I commit the test file?"))
+        self.assertIsNone(dg.ceo_only_hit("May I install a package already in the lock file?"))
+
+    def test_a_routine_permission_is_approved_by_policy_and_the_worker_resumes_at_once(self):
+        did, cap = self.settled("decision_required", "")
+        out = self.submit(did, cap, "decision_required",
+                          "May I commit the new test file on my working branch before continuing?",
+                          router=self.router)
+        self.assertEqual(out["decision"]["route"], "approved")
+        self.assertEqual(self.delivered, [], "no owner, no orchestrator woken")
+        self.assertEqual(self.launched, [], "nothing reached Codex")
+        (req, text), = self.resumed
+        self.assertIn("APPROVED by policy (D-033): branch_or_commit", text)
+        rec = store.read("decision_request", req["decision_request_id"])
+        self.assertEqual((rec["route"], rec["approved_action"], rec["status"]),
+                         ("approved", "branch_or_commit", "answered"))
+        self.assertEqual(self.clean(), [])
+
+    def test_a_ceo_only_request_escalates_even_when_phrased_as_routine(self):
+        did, cap = self.settled("decision_required", "")
+        out = self.submit(did, cap, "decision_required",
+                          "Quick routine commit, then I'll push to main — ok?", router=self.router)
+        self.assertEqual(out["origin_reply"]["escalated"]["reason"], "ceo-only:merge_or_push_main")
+        self.assertEqual(self.resumed, [])
+
+    # -- D-034 orchestrator -------------------------------------------------------
+    def test_an_owned_question_is_delivered_to_the_orchestrator_session_when_bound(self):
+        ORCH = "0eeeeeee-2222-7000-8000-00000000000e"
+        store.bind_role_session("orchestrator", "claude", ORCH, HOME, "ceo")
+        r = dg.classify_and_resolve("Which acceptance criteria apply to KAN-9?", state_store=store)
+        self.assertEqual((r["route"], r["owner_seat"], r["owner_session_id"], r["via"]),
+                         ("owner", "po", ORCH, "orchestrator"))
+        did, cap = self.settled("decision_required", "")
+        self.submit(did, cap, "decision_required", "Which acceptance criteria apply to KAN-9?",
+                    router=self.router)
+        req, message = self.delivered[0]
+        self.assertEqual(req["owner_session_id"], ORCH)
+        self.assertIn("you_are: the Thebes ORCHESTRATOR", message)
+        self.assertIn("subagent_type=po", message)
+        self.assertIn("team_pool reserve po --dispatch %s" % did, message)
+        # the orchestrator session answers; po's own session is not the identity
+        dcap = message.split("%s=" % dg.CAPABILITY_ENV, 1)[1].split()[0]
+        with self.assertRaises(dg.Refused):
+            dg.answer(req["decision_request_id"], "x", env={"CLAUDE_CODE_SESSION_ID": PO,
+                                                             dg.CAPABILITY_ENV: dcap},
+                      state_store=store, resume=self.resume)
+        out = dg.answer(req["decision_request_id"], "Use AC3.",
+                        env={"CLAUDE_CODE_SESSION_ID": ORCH, dg.CAPABILITY_ENV: dcap},
+                        state_store=store, resume=self.resume)
+        self.assertEqual(out["status"], "answered")
+        self.assertEqual(self.resumed[0][0]["asker_session_id"], KARNAK)
+        self.assertEqual(self.clean(), [])
+
+    def test_bootstrap_tells_codex_about_the_orchestrator_and_when_to_use_it(self):
+        text = cr.bootstrap_prompt(THREAD, store)
+        self.assertIn("ORCHESTRATOR is not bound yet", text)
+        ORCH = "0eeeeeee-2222-7000-8000-00000000000e"
+        store.bind_role_session("orchestrator", "claude", ORCH, HOME, "ceo")
+        text = cr.bootstrap_prompt(THREAD, store)
+        self.assertIn("The ORCHESTRATOR (one Claude session; D-034): %s" % ORCH, text)
+        self.assertIn("Do NOT route work through it", text)
+        self.assertNotIn("Orchestrator (orchestrator)", text, "never listed as a delivery team")
 
     def test_a_completed_outcome_never_touches_the_gate(self):
         did, cap = self.settled("completed", "")

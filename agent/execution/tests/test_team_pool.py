@@ -82,9 +82,12 @@ class TeamPoolTests(unittest.TestCase):
                 if any(k in e for k in ("team", "reserv", "conversation", "role session"))]
 
     def test_registry_names_five_temples_and_a_team_binds_like_a_session(self):
-        self.assertEqual([t["display_name"] for t in sorted(teams.read().values(),
+        self.assertEqual([t["display_name"] for t in sorted(teams.delivery_teams().values(),
                                                             key=lambda t: t["number"])],
                          ["Karnak", "Habu", "Luxor", "Ramesseum", "Deir el-Bahari"])
+        self.assertTrue(teams.is_orchestrator("orchestrator"))
+        self.assertFalse(teams.is_orchestrator("karnak"))
+        self.assertNotIn("orchestrator", teams.delivery_teams(), "Codex never sends WORK to it")
         self.assertEqual(store.active_role_session("karnak")["session_id"], KARNAK)
         with self.assertRaises(store.StateError):
             store.bind_role_session("thebes", "claude", KARNAK, HOME, "ceo")

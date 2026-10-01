@@ -210,7 +210,20 @@ def connect(*, state_store=store, factory=None, runtime_id=RUNTIME_ID):
 def bootstrap_prompt(thread_id, state_store=store, runtime_id=RUNTIME_ID):
     """The first, private turn on a new thread. It names the real local route."""
     from agent.state import teams as team_registry
-    from agent.execution.team_pool import team_bindings
+    from agent.execution.team_pool import team_bindings, orchestrator_binding
+    orch = orchestrator_binding(state_store)
+    orch_lines = ([
+        "The ORCHESTRATOR (one Claude session; D-034): %s%s" % (
+            orch["session_id"], " — BUSY now" if orch["busy"] else ""),
+        "Ask it when the CEO wants an ANSWER rather than work done — 'what do we have?', "
+        "'what were we doing?', 'is X in scope?', anything a CPO/CTO/CXO/PO/analyst would "
+        "answer — or needs a decision. It decides which leadership seats answer; you never "
+        "name a seat. Dispatch to it with the same conversation-dispatch command, prompt = "
+        "the CEO's question with the context you have.",
+        "Do NOT route work through it: work goes straight to a team, and a team's result "
+        "comes straight back here. Call the orchestrator only when you need it.",
+    ] if orch else ["The ORCHESTRATOR is not bound yet: answer-type questions must wait or go "
+                    "to the CEO."])
     bound_teams = [t for t in team_bindings(state_store) if t["session_id"]]
     team_lines = "\n".join("- team %d %s (%s): %s%s" % (
         t["number"], t["display_name"], t["team_id"], t["session_id"],
@@ -228,6 +241,7 @@ def bootstrap_prompt(thread_id, state_store=store, runtime_id=RUNTIME_ID):
         "professional self-contained prompt, and send it to ONE free TEAM. You do not do "
         "the work yourself and you do not pick seats: a team runs the seats it needs as "
         "subagents inside its own session and returns one report.",
+    ] + orch_lines + [
         "Teams (execution islands; each is one persistent Claude session):",
         team_lines,
         "One request = one team. A team with an open dispatch is busy; send a new request "

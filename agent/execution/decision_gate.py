@@ -165,6 +165,90 @@ def gate_for(cfg=None, env=None):
     raise Refused("decision-gate-unknown", name)
 
 
+# ---------------------------------------------------------------- approvals (D-033)
+def ceo_only_hit(text, cfg=None):
+    """The deny-list, matched in plain code before any model is asked.
+    Returns the category name, or None."""
+    import re
+    cfg = cfg or config()
+    low = (text or "").lower()
+    for category, patterns in ((cfg.get("approval") or {}).get("ceo_only") or {}).items():
+        for p in patterns:
+            if p.startswith("re:"):
+                if re.search(p[3:], low):
+                    return category
+            elif p in low:
+                return category
+    return None
+
+
+class FakeApprovalGate:
+    gate_id = "fake"
+
+    def __init__(self, cfg):
+        self.routine = (cfg.get("approval") or {}).get("routine") or {}
+        self.hints = {
+            "branch_or_commit": ["commit", "branch"], "run_checks": ["test", "lint", "analyze"],
+            "code_generation": ["build_runner", "codegen"], "read_only_query": ["read-only", "query"],
+            "jira_comment": ["comment"], "open_pull_request": ["pull request", " pr "],
+            "retry_once": ["retry"], "release_worktree": ["worktree", "temp"]}
+
+    def classify(self, text):
+        low = (text or "").lower()
+        for action, words in self.hints.items():
+            if any(w in low for w in words):
+                return {"action": action, "confidence": 0.9, "gate": self.gate_id}
+        return {"action": "not_routine", "confidence": 0.9, "gate": self.gate_id}
+
+
+class JevApprovalGate(JevGate):
+    """ONE typed Choice over the routine actions plus `not_routine`."""
+
+    def classify(self, text):
+        key = read_key(self.provider, self.env)
+        if not key:
+            raise Refused("decision-gate-unavailable", "no API key")
+        routine = (config().get("approval") or {}).get("routine") or {}
+        body = json.dumps({
+            "model": self.provider["model"], "state": {"request": text},
+            "questions": {"action": {
+                "type": "choice",
+                "instructions": "A software worker asks permission for this. Which routine action "
+                                "is it, exactly? If it is a question, a judgement, or an action not "
+                                "listed, choose not_routine.",
+                "criteria": routine}}}).encode("utf-8")
+        req = urllib.request.Request(self.provider["url"], data=body, method="POST", headers={
+            "Content-Type": "application/json", "Authorization": "Bearer %s" % key})
+        try:
+            with self.opener(req, timeout=30) as resp:
+                answer = json.loads(resp.read().decode("utf-8"))
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            raise Refused("decision-gate-unavailable", "jev: %s" % exc)
+        a = (answer.get("answers") or {}).get("action") or {}
+        if a.get("choice") not in routine or not isinstance(a.get("confidence"), (int, float)):
+            raise Refused("decision-gate-malformed", json.dumps(a)[:300])
+        return {"action": a["choice"], "confidence": float(a["confidence"]), "gate": "jev",
+                "evidence": json.dumps(a.get("probabilities") or {})[:300]}
+
+
+def approval_verdict(text, *, cfg=None, env=None):
+    """D-033 in one call. Returns {verdict: ceo|approved|not_routine|unavailable, ...}."""
+    cfg = cfg or config()
+    hit = ceo_only_hit(text, cfg)
+    if hit:
+        return {"verdict": "ceo", "reason": "ceo-only:%s" % hit}
+    name = cfg.get("gate", "fake")
+    try:
+        gate = JevApprovalGate(cfg, env=env) if name == "jev" else FakeApprovalGate(cfg)
+        v = gate.classify(text)
+    except Refused as exc:
+        return {"verdict": "unavailable", "reason": exc.code}
+    threshold = float((cfg.get("approval") or {}).get("threshold", 0.7))
+    if v["action"] == "not_routine" or v["confidence"] < threshold:
+        return dict(v, verdict="not_routine", reason="not-routine-or-unsure")
+    return dict(v, verdict="approved", reason="routine:%s" % v["action"])
+
+
 # ---------------------------------------------------------------- owners
 def owner_seat_for_role(role):
     """The one seat instantiating a leadership role, or None."""
@@ -190,11 +274,18 @@ def classify_and_resolve(text, *, cfg=None, env=None, state_store=store):
     if role == TASK_OWNER:
         return dict(out, route="task-owner")
     seat = owner_seat_for_role(role)
+    # D-034: the accountable seat answers INSIDE the orchestrator session (as a
+    # subagent). Fallback: the seat's own bound session; then the CEO.
+    from agent.state import teams
+    orch = state_store.active_role_session(teams.ORCHESTRATOR_ID)
+    if orch is not None and orch.get("provider") == "claude":
+        return dict(out, route="owner", owner_seat=seat, owner_session_id=orch["session_id"],
+                    owner_stable_home=orch.get("stable_home"), via="orchestrator")
     binding = state_store.active_role_session(seat) if seat else None
     if binding is None or binding.get("provider") != "claude":
         return dict(out, route="escalate", reason="decision-owner-unbound", owner_seat=seat)
     return dict(out, route="owner", owner_seat=seat, owner_session_id=binding["session_id"],
-                owner_stable_home=binding.get("stable_home"))
+                owner_stable_home=binding.get("stable_home"), via="seat")
 
 
 # ---------------------------------------------------------------- the request
@@ -220,9 +311,16 @@ def request_envelope(req, capability, question):
         % (req["asker_seat_id"], req["asker_session_id"], req["origin_thread_id"]),
         "expected_owner_sid: %s — verify $CLAUDE_CODE_SESSION_ID matches; if not, do nothing."
         % req["owner_session_id"],
-        "what_to_do: decide this question within your Role's authority (agent/roles/%s.md). Give "
+    ] + ([
+        "you_are: the Thebes ORCHESTRATOR (D-034). Run the accountable seat `%s` as a subagent "
+        "in THIS session (Agent tool, subagent_type=%s) after reserving it: cd %s && python3 -m "
+        "agent.execution.team_pool reserve %s --dispatch %s . Its decision is the answer; you "
+        "may add a second seat only if the question genuinely spans two roles."
+        % (req["owner_seat"], req["owner_seat"], ROOT, req["owner_seat"], req["origin_dispatch_id"]),
+    ] if req.get("via") == "orchestrator" else []) + [
+        "what_to_do: decide this question within the Role's authority (agent/roles/%s.md). Give "
         "the decision, the reason, and what the asker should do next. If it is genuinely not "
-        "yours to decide, say so and name whose it is." % req["accountable_role"],
+        "that Role's to decide, say so and name whose it is." % req["accountable_role"],
         "report: write your decision to a file and run exactly once: %s"
         % answer_command(req["decision_request_id"], capability),
         "report_rules: one answer per request; never contact Codex or the asker directly; "
@@ -252,7 +350,19 @@ def route(record, *, state_store=store, env=None, cfg=None, deliver=None, resume
     with `route` in {owner, task-owner, escalate} and what was done."""
     with open(record["result_ref"], encoding="utf-8") as fh:
         question = fh.read()
-    resolved = classify_and_resolve(question, cfg=cfg, env=env, state_store=state_store)
+    # D-033 first: a routine permission is approved by policy and the worker
+    # resumes at once — no owner, no CEO, no Claude session woken. The deny-list
+    # inside approval_verdict runs before any model and wins over any score.
+    approval = approval_verdict(question, cfg=cfg, env=env)
+    if approval["verdict"] == "ceo":
+        resolved = {"route": "escalate", "reason": approval["reason"], "gate": "policy",
+                    "decision_class": None, "accountable_role": CEO, "confidence": None}
+    elif approval["verdict"] == "approved":
+        resolved = {"route": "approved", "reason": approval["reason"], "gate": approval["gate"],
+                    "decision_class": "routine_action", "accountable_role": "policy",
+                    "confidence": approval["confidence"], "action": approval["action"]}
+    else:
+        resolved = classify_and_resolve(question, cfg=cfg, env=env, state_store=state_store)
     rid = state_store.new_id("decision_request")
     question_ref = _ref(state_store, "decision-questions", rid)
     with open(question_ref, "w", encoding="utf-8") as fh:
@@ -268,12 +378,20 @@ def route(record, *, state_store=store, env=None, cfg=None, deliver=None, resume
         "confidence": resolved.get("confidence"), "route": resolved["route"],
         "escalation_reason": resolved.get("reason"), "owner_seat": resolved.get("owner_seat"),
         "owner_session_id": resolved.get("owner_session_id"),
+        "owner_stable_home": resolved.get("owner_stable_home"), "via": resolved.get("via"),
+        "approved_action": resolved.get("action"),
         "capability_sha256": state_store.capability_sha256(capability),
         "status": "open", "answer_ref": None, "answered_by_session_id": None,
         "continuation_dispatch_id": None, "error": None}, rid=rid)
     if resolved["route"] == "escalate":
         return dict(resolved, decision_request_id=rid, request=state_store.update(
             "decision_request", rid, req["revision"], {"status": "escalated"}))
+    if resolved["route"] == "approved":
+        text = ("APPROVED by policy (D-033): %s. Gate %s, confidence %.2f. Proceed with exactly "
+                "that action and continue the task; do not ask again for the same action."
+                % (resolved["action"], resolved["gate"], resolved["confidence"]))
+        return dict(resolved, decision_request_id=rid,
+                    continuation=_resume_asker(req, text, state_store=state_store, resume=resume))
     if resolved["route"] == "task-owner":
         text = ("This question is task-local (%s): it is yours to decide within the brief. "
                 "Decide, record why in your report, and continue." % resolved["decision_class"])
@@ -294,15 +412,18 @@ def route(record, *, state_store=store, env=None, cfg=None, deliver=None, resume
 def _deliver_to_owner(req, message, *, state_store=store):
     from agent.execution import claude_delivery
     from agent.execution.claude_cli import ClaudeCli
+    from agent.state import teams
+    target_seat = teams.ORCHESTRATOR_ID if req.get("via") == "orchestrator" else req["owner_seat"]
     base = {"dispatch_id": req["decision_request_id"], "work_item_id": None,
-            "seat_id": req["owner_seat"], "provider": "claude",
+            "seat_id": target_seat, "provider": "claude",
             "envelope_version": "decision-v1", "expected_worker_sid": req["owner_session_id"],
             "report_to": None}
-    binding = state_store.active_role_session(req["owner_seat"])
+    home = req.get("owner_stable_home") or (state_store.active_role_session(target_seat) or {}).get(
+        "stable_home")
     env = {k: v for k, v in os.environ.items() if k not in SCRUBBED_ENV}
     res = claude_delivery.deliver_prompt(
         req["decision_request_id"], req["decision_request_id"], base, req["owner_session_id"],
-        binding["stable_home"], message, state_store=state_store, cli=ClaudeCli(env=env))
+        home, message, state_store=state_store, cli=ClaudeCli(env=env))
     if res.status != claude_delivery.DELIVERED:
         raise Refused("owner-delivery-failed", res.error or res.status)
     return res.as_dict()

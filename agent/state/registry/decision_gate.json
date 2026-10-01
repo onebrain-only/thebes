@@ -4,6 +4,37 @@
   "note": "D-031: the gate classifies a worker's decision_required / blocked / clarification_required into one decision class of authority.json and scores confidence; the accountable role still writes the decision. `gate` selects the implementation: `fake` (deterministic keyword table below, for P2) or `jev` (TypeSafe Jev over POST /v1/systemone with TYPESAFE_API_KEY, P3). Below `threshold` the question escalates to the CEO through the origin conversation. An unavailable gate escalates the same way.",
   "gate": "jev",
   "threshold": 0.7,
+  "approval": {
+    "note": "D-033. `ceo_only` patterns are matched in plain code BEFORE any model is asked; a hit always escalates to the CEO. `routine` names the actions Jev may approve alone (one typed Choice over these plus `not_routine`); a confident routine match resumes the worker at once with an approval. Patterns are lowercase substrings.",
+    "threshold": 0.7,
+    "ceo_only": {
+      "merge_or_push_main":      ["to main", "into main", "onto main", "push main", "origin main", "main branch"],
+      "destructive_git":         ["--force", "force push", "force-push", "reset --hard", "branch -d", "re:\\b(delete|remove|drop)\\b.{0,40}\\bbranch", "re:\\bbranch\\b.{0,40}\\b(delete|remove|drop)"],
+      "push_canary":             ["push to canary", "push canary", "deploy to canary", "origin canary"],
+      "production":              ["production", "apply_migration", "apply the migration", "run the migration", "prod database", "live database"],
+      "next_ticket":             ["next ticket", "next jira", "next task", "pick up kan-", "start kan-", "move to done", "transition to done", "mark done"],
+      "design_or_governance":    ["add a dependency", "new dependency", "add package", "add a package", "re:\\bnew\\b.{0,20}\\bpackage", "schema design", "change the schema", "role file", "decisions.md", "contract.md"],
+      "money_or_secrets":        ["spend", "pay for", "budget", "api key", "secret", "credential", "token", "permission", "settings.json"],
+      "external_send":           ["send an email", "send email", "slack", "publish", "post to", "notify the user"],
+      "other_repository":        ["another repo", "other repository", "different repo"]
+    },
+    "routine": {
+      "branch_or_commit":        "create or switch a working branch, or commit on the current working branch",
+      "run_checks":              "run tests, lint, format or analyze",
+      "code_generation":         "run build_runner / code generation",
+      "install_locked_package":  "install a package that is already in the lock file",
+      "read_only_query":         "a read-only query of the database, Jira or git history",
+      "jira_comment":            "post a findings comment on a Jira ticket",
+      "file_followup_backlog":   "file a follow-up ticket in Backlog",
+      "own_execution_status":    "move its own ticket into its own execution status",
+      "open_pull_request":       "open a pull request (not merge it)",
+      "retry_once":              "retry a failed test or a failed delivery once",
+      "resume_worker":           "resume the same worker with an answer",
+      "option_within_criteria":  "choose between options the acceptance criteria already allow",
+      "release_worktree":        "release a finished worktree or clean its own temp files",
+      "not_routine":             "none of the above: a question, a judgement, or an action not listed"
+    }
+  },
   "jev_provider": {
     "note": "CEO chose OpenRouter 2026-10-01 (no waitlist; same /v1/systemone body as direct). To switch route edit this block only: direct = https://api.typesafe.ai/v1/systemone, model jev-latest, key_env TYPESAFE_API_KEY; Vercel = https://ai-gateway.vercel.sh/typesafe/v1/systemone with an AI Gateway key. The key itself is never in the repo.",
     "url": "https://openrouter.ai/api/v1/systemone",

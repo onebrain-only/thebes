@@ -45,10 +45,28 @@ def team_for_session(session_id, state_store=store):
     raise Refused("not-a-team-session", "session %s is not bound to a team" % session_id)
 
 
+def open_dispatches_for(session_id, state_store=store):
+    return [r["dispatch_id"] for r in state_store.read_all("conversation_dispatch")
+            if r.get("target_session_id") == session_id
+            and r.get("status") in store.CONVERSATION_DISPATCH_OPEN]
+
+
+def orchestrator_binding(state_store=store):
+    """The orchestrator's ACTIVE binding with busy state, or None (D-034)."""
+    binding = state_store.active_role_session(teams.ORCHESTRATOR_ID)
+    if binding is None or binding.get("provider") != "claude":
+        return None
+    busy = open_dispatches_for(binding["session_id"], state_store)
+    return {"team_id": teams.ORCHESTRATOR_ID, "session_id": binding["session_id"],
+            "stable_home": binding.get("stable_home"), "busy": bool(busy),
+            "open_dispatches": busy}
+
+
 def team_bindings(state_store=store):
-    """Every team's binding plus whether it currently has an open dispatch."""
+    """Every DELIVERY team's binding plus whether it has an open dispatch.
+    The orchestrator is not a delivery team; see orchestrator_binding()."""
     out = []
-    for team_id, entry in sorted(teams.read().items(), key=lambda kv: kv[1]["number"]):
+    for team_id, entry in sorted(teams.delivery_teams().items(), key=lambda kv: kv[1]["number"]):
         binding = state_store.active_role_session(team_id)
         busy = []
         if binding:
