@@ -1291,10 +1291,17 @@ usage. Two changes serve it:
    fallback is the seat's own session, then the CEO. It is a service either side calls, never a
    layer: Codex → team → result stays direct.
 
-**P3b (next, live):** bind an orchestrator session; Codex asks "what do we have in the
-board?" and gets one answer without a team; Karnak asks "may I commit?" and continues within
-seconds with no session woken; Karnak asks an acceptance question and the orchestrator's `po`
-subagent answers it.
+**P3b-approval — PASSED live, 2026-10-01 18:24 UTC.** Karnak (`cdispatch-9ab1354d…`)
+stopped with `decision_required: "May I commit this new test file on the working branch
+exec/karnak/thebes-approval-proof?"` → deny-list clean → Jev `branch_or_commit` 0.88 →
+`dreq-ce7657b3` `approved` → the same Karnak session resumed with `APPROVED by policy` in
+the same second → committed, cleaned up, reported `completed`. No owner, no orchestrator,
+no CEO, no Claude session woken; one Jev call (~$0.00003). The Codex conversation received
+only the final report.
+
+**P3b-orchestrator (next, live):** bind an orchestrator session; Codex asks "what do we
+have in the board?" and gets one answer without a team; Karnak asks an acceptance question
+and the orchestrator's `po` subagent answers it.
 
 ### Not in scope
 
