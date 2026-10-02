@@ -655,3 +655,28 @@ record-keeping act. The orchestrator decides and the work proceeds; it does not 
 decision to Jira as a step of its own, and it does not treat "recording the decision" as
 work. A ticket's own lifecycle (comments, transitions) stays with the seat executing that
 ticket, as `WORKFLOWS.md` already says. The measure is the ticket reaching Done.
+
+## D-039 — Claude-only Thebes: the orchestrator is the CEO's front door
+
+**Status:** ACTIVE (2026-10-02, CEO: "I want to exit Codex … talk to the orchestrator
+directly and remove the Listener island … send my request here and divide tasks to teams")
+**Decision:** The CEO talks to the `thebes-orchestrator` Claude session directly (Remote
+Control on desktop or phone). It is the Listener: it routes work to free teams with
+`conversation_dispatch dispatch` (its own `CLAUDE_CODE_SESSION_ID` is the origin, accepted only
+when it equals the bound orchestrator session), answers questions and executes CEO orders
+itself with seats as subagents, and takes team results, team decision requests and watchdog
+alerts from **its inbox** (`agent/execution/inbox.py wait`, one background command that exits
+when something arrives). Nothing stops or resumes the orchestrator: a decision request routed
+via the orchestrator is held for the inbox (fresh capability on collection) instead of being
+delivered by stop → `--bg --resume`. The orchestrator may hold a seat for a CEO order it runs
+itself under a `ceo-<label>` id (orchestrator only; lapses after one hour). Operating card:
+`agent/ORCHESTRATOR.md`. The Codex path (D-036, D-038, root `AGENTS.md`) still works but is no
+longer the front door; Codex is not required.
+**Why:** One conversation for the CEO, no second app, no Listener hop, and the orchestrator's
+live chat is never interrupted by a delivery. Teams stay the execution islands (D-032);
+decisions stay delegated (D-035).
+**Consequences:** `conversation_dispatch` (Claude origin, inline reply, no Codex turn),
+`decision_gate` (inbox delivery, origin-aware continuation, origin-neutral envelopes),
+`store.reserve_seat` (`ceo-` holds), validator (Claude-origin dispatch, `ceo-` reservations),
+`inbox.py`, `test_inbox.py` (7 tests). P4 is proven by one live round-trip from the CEO's
+message to the orchestrator; P5 (bootstrap) is still open.

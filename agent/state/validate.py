@@ -1707,9 +1707,9 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
             errs.append("%s: reserved seat %r is not declared" % (where, rec.get("seat_id")))
         if rec.get("team_id") not in team_ids():
             errs.append("%s: reserving team %r is not declared" % (where, rec.get("team_id")))
-        if not str(rec.get("dispatch_id") or "").startswith(("cdispatch-", "dreq-")):
-            errs.append("%s: a seat is reserved for one conversation dispatch or one decision "
-                        "request" % where)
+        if not str(rec.get("dispatch_id") or "").startswith(("cdispatch-", "dreq-", "ceo-")):
+            errs.append("%s: a seat is reserved for one conversation dispatch, one decision "
+                        "request or one orchestrator CEO order" % where)
         if rec.get("status") not in ("active", "released"):
             errs.append("%s: seat reservation status must be active or released" % where)
         if rec.get("status") == "released" and not rec.get("released_at"):
@@ -1788,9 +1788,11 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
                    "prompt_ref", "status"], errs, where)
         if not str(rec.get("dispatch_id") or "").startswith("cdispatch-"):
             errs.append("%s: conversation dispatch_id must start with cdispatch-" % where)
-        if rec.get("origin_provider") != "codex" or not SESSION_UUID.match(
+        # D-039: the orchestrator session may be the origin; its id is a claude uuid.
+        if rec.get("origin_provider") not in ("codex", "claude") or not SESSION_UUID.match(
                 str(rec.get("origin_thread_id") or "")):
-            errs.append("%s: origin is a codex thread uuid, captured from its environment" % where)
+            errs.append("%s: origin is a codex thread or the orchestrator's claude session "
+                        "uuid, captured from its environment" % where)
         if rec.get("target_provider") != "claude" or not SESSION_UUID.match(
                 str(rec.get("target_session_id") or "")):
             errs.append("%s: target is a durable claude session uuid" % where)

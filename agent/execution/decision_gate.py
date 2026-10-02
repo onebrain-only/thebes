@@ -313,7 +313,7 @@ def request_envelope(req, capability, question):
         "decision_request_id: %s" % req["decision_request_id"],
         "decision_class: %s (you are the accountable role: %s)"
         % (req["decision_class"], req["accountable_role"]),
-        "asked_by: %s (session %s), working for Codex conversation %s"
+        "asked_by: %s (session %s), working for origin conversation %s"
         % (req["asker_seat_id"], req["asker_session_id"], req["origin_thread_id"]),
         "expected_owner_sid: %s — verify $CLAUDE_CODE_SESSION_ID matches; if not, do nothing."
         % req["owner_session_id"],
@@ -342,7 +342,7 @@ def request_envelope(req, capability, question):
         "that Role's to decide, say so and name whose it is." % req["accountable_role"],
         "report: write your decision to a file and run exactly once: %s"
         % answer_command(req["decision_request_id"], capability),
-        "report_rules: one answer per request; never contact Codex or the asker directly; "
+        "report_rules: one answer per request; never contact the origin or the asker directly; "
         "Thebes resumes the asker with your answer.",
         "",
         "--- question ---",
@@ -358,7 +358,7 @@ def answer_envelope(req, answer_text):
         "decided_by: %s (%s)" % (req["accountable_role"], req.get("owner_seat") or TASK_OWNER),
         "Continue the original task you reported %s on, using this decision. When the task is "
         "done, report `completed` through the report command in THIS envelope's header — the "
-        "report goes to the Codex conversation that asked." % req["origin_outcome"],
+        "report goes to the conversation that asked." % req["origin_outcome"],
         "--- decision ---",
         answer_text,
     ])
@@ -416,7 +416,8 @@ def route(record, *, state_store=store, env=None, cfg=None, deliver=None, resume
                 "Decide, record why in your report, and continue." % resolved["decision_class"])
         return dict(resolved, decision_request_id=rid,
                     continuation=_resume_asker(req, text, state_store=state_store, resume=resume))
-    sender = deliver or _deliver_to_owner
+    sender = deliver or (_deliver_to_inbox if req.get("via") == "orchestrator"
+                         else _deliver_to_owner)
     try:
         sent = sender(req, request_envelope(req, capability, question), state_store=state_store)
     except Exception as exc:                        # fail closed: escalate, never lose it
@@ -426,6 +427,17 @@ def route(record, *, state_store=store, env=None, cfg=None, deliver=None, resume
         return dict(resolved, route="escalate", reason="owner-delivery-failed",
                     decision_request_id=rid)
     return dict(resolved, decision_request_id=rid, delivery=sent)
+
+
+def _deliver_to_inbox(req, message, *, state_store=store):
+    """D-039: the orchestrator is the CEO's live conversation, so it is never
+    stopped and resumed. The request waits in its inbox; `agent.execution.inbox
+    wait` hands it over with a fresh capability. `message` is not stored: it
+    carries the capability, which never touches disk."""
+    cur = state_store.read("decision_request", req["decision_request_id"])
+    state_store.update("decision_request", cur["decision_request_id"], cur["revision"],
+                       {"delivery": "inbox", "inbox_collected_at": None})
+    return {"status": "INBOX", "decision_request_id": req["decision_request_id"]}
 
 
 def _deliver_to_owner(req, message, *, state_store=store, delivery_id=None):
@@ -457,7 +469,13 @@ def _resume_asker(req, answer_text, *, state_store=store, resume=None):
         out = resume(req, text, state_store=state_store)
     else:
         from agent.execution import conversation_dispatch as cd
-        env = dict(os.environ, CODEX_THREAD_ID=req["origin_thread_id"])
+        origin = state_store.read("conversation_dispatch", req["origin_dispatch_id"]) or {}
+        env = {k: v for k, v in os.environ.items()
+               if k not in ("CODEX_THREAD_ID", cd.CLAUDE_ORIGIN_ENV)}
+        if origin.get("origin_provider") == "claude":       # D-039: the orchestrator asked
+            env[cd.CLAUDE_ORIGIN_ENV] = req["origin_thread_id"]
+        else:
+            env["CODEX_THREAD_ID"] = req["origin_thread_id"]
         out = cd.dispatch(text, req["asker_session_id"], env=env, state_store=state_store,
                           detach=True)
     cur = state_store.read("decision_request", req["decision_request_id"])
@@ -478,6 +496,11 @@ def redeliver(request_id, *, state_store=store, deliver=None):
     if req["status"] != "open" or req["route"] != "owner":
         raise Refused("decision-request-not-open", "%s is %s/%s" % (request_id, req["status"],
                                                                      req["route"]))
+    if req.get("delivery") == "inbox" and deliver is None:
+        # The orchestrator's inbox hands it over again on its next collection.
+        state_store.update("decision_request", request_id, req["revision"],
+                           {"inbox_collected_at": None, "redelivered_at": state_store.now()})
+        return {"status": "requeued-to-inbox", "decision_request_id": request_id}
     with open(req["question_ref"], encoding="utf-8") as fh:
         question = fh.read()
     capability = secrets.token_urlsafe(32)

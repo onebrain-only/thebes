@@ -44,6 +44,9 @@ from agent.execution.claude_cli import ClaudeCli                     # noqa: E40
 
 ENVELOPE_VERSION = "conversation-v1"
 CAPABILITY_ENV = "THEBES_DISPATCH_CAPABILITY"
+# D-039: the orchestrator's own session id, passed through the Listener when the
+# dispatching shell is the orchestrator (no CODEX_THREAD_ID). Never a flag.
+CLAUDE_ORIGIN_ENV = "THEBES_ORIGIN_CLAUDE_SID"
 MAX_PROMPT_BYTES = 150_000       # the envelope must still fit claude_delivery's 200 KB argv cap
 MAX_RESULT_BYTES = 100_000
 OUTCOMES = ("completed", "blocked", "decision_required", "clarification_required", "failed")
@@ -184,14 +187,29 @@ def build_envelope(record, capability):
         "  (or pass --result \"<text>\" instead of --result-file). <outcome> is one of: %s."
         % ", ".join(OUTCOMES),
         "report_rules: the capability authorizes this dispatch's single result and nothing "
-        "else; never repeat it elsewhere, never report twice, never contact Codex, never "
-        "start or resume a session. Thebes returns your result to the Codex conversation "
-        "that dispatched this.",
+        "else; never repeat it elsewhere, never report twice, never contact the origin "
+        "conversation, never start or resume a session. Thebes returns your result to the "
+        "conversation that dispatched this.",
     ] + team_block(record) + [
         "",
         "--- task ---",
         "",
     ])
+
+
+def _codex_origin(thread_id, state_store):
+    try:
+        return codex_runtime.require_conversation(thread_id, state_store)
+    except codex_runtime.RuntimeError_ as exc:
+        if exc.code != "thread-not-in-shared-runtime":
+            raise Refused(exc.code, str(exc))
+        # D-036: a new conversation registers itself on its first dispatch.
+        try:
+            return codex_runtime.auto_register(thread_id, state_store=state_store)
+        except codex_runtime.RuntimeError_ as exc2:
+            raise Refused("thread-not-in-shared-runtime",
+                          "%s is not registered and could not be auto-registered (%s)"
+                          % (thread_id, exc2.code))
 
 
 def dispatch(prompt, target_session_id, *, env=None, state_store=store, cli=None, runner=None,
@@ -204,21 +222,24 @@ def dispatch(prompt, target_session_id, *, env=None, state_store=store, cli=None
     ``detach=False`` is the synchronous seam for focused tests."""
     env = os.environ if env is None else env
     thread_id = env.get("CODEX_THREAD_ID")
+    origin_provider = "codex"
+    claude_origin = env.get(CLAUDE_ORIGIN_ENV) or env.get("CLAUDE_CODE_SESSION_ID")
+    if not thread_id and claude_origin:
+        # D-039: the orchestrator is the Listener. Its own session id is the origin;
+        # results are collected by its inbox waiter, never pushed into the session.
+        from agent.state import teams
+        orch = state_store.active_role_session(teams.ORCHESTRATOR_ID) or {}
+        if claude_origin != orch.get("session_id"):
+            raise Refused("origin-not-orchestrator",
+                          "only the bound orchestrator session may dispatch as a Claude origin")
+        thread_id, origin_provider = claude_origin, "claude"
     if not thread_id:
-        raise Refused("origin-thread-missing", "run from a Codex tool shell: CODEX_THREAD_ID "
-                      "is the only source of the origin thread")
-    try:
-        conv = codex_runtime.require_conversation(thread_id, state_store)
-    except codex_runtime.RuntimeError_ as exc:
-        if exc.code != "thread-not-in-shared-runtime":
-            raise Refused(exc.code, str(exc))
-        # D-036: a new conversation registers itself on its first dispatch.
-        try:
-            conv = codex_runtime.auto_register(thread_id, state_store=state_store)
-        except codex_runtime.RuntimeError_ as exc2:
-            raise Refused("thread-not-in-shared-runtime",
-                          "%s is not registered and could not be auto-registered (%s)"
-                          % (thread_id, exc2.code))
+        raise Refused("origin-thread-missing", "run from a Codex tool shell or the orchestrator "
+                      "session: the origin comes from the environment only")
+    if origin_provider == "claude":
+        conv = {"reply_mode": "inline"}
+    else:
+        conv = _codex_origin(thread_id, state_store)
     if conv.get("reply_mode") == "inline":
         pass                     # the dispatcher collects the result itself; no thread write
     elif conv.get("runtime_id") == codex_runtime.DAEMON_RUNTIME_ID:
@@ -250,7 +271,8 @@ def dispatch(prompt, target_session_id, *, env=None, state_store=store, cli=None
         with open(prompt_ref, "w", encoding="utf-8") as fh:
             fh.write(prompt)
         record = state_store.create("conversation_dispatch", {
-            "dispatch_id": dispatch_id, "origin_provider": "codex", "origin_thread_id": thread_id,
+            "dispatch_id": dispatch_id, "origin_provider": origin_provider,
+            "origin_thread_id": thread_id,
             "target_provider": "claude", "target_session_id": target_session_id,
             "target_seat_id": binding["seat_id"], "delivery_id": dispatch_id,
             "capability_sha256": state_store.capability_sha256(capability),
@@ -270,7 +292,11 @@ def dispatch(prompt, target_session_id, *, env=None, state_store=store, cli=None
                     "origin_thread_id": thread_id, "target_session_id": target_session_id,
                     "target_seat_id": binding["seat_id"], "delivery_id": dispatch_id,
                     "dispatch_status": "delivering", "reply_mode": mode,
-                    "next": ("finish your turn now and go idle; the result arrives here as a "
+                    "next": ("make sure your inbox waiter is running (run_in_background: "
+                             "cd %s && python3 -m agent.execution.inbox wait); the result "
+                             "arrives through it — do not block on this dispatch" % ROOT
+                             if origin_provider == "claude" else
+                             "finish your turn now and go idle; the result arrives here as a "
                              "new turn" if mode == "push" else
                              "run: cd %s && python3 -m agent.execution.conversation_dispatch "
                              "wait %s --timeout 1500 — it prints the result; relay it"
@@ -475,6 +501,9 @@ def schedule_result(record, *, state_store=store, launcher=None):
     Idempotent: the event id derives from the dispatch. An INLINE conversation
     (its thread cannot be written into) gets no turn: the dispatcher asks for
     the result with `wait`."""
+    if record.get("origin_provider") == "claude":
+        return {"status": "inline", "event_id": None, "thread_id": record["origin_thread_id"],
+                "detail": "origin is the orchestrator; its inbox waiter collects the result"}
     conv = state_store.read("codex_conversation", record["origin_thread_id"]) or {}
     if conv.get("reply_mode") == "inline":
         return {"status": "inline", "event_id": None, "thread_id": record["origin_thread_id"],

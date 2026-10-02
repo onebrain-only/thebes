@@ -1346,6 +1346,26 @@ first dispatch auto-registers the thread and probes its reply mode.
 **Mobile rule:** SSH host = push mode (needs Tailscale to work off-network); remote control =
 inline mode (works anywhere). Both need the Mac awake.
 
+### P4 — Listener on Claude (D-039), built 2026-10-02, live run pending
+
+Redirected by the CEO ("exit Codex; talk to the orchestrator directly; divide tasks to
+teams"): the Claude Listener is the existing orchestrator session, not a new Primary.
+Built: Claude-origin dispatch (only the bound orchestrator), inline reply with no Codex
+turn, the orchestrator inbox (`agent/execution/inbox.py`) for team results, routed decision
+requests and watchdog alerts, decision requests held for the inbox instead of stop/resume,
+`ceo-` seat holds for orders the orchestrator runs itself, `agent/ORCHESTRATOR.md`. 7 tests;
+dispatch, decision, watchdog, team-pool and runtime suites green.
+
+First live contact (2026-10-02 18:08 UTC), before the card was read: "confirm all open tasks
+are closed" took 4 min 39 s — 60 s on an unscoped all-projects Jira query that timed out,
+3 min 9 s generating a 574-token answer with no tool or network failure recorded. The card
+now has a fast path (answer lookups with one or two reads; Jira scoped to `project = KAN`).
+Answer correct: zero open KAN issues; 19 Persistent State tasks still `ready` are stale.
+
+**Passes when:** the CEO's message to the orchestrator → dispatch to a free team → team
+`completed` → orchestrator inbox → CEO hears the result in the same conversation, Codex
+closed throughout.
+
 ### Not in scope
 
 A ChatGPT web Custom GPT (send-only; it cannot satisfy the success definition). Any new

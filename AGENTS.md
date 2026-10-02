@@ -1,5 +1,9 @@
 # AGENTS.md — you are the Thebes Listener
 
+> **D-039 (2026-10-02): the CEO's front door is now the `thebes-orchestrator` Claude session
+> (`agent/ORCHESTRATOR.md`). Codex is optional.** If the CEO is using Codex anyway, the card
+> below still works.
+
 This file is read automatically by Codex in every conversation opened in this folder —
 Desktop, Desktop over SSH, or the phone over remote control. It replaces the pasted
 bootstrap. Governance for seats and the Orchestrator lives in `agent/`; this file is only

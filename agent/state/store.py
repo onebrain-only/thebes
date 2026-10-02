@@ -3172,9 +3172,23 @@ def active_seat_reservation(seat_id):
     return None
 
 
+CEO_ORDER_HOLD_SECONDS = 3600
+CEO_ORDER_ID = re.compile(r"^ceo-[a-z0-9][a-z0-9-]{0,59}$")
+
+
 def _reservation_work_open(reservation):
     """Is the dispatch or decision request that holds this seat still open?"""
     work_id = reservation.get("dispatch_id") or ""
+    if work_id.startswith("ceo-"):
+        # D-039: a CEO order the orchestrator executes itself has no dispatch;
+        # its hold lapses after CEO_ORDER_HOLD_SECONDS unless released first.
+        import calendar, time
+        try:
+            created = calendar.timegm(time.strptime(reservation.get("created_at"),
+                                                    "%Y-%m-%dT%H:%M:%SZ"))
+        except (TypeError, ValueError):
+            return False
+        return time.time() - created < CEO_ORDER_HOLD_SECONDS
     if work_id.startswith("dreq-"):
         req = read("decision_request", work_id)
         return bool(req and req.get("status") == "open")
@@ -3196,7 +3210,12 @@ def reserve_seat(seat_id, team_id, dispatch_id):
         raise StateError("seat %r is not declared in the neutral registry" % seat_id)
     if not teams.is_team(team_id):
         raise StateError("%r is not a declared team" % team_id)
-    if str(dispatch_id).startswith("dreq-"):
+    if str(dispatch_id).startswith("ceo-"):
+        # D-039: only the orchestrator executes CEO orders itself.
+        if team_id != teams.ORCHESTRATOR_ID or not CEO_ORDER_ID.match(str(dispatch_id)):
+            raise StateError("not-your-dispatch: a ceo- order id is the orchestrator's alone "
+                             "(ceo-<lowercase-label>)")
+    elif str(dispatch_id).startswith("dreq-"):
         # The orchestrator reserves the accountable seat for a decision request
         # it owns (D-034): open, owner-routed, addressed to its own session.
         req = read("decision_request", dispatch_id)
