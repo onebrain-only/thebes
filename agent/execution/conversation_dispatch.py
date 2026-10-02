@@ -202,7 +202,9 @@ def dispatch(prompt, target_session_id, *, env=None, state_store=store, cli=None
         conv = codex_runtime.require_conversation(thread_id, state_store)
     except codex_runtime.RuntimeError_ as exc:
         raise Refused(exc.code, str(exc))
-    if conv.get("runtime_id") == codex_runtime.DAEMON_RUNTIME_ID:
+    if conv.get("reply_mode") == "inline":
+        pass                     # the dispatcher collects the result itself; no thread write
+    elif conv.get("runtime_id") == codex_runtime.DAEMON_RUNTIME_ID:
         if not codex_runtime.daemon_alive():
             raise Refused("codex-daemon-not-running", "the Codex daemon holding %s is not "
                           "reachable, so the result could not be returned" % thread_id)
@@ -354,9 +356,46 @@ def render_result(record, result_text):
     ])
 
 
+def wait_for_result(dispatch_id, timeout_seconds=1500, *, state_store=store, sleep=None):
+    """Block until the dispatch settles and return its result text.
+
+    The INLINE reply mode (D-036): a conversation whose thread Thebes cannot
+    write into — a phone remote-control thread holds its writer for as long as
+    the phone is connected — gets its result by asking for it. Codex runs this
+    in its own tool shell right after dispatching; the result is durable, so a
+    client that gives up waiting loses nothing and can ask again."""
+    import time
+    sleep = sleep or time.sleep
+    deadline = time.time() + timeout_seconds
+    while True:
+        rec = state_store.read("conversation_dispatch", dispatch_id)
+        if rec is None:
+            raise Refused("dispatch-not-found", dispatch_id)
+        if rec.get("status") in store.CONVERSATION_RESULT_OUTCOMES:
+            with open(rec["result_ref"], encoding="utf-8") as fh:
+                text = fh.read()
+            return {"status": "settled", "dispatch_id": dispatch_id, "outcome": rec["outcome"],
+                    "worker_seat": rec.get("target_seat_id"), "result": text}
+        if rec.get("status") in ("delivery_failed", "withdrawn"):
+            return {"status": rec["status"], "dispatch_id": dispatch_id,
+                    "error": rec.get("error"), "result": None}
+        if time.time() >= deadline:
+            return {"status": "still-running", "dispatch_id": dispatch_id,
+                    "detail": "no result yet after %ds; run wait again — the result is durable"
+                              % timeout_seconds, "result": None}
+        sleep(5)
+
+
 def schedule_result(record, *, state_store=store, launcher=None):
     """One result turn on the stored origin thread, then a detached drain.
-    Idempotent: the event id derives from the dispatch."""
+    Idempotent: the event id derives from the dispatch. An INLINE conversation
+    (its thread cannot be written into) gets no turn: the dispatcher asks for
+    the result with `wait`."""
+    conv = state_store.read("codex_conversation", record["origin_thread_id"]) or {}
+    if conv.get("reply_mode") == "inline":
+        return {"status": "inline", "event_id": None, "thread_id": record["origin_thread_id"],
+                "detail": "origin conversation is inline; the dispatcher collects the result "
+                          "with `conversation_dispatch wait`"}
     with open(record["result_ref"], encoding="utf-8") as fh:
         result_text = fh.read()
     ev, created = codex_runtime.enqueue(
@@ -459,6 +498,9 @@ def main(argv=None):
     s.add_argument("--result"); s.add_argument("--result-file")
     w = sub.add_parser("withdraw", help="from the origin Codex tool shell")
     w.add_argument("dispatch_id")
+    wt = sub.add_parser("wait", help="block until the dispatch settles and print its result "
+                                     "(inline reply mode)")
+    wt.add_argument("dispatch_id"); wt.add_argument("--timeout", type=int, default=1500)
     st = sub.add_parser("status"); st.add_argument("dispatch_id", nargs="?")
     ns = ap.parse_args(argv)
     try:
@@ -471,6 +513,8 @@ def main(argv=None):
             out = submit(ns.dispatch_id, ns.outcome, _text_arg(ns.result, ns.result_file))
         elif ns.cmd == "withdraw":
             out = withdraw(ns.dispatch_id)
+        elif ns.cmd == "wait":
+            out = wait_for_result(ns.dispatch_id, ns.timeout)
         elif ns.dispatch_id:
             out = store.read("conversation_dispatch", ns.dispatch_id)
         else:

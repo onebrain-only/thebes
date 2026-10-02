@@ -207,8 +207,10 @@ def connect(*, state_store=store, factory=None, runtime_id=RUNTIME_ID):
 
 
 # ---------------------------------------------------------------- registry
-def bootstrap_prompt(thread_id, state_store=store, runtime_id=RUNTIME_ID):
-    """The first, private turn on a new thread. It names the real local route."""
+def bootstrap_prompt(thread_id, state_store=store, runtime_id=RUNTIME_ID, inline=False):
+    """The first, private turn on a new thread. It names the real local route.
+    ``inline``: the thread cannot be written into, so the Listener collects
+    results itself with `conversation_dispatch wait` instead of going idle."""
     from agent.state import teams as team_registry
     from agent.execution.team_pool import team_bindings, orchestrator_binding
     orch = orchestrator_binding(state_store)
@@ -258,9 +260,18 @@ def bootstrap_prompt(thread_id, state_store=store, runtime_id=RUNTIME_ID):
         choices,
         "Run: python3 -m agent.listener conversation-dispatch --to <CLAUDE_SESSION_ID> "
         "--prompt '<YOUR_COMPLETE_PROMPT>'",
+    ] + ([
+        "INLINE MODE (this conversation is reached from a phone over remote control, so Thebes "
+        "cannot push turns into it): after the dispatch is accepted, run in the same tool shell "
+        "`python3 -m agent.execution.conversation_dispatch wait <dispatch_id> --timeout 1500`; "
+        "it blocks until the worker reports and prints the result. Relay the result to the CEO "
+        "in your own words. If it prints still-running, run wait again. Do not go idle before "
+        "the result arrives.",
+    ] if inline else [
         "Read the accepted intake response, finish your own turn immediately, and go idle. "
         "Claude works independently and submits its own result. Thebes resolves the dispatch "
         "to this exact origin_thread_id and sends the result as a new prompt turn here.",
+    ]) + [
         "Do not poll, relay through another worker, ask the user to copy text, or ask what "
         "channel to use for Claude. Use the Listener command above.",
         "The Listener is local HTTP on 127.0.0.1:8787. If your sandbox refuses that connection "
@@ -298,7 +309,11 @@ def conversation_status(thread_id, *, state_store=store, route_ready=None, alive
                      and conv.get("runtime_id") == runtime.get("runtime_id") == RUNTIME_ID
                      and conv.get("runtime_socket_path") == runtime.get("socket_path"))
     bootstrap = False
-    if registered and conv.get("bootstrap_event_id"):
+    if registered and conv.get("reply_mode") == "inline":
+        # D-036: no turn can be pushed, so the bootstrap is pasted by the CEO;
+        # the registration itself is what makes dispatches from it legal.
+        bootstrap = bool(conv.get("bootstrap_sha256"))
+    elif registered and conv.get("bootstrap_event_id"):
         ev = state_store.read("codex_turn_event", conv["bootstrap_event_id"])
         if ev and ev.get("thread_id") == thread_id and ev.get("event_kind") == "bootstrap" \
                 and ev.get("status") == "delivered" and ev.get("turn_ref"):
@@ -405,6 +420,31 @@ def create_conversation(label, created_by, first_prompt, *, state_store=store, f
     # releasing the lock so that such a result cannot be stranded.
     return {"conversation": conv, "first_event": state_store.read("codex_turn_event", ev["event_id"]),
             "status": conversation_status(thread_id, state_store=state_store, route_ready=route_ready)}
+
+
+def attach_inline(thread_id, label, created_by, *, state_store=store, alive=None):
+    """Register a conversation Thebes can NOT write into (D-036): a phone
+    remote-control thread holds its writer while the phone is connected. The
+    Listener still dispatches from it; results are collected by the Listener
+    itself with `conversation_dispatch wait`. No turn is pushed, so the
+    bootstrap is returned as text for the CEO to paste into the conversation."""
+    if str(created_by).startswith("worker:"):
+        raise RuntimeError_("actor-not-permitted", "a worker may not attach a conversation")
+    if not THREAD_ID.fullmatch(str(thread_id or "")):
+        raise RuntimeError_("thread-id-invalid", "a Codex thread id is a UUID")
+    if not daemon_alive(alive):
+        raise RuntimeError_("codex-daemon-not-running", daemon_socket_path())
+    existing = state_store.read("codex_conversation", thread_id)
+    if existing and existing.get("status") == "active":
+        raise RuntimeError_("conversation-already-attached", thread_id)
+    text = bootstrap_prompt(thread_id, state_store, DAEMON_RUNTIME_ID, inline=True)
+    fields = {"thread_id": thread_id, "runtime_id": DAEMON_RUNTIME_ID, "label": label,
+              "runtime_socket_path": daemon_socket_path(), "registered_by": created_by,
+              "status": "active", "reply_mode": "inline", "bootstrap_event_id": None,
+              "bootstrap_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest()}
+    conv = (state_store.update("codex_conversation", thread_id, existing["revision"], fields)
+            if existing else state_store.create("codex_conversation", fields, rid=thread_id))
+    return {"conversation": conv, "paste_into_conversation": text}
 
 
 def attach_conversation(thread_id, label, created_by, *, state_store=store, factory=None,
@@ -672,6 +712,9 @@ def main(argv=None):
     at.add_argument("thread_id", nargs="?", default=None,
                     help="omit with --latest to attach the newest unattached thread under this workspace")
     at.add_argument("--latest", action="store_true")
+    at.add_argument("--inline", action="store_true",
+                    help="the thread cannot be written into (phone remote control): register "
+                         "it, print the bootstrap to paste, results are collected with `wait`")
     at.add_argument("--label", required=True)
     at.add_argument("--created-by", default="ceo")
     pr = sub.add_parser("prompt"); pr.add_argument("thread_id"); pr.add_argument("text")
@@ -691,7 +734,8 @@ def main(argv=None):
             tid = ns.thread_id
             if ns.latest or not tid:
                 tid = latest_daemon_thread()
-            out = attach_conversation(tid, ns.label, ns.created_by)
+            out = (attach_inline(tid, ns.label, ns.created_by) if ns.inline
+                   else attach_conversation(tid, ns.label, ns.created_by))
         elif ns.cmd == "conversation-status":
             out = conversation_status(ns.thread_id)
         elif ns.cmd == "prompt":
