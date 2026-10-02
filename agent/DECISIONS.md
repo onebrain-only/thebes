@@ -613,6 +613,29 @@ conversation is the kind of friction this programme exists to remove.
 Thebes created itself. The orchestrator and teams are unaffected: a result's route back is
 the Listener's concern alone.
 
+## D-037 — Three kinds of session only; CEO orders are executed; more than one PO
+
+**Status:** ACTIVE (2026-10-02, CEO)
+**Decision:** (1) Thebes runs exactly three kinds of Claude/Codex session: the Listener
+(any Codex conversation), ONE orchestrator, and teams. Every role — po, cto, cxo, pm,
+frontend-N, backend-N — is a subagent inside the orchestrator or a team; single-role
+sessions are retired (`po`, `frontend-1`, `frontend-2` bindings set `retired`, records
+kept). (2) A CEO direct order ("move KAN-348 to Ready") goes to the orchestrator marked
+`CEO ORDER — execute, do not evaluate:`; the orchestrator runs the owning role and does it,
+stopping only at a D-035 hard stop. (3) There is more than one PO seat (`po`, `po-2`;
+topology ceiling 3) so a PO is free whenever teams run in parallel; a held `po` offers
+`po-2` as the free alternative. Acceptance authority is per ticket (the PO who wrote its
+criteria), not per Project.
+**Why:** CEO, 2026-10-02: work stalled with "zero productivity, 100% complexity" — a CEO
+order to move one ticket passed through a team and the orchestrator, then waited on a
+single `po` held elsewhere, while a stray single-role `po` session added a fourth layer.
+**Consequences:** `AGENTS.md` routing table; orchestrator envelope carries `ceo_orders`
+and `po_pool`; `seats.json`, `topology.json`, `employee_profiles.json`, binding and
+generated agent for `po-2`. The project registry keeps `current_po_seat_id: po` as the
+Project's primary PO; `po-2` is an additional seat, not a second owner of the board.
+Mode switches use `python3 -m agent.state.mode set …` so one permission rule can allow
+them.
+
 **Addendum to D-035, CEO 2026-10-02 — decide and go, no bureaucracy.** A decision is not a
 record-keeping act. The orchestrator decides and the work proceeds; it does not write the
 decision to Jira as a step of its own, and it does not treat "recording the decision" as

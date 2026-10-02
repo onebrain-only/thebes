@@ -28,6 +28,7 @@
     "frontend-8": {"role": "frontend"},
     "pm": {"role": "pm"},
     "po": {"role": "po"},
+    "po-2": {"role": "po"},
     "qa": {"role": "qa"},
     "ux-engineer-1": {"role": "ux-engineer"},
     "ux-engineer-2": {"role": "ux-engineer"}

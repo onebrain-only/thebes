@@ -28,6 +28,7 @@
     "frontend-8": {"primary_scope": "client delivery"},
     "pm": {"primary_scope": "product outcomes and sequencing"},
     "po": {"primary_scope": "project work definition and acceptance"},
+    "po-2": {"primary_scope": "project work definition and acceptance"},
     "qa": {"primary_scope": "quality engineering"},
     "ux-engineer-1": {"primary_scope": "experience design and implementation"},
     "ux-engineer-2": {"primary_scope": "experience design and implementation"}

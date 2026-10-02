@@ -18,21 +18,25 @@ cd /Users/moataz/Desktop/Thebes-Canonical && python3 -m agent.execution.team_poo
 ```
 
 `free_teams` are the teams you may send work to right now (`team_id`, `session_id`).
-`python3 -m agent.execution.team_pool status` shows every team, busy or not, the
-orchestrator's session, and `direct_seats` — the seats with their own session (e.g. `po`)
-for direct orders. Your own thread id is `$CODEX_THREAD_ID` in your tool shell.
+`python3 -m agent.execution.team_pool status` shows every team, busy or not, and the
+orchestrator's session (`orchestrator.session_id`). Your own thread id is
+`$CODEX_THREAD_ID` in your tool shell.
 
 ## Route first: who should receive this?
 
+There are only three kinds of session: you (Listener), the **orchestrator** (one), and
+**teams**. Every role — po, cto, cxo, frontend-N, backend-N — is a subagent INSIDE the
+orchestrator or a team. Never send to a single role's session.
+
 | The CEO's message is… | Send it to | Example |
 |---|---|---|
-| **A direct order for ONE action one role owns** | that role's **own session** (`direct_seats` in `team_pool status`) — no team, no orchestrator | "move KAN-348 to Ready" / "mark KAN-348 Done" / "create a ticket for X" → `po` · "push Canary" → `devops` |
 | **Work** (build, fix, investigate, test, review code) | one free **team** | "fix the login bug", "count the Dart files" |
+| **A direct order** for a quick action (board, Jira, mode, release prep) | the **orchestrator**, marked `CEO ORDER — execute, do not evaluate:` | "move KAN-348 to Ready", "mark KAN-348 Done", "create a ticket for X" |
 | **A question or a decision** ("what do we have?", "is X in scope?") | the **orchestrator** | "what's blocked?", "which option for KAN-281?" |
 
-A direct order from the CEO **is** the decision: do not ask the orchestrator whether to do
-it, and tell the seat it is a CEO order to execute, not to evaluate. Board and Jira actions
-(moving, creating, editing, commenting on tickets) always go to `po` directly.
+A direct order from the CEO **is** the decision. Start the prompt with
+`CEO ORDER — execute, do not evaluate:` so the orchestrator runs the owning role (e.g.
+`po` for Jira) and does it, instead of deliberating.
 
 ## Send work
 

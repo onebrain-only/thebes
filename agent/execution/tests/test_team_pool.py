@@ -173,6 +173,20 @@ class TeamPoolTests(unittest.TestCase):
         self.assertEqual(len(reaped), 1)
         self.assertEqual(self.clean(), [])
 
+    def test_a_second_po_is_offered_when_po_is_held(self):
+        """D-037: more than one PO, so a held po never stops the board."""
+        dk = self.open_dispatch(KARNAK, "karnak")
+        dl = self.open_dispatch(LUXOR, "luxor")
+        tp.reserve("po", dk["dispatch_id"], env={"CLAUDE_CODE_SESSION_ID": KARNAK},
+                   state_store=store)
+        with self.assertRaises(tp.Refused) as ctx:
+            tp.reserve("po", dl["dispatch_id"], env={"CLAUDE_CODE_SESSION_ID": LUXOR},
+                       state_store=store)
+        self.assertIn("po-2", str(ctx.exception))
+        self.assertEqual(tp.reserve("po-2", dl["dispatch_id"],
+                                    env={"CLAUDE_CODE_SESSION_ID": LUXOR},
+                                    state_store=store)["status"], "reserved")
+
     def test_status_lists_direct_seat_sessions_for_direct_orders(self):
         seats = {s["seat_id"]: s for s in tp.status(store)["direct_seats"]}
         self.assertEqual(seats["frontend-1"]["session_id"], SEAT_SID)

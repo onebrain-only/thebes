@@ -341,7 +341,7 @@ ok("ceiling respected: content at ceiling refuses",
    capacity.expansion_justified("content", [], {"content": ["content-manager", "content-2"]},
                                 jira_by_key={}, **FRESH)[1] == "at-ceiling")
 ok("non-expandable capability refuses",
-   capacity.expansion_justified("po", [], {"po": ["po"]}, jira_by_key={}, **FRESH)[1]
+   capacity.expansion_justified("cto", [], {"cto": ["cto"]}, jira_by_key={}, **FRESH)[1]
    == "capability-not-expandable")
 ok("deterministic next id", capacity.next_seat_id("backend", sbc) == "backend-9")
 ok("historical id is NEVER recycled",
@@ -368,8 +368,8 @@ ok("Team Lead STATUS history PRESERVED (5 files)",
 ok("ux-engineer-1 binding exists", "ux-engineer-1" in binds)
 ok("ux-engineer-1 generated agent exists", "ux-engineer-1" in agents)
 ok("bindings and generated agents are 1:1", binds == agents)
-ok("Claude provider retains 28 bindings", len(binds) == 28)
-ok("roster is 28 generated agents", len(agents) == 28)
+ok("Claude provider retains 29 bindings (po-2, D-037)", len(binds) == 29)
+ok("roster is 29 generated agents (po-2, D-037)", len(agents) == 29)
 ok("agent/seats/ is gone", not os.path.isdir(os.path.join(ROOT, "agent", "seats")))
 ok("no binding declares seat_context",
    not any("seat_context" in open(os.path.join(B, f), encoding="utf-8").read()

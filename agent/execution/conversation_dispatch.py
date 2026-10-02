@@ -134,8 +134,17 @@ def team_block(record):
             "State (agent/state/store.py) or a read-only query, answer yourself without a seat.",
             "seat_pool: BEFORE spawning a seat run exactly: cd %s && python3 -m "
             "agent.execution.team_pool reserve <seat> --dispatch %s ; a 'seat-held' refusal "
-            "means wait for that seat (leadership seats have no alternative) and say so in the "
-            "answer if it cannot be reached." % (ROOT, record["dispatch_id"]),
+            "names free_alternatives of the same role (e.g. po-2 when po is held) — take one. "
+            "Only a role with no free alternative waits, and you say so in the answer."
+            % (ROOT, record["dispatch_id"]),
+            "ceo_orders: a prompt that starts with 'CEO ORDER — execute, do not evaluate:' is "
+            "already decided. Run the owning seat (po for Jira and the board, devops for "
+            "release prep, …), do exactly that, verify it, and report the result. Do not ask "
+            "whether to do it, do not route it to a review, do not return it as 'not "
+            "confirmed'. Stop only for a hard stop (main, production data, money/secrets, "
+            "sending outside) and name it.",
+            "po_pool: there are several PO seats (po, po-2, …). If `po` is held, reserve the "
+            "free one the refusal names instead of waiting.",
             "delegation (D-035): the CEO has delegated EVERY decision to you — scope, priority, "
             "the next ticket, acceptance, architecture, dependencies. Never return 'needs the "
             "CEO's decision' or a list of items awaiting the CEO: decide them through the "

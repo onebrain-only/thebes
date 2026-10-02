@@ -1,34 +1,151 @@
 {
-  "seat_count": 28,
+  "seat_count": 29,
   "seats": {
-    "analyst": {"role": "analyst", "model": "opus", "effort": "medium"},
-    "backend-1": {"role": "backend", "model": "opus", "effort": "low"},
-    "backend-2": {"role": "backend", "model": "opus", "effort": "low"},
-    "backend-3": {"role": "backend", "model": "opus", "effort": "low"},
-    "backend-4": {"role": "backend", "model": "opus", "effort": "low"},
-    "backend-5": {"role": "backend", "model": "opus", "effort": "low"},
-    "backend-6": {"role": "backend", "model": "opus", "effort": "low"},
-    "backend-7": {"role": "backend", "model": "opus", "effort": "low"},
-    "backend-8": {"role": "backend", "model": "opus", "effort": "low"},
-    "content-manager": {"role": "content", "model": "sonnet", "effort": "low"},
-    "content-2": {"role": "content", "model": "sonnet", "effort": "low"},
-    "cpo": {"role": "cpo", "model": "opus", "effort": "low"},
-    "cto": {"role": "cto", "model": "opus", "effort": "low"},
-    "cxo": {"role": "cxo", "model": "opus", "effort": "low"},
-    "devops": {"role": "devops", "model": "sonnet", "effort": "low"},
-    "frontend-1": {"role": "frontend", "model": "opus", "effort": "low"},
-    "frontend-2": {"role": "frontend", "model": "opus", "effort": "low"},
-    "frontend-3": {"role": "frontend", "model": "opus", "effort": "low"},
-    "frontend-4": {"role": "frontend", "model": "opus", "effort": "low"},
-    "frontend-5": {"role": "frontend", "model": "opus", "effort": "low"},
-    "frontend-6": {"role": "frontend", "model": "opus", "effort": "low"},
-    "frontend-7": {"role": "frontend", "model": "opus", "effort": "low"},
-    "frontend-8": {"role": "frontend", "model": "opus", "effort": "low"},
-    "pm": {"role": "pm", "model": "sonnet", "effort": "medium"},
-    "po": {"role": "po", "model": "sonnet", "effort": "medium"},
-    "qa": {"role": "qa", "model": "sonnet", "effort": "medium"},
-    "ux-engineer-1": {"role": "ux-engineer", "model": "sonnet", "effort": "medium"},
-    "ux-engineer-2": {"role": "ux-engineer", "model": "sonnet", "effort": "medium"}
+    "analyst": {
+      "role": "analyst",
+      "model": "opus",
+      "effort": "medium"
+    },
+    "backend-1": {
+      "role": "backend",
+      "model": "opus",
+      "effort": "low"
+    },
+    "backend-2": {
+      "role": "backend",
+      "model": "opus",
+      "effort": "low"
+    },
+    "backend-3": {
+      "role": "backend",
+      "model": "opus",
+      "effort": "low"
+    },
+    "backend-4": {
+      "role": "backend",
+      "model": "opus",
+      "effort": "low"
+    },
+    "backend-5": {
+      "role": "backend",
+      "model": "opus",
+      "effort": "low"
+    },
+    "backend-6": {
+      "role": "backend",
+      "model": "opus",
+      "effort": "low"
+    },
+    "backend-7": {
+      "role": "backend",
+      "model": "opus",
+      "effort": "low"
+    },
+    "backend-8": {
+      "role": "backend",
+      "model": "opus",
+      "effort": "low"
+    },
+    "content-manager": {
+      "role": "content",
+      "model": "sonnet",
+      "effort": "low"
+    },
+    "content-2": {
+      "role": "content",
+      "model": "sonnet",
+      "effort": "low"
+    },
+    "cpo": {
+      "role": "cpo",
+      "model": "opus",
+      "effort": "low"
+    },
+    "cto": {
+      "role": "cto",
+      "model": "opus",
+      "effort": "low"
+    },
+    "cxo": {
+      "role": "cxo",
+      "model": "opus",
+      "effort": "low"
+    },
+    "devops": {
+      "role": "devops",
+      "model": "sonnet",
+      "effort": "low"
+    },
+    "frontend-1": {
+      "role": "frontend",
+      "model": "opus",
+      "effort": "low"
+    },
+    "frontend-2": {
+      "role": "frontend",
+      "model": "opus",
+      "effort": "low"
+    },
+    "frontend-3": {
+      "role": "frontend",
+      "model": "opus",
+      "effort": "low"
+    },
+    "frontend-4": {
+      "role": "frontend",
+      "model": "opus",
+      "effort": "low"
+    },
+    "frontend-5": {
+      "role": "frontend",
+      "model": "opus",
+      "effort": "low"
+    },
+    "frontend-6": {
+      "role": "frontend",
+      "model": "opus",
+      "effort": "low"
+    },
+    "frontend-7": {
+      "role": "frontend",
+      "model": "opus",
+      "effort": "low"
+    },
+    "frontend-8": {
+      "role": "frontend",
+      "model": "opus",
+      "effort": "low"
+    },
+    "pm": {
+      "role": "pm",
+      "model": "sonnet",
+      "effort": "medium"
+    },
+    "po": {
+      "role": "po",
+      "model": "sonnet",
+      "effort": "medium"
+    },
+    "qa": {
+      "role": "qa",
+      "model": "sonnet",
+      "effort": "medium"
+    },
+    "ux-engineer-1": {
+      "role": "ux-engineer",
+      "model": "sonnet",
+      "effort": "medium"
+    },
+    "ux-engineer-2": {
+      "role": "ux-engineer",
+      "model": "sonnet",
+      "effort": "medium"
+    },
+    "po-2": {
+      "role": "po",
+      "model": "sonnet",
+      "effort": "medium"
+    }
   },
   "prompt_contract": {
     "source": "agent/skills/route-to-seat/SKILL.md",

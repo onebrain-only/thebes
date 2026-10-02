@@ -30,16 +30,16 @@ fixture_path = os.path.join(ROOT, "agent", "execution", "tests", "fixtures",
 fixture = json.load(open(fixture_path, encoding="utf-8"))
 expected_roles = {seat: row["role"] for seat, row in fixture["seats"].items()}
 actual_roles = {seat: row["role"] for seat, row in entries.items()}
-ok("exact 28-seat roster (content-2 added 2026-09-21, ux-engineer-2 added 2026-09-25, both within ceiling)",
-   len(entries) == 28 and set(entries) == set(expected_roles))
+ok("exact 29-seat roster (content-2 added 2026-09-21, ux-engineer-2 added 2026-09-25, po-2 added 2026-10-02 under D-037, all within ceiling)",
+   len(entries) == 29 and set(entries) == set(expected_roles))
 ok("exact Seat to Role mapping", actual_roles == expected_roles)
 ok("registry contains provider-neutral fields only",
    all(set(row) == {"seat_id", "role", "capability"} for row in entries.values()))
 by_capability = roster.seats_by_capability()
 ok("frontend and backend capacity inputs remain eight each",
    len(by_capability["frontend"]) == 8 and len(by_capability["backend"]) == 8)
-ok("all other active capabilities retain one defined Seat, except content and ux-engineer at two",
-   all(len(seats) == (2 if cap in ("content", "ux-engineer") else 1)
+ok("all other active capabilities retain one defined Seat, except content, ux-engineer and po at two",
+   all(len(seats) == (2 if cap in ("content", "ux-engineer", "po") else 1)
        for cap, seats in by_capability.items()
        if cap not in ("frontend", "backend")))
 topology = json.load(open(os.path.join(ROOT, "agent", "state", "registry",
