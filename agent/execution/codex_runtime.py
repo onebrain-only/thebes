@@ -466,6 +466,28 @@ def attach_conversation(thread_id, label, created_by, *, state_store=store, fact
         thread_id, state_store=state_store, route_ready=route_ready, alive=alive)}
 
 
+def latest_daemon_thread(cwd_prefix=ROOT, *, state_store=store, factory=None):
+    """The newest thread on the user's Codex daemon whose cwd is under this
+    workspace and that Thebes has not attached yet — so a conversation started
+    from the phone (remote control) or from Desktop over SSH can be attached
+    without the CEO hunting for its id."""
+    client, _ = connect(state_store=state_store, factory=factory, runtime_id=DAEMON_RUNTIME_ID)
+    try:
+        listed = client.request("thread/list", {"limit": 20}, timeout=60)
+    finally:
+        client.close()
+    for t in listed.get("data") or []:
+        tid = t.get("id")
+        if not str(t.get("cwd") or "").startswith(cwd_prefix):
+            continue
+        conv = state_store.read("codex_conversation", tid or "none")
+        if conv and conv.get("status") == "active":
+            continue
+        return tid
+    raise RuntimeError_("no-unattached-thread", "no new Codex thread under %s on the daemon"
+                        % cwd_prefix)
+
+
 def require_conversation(thread_id, state_store=store):
     conv = state_store.read("codex_conversation", thread_id or "none")
     if conv is None or conv.get("status") != "active" or conv.get("runtime_id") not in RUNTIME_IDS:
@@ -647,7 +669,10 @@ def main(argv=None):
     at = sub.add_parser("attach-conversation",
                         help="register a Codex Desktop conversation opened over SSH to this "
                              "machine (it lives on the user's Codex daemon) as a Listener")
-    at.add_argument("thread_id"); at.add_argument("--label", required=True)
+    at.add_argument("thread_id", nargs="?", default=None,
+                    help="omit with --latest to attach the newest unattached thread under this workspace")
+    at.add_argument("--latest", action="store_true")
+    at.add_argument("--label", required=True)
     at.add_argument("--created-by", default="ceo")
     pr = sub.add_parser("prompt"); pr.add_argument("thread_id"); pr.add_argument("text")
     dr = sub.add_parser("drain"); dr.add_argument("thread_id")
@@ -663,7 +688,10 @@ def main(argv=None):
         elif ns.cmd == "new-conversation":
             out = create_conversation(ns.label, ns.created_by, ns.prompt)
         elif ns.cmd == "attach-conversation":
-            out = attach_conversation(ns.thread_id, ns.label, ns.created_by)
+            tid = ns.thread_id
+            if ns.latest or not tid:
+                tid = latest_daemon_thread()
+            out = attach_conversation(tid, ns.label, ns.created_by)
         elif ns.cmd == "conversation-status":
             out = conversation_status(ns.thread_id)
         elif ns.cmd == "prompt":

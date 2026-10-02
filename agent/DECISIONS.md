@@ -594,3 +594,8 @@ CEO informed" except where a hard stop applies.
 classify_and_resolve` routes unsure/CEO-class/unbound-seat to the orchestrator; the
 orchestrator and Codex bootstraps carry the delegation text. The CEO can narrow this at
 any time by adding a pattern to `ceo_only`.
+**Addendum, CEO 2026-10-02 — decide and go, no bureaucracy.** A decision is not a
+record-keeping act. The orchestrator decides and the work proceeds; it does not write the
+decision to Jira as a step of its own, and it does not treat "recording the decision" as
+work. A ticket's own lifecycle (comments, transitions) stays with the seat executing that
+ticket, as `WORKFLOWS.md` already says. The measure is the ticket reaching Done.
