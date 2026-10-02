@@ -379,7 +379,9 @@ def render_result(record, result_text):
     ])
 
 
-STALL_SECONDS = 600
+# 3 minutes: a 'Connection lost mid-response' ends a team's turn silently (45 drops
+# in one day, 2026-10-02); the watchdog should recover it fast, not after 10 minutes.
+STALL_SECONDS = 180
 
 
 def stalled(*, state_store=store, cli=None, now=None):
