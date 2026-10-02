@@ -3172,6 +3172,16 @@ def active_seat_reservation(seat_id):
     return None
 
 
+def _reservation_work_open(reservation):
+    """Is the dispatch or decision request that holds this seat still open?"""
+    work_id = reservation.get("dispatch_id") or ""
+    if work_id.startswith("dreq-"):
+        req = read("decision_request", work_id)
+        return bool(req and req.get("status") == "open")
+    rec = read("conversation_dispatch", work_id)
+    return bool(rec and rec.get("status") in CONVERSATION_DISPATCH_OPEN)
+
+
 def reserve_seat(seat_id, team_id, dispatch_id):
     """A team takes one seat for one OPEN dispatch of its own.
 
@@ -3206,6 +3216,14 @@ def reserve_seat(seat_id, team_id, dispatch_id):
                              % (dispatch_id, dispatch.get("target_seat_id"), team_id))
     with _Lock("seat-reservation-%s" % seat_id):
         held = active_seat_reservation(seat_id)
+        if held is not None and not _reservation_work_open(held):
+            # The work that took this seat has settled but the hold survived (live,
+            # 2026-10-02: po stayed held by the orchestrator and a CEO order to move
+            # KAN-348 was refused). A finished job must never keep a seat.
+            update("seat_reservation", held["seat_reservation_id"], held["revision"],
+                   {"status": "released", "released_at": now(),
+                    "release_reason": "stale-work-settled"})
+            held = None
         if held is not None:
             if held.get("team_id") == team_id and held.get("dispatch_id") == dispatch_id:
                 return held, False

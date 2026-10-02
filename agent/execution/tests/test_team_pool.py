@@ -154,6 +154,30 @@ class TeamPoolTests(unittest.TestCase):
         self.assertEqual(ctx.exception.code, "dispatch-not-open")
         self.assertEqual(self.clean(), [])
 
+    def test_a_hold_whose_work_has_settled_is_reaped_on_the_next_reserve(self):
+        """Live 2026-10-02: po stayed held after its work settled; a CEO order was refused."""
+        dk = self.open_dispatch(KARNAK, "karnak")
+        tp.reserve("po", dk["dispatch_id"], env={"CLAUDE_CODE_SESSION_ID": KARNAK},
+                   state_store=store)
+        # settle the dispatch WITHOUT the normal release (the leak)
+        cur = store.read("conversation_dispatch", dk["dispatch_id"])
+        store.update("conversation_dispatch", dk["dispatch_id"], cur["revision"],
+                     {"status": "withdrawn", "withdrawn_at": store.now()})
+        self.assertIsNotNone(store.active_seat_reservation("po"), "the leak, reproduced")
+        dl = self.open_dispatch(LUXOR, "luxor")
+        out = tp.reserve("po", dl["dispatch_id"], env={"CLAUDE_CODE_SESSION_ID": LUXOR},
+                         state_store=store)
+        self.assertEqual(out["status"], "reserved", "the stale hold is reaped, not obeyed")
+        reaped = [r for r in store.read_all("seat_reservation")
+                  if r.get("release_reason") == "stale-work-settled"]
+        self.assertEqual(len(reaped), 1)
+        self.assertEqual(self.clean(), [])
+
+    def test_status_lists_direct_seat_sessions_for_direct_orders(self):
+        seats = {s["seat_id"]: s for s in tp.status(store)["direct_seats"]}
+        self.assertEqual(seats["frontend-1"]["session_id"], SEAT_SID)
+        self.assertNotIn("karnak", seats, "teams are not direct seats")
+
     def test_bootstrap_lists_teams_with_busy_state_and_free_teams_are_derived(self):
         text = cr.bootstrap_prompt(THREAD, store)
         self.assertIn("team 1 Karnak (karnak): %s" % KARNAK, text)

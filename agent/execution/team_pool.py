@@ -130,8 +130,22 @@ def release(seat_id, dispatch_id, *, env=None, state_store=store):
             "team_id": team_id, "dispatch_id": dispatch_id}
 
 
+def direct_seats(state_store=store):
+    """Seats with their OWN bound session, for direct CEO orders (AGENTS.md:
+    'move KAN-348 to Ready' goes to po's session, not a team or the orchestrator)."""
+    out = []
+    for rec in state_store.read_all("role_session"):
+        if (rec.get("status") == "active" and rec.get("provider") == "claude"
+                and not teams.is_team(rec.get("seat_id"))):
+            out.append({"seat_id": rec["seat_id"], "session_id": rec["session_id"],
+                        "busy": bool(open_dispatches_for(rec["session_id"], state_store))})
+    return sorted(out, key=lambda r: r["seat_id"])
+
+
 def status(state_store=store):
     return {"teams": team_bindings(state_store),
+            "orchestrator": orchestrator_binding(state_store),
+            "direct_seats": direct_seats(state_store),
             "reservations": [r for r in state_store.read_all("seat_reservation")
                              if r.get("status") == "active"]}
 
