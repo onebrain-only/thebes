@@ -154,6 +154,26 @@ class ConversationDispatchTests(unittest.TestCase):
         return [e for e in validate.check(store.RUNTIME)
                 if any(k in e for k in ("conversation", "session_deliver", "codex"))]
 
+    def test_a_stopped_session_is_reported_stalled_and_resumed_at_most_twice(self):
+        """Live 2026-10-02: Luxor hit its usage limit and held three seats for nine hours."""
+        out, fake = self.send(THREAD_A, SID_X)
+        rows = [dict(row(SID_X), state="idle")]
+        cli = ClaudeCli(runner=lambda argv, **kw: Completed(json.dumps(rows)))
+        import time
+        st = cd.stalled(state_store=store, cli=cli, now=time.time() + cd.STALL_SECONDS + 5)
+        self.assertEqual([s["dispatch_id"] for s in st], [out["dispatch_id"]])
+        rows[0]["state"] = "working"
+        self.assertEqual(cd.stalled(state_store=store, cli=cli,
+                                    now=time.time() + cd.STALL_SECONDS + 5), [])
+        for n in (1, 2):
+            fake2 = FakeClaude(live=[row(SID_X, pid=4242)])
+            r = cd.resume_stalled(out["dispatch_id"], state_store=store,
+                                  cli=ClaudeCli(runner=fake2))
+            self.assertEqual((r["status"], r["attempt"]), ("resumed", n))
+            self.assertIn("THEBES_RESUME", fake2.resumes()[0][0][4])
+        self.refused(lambda: cd.resume_stalled(out["dispatch_id"], state_store=store,
+                                               cli=ClaudeCli(runner=FakeClaude())), "resume-limit")
+
     def test_inline_origin_gets_no_result_turn_and_wait_returns_the_result(self):
         """D-036: an inline conversation collects its result; nothing is queued on it."""
         inline = "0cccccc1-0000-7000-8000-00000000000c"

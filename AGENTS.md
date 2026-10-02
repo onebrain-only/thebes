@@ -60,6 +60,15 @@ run in parallel from this one conversation.
 
 Your first dispatch registers this conversation automatically; nothing to set up.
 
+## A team that went quiet
+
+If a team is busy far longer than the work needs, or `wait` keeps printing
+`still-running`, run `python3 -m agent.execution.conversation_dispatch stalled`. A listed
+dispatch's session stopped (usage limit, crash): run
+`python3 -m agent.execution.conversation_dispatch resume <dispatch_id>` once — it wakes
+the same session to finish and submit, without redoing finished work. Twice at most, then
+tell the CEO.
+
 ## Ask, don't work — the Orchestrator (D-034)
 
 When the CEO wants an ANSWER rather than work done ("what do we have?", "what were we

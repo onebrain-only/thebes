@@ -379,6 +379,59 @@ def render_result(record, result_text):
     ])
 
 
+STALL_SECONDS = 600
+
+
+def stalled(*, state_store=store, cli=None, now=None):
+    """Open dispatches whose target session is no longer working on them.
+
+    Seen live 2026-10-02: Luxor hit its Claude usage limit after its subagents
+    finished, never submitted, and held three seats for nine hours. A dispatch
+    is stalled when it has been open longer than STALL_SECONDS and its target
+    session is not in the `working` state."""
+    import calendar, time
+    now = now or time.time()
+    cli = cli or ClaudeCli()
+    rows = {r.get("sessionId"): r for r in cli.agents(include_completed=True)}
+    out = []
+    for rec in state_store.read_all("conversation_dispatch"):
+        if rec.get("status") not in store.CONVERSATION_DISPATCH_OPEN:
+            continue
+        age = now - calendar.timegm(time.strptime(rec["created_at"], "%Y-%m-%dT%H:%M:%SZ"))
+        state = (rows.get(rec["target_session_id"]) or {}).get("state")
+        if age > STALL_SECONDS and state != "working":
+            out.append({"dispatch_id": rec["dispatch_id"], "target": rec.get("target_seat_id"),
+                        "session_state": state, "open_minutes": int(age // 60)})
+    return out
+
+
+def resume_stalled(dispatch_id, *, state_store=store, cli=None):
+    """Wake the SAME session to finish and submit an open dispatch once.
+    It already holds the capability in its original envelope; nothing new is
+    issued and the work is not re-run."""
+    rec = state_store.read("conversation_dispatch", dispatch_id)
+    if rec is None or rec.get("status") not in store.CONVERSATION_DISPATCH_OPEN:
+        raise Refused("dispatch-not-open", dispatch_id)
+    binding = target_binding(rec["target_session_id"], state_store)
+    n = 1 + sum(1 for d in state_store.read_all("session_delivery")
+                if str(d.get("delivery_id") or "").startswith(dispatch_id + "-resume"))
+    if n > 2:
+        raise Refused("resume-limit", "%s was already resumed twice; withdraw it" % dispatch_id)
+    msg = ("THEBES_RESUME %s\nYour session stopped before you submitted this dispatch (usage limit, "
+           "crash or lost connection). Finish it now from where you are — do not redo work whose "
+           "results you already have — and submit ONE result with the report command from the "
+           "original THEBES_CONVERSATION_DISPATCH envelope for %s." % (dispatch_id, dispatch_id))
+    base = {"dispatch_id": dispatch_id, "work_item_id": None, "seat_id": rec["target_seat_id"],
+            "provider": "claude", "envelope_version": "resume-v1",
+            "expected_worker_sid": rec["target_session_id"], "report_to": None}
+    cli = cli or ClaudeCli(env={k: v for k, v in os.environ.items() if k not in SCRUBBED_ENV})
+    res = claude_delivery.deliver_prompt("%s-resume%d" % (dispatch_id, n), dispatch_id, base,
+                                         rec["target_session_id"], binding["stable_home"], msg,
+                                         state_store=state_store, cli=cli)
+    return {"status": "resumed" if res.status == claude_delivery.DELIVERED else "resume-failed",
+            "dispatch_id": dispatch_id, "attempt": n, "error": res.error}
+
+
 def wait_for_result(dispatch_id, timeout_seconds=1500, *, state_store=store, sleep=None):
     """Block until the dispatch settles and return its result text.
 
@@ -522,6 +575,9 @@ def main(argv=None):
     s.add_argument("--result"); s.add_argument("--result-file")
     w = sub.add_parser("withdraw", help="from the origin Codex tool shell")
     w.add_argument("dispatch_id")
+    sub.add_parser("stalled", help="open dispatches whose session stopped working on them")
+    rs = sub.add_parser("resume", help="wake the same session once to finish a stalled dispatch")
+    rs.add_argument("dispatch_id")
     wt = sub.add_parser("wait", help="block until the dispatch settles and print its result "
                                      "(inline reply mode)")
     wt.add_argument("dispatch_id"); wt.add_argument("--timeout", type=int, default=1500)
@@ -539,6 +595,10 @@ def main(argv=None):
             out = withdraw(ns.dispatch_id)
         elif ns.cmd == "wait":
             out = wait_for_result(ns.dispatch_id, ns.timeout)
+        elif ns.cmd == "stalled":
+            out = stalled()
+        elif ns.cmd == "resume":
+            out = resume_stalled(ns.dispatch_id)
         elif ns.dispatch_id:
             out = store.read("conversation_dispatch", ns.dispatch_id)
         else:
