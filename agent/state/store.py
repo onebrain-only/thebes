@@ -139,7 +139,7 @@ CONVERSATION_RESULT_OUTCOMES = frozenset({
 CONVERSATION_DISPATCH_STATUSES = (CONVERSATION_DISPATCH_OPEN | CONVERSATION_RESULT_OUTCOMES
                                   | frozenset({"delivery_failed", "withdrawn"}))
 
-CODEX_TURN_EVENT_KINDS = frozenset({"user_prompt", "worker_result"})
+CODEX_TURN_EVENT_KINDS = frozenset({"user_prompt", "worker_result", "alert"})
 CODEX_TURN_EVENT_STATUSES = frozenset({"queued", "running", "delivered", "failed"})
 
 PRIMARY_COMMAND_STATUSES = frozenset({"accepted", "queued", "delivered", "busy", "failed",

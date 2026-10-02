@@ -455,6 +455,12 @@ def wait_for_result(dispatch_id, timeout_seconds=1500, *, state_store=store, sle
         if rec.get("status") in ("delivery_failed", "withdrawn"):
             return {"status": rec["status"], "dispatch_id": dispatch_id,
                     "error": rec.get("error"), "result": None}
+        alert = rec.get("watchdog_alert")
+        if alert:
+            # The watchdog flagged that this work stopped: say so NOW, don't wait it out.
+            return {"status": "stopped", "dispatch_id": dispatch_id, "alert": alert,
+                    "detail": "tell the CEO what stopped and what would unblock it",
+                    "result": None}
         if time.time() >= deadline:
             return {"status": "still-running", "dispatch_id": dispatch_id,
                     "detail": "no result yet after %ds; run wait again — the result is durable"

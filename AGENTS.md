@@ -60,14 +60,19 @@ run in parallel from this one conversation.
 
 Your first dispatch registers this conversation automatically; nothing to set up.
 
-## A team that went quiet
+## When work stops — you are told; tell the CEO at once
 
-If a team is busy far longer than the work needs, or `wait` keeps printing
-`still-running`, run `python3 -m agent.execution.conversation_dispatch stalled`. A listed
-dispatch's session stopped (usage limit, crash): run
-`python3 -m agent.execution.conversation_dispatch resume <dispatch_id>` once — it wakes
-the same session to finish and submit, without redoing finished work. Twice at most, then
-tell the CEO.
+A Thebes watchdog checks every minute. When a team stops (usage limit, crash), it resumes
+the same session once by itself; if that does not work, or a delivery fails, or a decision
+is escalated to the CEO, it raises an alert:
+
+- **push mode:** a `THEBES_ALERT` turn arrives in this conversation.
+- **inline mode:** `wait` returns `status: stopped` with the alert.
+
+Either way: tell the CEO immediately, in one or two plain sentences — what stopped, what
+Thebes already tried, the one thing that would unblock it. Never wait for the CEO to ask
+"why did it stop?". To check by hand: `python3 -m agent.execution.conversation_dispatch
+stalled`; to resume once: `… conversation_dispatch resume <dispatch_id>`.
 
 ## Ask, don't work — the Orchestrator (D-034)
 

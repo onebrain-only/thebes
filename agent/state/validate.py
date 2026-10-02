@@ -1766,7 +1766,7 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
         _req(rec, ["event_id", "thread_id", "event_kind", "status", "text_ref"], errs, where)
         if not str(rec.get("event_id") or "").startswith("cevt-"):
             errs.append("%s: event_id must start with cevt-" % where)
-        if rec.get("event_kind") not in ("bootstrap", "user_prompt", "worker_result"):
+        if rec.get("event_kind") not in ("bootstrap", "user_prompt", "worker_result", "alert"):
             errs.append("%s: event_kind must be bootstrap, user_prompt or worker_result" % where)
         if rec.get("status") not in ("queued", "running", "delivered", "failed"):
             errs.append("%s: unknown codex turn event status %r" % (where, rec.get("status")))
