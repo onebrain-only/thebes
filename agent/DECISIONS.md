@@ -594,7 +594,26 @@ CEO informed" except where a hard stop applies.
 classify_and_resolve` routes unsure/CEO-class/unbound-seat to the orchestrator; the
 orchestrator and Codex bootstraps carry the delegation text. The CEO can narrow this at
 any time by adding a pattern to `ceo_only`.
-**Addendum, CEO 2026-10-02 — decide and go, no bureaucracy.** A decision is not a
+## D-036 — Any Codex conversation on this machine is a Listener; reply mode is probed, not chosen
+
+**Status:** ACTIVE (2026-10-02)
+**Decision:** A Codex conversation opened in this folder — Desktop, Desktop over SSH, or
+the phone over remote control — reads the Listener role from the repository's root
+`AGENTS.md` and needs no pasted bootstrap. On its first dispatch Thebes registers it and
+probes once whether it can write into the thread (`thread/resume`): writable → `push`
+(result delivered as a turn while Codex is idle); held by another client → `inline`
+(Codex collects the result itself with `conversation_dispatch wait`, which is durable and
+repeatable). The accepted dispatch carries `reply_mode` and the exact `next` step.
+**Why:** The CEO was away from the desk and could not reach the Mac over SSH; the phone's
+remote-control link reached it but holds the thread's single writer while connected, so
+Thebes could not push results into it. Registering by hand and pasting a bootstrap per
+conversation is the kind of friction this programme exists to remove.
+**Consequences:** `codex_runtime.auto_register`, `attach_inline`,
+`conversation_dispatch.wait_for_result`; the pasted bootstrap stays only for conversations
+Thebes created itself. The orchestrator and teams are unaffected: a result's route back is
+the Listener's concern alone.
+
+**Addendum to D-035, CEO 2026-10-02 — decide and go, no bureaucracy.** A decision is not a
 record-keeping act. The orchestrator decides and the work proceeds; it does not write the
 decision to Jira as a step of its own, and it does not treat "recording the decision" as
 work. A ticket's own lifecycle (comments, transitions) stays with the seat executing that

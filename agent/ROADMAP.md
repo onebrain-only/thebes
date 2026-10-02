@@ -1330,6 +1330,22 @@ earlier report; KAN-261 decided by `cxo` (accept all 15, no hard stop); KAN-195 
 stop. It also made no Jira writes and said so — a reasonable default, and the next question
 for the CEO is whether decided items should be recorded on the tickets automatically.
 
+### P3d — the phone, 2026-10-02 — PASSED
+
+Phone over **SSH host** (same Wi-Fi): conversation `01a0fb06…` attached with
+`attach-conversation --latest`, bootstrap pushed, work dispatched to Karnak and the
+orchestrator from the phone, results pushed back; the CEO ran real design-ruling work
+through it. Phone over **remote control** (anywhere): the thread holds its writer while the
+phone is connected (`already has an active writer`), so the push path cannot work; built
+**inline reply mode** (D-036): registered `01a0fb62…`, the CEO pasted the bootstrap, asked
+for the Dart count, Codex dispatched to Luxor and `wait`ed, and reported "Luxor reported 728
+Dart files" in the same phone conversation. Then removed the remaining manual steps: root
+`AGENTS.md` carries the Listener role for every Codex conversation in this folder, and the
+first dispatch auto-registers the thread and probes its reply mode.
+
+**Mobile rule:** SSH host = push mode (needs Tailscale to work off-network); remote control =
+inline mode (works anywhere). Both need the Mac awake.
+
 ### Not in scope
 
 A ChatGPT web Custom GPT (send-only; it cannot satisfy the success definition). Any new

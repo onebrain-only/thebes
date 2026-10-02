@@ -201,7 +201,15 @@ def dispatch(prompt, target_session_id, *, env=None, state_store=store, cli=None
     try:
         conv = codex_runtime.require_conversation(thread_id, state_store)
     except codex_runtime.RuntimeError_ as exc:
-        raise Refused(exc.code, str(exc))
+        if exc.code != "thread-not-in-shared-runtime":
+            raise Refused(exc.code, str(exc))
+        # D-036: a new conversation registers itself on its first dispatch.
+        try:
+            conv = codex_runtime.auto_register(thread_id, state_store=state_store)
+        except codex_runtime.RuntimeError_ as exc2:
+            raise Refused("thread-not-in-shared-runtime",
+                          "%s is not registered and could not be auto-registered (%s)"
+                          % (thread_id, exc2.code))
     if conv.get("reply_mode") == "inline":
         pass                     # the dispatcher collects the result itself; no thread write
     elif conv.get("runtime_id") == codex_runtime.DAEMON_RUNTIME_ID:
@@ -248,10 +256,16 @@ def dispatch(prompt, target_session_id, *, env=None, state_store=store, cli=None
                 state_store.settle_conversation_delivery(dispatch_id, claude_delivery.FAILED,
                                                          "delivery process could not start: %s" % exc)
                 raise Refused("delivery-process-start-failed", str(exc))
+            mode = conv.get("reply_mode") or "push"
             return {"status": "accepted", "dispatch_id": dispatch_id,
                     "origin_thread_id": thread_id, "target_session_id": target_session_id,
                     "target_seat_id": binding["seat_id"], "delivery_id": dispatch_id,
-                    "dispatch_status": "delivering"}
+                    "dispatch_status": "delivering", "reply_mode": mode,
+                    "next": ("finish your turn now and go idle; the result arrives here as a "
+                             "new turn" if mode == "push" else
+                             "run: cd %s && python3 -m agent.execution.conversation_dispatch "
+                             "wait %s --timeout 1500 — it prints the result; relay it"
+                             % (ROOT, dispatch_id))}
         return _deliver_created(record, capability, binding, prompt, state_store=state_store,
                                 cli=cli, runner=runner, stop_timeout_seconds=stop_timeout_seconds)
 
@@ -452,8 +466,9 @@ def submit(dispatch_id, outcome, result_text, *, env=None, state_store=store, la
     except (codex_runtime.RuntimeError_, state_store.StateError, OSError) as exc:
         reply = {"status": "failed", "error": str(exc)}
     current = state_store.read("conversation_dispatch", dispatch_id)
-    note = ({"result_event_id": reply["event_id"], "error": None} if reply.get("event_id")
-            else {"error": "result-not-queued: %s" % reply["error"]})
+    note = ({"result_event_id": reply.get("event_id"), "error": None}
+            if reply.get("status") in ("scheduled", "already-scheduled", "inline")
+            else {"error": "result-not-queued: %s" % reply.get("error")})
     if any(current.get(k) != v for k, v in note.items()):
         try:
             state_store.update("conversation_dispatch", dispatch_id, current["revision"], note)

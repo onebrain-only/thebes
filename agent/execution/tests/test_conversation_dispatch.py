@@ -120,6 +120,8 @@ class ConversationDispatchTests(unittest.TestCase):
         self.patches = [mock.patch.object(subprocess, n, _refuse) for n in ("run", "Popen")]
         self.patches.append(mock.patch.object(cr, "_detach_drain", self.launched.append))
         self.patches.append(mock.patch.object(cr, "connect", lambda **kw: (FakeClient(), "m")))
+        # Hermetic: no test may touch the user's real Codex daemon (D-036 auto-register).
+        self.patches.append(mock.patch.object(cr, "daemon_alive", lambda alive=None: False))
         for p in self.patches:
             p.start()
 
@@ -151,6 +153,23 @@ class ConversationDispatchTests(unittest.TestCase):
     def clean(self):
         return [e for e in validate.check(store.RUNTIME)
                 if any(k in e for k in ("conversation", "session_deliver", "codex"))]
+
+    def test_inline_origin_gets_no_result_turn_and_wait_returns_the_result(self):
+        """D-036: an inline conversation collects its result; nothing is queued on it."""
+        inline = "0cccccc1-0000-7000-8000-00000000000c"
+        store.create("codex_conversation", {"thread_id": inline, "runtime_id": cr.DAEMON_RUNTIME_ID,
+                                            "registered_by": "ceo", "status": "active",
+                                            "reply_mode": "inline"}, rid=inline)
+        out, fake = self.send(inline, SID_X)       # inline needs no daemon write
+        self.assertEqual(out["dispatch_status"], "delivered")
+        self.assertEqual(cd.wait_for_result(out["dispatch_id"], 1, state_store=store,
+                                            sleep=lambda s: None)["status"], "still-running")
+        rep = self.report(out, fake, result="THE ANSWER")
+        self.assertEqual(rep["origin_reply"]["status"], "inline")
+        self.assertEqual(self.launched, [], "no drain, no turn on the phone thread")
+        got = cd.wait_for_result(out["dispatch_id"], 1, state_store=store, sleep=lambda s: None)
+        self.assertEqual((got["status"], got["outcome"], got["result"]),
+                         ("settled", "completed", "THE ANSWER"))
 
     # -- 1. dispatch ---------------------------------------------------------------
     def test_origin_comes_from_the_codex_env_and_the_prompt_reaches_exactly_that_sid(self):

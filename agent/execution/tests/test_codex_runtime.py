@@ -174,6 +174,29 @@ class CodexRuntimeTests(unittest.TestCase):
                          "the result goes back through the server Desktop is attached to")
         self.assertEqual(self.turn_starts()[-1]["threadId"], DESKTOP)
 
+    def test_first_dispatch_auto_registers_and_probes_the_reply_mode(self):
+        """D-036: push when the thread is writable, inline when another client holds it."""
+        class Busy(FakeClient):
+            def request(self, method, params, timeout=60):
+                if method == "thread/resume":
+                    raise RuntimeError("thread %s already has an active writer" % params["threadId"])
+                return super().request(method, params, timeout)
+        held = "0a1a1a1a-0000-7000-8000-00000000000f"
+        free_ = "0b2b2b2b-0000-7000-8000-00000000000f"
+        with mock.patch.object(cr, "connect", lambda **kw: (Busy(), None)):
+            conv = cr.auto_register(held, state_store=store, alive=lambda p: True)
+        self.assertEqual((conv["status"], conv["reply_mode"], conv["bootstrap_source"]),
+                         ("active", "inline", "AGENTS.md"))
+        with mock.patch.object(cr, "connect", lambda **kw: (FakeClient(), None)):
+            conv = cr.auto_register(free_, state_store=store, alive=lambda p: True)
+        self.assertEqual(conv["reply_mode"], "push")
+        self.assertIs(cr.auto_register(free_, state_store=store, alive=lambda p: True)["revision"],
+                      conv["revision"], "already active: returned, not re-registered")
+        # conversation_status treats an inline registration as managed.
+        self.assertTrue(cr.conversation_status(held, state_store=store, route_ready=True,
+                                               alive=lambda p: True)["MANAGED"])
+        self.assertEqual([e for e in validate.check(store.RUNTIME) if "codex" in e], [])
+
     # -- A/B exact routing ----------------------------------------------------
     def test_each_outcome_wakes_exactly_the_conversation_that_dispatched_it(self):
         a, b = self.dispatch(THREAD_A), self.dispatch(THREAD_B)

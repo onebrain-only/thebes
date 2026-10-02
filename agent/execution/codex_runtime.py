@@ -528,6 +528,50 @@ def latest_daemon_thread(cwd_prefix=ROOT, *, state_store=store, factory=None):
                         % cwd_prefix)
 
 
+def auto_register(thread_id, *, state_store=store, factory=None, alive=None, created_by="codex"):
+    """Register a daemon thread the moment it first dispatches (D-036).
+
+    A new Codex conversation on this machine — Desktop over SSH, or a phone over
+    remote control — reads the Listener role from the repository's AGENTS.md, so
+    no bootstrap turn is needed. What Thebes must still learn is whether it can
+    WRITE into the thread: one `thread/resume` probe decides. Writable → the
+    result is pushed as a turn while Codex is idle (`push`); held by another
+    client (the phone) → Codex collects the result itself (`inline`)."""
+    if not THREAD_ID.fullmatch(str(thread_id or "")):
+        raise RuntimeError_("thread-id-invalid", "a Codex thread id is a UUID")
+    if not daemon_alive(alive):
+        raise RuntimeError_("codex-daemon-not-running", daemon_socket_path())
+    existing = state_store.read("codex_conversation", thread_id)
+    if existing and existing.get("status") == "active":
+        return existing
+    client, _ = connect(state_store=state_store, factory=factory, runtime_id=DAEMON_RUNTIME_ID)
+    try:
+        try:
+            _resume_if_needed(client, thread_id)
+            mode = "push"
+        except Exception as exc:
+            if "active writer" in str(exc):
+                mode = "inline"
+            else:
+                raise RuntimeError_("thread-not-on-daemon", str(exc)[:200])
+    finally:
+        client.close()
+    agents_md = os.path.join(ROOT, "AGENTS.md")
+    try:
+        with open(agents_md, "rb") as fh:
+            digest = hashlib.sha256(fh.read()).hexdigest()
+    except OSError:
+        digest = None
+    fields = {"thread_id": thread_id, "runtime_id": DAEMON_RUNTIME_ID,
+              "label": "auto-%s" % mode, "runtime_socket_path": daemon_socket_path(),
+              "registered_by": created_by, "status": "active", "reply_mode": mode,
+              "bootstrap_event_id": None, "bootstrap_sha256": digest,
+              "bootstrap_source": "AGENTS.md"}
+    if existing:
+        return state_store.update("codex_conversation", thread_id, existing["revision"], fields)
+    return state_store.create("codex_conversation", fields, rid=thread_id)
+
+
 def require_conversation(thread_id, state_store=store):
     conv = state_store.read("codex_conversation", thread_id or "none")
     if conv is None or conv.get("status") != "active" or conv.get("runtime_id") not in RUNTIME_IDS:
