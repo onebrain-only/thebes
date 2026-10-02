@@ -636,6 +636,20 @@ Project's primary PO; `po-2` is an additional seat, not a second owner of the bo
 Mode switches use `python3 -m agent.state.mode set …` so one permission rule can allow
 them.
 
+## D-038 — One Codex conversation, three Claude sessions
+
+**Status:** ACTIVE (2026-10-02, CEO: "stop the mess … only 3 conversations on Claude —
+Orchestrator, Karnak and Luxor — and talk to only one Codex conversation"; chose A)
+**Decision:** The running Claude sessions are exactly `thebes-orchestrator`,
+`thebes-team-karnak` and `thebes-team-luxor`. The CEO's single Listener is the Codex
+conversation "Hi There from Local through SSH" (`01a0f777-…`, Desktop over SSH, also
+visible on the phone), recorded in `agent/state/registry/listener.json`. Thebes refuses to
+auto-register any other conversation (`not-the-listener`); every other registration is
+retired, records kept. `frontend-1`, `frontend-2` and `po` sessions were stopped, not
+deleted. Moving the Listener is one edit to `listener.json`.
+**Why:** Test conversations and single-role sessions accumulated during the milestone and
+the CEO could no longer tell where to look.
+
 **Addendum to D-035, CEO 2026-10-02 — decide and go, no bureaucracy.** A decision is not a
 record-keeping act. The orchestrator decides and the work proceeds; it does not write the
 decision to Jira as a step of its own, and it does not treat "recording the decision" as

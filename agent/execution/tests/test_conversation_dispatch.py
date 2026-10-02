@@ -122,6 +122,7 @@ class ConversationDispatchTests(unittest.TestCase):
         self.patches.append(mock.patch.object(cr, "connect", lambda **kw: (FakeClient(), "m")))
         # Hermetic: no test may touch the user's real Codex daemon (D-036 auto-register).
         self.patches.append(mock.patch.object(cr, "daemon_alive", lambda alive=None: False))
+        self.patches.append(mock.patch.object(cr, "sole_listener", lambda state_store=None: None))
         for p in self.patches:
             p.start()
 

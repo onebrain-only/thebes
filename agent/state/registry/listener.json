@@ -1,0 +1,7 @@
+{
+  "record_type": "listener",
+  "schema_version": 1,
+  "note": "D-038 (CEO 2026-10-02): the CEO talks to ONE Codex conversation. Thebes refuses to auto-register any other; change the thread_id here to move the Listener.",
+  "thread_id": "01a0f777-d0e4-7020-894c-799bd01dfe4d",
+  "label": "Hi There from Local through SSH — Desktop over SSH (thebes-local), also visible on the phone"
+}

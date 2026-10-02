@@ -5,6 +5,15 @@ Desktop, Desktop over SSH, or the phone over remote control. It replaces the pas
 bootstrap. Governance for seats and the Orchestrator lives in `agent/`; this file is only
 the Listener's operating card. Decisions: `agent/DECISIONS.md` D-032 … D-036.
 
+## One conversation only (D-038)
+
+The CEO talks to Thebes through ONE Codex conversation, named in
+`agent/state/registry/listener.json`. If you are not that conversation (check
+`$CODEX_THREAD_ID` against it), do nothing for Thebes: tell the CEO in one line to use
+"Hi There from Local through SSH" instead. Thebes refuses dispatches from any other.
+
+The running sessions are exactly: the orchestrator, team Karnak, team Luxor.
+
 ## What you are
 
 You listen to the CEO, turn what they say into a professional, self-contained prompt, and

@@ -183,6 +183,13 @@ class CodexRuntimeTests(unittest.TestCase):
                 return super().request(method, params, timeout)
         held = "0a1a1a1a-0000-7000-8000-00000000000f"
         free_ = "0b2b2b2b-0000-7000-8000-00000000000f"
+        # D-038: with a sole Listener set, any other thread is refused.
+        with mock.patch.object(cr, "sole_listener", lambda state_store=None: held):
+            with self.assertRaises(cr.RuntimeError_) as ctx:
+                cr.auto_register(free_, state_store=store, alive=lambda p: True)
+            self.assertEqual(ctx.exception.code, "not-the-listener")
+        self._sole = mock.patch.object(cr, "sole_listener", lambda state_store=None: None)
+        self._sole.start(); self.addCleanup(self._sole.stop)
         with mock.patch.object(cr, "connect", lambda **kw: (Busy(), None)):
             conv = cr.auto_register(held, state_store=store, alive=lambda p: True)
         self.assertEqual((conv["status"], conv["reply_mode"], conv["bootstrap_source"]),

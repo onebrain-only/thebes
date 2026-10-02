@@ -528,6 +528,18 @@ def latest_daemon_thread(cwd_prefix=ROOT, *, state_store=store, factory=None):
                         % cwd_prefix)
 
 
+LISTENER_PATH = os.path.join(ROOT, "agent", "state", "registry", "listener.json")
+
+
+def sole_listener(state_store=store, path=LISTENER_PATH):
+    """The one Codex conversation the CEO talks to (D-038), or None if unset."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return (json.load(fh) or {}).get("thread_id")
+    except (OSError, ValueError):
+        return None
+
+
 def auto_register(thread_id, *, state_store=store, factory=None, alive=None, created_by="codex"):
     """Register a daemon thread the moment it first dispatches (D-036).
 
@@ -539,11 +551,17 @@ def auto_register(thread_id, *, state_store=store, factory=None, alive=None, cre
     client (the phone) → Codex collects the result itself (`inline`)."""
     if not THREAD_ID.fullmatch(str(thread_id or "")):
         raise RuntimeError_("thread-id-invalid", "a Codex thread id is a UUID")
-    if not daemon_alive(alive):
-        raise RuntimeError_("codex-daemon-not-running", daemon_socket_path())
     existing = state_store.read("codex_conversation", thread_id)
     if existing and existing.get("status") == "active":
         return existing
+    # D-038: the CEO talks to ONE Codex conversation. A different one is refused,
+    # never silently made a second Listener.
+    sole = sole_listener(state_store)
+    if sole and sole != thread_id:
+        raise RuntimeError_("not-the-listener",
+                            "Thebes talks to one Codex conversation (%s). Use that one." % sole)
+    if not daemon_alive(alive):
+        raise RuntimeError_("codex-daemon-not-running", daemon_socket_path())
     client, _ = connect(state_store=state_store, factory=factory, runtime_id=DAEMON_RUNTIME_ID)
     try:
         try:
