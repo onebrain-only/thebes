@@ -477,7 +477,9 @@ def _resume_asker(req, answer_text, *, state_store=store, resume=None):
         else:
             env["CODEX_THREAD_ID"] = req["origin_thread_id"]
         out = cd.dispatch(text, req["asker_session_id"], env=env, state_store=state_store,
-                          detach=True)
+                          detach=True, ticket=origin.get("jira_key"),
+                          lane_capability=origin.get("jira_capability"),
+                          continuation=True)
     cur = state_store.read("decision_request", req["decision_request_id"])
     state_store.update("decision_request", cur["decision_request_id"], cur["revision"],
                        {"status": "answered", "continuation_dispatch_id": out.get("dispatch_id")})

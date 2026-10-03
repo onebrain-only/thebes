@@ -1,0 +1,8 @@
+{
+  "record_type": "jira_connection",
+  "schema_version": 1,
+  "note": "Non-secret Jira connection facts (D-040). The API token is never here: it lives in the macOS Keychain (service thebes-jira, account JIRA_API_TOKEN) or $JIRA_API_TOKEN.",
+  "JIRA_ACCOUNT_EMAIL": "workflow@dabbler.pro",
+  "JIRA_CLOUD_ID": "18c8e9f5-d139-4e03-b5d8-89122cc14937",
+  "site": "https://dabbler.atlassian.net"
+}

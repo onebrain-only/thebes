@@ -213,7 +213,8 @@ def _codex_origin(thread_id, state_store):
 
 
 def dispatch(prompt, target_session_id, *, env=None, state_store=store, cli=None, runner=None,
-             stop_timeout_seconds=30, detach=False, launcher=None):
+             stop_timeout_seconds=30, detach=False, launcher=None, ticket=None,
+             lane_capability=None, continuation=False):
     """Record one conversation dispatch. CLI use detaches its delivery process.
 
     The origin is CODEX_THREAD_ID from ``env`` only, and it must be an active
@@ -252,6 +253,14 @@ def dispatch(prompt, target_session_id, *, env=None, state_store=store, cli=None
             raise Refused("codex-runtime-not-running", "the shared runtime is not running")
     prompt = _bounded_text(prompt, MAX_PROMPT_BYTES, "prompt")
     binding = target_binding(target_session_id, state_store)
+    # D-040: the ticket Jira follows. A continuation inherits it and never scans
+    # the decision text, which may mention other keys.
+    from agent.execution import jira_sync
+    try:
+        jira_key, jira_reason = ((ticket, "inherited") if continuation else
+                                 jira_sync.ticket_for(prompt, ticket))
+    except ValueError as exc:
+        raise Refused("ticket-invalid", str(exc))
 
     # One writer per target SID: the busy check, the record and the delivery
     # are one critical section, so two dispatches never stop/resume one SID
@@ -279,7 +288,9 @@ def dispatch(prompt, target_session_id, *, env=None, state_store=store, cli=None
             "prompt_ref": prompt_ref, "status": "delivering", "delivery_status": None,
             "outcome": None, "result_ref": None, "result_sha256": None,
             "reported_session_id": None, "attested_delivery_id": None, "outcome_at": None,
-            "result_event_id": None, "error": None}, rid=dispatch_id)
+            "result_event_id": None, "error": None, "jira_key": jira_key,
+            "jira_capability": lane_capability, "jira_continuation": bool(continuation)},
+            rid=dispatch_id)
         if detach:
             try:
                 (launcher or _detach_delivery)(dispatch_id, capability)
@@ -292,6 +303,7 @@ def dispatch(prompt, target_session_id, *, env=None, state_store=store, cli=None
                     "origin_thread_id": thread_id, "target_session_id": target_session_id,
                     "target_seat_id": binding["seat_id"], "delivery_id": dispatch_id,
                     "dispatch_status": "delivering", "reply_mode": mode,
+                    "jira_key": jira_key, "jira_sync": jira_reason,
                     "next": ("make sure your inbox waiter is running (run_in_background: "
                              "cd %s && python3 -m agent.execution.inbox wait); the result "
                              "arrives through it — do not block on this dispatch" % ROOT
@@ -340,6 +352,12 @@ def _deliver_created(record, capability, binding, prompt, *, state_store, cli=No
     except Exception as exc:                 # leave a terminal failure, not an open dispatch
         status, error, delivered = claude_delivery.FAILED, "delivery raised: %s" % exc, None
     final = state_store.settle_conversation_delivery(dispatch_id, status, error)
+    if status == claude_delivery.DELIVERED:
+        try:                                     # D-040; never fails the delivery
+            from agent.execution import jira_sync
+            jira_sync.on_start(final, state_store=state_store)
+        except Exception:                        # noqa: BLE001
+            pass
     return {"status": "dispatched" if status == claude_delivery.DELIVERED else "delivery-failed",
             "dispatch_id": dispatch_id, "origin_thread_id": record["origin_thread_id"],
             "target_session_id": target_session_id, "target_seat_id": binding["seat_id"],
@@ -557,6 +575,13 @@ def submit(dispatch_id, outcome, result_text, *, env=None, state_store=store, la
                                                           "owner_seat", "decision_request_id")}}
     # Settled. Queueing is idempotent, so an identical repeat (or a re-run
     # after a crash between settling and queueing) completes it exactly once.
+    if created:
+        try:                                     # D-040; never fails the report
+            from agent.execution import jira_sync
+            jira_sync.on_finish(record, result_text, state_store=state_store,
+                                escalated=decision is not None)
+        except Exception:                        # noqa: BLE001
+            pass
     try:
         reply = schedule_result(record, state_store=state_store, launcher=launcher)
         if decision is not None:
@@ -604,6 +629,11 @@ def main(argv=None):
     d.add_argument("--to", required=True, dest="target_session_id",
                    help="durable Claude session id bound to a seat")
     d.add_argument("--prompt"); d.add_argument("--prompt-file")
+    d.add_argument("--ticket", help="the KAN key Jira follows (default: the only key in "
+                                    "the prompt)")
+    d.add_argument("--capability", help="the ticket's execution lane when Thebes has no "
+                                        "record of it: frontend, backend, content, "
+                                        "ux-engineer, devops …")
     pending = sub.add_parser("deliver-pending", help=argparse.SUPPRESS)
     pending.add_argument("dispatch_id")
     s = sub.add_parser("submit", help="from the target Claude session, capability in $%s"
@@ -623,7 +653,7 @@ def main(argv=None):
     try:
         if ns.cmd == "dispatch":
             out = dispatch(_text_arg(ns.prompt, ns.prompt_file), ns.target_session_id,
-                           detach=True)
+                           detach=True, ticket=ns.ticket, lane_capability=ns.capability)
         elif ns.cmd == "deliver-pending":
             out = deliver_pending(ns.dispatch_id)
         elif ns.cmd == "submit":

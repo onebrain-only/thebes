@@ -50,6 +50,14 @@ python3 -m agent.execution.conversation_dispatch dispatch --to <TEAM_SESSION_ID>
   --prompt-file <file with the complete, self-contained prompt>
 ```
 
+- **Jira follows a ticket automatically (D-040).** Add `--ticket KAN-123` when the work is a
+  ticket, plus `--capability frontend|backend|content|ux-engineer|devops` when Thebes has no
+  record of it. Thebes then moves the ticket to its work lane when the team receives the
+  work, and to its review status when the team reports `completed`. It comments each step
+  with the team's name, and on `failed` or a hard stop it comments without moving the
+  ticket. With no `--ticket`, a prompt naming exactly one KAN key uses that key; if it names
+  several, nothing is synced. A Jira failure arrives as a `jira-sync-failed` alert, and the
+  team's work is unaffected. Don't move a dispatched ticket by hand.
 - One request = one team. Several pieces run in parallel on several teams. A busy team
   refuses with `target-session-busy` and names the free ones; never queue on a busy team.
 - The prompt is self-contained: goal, repo/paths, acceptance (what proves it done), the

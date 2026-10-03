@@ -27,6 +27,8 @@ from _harness import ok, raises, section, summary, repo_root      # noqa: E402
 
 sys.path.insert(0, os.path.join(repo_root(), "agent", "integrations"))
 import jira                                                       # noqa: E402
+# Hermetic: the live non-secret registry (D-040) must not stand in for a missing value.
+jira._registry = lambda: {}
 
 FAKE_TOKEN = "fake-token-not-a-real-credential-0123456789"
 

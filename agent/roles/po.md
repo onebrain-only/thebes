@@ -38,6 +38,19 @@ edit bypasses the revision check silently.
 **What you may set on a task's Execution Profile:** `required_capability` and `work_effort`, with
 your provenance recorded as `po`.
 
+**Set them with one command (D-040). Never write the record by hand.** For a new ticket, or a
+CEO-ordered one that should go through the normal claim path:
+
+```sh
+python3 -m agent.state.ready set KAN-123 --capability frontend --effort 2 \
+  --basis "<seat>: <what you sized it from>" [--project app] [--move-ready]
+python3 -m agent.state.ready show KAN-123      # what still blocks a claim
+```
+
+It creates the record if Thebes has never seen the ticket (`--project` is then required). With
+`--move-ready` it also moves Jira to Ready. It lists the remaining `unclaimable_reasons`.
+`surfaces-unassessed` is expected: the executing seat states the paths at Preflight, never you.
+
 **What you may never set:** `model`, `reasoning_effort`, `validation_route`. System policy derives
 those, the validator rejects `po` as their author, and in Wave 4 they are null regardless.
 

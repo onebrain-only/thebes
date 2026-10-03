@@ -127,7 +127,7 @@ class InboxTests(unittest.TestCase):
         rid = got["items"][0]["decision_request_id"]
         captured = {}
 
-        def fake_dispatch(text, target, env, state_store, detach):
+        def fake_dispatch(text, target, env, state_store, detach, **kw):
             captured.update(env=env, target=target)
             return {"dispatch_id": "cdispatch-cont", "status": "accepted"}
         with mock.patch.object(cd, "dispatch", fake_dispatch):

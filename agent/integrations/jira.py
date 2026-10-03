@@ -109,6 +109,20 @@ _KEYCHAIN_SERVICES = {
 }
 
 
+SHARED_KEYCHAIN_SERVICE = "thebes-jira"
+_REGISTRY_FIELDS = ("JIRA_ACCOUNT_EMAIL", "JIRA_CLOUD_ID")
+REGISTRY_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                             "state", "registry", "jira.json")
+
+
+def _registry():
+    try:
+        with open(REGISTRY_PATH, encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+
 def _keychain_lookup(service, account):
     """Return one Keychain value, or None without exposing Keychain errors."""
     if sys.platform != "darwin":
@@ -139,6 +153,18 @@ def _credential(name):
             value = None
         if value:
             return value, "keychain"
+    # D-040: the CEO's setup command stores each value under one service,
+    # `thebes-jira`, with the variable name as the account.
+    try:
+        value = _keychain_lookup(SHARED_KEYCHAIN_SERVICE, name)
+    except (OSError, subprocess.SubprocessError):
+        value = None
+    if value:
+        return value, "keychain"
+    if name in _REGISTRY_FIELDS:                     # non-secret facts only
+        value = _registry().get(name)
+        if value:
+            return value, "registry"
     return None, "unavailable"
 
 

@@ -680,3 +680,34 @@ decisions stay delegated (D-035).
 `store.reserve_seat` (`ceo-` holds), validator (Claude-origin dispatch, `ceo-` reservations),
 `inbox.py`, `test_inbox.py` (7 tests). P4 is proven by one live round-trip from the CEO's
 message to the orchestrator; P5 (bootstrap) is still open.
+
+## D-040 — Jira follows a team dispatch; the PO records Ready facts by command
+
+**Status:** ACTIVE (2026-10-03, CEO: "when a dispatch carries a KAN key it moves the ticket … a
+way to record effort and Ready from the PO", answered "1 yes, 2 yes")
+**Decision:** (1) A conversation dispatch that names one ticket (`--ticket`, or the only KAN key
+in the prompt) moves it in Jira: to its execution lane when the team receives the work (the
+task's `required_capability`, or the dispatch's `--capability`; comment only when neither is
+known), and to its review status when the team reports `completed` (the route Thebes policy
+derived for the task; Self-review for a ticket Thebes has no record of). Each step is
+commented with the team's name; `failed` and CEO escalations comment without moving. A
+continuation dispatch inherits the ticket and never rescans the decision text. Persistent State
+observes Jira after each move. A Jira failure never blocks the work: it is recorded on the
+dispatch and raised as a `jira-sync-failed` alert. Only the canonical workspace's runtime
+writes the real board. (2) `python3 -m agent.state.ready` lets the PO record capability and
+Work Effort with provenance, admit a ticket Thebes has never seen, and optionally move it to
+Ready, so a CEO-ordered ticket can take the normal claim path. Surfaces stay the executing
+seat's assessment.
+**Why:** A team dispatch bypasses claim → lease → execute, the only path that moved Jira, so
+the board went stale and the PO synced it by hand.
+**Consequences:** `agent/execution/jira_sync.py`, dispatch `--ticket`/`--capability`,
+`store.admit_task` / `store.set_work_profile`, `agent/state/ready.py`,
+`agent/state/registry/jira.json` (non-secret email and cloud id; the token stays in the
+Keychain, service `thebes-jira`), `jira.py` reads both, `test_jira_sync.py` (10 tests).
+**Defect found live while building (2026-10-03 12:02 UTC):** in-progress code read the
+dispatch's secret capability as the lane, stored it on `cdispatch-4a2527ac…` (local runtime
+only, gitignored; cleared) and moved KAN-408 from Design to Operations. Fixed (parameter
+renamed, regression test). The ticket needs moving back to Design by hand: the automated
+correction was refused by this session's permission check. Building outside
+`SYSTEM_MAINTENANCE` let a live dispatch run half-built code, which is exactly what the mode
+exists to prevent.

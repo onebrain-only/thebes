@@ -2520,6 +2520,88 @@ def accelerated(task, policies=None):
 
 # ---------------------------------------------------------------- ownership
 
+WORK_PROFILE_AUTHORS = ("po", "pm")
+
+
+def admit_task(work_item_id, project_id, jira_status_id, required_capability, author,
+               basis_ref, product_id="dabbler"):
+    """Create the Persistent State record for a Jira ticket Thebes has never seen
+    (D-040). It starts with the PO's capability only: no effort, surfaces null. Its
+    lifecycle is what Jira says now; nothing here decides anything."""
+    import board                                        # noqa: E402
+    sid = str(jira_status_id)
+    if board.canonical_for(sid) is None:
+        raise StateError("unknown Jira status id %r" % sid)
+    if author not in WORK_PROFILE_AUTHORS or not basis_ref:
+        raise StateError("the PO admits a ticket, with a basis for its capability")
+    return create("task", {
+        "work_item_id": work_item_id, "record_type": "executable",
+        "product_id": product_id, "project_id": project_id,
+        "lifecycle": {"canonical": board.canonical_for(sid),
+                      "jira_column": board.column_for(sid), "jira_status_id": sid,
+                      "jira_status_name": board.name_for(sid), "observed_at": now(),
+                      "source": "jira"},
+        "ownership": None, "surfaces": None, "review_context": None,
+        "executor_evidence": [],
+        "execution_profile": {
+            "profile_status": "partial",
+            "effective_fields": ["project_id", "required_capability"],
+            "provenance": {"required_capability": {"by": author, "at": now(),
+                                                   "basis_ref": basis_ref}},
+            "required_capability": required_capability, "work_effort": None}},
+        rid=work_item_id)
+
+
+def set_work_profile(work_item_id, expected_revision, author, basis_ref,
+                     required_capability=None, work_effort=None):
+    """The PO records WHAT the work is and HOW BIG it is (D-040). CAS'd.
+
+    These are the two Ready facts only the PO states; the validation route stays
+    system-derived and is never accepted here. Each field carries provenance with
+    the basis it was stated on."""
+    if author not in WORK_PROFILE_AUTHORS:
+        raise StateError("%s may not state capability or work effort; the PO does" % author)
+    if not basis_ref:
+        raise StateError("basis_ref is required: say what the effort was sized from")
+    if required_capability is None and work_effort is None:
+        raise StateError("nothing to record")
+    if work_effort is not None and (not isinstance(work_effort, int) or work_effort < 0):
+        raise StateError("work_effort is a non-negative integer of sittings")
+    with record_lock("task", work_item_id):
+        cur = read("task", work_item_id)
+        if cur is None:
+            raise StateError("task %s does not exist" % work_item_id)
+        if cur["revision"] != expected_revision:
+            raise StateError("stale write refused: task %s is at revision %d, caller "
+                             "expected %d" % (work_item_id, cur["revision"],
+                                              expected_revision))
+        if cur.get("record_type") == "container":
+            raise StateError("a container carries no capability or effort; split it")
+        if cur.get("ownership"):
+            raise StateError("%s is owned; its profile changes only through its owner"
+                             % work_item_id)
+        prof = dict(cur.get("execution_profile") or {})
+        prov = dict(prof.get("provenance") or {})
+        for field, value in (("required_capability", required_capability),
+                             ("work_effort", work_effort)):
+            if value is not None:
+                prof[field] = value
+                prov[field] = {"by": author, "at": now(), "basis_ref": basis_ref}
+        prof["provenance"] = prov
+        prof.setdefault("profile_status", "partial")
+        prof["effective_fields"] = [
+            f for f in ("project_id", "required_capability", "work_effort",
+                        "characteristics", "validation_route", "completion_route")
+            if (cur.get(f) if f == "project_id" else prof.get(f)) is not None]
+        merged = dict(cur)
+        merged["execution_profile"] = prof
+        merged["revision"] = cur["revision"] + 1
+        merged["updated_at"] = now()
+        _validate_one("task", merged)
+        _atomic_write(path_for("task", work_item_id), merged)
+        return merged
+
+
 def set_surfaces(work_item_id, expected_revision, surfaces, author, basis_ref=None):
     """Record a SURFACE ASSESSMENT: the paths this work touches, possibly none.
 
