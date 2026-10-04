@@ -169,7 +169,33 @@ def team_block(record):
         % (ROOT, record["dispatch_id"]),
         "report_shape: one report for the whole request — what each seat did, evidence (paths, "
         "commands, output), what is blocked or needs a decision, nothing else.",
+    ] + verify_block(record)
+
+
+def verify_block(record):
+    """What the team must return so its claim can be verified, not re-done (D-041)."""
+    if not record.get("checks"):
+        return []
+    lines = [
+        "branching: work ONLY on the branch named in the brief's BRANCH line, in your own git "
+        "worktree. Never check out or commit to the shared base branch; integration into it is "
+        "a separate, serial dispatch." if record.get("branch") else
+        "branching: the brief names no branch.",
+        "checks: the brief's CHECKS are the agreed scenarios for 'done'. Run each one yourself "
+        "before reporting. Do not invent extra scenarios and do not stop to re-plan them. "
+        "Thebes re-runs every `run` check ONCE on the commit you report, then closes the "
+        "ticket or sends back only the failures. Nobody re-does your work to review it.",
+        "verify_block: put this block in your result file, exactly:",
+        "  VERIFY",
+        "  branch: <the branch>",
+        "  sha: <full 40-character commit>",
+        "  worktree: <absolute path of the worktree at that commit>",
+    ] + ["  %s: PASS|FAIL — <evidence: command and result, or the file you attached>" % c["id"]
+         for c in record["checks"]] + [
+        "  The commit must be committed and the worktree on it. A check you could not run is "
+        "FAIL with the reason — never PASS by assumption.",
     ]
+    return lines
 
 
 def build_envelope(record, capability):
@@ -197,6 +223,12 @@ def build_envelope(record, capability):
     ])
 
 
+def target_session_team(binding, teams_mod):
+    """The team id a branch name must end with, or None for a seat that is not a team."""
+    seat = binding.get("seat_id")
+    return seat if teams_mod.is_team(seat) else None
+
+
 def _codex_origin(thread_id, state_store):
     try:
         return codex_runtime.require_conversation(thread_id, state_store)
@@ -214,7 +246,8 @@ def _codex_origin(thread_id, state_store):
 
 def dispatch(prompt, target_session_id, *, env=None, state_store=store, cli=None, runner=None,
              stop_timeout_seconds=30, detach=False, launcher=None, ticket=None,
-             lane_capability=None, continuation=False):
+             lane_capability=None, continuation=False, root_dispatch_id=None,
+             verify_cycle=None, checks=None):
     """Record one conversation dispatch. CLI use detaches its delivery process.
 
     The origin is CODEX_THREAD_ID from ``env`` only, and it must be an active
@@ -261,6 +294,25 @@ def dispatch(prompt, target_session_id, *, env=None, state_store=store, cli=None
                                  jira_sync.ticket_for(prompt, ticket))
     except ValueError as exc:
         raise Refused("ticket-invalid", str(exc))
+    # D-041: a ticket dispatch carries a brief with the agreed checks for "done". Refused,
+    # naming everything missing, rather than discovered by the team mid-work.
+    from agent.execution import dispatch_brief as brief_mod
+    from agent.state import teams as teams_mod
+    sections, brief_checks = {}, []
+    if jira_key and not continuation:
+        try:
+            sections, brief_checks = brief_mod.lint(
+                prompt, target_session_team(binding, teams_mod))
+        except brief_mod.BriefError as exc:
+            raise Refused("brief-incomplete",
+                          "%s — see `python3 -m agent.execution.dispatch_brief template`"
+                          % "; ".join(exc.problems))
+    elif continuation:
+        brief_checks = list(checks or [])
+    integrate_base = next(iter((sections.get("INTEGRATE") or "").split()), None)
+    branch = next(iter((sections.get("BRANCH") or "").split()), None)
+    if branch and branch.lower() == "none":
+        branch = None
 
     # One writer per target SID: the busy check, the record and the delivery
     # are one critical section, so two dispatches never stop/resume one SID
@@ -274,6 +326,16 @@ def dispatch(prompt, target_session_id, *, env=None, state_store=store, cli=None
             raise Refused("target-session-busy", "%s has open dispatches %s; send this to a "
                           "free team instead: %s — or wait for their results"
                           % (target_session_id, ", ".join(busy), free))
+        if integrate_base:
+            # One integration into a shared branch at a time: two at once is the clash
+            # that blocked 21 of 40 stopped dispatches.
+            for other in state_store.read_all("conversation_dispatch"):
+                if (other.get("integrate_base") == integrate_base
+                        and other.get("status") in store.CONVERSATION_DISPATCH_OPEN):
+                    raise Refused("integration-busy", "%s is already being integrated into %s "
+                                  "by %s; wait for its result"
+                                  % (other["dispatch_id"], integrate_base,
+                                     other.get("target_seat_id")))
         dispatch_id = state_store.new_id("conversation_dispatch")
         capability = secrets.token_urlsafe(32)
         prompt_ref = _ref_path(state_store, "conversation-prompts", dispatch_id)
@@ -289,7 +351,9 @@ def dispatch(prompt, target_session_id, *, env=None, state_store=store, cli=None
             "outcome": None, "result_ref": None, "result_sha256": None,
             "reported_session_id": None, "attested_delivery_id": None, "outcome_at": None,
             "result_event_id": None, "error": None, "jira_key": jira_key,
-            "jira_capability": lane_capability, "jira_continuation": bool(continuation)},
+            "jira_capability": lane_capability, "jira_continuation": bool(continuation),
+            "checks": brief_checks, "branch": branch, "integrate_base": integrate_base,
+            "root_dispatch_id": root_dispatch_id, "verify_cycle": verify_cycle},
             rid=dispatch_id)
         if detach:
             try:
@@ -543,7 +607,7 @@ DECISION_OUTCOMES = ("decision_required", "blocked", "clarification_required")
 
 
 def submit(dispatch_id, outcome, result_text, *, env=None, state_store=store, launcher=None,
-           decision_router=None):
+           decision_router=None, verify_launcher=None):
     """The worker's single self-report. Identity is CLAUDE_CODE_SESSION_ID and
     the capability, both from ``env``; the result text is explicit."""
     env = os.environ if env is None else env
@@ -575,6 +639,12 @@ def submit(dispatch_id, outcome, result_text, *, env=None, state_store=store, la
                                                           "owner_seat", "decision_request_id")}}
     # Settled. Queueing is idempotent, so an identical repeat (or a re-run
     # after a crash between settling and queueing) completes it exactly once.
+    if created and outcome == "completed" and record.get("checks"):
+        try:                                     # D-041; verify runs detached, never blocks
+            from agent.execution import verify
+            (verify_launcher or verify._detach_run)(dispatch_id)
+        except Exception:                        # noqa: BLE001
+            pass
     if created:
         try:                                     # D-040; never fails the report
             from agent.execution import jira_sync

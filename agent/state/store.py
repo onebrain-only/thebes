@@ -2524,7 +2524,7 @@ WORK_PROFILE_AUTHORS = ("po", "pm")
 
 
 def admit_task(work_item_id, project_id, jira_status_id, required_capability, author,
-               basis_ref, product_id="dabbler"):
+               basis_ref, product_id="dabbler", work_effort=None):
     """Create the Persistent State record for a Jira ticket Thebes has never seen
     (D-040). It starts with the PO's capability only: no effort, surfaces null. Its
     lifecycle is what Jira says now; nothing here decides anything."""
@@ -2545,10 +2545,13 @@ def admit_task(work_item_id, project_id, jira_status_id, required_capability, au
         "executor_evidence": [],
         "execution_profile": {
             "profile_status": "partial",
-            "effective_fields": ["project_id", "required_capability"],
-            "provenance": {"required_capability": {"by": author, "at": now(),
-                                                   "basis_ref": basis_ref}},
-            "required_capability": required_capability, "work_effort": None}},
+            "effective_fields": ["project_id", "required_capability"]
+                                + (["work_effort"] if work_effort is not None else []),
+            "provenance": dict(
+                {"required_capability": {"by": author, "at": now(), "basis_ref": basis_ref}},
+                **({"work_effort": {"by": author, "at": now(), "basis_ref": basis_ref}}
+                   if work_effort is not None else {})),
+            "required_capability": required_capability, "work_effort": work_effort}},
         rid=work_item_id)
 
 

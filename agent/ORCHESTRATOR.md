@@ -46,22 +46,45 @@ CEO. Never write Product code.
 
 ```sh
 python3 -m agent.execution.team_pool free          # free_teams: team_id + session_id
+python3 -m agent.execution.dispatch_brief template --team karnak   # the brief shape
 python3 -m agent.execution.conversation_dispatch dispatch --to <TEAM_SESSION_ID> \
-  --prompt-file <file with the complete, self-contained prompt>
+  --prompt-file <brief file> [--ticket KAN-123 --capability frontend]
 ```
 
-- **Jira follows a ticket automatically (D-040).** Add `--ticket KAN-123` when the work is a
-  ticket, plus `--capability frontend|backend|content|ux-engineer|devops` when Thebes has no
-  record of it. Thebes then moves the ticket to its work lane when the team receives the
-  work, and to its review status when the team reports `completed`. It comments each step
-  with the team's name, and on `failed` or a hard stop it comments without moving the
-  ticket. With no `--ticket`, a prompt naming exactly one KAN key uses that key; if it names
-  several, nothing is synced. A Jira failure arrives as a `jira-sync-failed` alert, and the
-  team's work is unaffected. Don't move a dispatched ticket by hand.
+**A dispatch for a ticket (`--ticket`) carries a brief, or Thebes refuses it and names
+everything missing (D-041).** A question or a lookup needs no brief and no `--ticket`: a prompt
+that merely *mentions* a ticket is never treated as that ticket's work.
+
+```
+GOAL: <the outcome, one or two sentences>
+BRANCH: <base>-<team>        # one branch per team, e.g. alpha-karnak; `none` for no git work
+ALLOWED PATHS: <where it may write>
+FORBIDDEN: <what it must not touch or do>
+DECISIONS MADE: <rulings already taken, or `none`>
+IF BLOCKED: <default: return decision_required with ONE question; no retry loop>
+CHECKS:
+C1 | run   | flutter test test/forms/select_test.dart | exit 0
+C2 | judge | Home matches frame "Home Feed" 1:1        | screenshot vs the frame
+```
+
+- **Decisions come first.** Before dispatching, settle every open question the work depends
+  on (cxo for design, cto for technical, po for scope/acceptance) and write the rulings into
+  DECISIONS MADE. A team that has to stop and ask is a brief that was not finished.
+- **Checks are the agreed scenarios for "done", written before the work.** `run` = a
+  `flutter test|analyze` or `dart test|analyze` command that passes on `exit 0`; Thebes
+  re-runs it itself, once, on the commit the team reports, at zero tokens. `judge` = only
+  what an eye can settle, with the evidence named. Prefer `run` (a golden or widget test
+  beats a reviewer's opinion). Never a check like "looks good".
+- **One branch per team.** Teams never share a checkout or commit to the shared base.
+  Bringing branches together is ONE serial dispatch with `INTEGRATE: <base>` instead of
+  BRANCH; Thebes refuses a second integration into the same base while one is open
+  (`integration-busy`).
+- With `--ticket`, Jira follows the work (D-040): the ticket moves to its lane when the
+  team receives it (`--capability` when Thebes has no record of the ticket), to review when
+  the team reports `completed`, and is closed or sent back by verification (§5). Don't move
+  a dispatched ticket by hand. A Jira failure arrives as a `jira-sync-failed` alert.
 - One request = one team. Several pieces run in parallel on several teams. A busy team
   refuses with `target-session-busy` and names the free ones; never queue on a busy team.
-- The prompt is self-contained: goal, repo/paths, acceptance (what proves it done), the
-  hard stops, and "report once with your envelope's submit command".
 - Your session id is the origin automatically. The accepted response says `reply_mode:
   inline`: do not block on it. Tell the CEO in one line what went where, and make sure the
   inbox waiter is running.
@@ -94,9 +117,25 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
   the full request, including the one-time answer command. Follow it: reserve the named
   seat against the `decision_request_id`, run it, write the decision to a file, run the
   answer command. Thebes resumes the team. Do not bother the CEO (D-035).
+- **`verification`**: a team's `completed` claim was checked (D-041). `verdict: pass` →
+  the ticket is closed (a PEER/QA-route ticket keeps its review status with the verified
+  evidence); tell the CEO in one line: ticket, what was verified, done. `verdict:
+  exhausted` → the checks still fail after the one allowed fix; the ticket stays in review
+  with the reason on it. Decide the next step (a different approach, a different team, or a
+  CEO question); never just re-dispatch the same work.
+- **`judge`**: the mechanical checks passed; only the `judge` checks are left. Run ONE
+  reviewer (cxo for design fidelity, qa for behaviour) as a subagent over exactly the listed
+  checks and the evidence the team named: one pass, a PASS/FAIL line per check, no rework,
+  no new scenarios. Then record it with the `how` command in the item
+  (`verify verdict <id> --pass C2 --fail C3:"reason"`); a pass closes the ticket, a fail
+  sends only that check back to the team.
 - **`alert`**: the watchdog says a team stopped (usage limit, crash, lost connection) after
   one automatic resume, or a delivery failed. Tell the CEO immediately in one or two plain
   sentences: what stopped, what Thebes tried, the one thing that would unblock it.
+
+  Alert kinds you may also see: `review-exhausted` (see `verification`), `review-could-not-run`
+  (Thebes could not execute a check, for example Flutter was not found: not the team's
+  fault, nothing was sent back; fix the cause and run `verify run <id> --force`).
 
 Then start the waiter again.
 

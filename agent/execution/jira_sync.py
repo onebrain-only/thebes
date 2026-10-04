@@ -18,9 +18,8 @@ now says (`store.observe_lifecycle`). Nothing here decides ownership, claims, or
 Done. A Jira failure never blocks or undoes the work; it is recorded on the dispatch
 and raised to the origin as a watchdog alert, so the orchestrator hears it.
 
-The ticket is the dispatch's `--ticket`, or the single KAN key in the prompt when
-there is exactly one. A prompt that mentions several keys and names no ticket is not
-synced — guessing which one is the work would move the wrong card.
+The ticket is the dispatch's `--ticket` and nothing else: a prompt that merely mentions
+a KAN key is not assigning that ticket's work, so it is never inferred (D-041).
 """
 import os
 import re
@@ -38,16 +37,20 @@ SUMMARY_CHARS = 1500
 
 
 def ticket_for(prompt, explicit=None):
-    """(ticket, reason). `ticket` is None when the dispatch is not synced."""
+    """(ticket, reason). `ticket` is None when the dispatch is not synced.
+
+    The ticket is ALWAYS named (`--ticket`). It used to be inferred from the only KAN key
+    in the prompt (D-040), but a question that merely mentions a ticket ("summarize KAN-1")
+    would then have moved it on the board and demanded a brief. A mention is a hint, not
+    an assignment."""
     if explicit:
         if not KEY_RE.fullmatch(explicit):
             raise ValueError("ticket must look like KAN-123, got %r" % explicit)
         return explicit, "explicit"
     keys = list(dict.fromkeys(KEY_RE.findall(prompt or "")))
-    if len(keys) == 1:
-        return keys[0], "only-key-in-prompt"
-    return None, ("no-ticket-key" if not keys else
-                  "several-keys-%s-name-one-with---ticket" % "+".join(keys[:4]))
+    return None, ("no-ticket" if not keys else
+                  "not-synced: the prompt mentions %s; pass --ticket if this is that "
+                  "ticket's work" % "+".join(keys[:4]))
 
 
 CANONICAL_RUNTIME = os.path.join(ROOT, "agent", "state", "runtime")
@@ -189,4 +192,64 @@ def on_finish(record, result_text, *, state_store=store, jira=None, escalated=Fa
     except Exception as exc:                                 # noqa: BLE001
         out = {"status": "failed", "error": str(exc)[:300]}
     _note(record, "finish", out, state_store)
+    return out
+
+
+# ---------------------------------------------------------------- verification (D-041)
+DONE_STATUS_ID = "10007"
+
+
+def _evidence_lines(ver):
+    return "\n".join("%s %s — %s: %s" % (cid, (r.get("status") or "?").upper(),
+                                        r.get("what", ""), r.get("detail", ""))
+                     for cid, r in sorted((ver.get("results") or {}).items()))
+
+
+def on_verified(root, ver, *, state_store=store, jira=None):
+    """Every declared check passed. A SELF-route ticket (the policy default, and what an
+    untracked ticket gets) is closed; a PEER or QA route keeps its review status, now with
+    verified evidence for its reviewer. Never blocks, never raises."""
+    if not root.get("jira_key"):
+        return None
+    jira = _client(jira, state_store)
+    if jira is None:
+        return None
+    team = _team_name(root)
+    try:
+        _, route = review_target(root, state_store)
+        where = ("branch %s at %s. " % (ver.get("branch"), (ver.get("sha") or "")[:12])
+                 if ver.get("sha") else "")
+        if route == "self":
+            moved = _move(root["jira_key"], DONE_STATUS_ID, jira, state_store)
+            head = ("Thebes verified team %s's work and closed this: every declared check "
+                    "passed. %s" % (team, where))
+        else:
+            moved = {"moved": False}
+            head = ("Thebes verified team %s's work: every declared check passed. %sThe %s "
+                    "reviewer checks only what the checks do not cover." % (team, where, route))
+        jira.add_comment(root["jira_key"], "%s\n\n%s" % (head, _evidence_lines(ver)))
+        out = dict(moved, status="ok", route=route)
+    except Exception as exc:                                 # noqa: BLE001
+        out = {"status": "failed", "error": str(exc)[:300]}
+    _note(root, "verified", out, state_store)
+    return out
+
+
+def on_exhausted(root, ver, *, state_store=store, jira=None):
+    """Still failing after the allowed passes: say why on the ticket; do not move it."""
+    if not root.get("jira_key"):
+        return None
+    jira = _client(jira, state_store)
+    if jira is None:
+        return None
+    try:
+        jira.add_comment(
+            root["jira_key"],
+            "Thebes: verification still fails after %d passes; the ticket stays in review and "
+            "needs a decision, not another retry.\n\n%s"
+            % (ver.get("cycle") or 0, _evidence_lines(ver)))
+        out = {"status": "ok", "moved": False}
+    except Exception as exc:                                 # noqa: BLE001
+        out = {"status": "failed", "error": str(exc)[:300]}
+    _note(root, "exhausted", out, state_store)
     return out

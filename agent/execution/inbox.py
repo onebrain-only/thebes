@@ -34,6 +34,9 @@ POLL_SECONDS = 3
 # A decision outcome is routed by the gate right after it is recorded; give the
 # router this long to file its request before treating the result as final.
 ROUTING_GRACE_SECONDS = 30
+# A completed dispatch with checks is reported once it is verified. If verification never
+# ran (the detached process failed), the plain result still reaches the orchestrator after this.
+VERIFY_GRACE_SECONDS = 1800
 SETTLED = tuple(store.CONVERSATION_RESULT_OUTCOMES) + ("delivery_failed",)
 
 
@@ -62,6 +65,38 @@ def _read(path):
         return None
 
 
+def _verification_items(rec, seen, now):
+    """The verified / exhausted / needs-a-reviewer outcome of a ROOT dispatch (D-041)."""
+    ver = rec.get("verification")
+    if rec.get("root_dispatch_id") or not ver:
+        return []
+    verdict = ver.get("verdict")
+    base = {"dispatch_id": rec["dispatch_id"], "team": rec.get("target_seat_id"),
+            "ticket": rec.get("jira_key"), "branch": ver.get("branch"), "sha": ver.get("sha"),
+            "checks": {i: {"status": r.get("status"), "what": r.get("what"),
+                           "detail": r.get("detail")}
+                       for i, r in sorted((ver.get("results") or {}).items())}}
+    if verdict in ("pass", "exhausted") and "verified:%s" % verdict not in seen:
+        return [dict(base, kind="verification", verdict=verdict,
+                     jira=(rec.get("jira_sync") or {}).get("verified")
+                     or (rec.get("jira_sync") or {}).get("exhausted"),
+                     report=(_read(rec.get("result_ref")) or "")[:3000],
+                     _key="verified:%s" % verdict)]
+    if verdict == "needs_judge" and "judge:%s" % ver.get("cycle") not in seen:
+        pend = [dict(r, id=i) for i, r in sorted((ver.get("results") or {}).items())
+                if r.get("status") == "pending-judge"]
+        return [dict(base, kind="judge", cycle=ver.get("cycle"),
+                     pending=[{"id": r["id"], "what": r.get("what"),
+                               "team_evidence": r.get("detail")} for r in pend],
+                     how=("run ONE reviewer (cxo for design fidelity, qa for behaviour) as a "
+                          "subagent over exactly these checks and their named evidence. One "
+                          "pass, a PASS/FAIL line per check, no rework and no new scenarios. "
+                          "Then: python3 -m agent.execution.verify verdict %s --pass C1 "
+                          "--fail C2:\"reason\"" % rec["dispatch_id"]),
+                     _key="judge:%s" % ver.get("cycle"))]
+    return []
+
+
 def pending(session_id, *, state_store=store, now=None):
     """What is waiting for this orchestrator session, without collecting it."""
     now = now or time.time()
@@ -77,7 +112,14 @@ def pending(session_id, *, state_store=store, now=None):
             out.append({"kind": "alert", "dispatch_id": rec["dispatch_id"],
                         "team": rec.get("target_seat_id"), "alert": alert.get("kind"),
                         "text": alert.get("text"), "_key": "alert:%s" % alert.get("kind")})
+        out.extend(_verification_items(rec, seen, now))
         if rec.get("status") not in SETTLED or "result" in seen:
+            continue
+        if (rec.get("outcome") == "completed" and rec.get("checks")
+                and not rec.get("verified_at")
+                and _age(rec.get("outcome_at"), now) < VERIFY_GRACE_SECONDS):
+            continue                           # reported through the verification item (D-041)
+        if rec.get("outcome") == "completed" and rec.get("checks") and rec.get("verified_at"):
             continue
         req = routed.get(rec["dispatch_id"])
         if rec.get("status") in ("decision_required", "blocked", "clarification_required"):

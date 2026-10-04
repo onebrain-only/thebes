@@ -563,6 +563,39 @@ developer** — but now only where the QA route applies, not for every ticket.
 PEER is genuinely required for such work, **the work waits for an authorised validator** — it
 is not rerouted.
 
+### Team dispatches — verify the claim, never redo the work (D-041)
+
+A ticket dispatched to a team (`conversation_dispatch --ticket`) does not pass through claim →
+lease → execute, so its review is defined here, not improvised. **A review confirms that the
+work matches what was agreed; it never repeats the work, and it never invents scenarios.**
+
+1. **Agreed first.** The brief carries CHECKS (`agent/execution/dispatch_brief.py`): the
+   scenarios for "done", written before the work. `run` checks are exact `flutter`/`dart`
+   test or analyze commands that pass on `exit 0`; `judge` checks are only what an eye can
+   settle. A dispatch with no checks is refused.
+2. **Claimed with evidence.** The team's `completed` report carries a VERIFY block: branch,
+   the full commit SHA, the worktree, and PASS/FAIL with evidence per check. A check it could
+   not run is FAIL, never PASS by assumption.
+3. **Verified once, by Thebes.** `agent/execution/verify.py` re-runs each `run` check once, in
+   that worktree, on that SHA, with no model and no tokens (allowlisted commands, no shell,
+   only inside a team's job or Dabbler directory). A claimed PASS that fails is reported as
+   such.
+4. **Closed or sent back, bounded.** All checks pass → a SELF-route ticket (the policy default)
+   is moved to Done; a PEER or QA route keeps its review status with the verified evidence, so
+   its reviewer checks the delta. Any check fails → the team receives ONLY the failing checks
+   and their output. The loop is `MAX_CYCLES = 2` (first pass plus one fix). Still failing is
+   **exhausted**: the ticket stays in review with the reason written on it and the orchestrator
+   is alerted. There is no third pass.
+5. **Not the team's defect.** If Thebes cannot run a check (tool missing, timeout) that is an
+   infrastructure error: no verdict, no cycle spent, nothing sent back.
+6. **One eye, one pass.** `judge` checks go to ONE reviewer (cxo or qa) with the team's named
+   evidence. The reviewer answers PASS/FAIL per check; it does not rework, restyle or add
+   scenarios.
+
+**Never two teams on one branch.** Each team works on `<base>-<team>` in its own worktree;
+bringing branches together is one serial `INTEGRATE` dispatch, and a second integration into
+the same base is refused while one is open.
+
 ---
 
 ## 3.1 ACCELERATE — MAXIMUM SAFE PARALLEL THROUGHPUT

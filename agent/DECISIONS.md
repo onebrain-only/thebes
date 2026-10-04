@@ -711,3 +711,35 @@ renamed, regression test). The ticket needs moving back to Design by hand: the a
 correction was refused by this session's permission check. Building outside
 `SYSTEM_MAINTENANCE` let a live dispatch run half-built code, which is exactly what the mode
 exists to prevent.
+
+## D-041 — Review verifies the claim; it never redoes the work
+
+**Status:** ACTIVE (2026-10-04, CEO: "the review is meant to confirm the work, not to redo it,
+nor to spend time, effort and tokens"; also steps 1–3: a branch per team, a brief template,
+decisions settled before dispatch)
+**Evidence (measured 2026-10-04):** of 136 team dispatches, 40 stopped. Keyword tally of their
+reports (approximate; a report can match several): decisions needed 27, permission/hook refusals
+22, git/worktree clashes 21, missing input 8, session cut or limit 4. Karnak's session ran
+`flutter test` 228 times and `flutter analyze` 195, and never once invoked the `qa` seat: Thebes'
+cheapest-layer QA routing (`agent/qa`) and bounded retest exist, but a team dispatch bypasses
+them, so review was subjective po/cxo opinion repeated per round (KAN-368: nine dispatches).
+Since D-040 a completed dispatch moved its ticket to review and nothing ever closed it.
+**Decision:** (1) One branch per team (`<base>-<team>`), enforced in the brief lint; integration
+into a shared base is one serial `INTEGRATE` dispatch (`integration-busy` otherwise). (2) A
+dispatch that names a ticket carries a brief (GOAL, BRANCH, ALLOWED PATHS, FORBIDDEN, DECISIONS
+MADE, IF BLOCKED, CHECKS) or is refused naming everything missing
+(`agent/execution/dispatch_brief.py`). (3) The orchestrator settles open decisions before
+dispatching and writes them into DECISIONS MADE. (4) Review is verification: the team reports a
+VERIFY block (branch, sha, worktree, evidence per check); `agent/execution/verify.py` re-runs
+the declared `run` checks once on that commit at zero tokens, sends back only failures, allows
+`MAX_CYCLES = 2`, then marks the review exhausted with a reason on the ticket and an alert —
+no third pass. `judge` checks go to one reviewer for one pass. A SELF-route ticket closes on
+pass; PEER/QA routes keep their review status with verified evidence. A check Thebes cannot run
+is an infrastructure error, not a team failure. `--ticket` is explicit only: D-040's inference
+from the one KAN key in a prompt is withdrawn, because a question that mentions a ticket would
+have moved it.
+**Consequences:** `dispatch_brief.py`, `verify.py`, `jira_sync.on_verified/on_exhausted`,
+inbox `verification` and `judge` items, envelope VERIFY block, `store.admit_task(work_effort=)`,
+`test_verify.py` (14 tests), `ORCHESTRATOR.md`, `WORKFLOWS.md` §3 "Team dispatches". Not done
+here: automated golden/screenshot generation for design fidelity (a `run` check can call a
+golden test that already exists), and a `qa`-seat runtime layer for dispatches.
