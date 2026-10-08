@@ -149,6 +149,9 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
     ruling, dispatch ONE question to Memphis (no `--ticket`) naming every seat it needs; Memphis
     runs them in parallel and returns one answer to your inbox. Then log it in the PM ledger
     and resume. You never run cto, cpo, cxo, qa or any other team seat yourself.
+  - **`judge` checks follow the same rule:** a design-fidelity judge goes to Memphis (cxo), a
+    behaviour judge to Memphis (qa). Only an acceptance judge on a project's own ticket may
+    use that project's PO.
   - A PO that is stuck asks the PM first; the PM must have the answer or get it.
   - **Every ruling you obtain** from cpo, cto, cxo or the CEO goes into the PM's ledger at
     once: `python3 -m agent.execution.pm_ledger add --by <who> --ref <ticket> --text "<one
