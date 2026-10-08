@@ -32,6 +32,51 @@ WRITE_TOOLS = {"apply_migration", "execute_sql", "deploy_edge_function",
                "rebase_branch"}
 CEO_ONLY_TOOLS = {"pause_project", "restore_project", "create_project", "delete_branch",
                   "reset_branch", "confirm_cost"}
+# A read-only query any session may run (D-042 amendment, 2026-10-09): reviewers and the PM
+# must be able to LOOK at the live database. Deliberately conservative: one statement,
+# starting with SELECT / WITH / EXPLAIN / SHOW, no write or DDL keyword anywhere, and no call
+# to a function outside a small allowlist (a SELECT can call a function that writes).
+READ_START = re.compile(r"^\s*(select|with|explain|show)\b", re.I)
+WRITE_WORDS = re.compile(r"\b(insert|update|delete|merge|upsert|drop|alter|create|grant|revoke|"
+                         r"truncate|copy|call|do|vacuum|reindex|cluster|lock|refresh|comment|"
+                         r"security|set|reset|discard|notify|listen|prepare|execute|into|"
+                         r"nextval|setval|pg_sleep|dblink|lo_\w+|pg_read\w*|pg_write\w*)\b",
+                         re.I)
+SAFE_FUNCS = {"count", "sum", "min", "max", "avg", "coalesce", "nullif", "greatest", "least",
+              "now", "lower", "upper", "length", "trim", "substr", "substring", "left",
+              "right", "concat", "array_agg", "string_agg", "json_agg", "jsonb_agg",
+              "jsonb_build_object", "json_build_object", "to_jsonb", "row_to_json",
+              "exists", "cast", "date_trunc", "extract", "round", "abs", "unnest",
+              "array_length", "cardinality", "format_type", "pg_get_functiondef",
+              "pg_get_viewdef", "pg_get_function_arguments", "pg_get_function_result",
+              "pg_get_userbyid", "has_function_privilege", "has_table_privilege",
+              "has_schema_privilege", "to_regprocedure", "to_regclass", "obj_description",
+              "col_description", "pg_get_expr", "pg_get_constraintdef", "pg_get_indexdef",
+              "pg_relation_size", "pg_total_relation_size", "pg_size_pretty", "quote_ident",
+              "current_setting", "current_user", "session_user", "version", "any", "all",
+              "in", "filter", "over", "partition", "values", "as", "and", "or", "not", "on",
+              "from", "where", "case", "when", "then", "else", "end", "select", "is", "using"}
+FUNC_CALL = re.compile(r"([A-Za-z_][\w.]*)\s*\(")
+
+
+def read_only_sql(query):
+    """True only for a query that cannot write. When unsure, False."""
+    if not isinstance(query, str) or not query.strip():
+        return False
+    q = re.sub(r"--[^\n]*", " ", query)
+    q = re.sub(r"/\*.*?\*/", " ", q, flags=re.S)
+    q = re.sub(r"'(?:[^']|'')*'", "''", q)            # string literals cannot write
+    statements = [x for x in q.split(";") if x.strip()]
+    if len(statements) != 1 or not READ_START.match(statements[0]):
+        return False
+    if WRITE_WORDS.search(statements[0]):
+        return False
+    for name in FUNC_CALL.findall(statements[0]):
+        if name.split(".")[-1].lower() not in SAFE_FUNCS:
+            return False
+    return True
+
+
 PUSH = re.compile(r"(^|[;&|(\s])git(\s+-C\s+\S+)*\s+push(\s|$)")
 
 
@@ -64,6 +109,8 @@ def decide(payload, state_store=None, teams_mod=None):
                     "Report it as a hard stop instead." % name)
         if name not in WRITE_TOOLS:
             return None
+        if name == "execute_sql" and read_only_sql((payload.get("tool_input") or {}).get("query")):
+            return None                                   # anyone may read
         try:
             tid, lane = team_of(sid, state_store, teams_mod)
         except Exception as exc:                          # noqa: BLE001

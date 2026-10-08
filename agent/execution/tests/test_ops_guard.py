@@ -56,6 +56,22 @@ class OpsGuardTests(unittest.TestCase):
                 self.assertIsNotNone(why, (sid, tool))
                 self.assertIn("Memphis", why)
 
+    def test_read_only_sql_is_allowed_for_every_session(self):
+        """Live 2026-10-09: the guard refused the cto and the PM a read-only check."""
+        for q in ("select count(*) from public.venues where is_active = true",
+                  "SELECT pg_get_functiondef('public.rpc_create_game'::regprocedure)",
+                  "with x as (select 1) select * from x",
+                  "select has_function_privilege('anon', 'public.f(uuid)', 'EXECUTE');",
+                  "-- check\nselect name from public.games where name = 'drop table x'"):
+            self.assertIsNone(self.decide(KARNAK, SB + "execute_sql", query=q), q)
+        for q in ("delete from public.games", "select 1; drop table x",
+                  "select public.rpc_delete_my_account()", "select nextval('s')",
+                  "create table x(i int)", "select * into t from games", "",
+                  "update games set x = 1 returning *", "select set_config('a','b',false)"):
+            self.assertIsNotNone(self.decide(KARNAK, SB + "execute_sql", query=q), q)
+        self.assertIsNotNone(self.decide(KARNAK, SB + "apply_migration", query="select 1"),
+                             "a migration is never a read")
+
     def test_reads_are_never_touched(self):
         for sid in (KARNAK, STRANGER):
             self.assertIsNone(self.decide(sid, SB + "list_migrations"))

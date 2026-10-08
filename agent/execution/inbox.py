@@ -195,6 +195,21 @@ def collect(session_id, *, state_store=store, now=None):
     return taken
 
 
+CODE_FILES = ("agent/execution/inbox.py", "agent/execution/ready_dispatcher.py",
+              "agent/execution/verify.py", "agent/execution/conversation_dispatch.py",
+              "agent/state/store.py")
+
+
+def _code_stamp():
+    out = []
+    for rel in CODE_FILES:
+        try:
+            out.append(os.path.getmtime(os.path.join(ROOT, rel)))
+        except OSError:
+            out.append(None)
+    return tuple(out)
+
+
 def wait(timeout=DEFAULT_TIMEOUT, *, env=None, state_store=store, sleep=None):
     env = os.environ if env is None else env
     session_id = env.get("CLAUDE_CODE_SESSION_ID")
@@ -206,7 +221,13 @@ def wait(timeout=DEFAULT_TIMEOUT, *, env=None, state_store=store, sleep=None):
                       % orch)
     sleep = sleep or time.sleep
     deadline = time.time() + timeout
+    code_stamp = _code_stamp()
     while True:
+        if _code_stamp() != code_stamp:
+            # Live 2026-10-09: a waiter started before the `priority` item existed never
+            # saw one, and the board waited. A changed Thebes collects nothing stale.
+            return {"status": "restart", "items": [],
+                    "next": "Thebes code changed; start the inbox waiter again now"}
         items = collect(session_id, state_store=state_store)
         if items:
             return {"status": "items", "count": len(items), "items": items,
