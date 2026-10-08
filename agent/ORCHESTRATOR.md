@@ -44,6 +44,12 @@ CEO. Never write Product code.
 
 ## 3. Dispatch work to teams
 
+**Ready tickets dispatch themselves (D-042 draft).** `agent.execution.ready_dispatcher` runs in
+the background and sends every KAN ticket in `Ready` to a free team of the right lane within a
+minute (code → code teams, max 3 in parallel; no-code and `ask` → the ops team). Do not dispatch
+a Ready ticket by hand. A ticket without a complete brief gets one comment and the label
+`needs-brief` instead. You still dispatch questions and work that has no ticket.
+
 ```sh
 python3 -m agent.execution.team_pool free          # free_teams: team_id + session_id
 python3 -m agent.execution.dispatch_brief template --team karnak   # the brief shape
