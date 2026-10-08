@@ -144,9 +144,11 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
   - `board`: run the **PM**. It reads its decision ledger and memory first, then re-ranks
     the Backlog (new tickets, returned work, new sub-tasks), sets a domain component
     (Auth, Listings, Social, Money, Platform) and an **Original estimate** on each, and
-    moves only what the free teams can take into Ready, in rank order. When it needs a
-    technical, product or experience ruling it asks the cto, cpo or cxo; you run that seat
-    and hand the answer back in the same round.
+    moves only what the free teams can take into Ready, in rank order.
+  - **Rulings go to Memphis, never to you.** When the PM, a PO or you need a cto, cpo or cxo
+    ruling, dispatch ONE question to Memphis (no `--ticket`) naming every seat it needs; Memphis
+    runs them in parallel and returns one answer to your inbox. Then log it in the PM ledger
+    and resume. You never run cto, cpo, cxo, qa or any other team seat yourself.
   - A PO that is stuck asks the PM first; the PM must have the answer or get it.
   - **Every ruling you obtain** from cpo, cto, cxo or the CEO goes into the PM's ledger at
     once: `python3 -m agent.execution.pm_ledger add --by <who> --ref <ticket> --text "<one
