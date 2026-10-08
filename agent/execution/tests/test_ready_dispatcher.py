@@ -36,10 +36,11 @@ def _refuse(*a, **k):
     raise AssertionError("no process may be spawned here")
 
 
-def issue(key, description=BRIEF, labels=(), links=()):
+def issue(key, description=BRIEF, labels=(), links=(), component=None):
     return {"key": key, "id": key[4:], "fields": {
         "summary": "Ticket " + key, "status": {"name": "Ready", "id": "10008"},
         "labels": list(labels), "issuelinks": list(links),
+        "components": [{"name": component}] if component else [],
         "description": {"type": "doc", "version": 1, "content": [
             {"type": "paragraph", "content": [{"type": "text", "text": line}]}
             for line in description.splitlines()]}}}
@@ -51,12 +52,17 @@ def blocked_by(key, done=False):
 
 
 class FakeJira:
-    def __init__(self, issues):
+    def __init__(self, issues, fresh=(), backlog=()):
         self.issues, self.comments, self.updates = list(issues), [], []
+        self.fresh, self.backlog = set(fresh), list(backlog)
         from agent.integrations import jira as real
         self.normalize_issue = real.normalize_issue
 
     def search_issues(self, jql, fields=None, limit=50, raw=False):
+        if "CHANGED TO" in jql:
+            return [{"key": k} for k in self.fresh]
+        if 'status = "To Do"' in jql:
+            return [{"key": k, "updated": "u"} for k in self.backlog]
         assert raw and 'status = "Ready"' in jql
         return self.issues
 
@@ -125,6 +131,9 @@ class ReadyDispatcherTests(unittest.TestCase):
                          ("KAN-500", "frontend", ORCH), "results reach the orchestrator inbox")
         self.assertIn("BRANCH: alpha-karnak", sent["text"])
         self.assertIn("Every commit message starts with `KAN-500:`", sent["text"])
+        self.assertIn("Expected effort: not estimated.", sent["text"])
+        self.assertIn("Expected effort (PM's Original estimate): 3h.", rd.effort_line(10800))
+        self.assertIn("1.5h", rd.effort_line(5400))
         self.assertEqual(self.tick(j), [], "an open dispatch is never sent twice")
 
     def test_parallel_tickets_go_to_different_teams_and_wait_when_none_is_free(self):
@@ -157,25 +166,62 @@ class ReadyDispatcherTests(unittest.TestCase):
         self.tick(j); self.tick(j)
         self.assertEqual(len(j.comments), 1, "one comment, no matter how many passes")
 
-    def test_with_an_ops_team_the_brief_is_requested_from_it_once(self):
+    def test_a_missing_brief_asks_the_po_through_one_priority_request(self):
         self.with_ops()
         j = FakeJira([issue("KAN-507", description="Make it nicer.", labels=["cap:frontend"])])
-        out = self.tick(j)
-        self.assertEqual((out[0]["action"], out[0]["ops"]), ("needs-brief", "habu"))
-        self.assertTrue(self.sent[0]["text"].startswith("THEBES_BRIEF_REQUEST KAN-507"))
-        self.assertIsNone(self.sent[0]["ticket"], "a brief request does not move the ticket")
+        self.tick(j)
+        self.assertEqual(self.sent, [], "the brief is not Memphis's job any more (D-042)")
+        self.tick(j)
+        reqs = store.read_all("priority_request")
+        self.assertEqual(len(reqs), 1, "one open request, reasons merged")
+        self.assertEqual({r["key"] for r in reqs[0]["reasons"] if r["kind"] == "needs-brief"},
+                         {"KAN-507"})
         self.assertIn(rd.BRIEF_REQUESTED, j.issues[0]["fields"]["labels"])
-        self.tick(j)
-        self.assertEqual(len(self.sent), 1, "asked once")
+        from agent.execution import inbox
+        items = inbox.collect(ORCH, state_store=store)
+        self.assertEqual([(i["kind"], i["needs_brief"]) for i in items],
+                         [("priority", ["KAN-507"])])
+        self.assertEqual(inbox.collect(ORCH, state_store=store), [], "collected once")
 
-    def test_a_labelled_ticket_is_asked_for_a_brief_once_ops_exists(self):
-        j = FakeJira([issue("KAN-508", description="Nicer.", labels=["cap:frontend"])])
-        self.tick(j)
-        self.assertEqual(self.sent, [], "no ops team yet")
-        self.with_ops()
-        self.tick(j)
-        self.assertEqual(len(self.sent), 1)
-        self.assertEqual(len(j.comments), 1, "no second comment")
+    def test_backlog_changes_ask_the_pm_at_most_hourly(self):
+        j = FakeJira([], backlog=["KAN-600", "KAN-601"])
+        out = self.tick(j)
+        req = [d for d in out if d.get("action") == "priority-request"][0]
+        self.assertEqual(set(req["reasons"]), {"backlog-changed", "ready-short"})
+        from agent.execution import inbox
+        inbox.collect(ORCH, state_store=store)
+        j.backlog.append("KAN-602")
+        self.assertFalse([d for d in self.tick(j) if d.get("action") == "priority-request"],
+                         "rate-limited within the hour")
+        later = __import__("time").time() + rd.PRIORITY_MIN_SECONDS + 5
+        out = rd.tick(state_store=store, jira=j, dispatch=self.dispatch, now=later)
+        self.assertTrue([d for d in out if d.get("action") == "priority-request"])
+
+    def test_the_owner_team_gets_its_domain_first(self):
+        j = FakeJira([issue("KAN-610", labels=["cap:frontend"], component="Listings"),
+                      issue("KAN-611", labels=["cap:frontend"])])
+        out = self.tick(j)
+        got = {d["key"]: d["team"] for d in out if d.get("action") == "dispatched"}
+        self.assertEqual(got["KAN-610"], "luxor", "Listings is Luxor's although Karnak is first")
+        self.assertEqual(got["KAN-611"], "karnak")
+
+    def test_a_fresh_owned_ticket_waits_for_its_busy_owner_then_anyone_takes_it(self):
+        j = FakeJira([issue("KAN-620", labels=["cap:frontend"], component="Auth")])
+        self.dispatch("x", KARNAK, {}, store, True, "KAN-999", "frontend")   # Karnak busy
+        j.fresh = {"KAN-620"}
+        out = self.tick(j)
+        self.assertEqual(out[0], {"key": "KAN-620", "action": "waiting",
+                                  "reason": "owner-busy:karnak"})
+        j.fresh = set()                                    # 30 minutes later
+        out = self.tick(j)
+        self.assertEqual((out[0]["action"], out[0]["team"]), ("dispatched", "luxor"))
+
+    def test_teams_cannot_reserve_the_po_or_the_pm(self):
+        with self.assertRaises(store.StateError) as ctx:
+            store.reserve_seat("po", "karnak", "cdispatch-x")
+        self.assertIn("orchestrator-only-seat", str(ctx.exception))
+        with self.assertRaises(store.StateError):
+            store.reserve_seat("pm", "luxor", "cdispatch-x")
 
     def test_no_capability_means_needs_brief(self):
         j = FakeJira([issue("KAN-509")])

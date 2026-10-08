@@ -1,5 +1,5 @@
 {
-  "seat_count": 29,
+  "seat_count": 32,
   "seats": {
     "analyst": {
       "role": "analyst",
@@ -143,6 +143,21 @@
     },
     "po-2": {
       "role": "po",
+      "model": "sonnet",
+      "effort": "medium"
+    },
+    "ux-engineer-3": {
+      "role": "ux-engineer",
+      "model": "sonnet",
+      "effort": "medium"
+    },
+    "ux-engineer-4": {
+      "role": "ux-engineer",
+      "model": "sonnet",
+      "effort": "medium"
+    },
+    "ux-engineer-5": {
+      "role": "ux-engineer",
       "model": "sonnet",
       "effort": "medium"
     }

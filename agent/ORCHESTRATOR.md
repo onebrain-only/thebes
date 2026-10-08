@@ -135,6 +135,22 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
   no new scenarios. Then record it with the `how` command in the item
   (`verify verdict <id> --pass C2 --fail C3:"reason"`); a pass closes the ticket, a fail
   sends only that check back to the team.
+- **`priority`** (D-042): the board needs the PM or a PO. Run them **in the background**
+  (Agent tool, `run_in_background`), so you stay free for the CEO. The PM and the POs are the
+  only seats you run; teams can never reserve them.
+  - `needs_brief`: run the PO of each ticket's project (`po` = app, `po-2` = design system)
+    to write the brief into the Jira description and remove the `needs-brief` and
+    `brief-requested` labels. The dispatcher then sends it by itself.
+  - `board`: run the **PM**. It reads its decision ledger and memory first, then re-ranks
+    the Backlog (new tickets, returned work, new sub-tasks), sets a domain component
+    (Auth, Listings, Social, Money, Platform) and an **Original estimate** on each, and
+    moves only what the free teams can take into Ready, in rank order. When it needs a
+    technical, product or experience ruling it asks the cto, cpo or cxo; you run that seat
+    and hand the answer back in the same round.
+  - A PO that is stuck asks the PM first; the PM must have the answer or get it.
+  - **Every ruling you obtain** from cpo, cto, cxo or the CEO goes into the PM's ledger at
+    once: `python3 -m agent.execution.pm_ledger add --by <who> --ref <ticket> --text "<one
+    line>"`. Answers through the decision gate are logged by code.
 - **`alert`**: the watchdog says a team stopped (usage limit, crash, lost connection) after
   one automatic resume, or a delivery failed. Tell the CEO immediately in one or two plain
   sentences: what stopped, what Thebes tried, the one thing that would unblock it.

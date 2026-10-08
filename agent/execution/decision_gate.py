@@ -547,6 +547,12 @@ def answer(request_id, answer_text, *, env=None, state_store=store, resume=None)
     except state_store.StateError as exc:
         raise Refused("decision-request-not-open", "lost the race: %s" % exc)
     state_store.release_seat_reservations(request_id, "decision-answered")
+    try:                                     # D-042: the PM knows every ruling
+        from agent.execution import pm_ledger
+        pm_ledger.add(req.get("accountable_role") or "orchestrator",
+                      req.get("origin_dispatch_id"), answer_text, state_store=state_store)
+    except Exception:                        # noqa: BLE001  the ledger never blocks an answer
+        pass
     cont = _resume_asker(req, answer_text, state_store=state_store, resume=resume)
     return {"status": "answered", "decision_request_id": request_id, "continuation": cont}
 

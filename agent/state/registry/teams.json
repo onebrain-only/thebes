@@ -1,7 +1,7 @@
 {
  "record_type": "team_registry",
  "schema_version": 1,
- "note": "CEO 2026-10-01. A team is an execution island: ONE persistent Claude session that runs seats as subagents inside itself. Teams are generic, not per project — one request may cross the design system and the app in one island when the work has a dependency. Seats are a shared pool: a seat runs in at most one team at a time (seat_reservation), and a team borrows a free seat rather than waiting. One Codex Listener conversation controls every team. Teams are named after temples, as seats are named after deities (NAMING.csv).",
+ "note": "CEO 2026-10-01. A team is an execution island: ONE persistent Claude session that runs seats as subagents inside itself. Teams are generic, not per project — one request may cross the design system and the app in one island when the work has a dependency. Seats are a shared pool: a seat runs in at most one team at a time (seat_reservation), and a team borrows a free seat rather than waiting. One Codex Listener conversation controls every team. Teams are named after temples, as seats are named after deities (NAMING.csv). D-042 (CEO 2026-10-09): each code team OWNS one Jira component (its domain): owned tickets go to it first and wait for it up to 30 minutes, then any free team may take them; with nothing owned to do, a team takes other work.",
  "teams": {
   "orchestrator": {
    "number": 0,
@@ -11,23 +11,38 @@
   },
   "karnak": {
    "number": 1,
-   "display_name": "Karnak"
+   "display_name": "Karnak",
+   "owns": [
+    "Auth"
+   ]
   },
   "habu": {
    "number": 2,
-   "display_name": "Habu"
+   "display_name": "Habu",
+   "owns": [
+    "Social"
+   ]
   },
   "luxor": {
    "number": 3,
-   "display_name": "Luxor"
+   "display_name": "Luxor",
+   "owns": [
+    "Listings"
+   ]
   },
   "ramesseum": {
    "number": 4,
-   "display_name": "Ramesseum"
+   "display_name": "Ramesseum",
+   "owns": [
+    "Money"
+   ]
   },
   "deir-el-bahari": {
    "number": 5,
-   "display_name": "Deir el-Bahari"
+   "display_name": "Deir el-Bahari",
+   "owns": [
+    "Platform"
+   ]
   },
   "memphis": {
    "number": 6,

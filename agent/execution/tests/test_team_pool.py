@@ -156,17 +156,17 @@ class TeamPoolTests(unittest.TestCase):
         self.assertEqual(self.clean(), [])
 
     def test_a_hold_whose_work_has_settled_is_reaped_on_the_next_reserve(self):
-        """Live 2026-10-02: po stayed held after its work settled; a CEO order was refused."""
+        """Live 2026-10-02: a seat stayed held after its work settled; a later order was refused."""
         dk = self.open_dispatch(KARNAK, "karnak")
-        tp.reserve("po", dk["dispatch_id"], env={"CLAUDE_CODE_SESSION_ID": KARNAK},
+        tp.reserve("cto", dk["dispatch_id"], env={"CLAUDE_CODE_SESSION_ID": KARNAK},
                    state_store=store)
         # settle the dispatch WITHOUT the normal release (the leak)
         cur = store.read("conversation_dispatch", dk["dispatch_id"])
         store.update("conversation_dispatch", dk["dispatch_id"], cur["revision"],
                      {"status": "withdrawn", "withdrawn_at": store.now()})
-        self.assertIsNotNone(store.active_seat_reservation("po"), "the leak, reproduced")
+        self.assertIsNotNone(store.active_seat_reservation("cto"), "the leak, reproduced")
         dl = self.open_dispatch(LUXOR, "luxor")
-        out = tp.reserve("po", dl["dispatch_id"], env={"CLAUDE_CODE_SESSION_ID": LUXOR},
+        out = tp.reserve("cto", dl["dispatch_id"], env={"CLAUDE_CODE_SESSION_ID": LUXOR},
                          state_store=store)
         self.assertEqual(out["status"], "reserved", "the stale hold is reaped, not obeyed")
         reaped = [r for r in store.read_all("seat_reservation")
@@ -174,19 +174,15 @@ class TeamPoolTests(unittest.TestCase):
         self.assertEqual(len(reaped), 1)
         self.assertEqual(self.clean(), [])
 
-    def test_a_second_po_is_offered_when_po_is_held(self):
-        """D-037: more than one PO, so a held po never stops the board."""
+    def test_teams_never_hold_a_po_or_the_pm(self):
+        """D-042: the PM and the POs run only in the orchestrator, so a team can never keep
+        one busy while another team (or the board) needs it."""
         dk = self.open_dispatch(KARNAK, "karnak")
-        dl = self.open_dispatch(LUXOR, "luxor")
-        tp.reserve("po", dk["dispatch_id"], env={"CLAUDE_CODE_SESSION_ID": KARNAK},
-                   state_store=store)
-        with self.assertRaises(tp.Refused) as ctx:
-            tp.reserve("po", dl["dispatch_id"], env={"CLAUDE_CODE_SESSION_ID": LUXOR},
-                       state_store=store)
-        self.assertIn("po-2", str(ctx.exception))
-        self.assertEqual(tp.reserve("po-2", dl["dispatch_id"],
-                                    env={"CLAUDE_CODE_SESSION_ID": LUXOR},
-                                    state_store=store)["status"], "reserved")
+        for seat in ("po", "po-2", "pm"):
+            with self.assertRaises(tp.Refused) as ctx:
+                tp.reserve(seat, dk["dispatch_id"], env={"CLAUDE_CODE_SESSION_ID": KARNAK},
+                           state_store=store)
+            self.assertEqual(ctx.exception.code, "orchestrator-only-seat", seat)
 
     def test_status_lists_direct_seat_sessions_for_direct_orders(self):
         seats = {s["seat_id"]: s for s in tp.status(store)["direct_seats"]}

@@ -12,10 +12,14 @@ Ready tickets and, for each one it can place:
     dispatch        conversation_dispatch with --ticket, origin = the orchestrator session,
                     so results reach the orchestrator's inbox exactly as before
 
-A ticket it cannot place is never retried in a loop: an incomplete brief gets ONE comment
-and the label `needs-brief`; when an ops team exists, one brief request is sent to it,
-whose po writes the brief and removes the label. The label is the state; removing it
-makes the ticket eligible again.
+Ownership (D-042): a code ticket whose component a team owns goes to that team first; a fresh
+one waits up to 30 minutes for its busy owner, then any free team takes it. Owners take their
+domain first, in the PM's rank order.
+
+A ticket it cannot place is never retried in a loop: an incomplete brief gets ONE comment and
+the label `needs-brief`. The board's needs are raised as one `priority_request` for the
+orchestrator's inbox, which runs the project's PO (briefs) and the PM (re-ranking Backlog into
+Ready). Labels are the state; removing `needs-brief` makes a ticket eligible again.
 
 Stops dispatching (and says why) when the operating mode is not PRODUCT_EXECUTION, a
 FREEZE is active, or MAX_PARALLEL code dispatches are already open.
@@ -39,7 +43,11 @@ from agent.state import store, teams                                   # noqa: E
 INTERVAL = 60
 MAX_PARALLEL = 3
 JQL = 'project = KAN AND status = "Ready" ORDER BY rank ASC'
-FIELDS = ["summary", "status", "labels", "description", "issuelinks", "duedate"]
+FIELDS = ["summary", "status", "labels", "description", "issuelinks", "duedate", "components",
+          "timeoriginalestimate"]
+OWNER_WAIT = "-30m"
+FRESH_JQL = ('project = KAN AND status = "Ready" AND status CHANGED TO "Ready" AFTER %s'
+             % OWNER_WAIT)
 CODE_CAPABILITIES = ("frontend", "backend", "ux-engineer", "product-designer")
 CAP_LABEL = re.compile(r"^cap:([a-z-]+)$")
 NEEDS_BRIEF = "needs-brief"
@@ -115,10 +123,20 @@ def free_team(lane, state_store=store):
     return None, None
 
 
+def effort_line(seconds):
+    """The PM's Original estimate (D-042), as the team reads it."""
+    if not seconds:
+        return "Expected effort: not estimated."
+    hours = seconds / 3600.0
+    return "Expected effort (PM's Original estimate): %s." % (
+        "%dh" % hours if hours == int(hours) else "%.1fh" % hours)
+
+
 def prompt_for(issue, team_id):
     body = fill_branch(issue.get("description") or "", team_id)
     return "\n".join([
         "Jira %s: %s" % (issue["key"], issue.get("summary") or ""),
+        effort_line(issue.get("estimate_seconds")),
         "Source: the ticket description, dispatched by the Thebes Ready dispatcher (D-042).",
         "Every commit message starts with `%s:`." % issue["key"],
         "",
@@ -132,40 +150,58 @@ def _label(jira, key, labels, add):
     jira.update_issue(key, {"labels": list(labels) + [add]})
 
 
-def _request_brief(issue, problems, jira, state_store, dispatch, now, comment=True):
-    """One comment + label; one brief request to ops if an ops team is free. Labels are
-    the state: `needs-brief` (incomplete) and `brief-requested` (a PO has been asked)."""
+def _flag_brief(issue, problems, jira, comment=True):
+    """One comment and the `needs-brief` label. The project's PO (run by the
+    orchestrator, D-042) is asked through a priority request; the label is the state."""
     key = issue["key"]
     if comment:
         jira.add_comment(key, "Thebes Ready dispatcher: this ticket is in Ready but its brief "
-                              "is incomplete, so it was not dispatched.\n\nMissing: %s\n\nA "
-                              "PO writes the brief into the description and removes the `%s` "
-                              "label; the ticket is then picked up automatically."
+                              "is incomplete, so it was not dispatched.\n\nMissing: %s\n\nThe "
+                              "project's PO writes the brief into the description and removes "
+                              "the `%s` label; the ticket is then picked up automatically."
                          % ("; ".join(problems), NEEDS_BRIEF))
-    labels = list(issue.get("labels") or [])
-    _label(jira, key, labels, NEEDS_BRIEF)
-    labels = labels if NEEDS_BRIEF in labels else labels + [NEEDS_BRIEF]
-    tid, sid = free_team("ops", state_store)
-    if not tid:
-        return {"key": key, "action": "needs-brief", "problems": problems, "ops": "none-free"}
-    text = "\n".join([
-        "THEBES_BRIEF_REQUEST %s" % key,
-        "Ticket %s is in Ready without a complete brief. Run po as a subagent to write it." % key,
-        "Read the ticket and the code it concerns. Rewrite the Jira description so it carries, "
-        "one per line: GOAL, BRANCH (`<base>-<team>`, e.g. alpha-<team>), ALLOWED PATHS, "
-        "FORBIDDEN, DECISIONS MADE, IF BLOCKED, CHECKS (`C1 | run | <flutter/dart test or "
-        "analyze command> | exit 0`, or `| judge |` only where an eye must decide). Keep the "
-        "acceptance criteria. Check every path and command exists on the base branch.",
-        "Validate before saving: python3 -m agent.execution.dispatch_brief lint --file <draft> "
-        "--team <any team id>",
-        "Then remove the label `%s`. Do not change the status; do not implement anything."
-        % NEEDS_BRIEF,
-        "Missing now: %s" % "; ".join(problems),
-    ])
-    out = dispatch(text, sid, ticket=None, lane_capability=None)
-    _label(jira, key, labels, BRIEF_REQUESTED)
-    return {"key": key, "action": "needs-brief", "problems": problems,
-            "ops": tid, "dispatch_id": out.get("dispatch_id")}
+    _label(jira, key, issue.get("labels") or [], NEEDS_BRIEF)
+    return {"key": key, "action": "needs-brief", "problems": problems}
+
+
+# ------------------------------------------------------------------ priority requests
+PRIORITY_MIN_SECONDS = 3600      # the PM re-plans at most hourly unless a brief is needed
+BACKLOG_JQL = 'project = KAN AND status = "To Do" ORDER BY rank ASC'
+
+
+def _ts(stamp):
+    import calendar
+    try:
+        return calendar.timegm(time.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ"))
+    except (TypeError, ValueError):
+        return 0
+
+
+def raise_priority_request(reasons, signature, *, state_store=store, now=None):
+    """One open request at a time: new reasons join the open one. Backlog reasons are
+    rate-limited to one request per PRIORITY_MIN_SECONDS; brief reasons are not."""
+    now = now or time.time()
+    reqs = sorted(state_store.read_all("priority_request"), key=lambda r: r.get("created_at") or "")
+    open_req = next((r for r in reqs if r.get("status") == "open"), None)
+    last = reqs[-1] if reqs else None
+    if last and last.get("backlog_signature") == signature:
+        reasons = [r for r in reasons if r.get("kind") != "backlog-changed"]
+    if last and now - _ts(last.get("created_at")) < PRIORITY_MIN_SECONDS:
+        reasons = [r for r in reasons if r.get("kind") == "needs-brief"]
+    if not reasons:
+        return None
+    if open_req:
+        known = {json.dumps(r, sort_keys=True) for r in open_req["reasons"]}
+        merged = open_req["reasons"] + [r for r in reasons
+                                        if json.dumps(r, sort_keys=True) not in known]
+        if len(merged) == len(open_req["reasons"]):
+            return None
+        return state_store.update("priority_request", open_req["priority_request_id"],
+                                  open_req["revision"],
+                                  {"reasons": merged, "backlog_signature": signature})
+    return state_store.create("priority_request", {
+        "reasons": reasons, "status": "open", "backlog_signature": signature,
+        "collected_at": None})
 
 
 def tick(*, state_store=store, jira=None, dispatch=None, now=None):
@@ -189,20 +225,29 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None):
                                          detach=True, ticket=ticket,
                                          lane_capability=lane_capability)
 
-    done = []
-    open_keys = {r.get("jira_key") for r in open_dispatches(state_store)}
-    code_open = sum(1 for r in open_dispatches(state_store)
+    done, brief_reasons = [], []
+    opened = open_dispatches(state_store)
+    open_keys = {r.get("jira_key") for r in opened}
+    code_open = sum(1 for r in opened
                     if teams.read().get(r.get("target_seat_id"), {}).get("lane", "code") == "code")
+    try:
+        fresh = {i["key"] for i in jira.search_issues(FRESH_JQL, fields=["status"], limit=100)}
+    except Exception:                                   # noqa: BLE001
+        fresh = set()
+
+    candidates = []
     for issue_raw in jira.search_issues(JQL, fields=FIELDS, limit=50, raw=True):
         issue = jira.normalize_issue(issue_raw)
+        issue["components"] = [c.get("name") for c in
+                               ((issue_raw.get("fields") or {}).get("components") or [])]
+        issue["estimate_seconds"] = (issue_raw.get("fields") or {}).get("timeoriginalestimate")
         key = issue["key"]
         if key in open_keys:
             continue
         if NEEDS_BRIEF in issue["labels"]:
-            # Waiting for a PO; the labels are the state. Ask once an ops team exists.
-            if BRIEF_REQUESTED not in issue["labels"] and free_team("ops", state_store)[0]:
-                done.append(_request_brief(issue, ["see the earlier Thebes comment"], jira,
-                                           state_store, send, now, comment=False))
+            if BRIEF_REQUESTED not in issue["labels"]:
+                brief_reasons.append({"kind": "needs-brief", "key": key})
+                _label(jira, key, issue["labels"], BRIEF_REQUESTED)
             continue
         waiting = blockers((issue_raw.get("fields") or {}).get("issuelinks"), jira)
         if waiting:
@@ -210,10 +255,9 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None):
             continue
         cap = capability_of(issue, state_store)
         if not cap:
-            done.append(dict(_request_brief(issue, ["capability: unknown — add label "
-                                                    "`cap:<capability>` or record it with "
-                                                    "agent.state.ready"], jira, state_store,
-                                            send, now)))
+            done.append(_flag_brief(issue, ["capability: unknown — add label "
+                                            "`cap:<capability>` or record it with "
+                                            "agent.state.ready"], jira))
             continue
         task = state_store.read("task", key)
         if task:
@@ -221,31 +265,86 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None):
             if why:
                 done.append({"key": key, "action": "held", "reason": why})
                 continue
-        lane = lane_of(issue, cap)
-        if lane == "code" and code_open >= MAX_PARALLEL:
-            done.append({"key": key, "action": "waiting", "reason": "max-parallel"})
-            continue
-        tid, sid = free_team(lane, state_store)
-        if not tid:
-            done.append({"key": key, "action": "waiting", "reason": "no-free-%s-team" % lane})
-            continue
-        text = prompt_for(issue, tid)
-        try:
-            dispatch_brief.lint(text, tid)
-        except dispatch_brief.BriefError as exc:
-            done.append(_request_brief(issue, exc.problems, jira, state_store, send, now))
-            continue
-        try:
-            out = send(text, sid, key, cap)
-        except cd.Refused as exc:
-            done.append({"key": key, "action": "refused", "code": exc.code,
-                         "error": str(exc)[:300]})
-            continue
-        open_keys.add(key)
-        if lane == "code":
-            code_open += 1
-        done.append({"key": key, "action": "dispatched", "team": tid,
-                     "dispatch_id": out.get("dispatch_id")})
+        candidates.append((issue, cap))
+
+    # Two passes (D-042): owners take their own domain first, in the PM's rank order;
+    # then the rest. A fresh owned ticket waits for its busy owner up to 30 minutes.
+    taken = set()
+    for pass_no in (1, 2):
+        for issue, cap in candidates:
+            key = issue["key"]
+            if key in taken:
+                continue
+            lane = lane_of(issue, cap)
+            owner = teams.owner_of(issue["components"]) if lane == "code" else None
+            if pass_no == 1 and not owner:
+                continue
+            if lane == "code" and code_open >= MAX_PARALLEL:
+                if pass_no == 2:
+                    done.append({"key": key, "action": "waiting", "reason": "max-parallel"})
+                continue
+            tid = sid = None
+            if owner:
+                sid_owner = (state_store.active_role_session(owner) or {}).get("session_id")
+                busy = {r["target_session_id"] for r in open_dispatches(state_store)}
+                if sid_owner and sid_owner not in busy:
+                    tid, sid = owner, sid_owner
+                elif pass_no == 1:
+                    continue
+                elif key in fresh:
+                    done.append({"key": key, "action": "waiting",
+                                 "reason": "owner-busy:%s" % owner})
+                    continue
+            if not tid:
+                tid, sid = free_team(lane, state_store)
+            if not tid:
+                if pass_no == 2:
+                    done.append({"key": key, "action": "waiting",
+                                 "reason": "no-free-%s-team" % lane})
+                continue
+            text = prompt_for(issue, tid)
+            try:
+                dispatch_brief.lint(text, tid)
+            except dispatch_brief.BriefError as exc:
+                taken.add(key)
+                done.append(_flag_brief(issue, exc.problems, jira))
+                brief_reasons.append({"kind": "needs-brief", "key": key})
+                continue
+            try:
+                out = send(text, sid, key, cap)
+            except cd.Refused as exc:
+                taken.add(key)
+                done.append({"key": key, "action": "refused", "code": exc.code,
+                             "error": str(exc)[:300]})
+                continue
+            taken.add(key)
+            if lane == "code":
+                code_open += 1
+            done.append({"key": key, "action": "dispatched", "team": tid,
+                         "owner": owner, "dispatch_id": out.get("dispatch_id")})
+
+    # Ask the PM (and the POs) when the board needs them (D-042).
+    reasons = list(brief_reasons)
+    try:
+        backlog = jira.search_issues(BACKLOG_JQL, fields=["status", "updated"], limit=100)
+        signature = "|".join("%s@%s" % (b["key"], b.get("updated")) for b in backlog)
+        ready_left = len(candidates) - len(taken)
+        free_code = sum(1 for t in teams.lane_teams("code")
+                        if (state_store.active_role_session(t) or {}).get("session_id")
+                        not in {r["target_session_id"] for r in open_dispatches(state_store)}
+                        and state_store.active_role_session(t))
+        if backlog:
+            reasons.append({"kind": "backlog-changed", "count": len(backlog)})
+            if ready_left < free_code:
+                reasons.append({"kind": "ready-short", "ready": ready_left,
+                                "free_code_teams": free_code})
+        req = raise_priority_request(reasons, signature, state_store=state_store, now=now)
+        if req:
+            done.append({"action": "priority-request",
+                         "priority_request_id": req["priority_request_id"],
+                         "reasons": [r["kind"] for r in req["reasons"]]})
+    except Exception as exc:                            # noqa: BLE001
+        done.append({"action": "priority-request-failed", "error": str(exc)[:200]})
     return done
 
 

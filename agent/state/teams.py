@@ -42,8 +42,12 @@ def read(path=TEAMS_JSON):
         lane = entry.get("lane", "code")
         if lane not in ("code", "ops"):
             raise TeamRegistryError("team %r has unknown lane %r" % (team_id, lane))
+        owns = entry.get("owns", [])
+        if not isinstance(owns, list) or not all(isinstance(c, str) and c for c in owns):
+            raise TeamRegistryError("team %r: owns must be a list of Jira component names"
+                                    % team_id)
         teams[team_id] = {"number": entry["number"], "display_name": entry["display_name"],
-                          "kind": kind, "lane": lane}
+                          "kind": kind, "lane": lane, "owns": list(owns)}
     return teams
 
 
@@ -73,4 +77,15 @@ def lane_teams(lane, path=TEAMS_JSON):
     return {t: e for t, e in delivery_teams(path).items() if e.get("lane", "code") == lane}
 
 
+def owner_of(components, path=TEAMS_JSON):
+    """The team that owns any of these Jira components (D-042), or None."""
+    for tid, e in delivery_teams(path).items():
+        if set(e.get("owns") or []) & set(components or []):
+            return tid
+    return None
+
+
 ORCHESTRATOR_ID = "orchestrator"
+# Seats only the orchestrator layer runs (D-042): the PM and every PO. A team never
+# reserves them, so they are never busy inside a team when another team needs them.
+ORCHESTRATOR_ONLY_ROLES = ("po", "pm")

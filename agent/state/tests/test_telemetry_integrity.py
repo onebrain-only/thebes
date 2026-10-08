@@ -57,7 +57,8 @@ def fresh_runtime():
 
 
 ROSTER = {"frontend-1": "frontend", "frontend-2": "frontend",
-          "backend-1": "backend", "backend-2": "backend", "qa": "qa", "po": "po"}
+          "backend-1": "backend", "backend-2": "backend", "qa": "qa", "po": "po",
+          "po-2": "po"}
 
 
 def fresh_roster():

@@ -1717,6 +1717,15 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
         if rec.get("status") == "active" and rec.get("released_at"):
             errs.append("%s: an active reservation carries no released_at" % where)
 
+    elif kind == "priority_request":
+        _req(rec, ["priority_request_id", "reasons", "status"], errs, where)
+        if not str(rec.get("priority_request_id") or "").startswith("prio-"):
+            errs.append("%s: priority_request_id must start with prio-" % where)
+        if rec.get("status") not in ("open", "collected"):
+            errs.append("%s: priority request status must be open or collected" % where)
+        if not isinstance(rec.get("reasons"), list) or not rec["reasons"]:
+            errs.append("%s: a priority request names at least one reason" % where)
+
     elif kind == "decision_request":
         _req(rec, ["decision_request_id", "origin_dispatch_id", "origin_thread_id",
                    "origin_outcome", "asker_seat_id", "asker_session_id", "question_ref",
@@ -2034,7 +2043,8 @@ def check(runtime=None):
              "codex_turn_event": "codex-turn-events",
              "conversation_dispatch": "conversation-dispatches",
              "seat_reservation": "seat-reservations",
-             "decision_request": "decision-requests"}
+             "decision_request": "decision-requests",
+             "priority_request": "priority-requests"}
     seen_ids = {}
     active_seat_holds = {}
     active_primaries = []
@@ -2083,7 +2093,8 @@ def check(runtime=None):
                    "codex_turn_event": "event_id",
                    "conversation_dispatch": "dispatch_id",
                    "seat_reservation": "seat_reservation_id",
-                   "decision_request": "decision_request_id"}[kind]
+                   "decision_request": "decision_request_id",
+                   "priority_request": "priority_request_id"}[kind]
             rid = rec.get(idf)
             if kind == "seat_reservation" and rec.get("status") == "active":
                 prior = active_seat_holds.get(rec.get("seat_id"))

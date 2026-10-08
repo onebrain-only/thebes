@@ -155,7 +155,8 @@ class InboxTests(unittest.TestCase):
         self.assertEqual((out["status"], out["team_id"]), ("reserved", "orchestrator"))
         with self.assertRaises(tp.Refused) as ctx:
             tp.reserve("po-2", "ceo-x", env={"CLAUDE_CODE_SESSION_ID": KARNAK}, state_store=store)
-        self.assertEqual(ctx.exception.code, "not-your-dispatch")
+        self.assertEqual(ctx.exception.code, "orchestrator-only-seat",
+                         "D-042: a team never reserves a PO, whatever the work id")
         self.assertEqual(tp.release("po", "ceo-kan-348-ready", env={"CLAUDE_CODE_SESSION_ID": ORCH},
                                     state_store=store)["status"], "released")
         self.assertEqual(self.clean(), [])

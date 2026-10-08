@@ -191,11 +191,7 @@ def ops_block():
         "migration at a time, run its probes, stop at the first error and report it.",
         "integration: merge team branches into Alpha only, one at a time, after their "
         "verification passed. Canary and main are the CEO's; never push or merge them.",
-        "briefs: a THEBES_BRIEF_REQUEST asks you to write a ticket's brief. Write BRANCH as "
-        "`alpha-<team>` literally (the dispatcher fills in the receiving team; never a seat "
-        "name such as frontend-1). Run po; validate "
-        "with `python3 -m agent.execution.dispatch_brief lint`; update the Jira description; "
-        "remove the `needs-brief` and `brief-requested` labels. Never implement the ticket.",
+        "no po or pm: the PM and the POs run only in the orchestrator (D-042); ask there.",
     ]
 
 

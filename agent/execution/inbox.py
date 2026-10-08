@@ -132,6 +132,19 @@ def pending(session_id, *, state_store=store, now=None):
                     "escalated": (req or {}).get("escalation_reason") if req else None,
                     "error": rec.get("error") if rec.get("status") == "delivery_failed" else None,
                     "result": _read(rec.get("result_ref")), "_key": "result"})
+    for pr in state_store.read_all("priority_request"):
+        if pr.get("status") == "open":
+            briefs = [r["key"] for r in pr["reasons"] if r.get("kind") == "needs-brief"]
+            board = [r for r in pr["reasons"] if r.get("kind") != "needs-brief"]
+            out.append({"kind": "priority", "priority_request_id": pr["priority_request_id"],
+                        "needs_brief": briefs, "board": board,
+                        "how": ("D-042, run in the background. needs_brief: run the PO of each "
+                                "ticket's project (po = app, po-2 = design system) to write "
+                                "its brief and remove the needs-brief and brief-requested "
+                                "labels. board: run the PM to re-prioritise the Backlog "
+                                "(including returned work and new sub-tasks) and move what the "
+                                "free teams can take into Ready, in rank order, with an "
+                                "Original estimate and a domain component on each.")})
     for req in requests:
         if (req.get("status") == "open" and req.get("delivery") == "inbox"
                 and req.get("owner_session_id") == session_id
@@ -162,6 +175,13 @@ def collect(session_id, *, state_store=store, now=None):
         try:
             if item["kind"] == "decision":
                 taken.append(_collect_decision(item, state_store))
+                continue
+            if item["kind"] == "priority":
+                pr = state_store.read("priority_request", item["priority_request_id"])
+                state_store.update("priority_request", pr["priority_request_id"],
+                                   pr["revision"], {"status": "collected",
+                                                    "collected_at": state_store.now()})
+                taken.append(item)
                 continue
             rec = state_store.read("conversation_dispatch", item["dispatch_id"])
             seen = list(rec.get("inbox_seen") or [])
