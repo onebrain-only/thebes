@@ -17,15 +17,20 @@ for tid, t in sorted(teams.delivery_teams().items(), key=lambda kv: kv[1]["numbe
     if want and tid not in want:
         continue
     if not store.active_role_session(tid):
-        print(tid, t["display_name"])
+        print(tid, t.get("lane", "code"), t["display_name"])
 EOF
 )
 [ -z "$unbound" ] && { echo "Every requested team already has a session."; exit 0; }
 
-while read -r tid display; do
+while read -r tid lane display; do
   name="thebes-team-$tid"
-  echo "Starting $display ($name) ..."
-  claude --bg --name "$name" "You are Thebes team $display, an execution island. Read CLAUDE.md and agent/skills/route-to-seat/SKILL.md. Do nothing now. Reply with one line: $(echo "$display" | tr a-z A-Z) READY, then go idle. Later a THEBES_CONVERSATION_DISPATCH envelope will arrive as a user turn; follow its team and report instructions exactly." >/dev/null
+  echo "Starting $display ($name, lane $lane) ..."
+  if [ "$lane" = "ops" ]; then
+    role="the Thebes OPERATIONS team (D-042): the only team that applies database migrations, pushes, and integrates team branches into Alpha; you also answer questions and write ticket briefs, running seats as subagents"
+  else
+    role="a Thebes code team, an execution island that runs seats as subagents; you never write to the database or push"
+  fi
+  claude --bg --name "$name" "You are Thebes team $display, $role. Read CLAUDE.md and agent/skills/route-to-seat/SKILL.md. Do nothing now. Reply with one line: $(echo "$display" | tr a-z A-Z) READY, then go idle. Later a THEBES_CONVERSATION_DISPATCH envelope will arrive as a user turn; follow its team, lane and report instructions exactly." >/dev/null
   sid=""
   for _ in $(seq 1 30); do
     sid=$(claude agents --json 2>/dev/null | python3 -c "

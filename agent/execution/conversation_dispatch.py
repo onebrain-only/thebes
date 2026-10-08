@@ -169,7 +169,32 @@ def team_block(record):
         % (ROOT, record["dispatch_id"]),
         "report_shape: one report for the whole request — what each seat did, evidence (paths, "
         "commands, output), what is blocked or needs a decision, nothing else.",
-    ] + verify_block(record)
+    ] + (ops_block() if teams.read()[team_id].get("lane") == "ops" else [
+        "lane: you are a CODE team. You never write to the database, push or merge into a base "
+        "branch: a hook refuses it. A migration is SQL plus probes committed on your branch; "
+        "report `blocked` with `needs-ops: <migration file>` and the operations team applies it.",
+    ]) + verify_block(record)
+
+
+def ops_block():
+    """What the OPERATIONS team (Memphis, D-042) is told on every dispatch."""
+    return [
+        "lane: you are the OPERATIONS team (Memphis, D-042): the only team allowed to apply "
+        "Supabase migrations, push, and integrate team branches into Alpha. You run seats as "
+        "subagents: cto for migrations and schema, devops for integration and push, po for "
+        "briefs and acceptance, analyst / cpo / cxo for questions and analysis.",
+        "migrations: before applying, cto reviews the SQL and classifies it. A: additive or "
+        "CREATE OR REPLACE. B: DROP of a function, view or policy, only after checking that "
+        "origin/main and origin/Canary do not use the object (git grep). C: DROP TABLE/COLUMN, "
+        "DELETE/UPDATE of rows, TRUNCATE: apply ONLY if the ticket's AUTHORIZED line names this "
+        "exact migration; otherwise report outcome blocked with `needs-ceo`. Apply one "
+        "migration at a time, run its probes, stop at the first error and report it.",
+        "integration: merge team branches into Alpha only, one at a time, after their "
+        "verification passed. Canary and main are the CEO's; never push or merge them.",
+        "briefs: a THEBES_BRIEF_REQUEST asks you to write a ticket's brief. Run po; validate "
+        "with `python3 -m agent.execution.dispatch_brief lint`; update the Jira description; "
+        "remove the `needs-brief` and `brief-requested` labels. Never implement the ticket.",
+    ]
 
 
 def verify_block(record):
