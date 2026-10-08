@@ -83,17 +83,19 @@ def blockers(raw_links, jira):
     return out
 
 
+BASES = ("alpha", "canary", "main")
+
+
 def fill_branch(text, team_id):
-    """`BRANCH: alpha-<team>` → `BRANCH: alpha-karnak`. A branch already naming a team
-    keeps its base and takes this team, so a re-dispatch never reuses another team's branch."""
+    """A team branch is always `<base>-<team>` (D-041): `BRANCH: alpha-<team>`,
+    `alpha-karnak` or a stray `alpha-frontend-1` all become `alpha-<this team>`, so a
+    dispatch never works on another team's (or a seat's) branch. `none` stays `none`."""
     def repl(m):
         branch = m.group(2).strip().split()[0] if m.group(2).strip() else ""
         if not branch or branch.lower() == "none":
             return m.group(0)
-        base = branch.replace("<team>", "").rstrip("-")
-        for t in teams.delivery_teams():
-            if base.endswith("-" + t):
-                base = base[:-(len(t) + 1)]
+        head = branch.split("-")[0]
+        base = head if head.lower() in BASES else branch.replace("<team>", "").rstrip("-")
         return "%s%s-%s" % (m.group(1), base, team_id)
     return re.sub(r"(?im)^(BRANCH:\s*)(\S.*)$", repl, text)
 

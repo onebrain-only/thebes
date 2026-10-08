@@ -122,13 +122,19 @@ def _move(ticket, target, jira, state_store):
 
 def _note(record, phase, outcome, state_store, alert=True):
     """Record what happened on the dispatch; alert the origin on failure."""
-    cur = state_store.read("conversation_dispatch", record["dispatch_id"])
-    sync = dict(cur.get("jira_sync") or {})
-    sync[phase] = dict(outcome, at=state_store.now())
-    try:
-        cur = state_store.update("conversation_dispatch", cur["dispatch_id"], cur["revision"],
-                                 {"jira_sync": sync})
-    except state_store.StateError:
+    # Verification and the report write the same record within seconds of each other
+    # (live 2026-10-09: the `finish` note was lost to that race), so retry the CAS.
+    for _ in range(5):
+        cur = state_store.read("conversation_dispatch", record["dispatch_id"])
+        sync = dict(cur.get("jira_sync") or {})
+        sync[phase] = dict(outcome, at=state_store.now())
+        try:
+            cur = state_store.update("conversation_dispatch", cur["dispatch_id"],
+                                     cur["revision"], {"jira_sync": sync})
+            break
+        except state_store.StateError:
+            continue
+    else:
         return
     if alert and outcome.get("status") == "failed":
         from agent.execution import watchdog

@@ -205,6 +205,10 @@ class ReadyDispatcherTests(unittest.TestCase):
         self.assertIn("BRANCH: alpha-luxor", rd.fill_branch("BRANCH: alpha-<team>", "luxor"))
         self.assertIn("BRANCH: alpha-luxor", rd.fill_branch("BRANCH: alpha-karnak", "luxor"))
         self.assertIn("BRANCH: none", rd.fill_branch("BRANCH: none", "luxor"))
+        self.assertIn("BRANCH: alpha-karnak", rd.fill_branch("BRANCH: alpha-frontend-1", "karnak"),
+                      "live 2026-10-09: a seat name in the branch became alpha-frontend-1-karnak")
+        self.assertIn("BRANCH: Alpha-luxor", rd.fill_branch("BRANCH: Alpha-<team> (team branch)",
+                                                            "luxor"))
 
 
 if __name__ == "__main__":
