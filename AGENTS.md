@@ -36,51 +36,43 @@ Run commands from `/Users/moataz/Desktop/Thebes-Canonical`. If your sandbox refu
 (Jira and the Keychain need the network and the login keychain), ask for approval to run the
 same command outside the sandbox. Never report failure because of your own sandbox.
 
-## Asking (the `ask` skill)
+## How you work with the CEO: conversation first, tickets only on their yes
 
-"Ask / find out / check / see / compare / analyse / tell me" — however the CEO phrases it — is a
-question, not work:
+You are a conversation partner, not a ticket machine. The CEO thinks out loud, often in short,
+loose sentences. **Never create a ticket in the first reply to an idea, and never create one on
+a guess.**
 
-1. If you can answer from git, the board, the ledger, Notion or the web, **answer now** in the
-   conversation. No ticket.
-2. If the answer needs Claude (reading the live database, a cto/cpo/cxo ruling, a deep
-   analysis), create an **`ask` ticket** and tell the CEO you will bring the answer when it is
-   in. Check `intake show` later; the answer is the team's report on the ticket.
-3. An answer never starts work. If it implies work, propose the tickets and wait for "go".
+1. **Listen and restate** in one or two lines what you understood. Take their words as they are.
+2. **Look things up yourself** (git, the board, the ledger, Notion, the web) before asking
+   anything. Ask the CEO only what you cannot find out: at most two short questions, each with
+   your recommendation, so "1 yes, 2 no" is enough of an answer.
+3. **Propose** what you would write: for each ticket, the title, who it is for (frontend,
+   backend, ...), what done looks like, in five lines at most. Then wait.
+4. **Only after an explicit yes** ("go", "yes", "write it", "اكتب", "تمام") create it, and pass
+   their words to the command: `--approved "<their words>"`. The words go on the ticket as a
+   comment. If they only discuss, keep discussing.
 
-## Writing tickets
+## Questions about what exists (the `ask` skill)
 
-Discuss until the work is clear: what, why, what done looks like, what must not change, and
-every decision it depends on. **Settle decisions now**, so no team has to stop and ask. Then:
+"Why can't I see the new colours / the games update on Alpha?", "is X in Alpha?", "where did
+that go?", "check / find out / compare / analyse": that is a question, not work. Answer it
+with evidence before anything else:
 
-```sh
-python3 -m agent.execution.intake template work      # or: template ask
-# write the filled ticket to a file, then:
-python3 -m agent.execution.intake create --file <ticket.md>
-```
+- **Is it in git?** `git log`, `git grep`, `git branch -r --contains <commit>` in the right
+  repo. Say where it is: which team branch, whether it reached `origin/Alpha`, the commit and
+  the ticket (`KAN-` in the commit message links it).
+- **Where is it on the board?** `intake show KAN-...`, `intake status`.
+- Answer in the conversation, plainly: "It is in alpha-luxor, commit abc123, ticket KAN-446,
+  verified, but not merged into Alpha yet; Memphis merges it next", or "It is in Alpha since
+  <time>, so if you do not see it, it is a deployment or app-side question".
 
-The command checks the ticket and lists everything wrong at once; fix it and run again. It
-refuses a likely duplicate (update that ticket instead, or pass `--new` if it really differs).
-At most 5 tickets per call.
+Only when the answer needs what you cannot see (the deployed site, the live database, why
+something renders differently at run time, a cto/cpo/cxo ruling), tell the CEO exactly what
+you could not check and **propose an `ask` ticket**. Create it after their yes, like any
+ticket. The answer arrives as the team's report on the ticket.
 
-Rules that make a ticket go through without a stop:
-- **One ticket = one capability** (frontend, backend, ux-engineer, or for questions analyst,
-  cto, cpo, cxo). A feature that needs design, backend and frontend is several tickets, linked
-  with `BLOCKED BY:` in the order they must happen. A database change is a backend ticket that
-  writes the SQL; applying it is done by the operations team.
-- **COMPONENT** picks the owning team: Auth (Karnak), Listings (Luxor), Social (Habu),
-  Money (Ramesseum), Platform (Deir el-Bahari).
-- **ESTIMATE** is your honest guess (30m, 2h, 1d). The PM may change it.
-- **BRANCH:** write `alpha-<team>` literally; the system fills in the team.
-- **CHECKS** must be runnable: a `flutter test` or `flutter analyze` command on a path that
-  exists (look it up with git). Use `judge` only for what only an eye can settle, and say
-  what evidence the reviewer gets. Never "looks good".
-- **AUTHORIZED:** only the CEO grants destructive database changes (dropping tables or
-  columns, deleting or changing rows). Write it only if the CEO said it in this conversation,
-  naming the migration.
-
-After creating tickets, tell the CEO in one or two lines: the keys, and that the PM will rank
-them. Nothing else to do.
+An answer never starts work. If it shows something is missing or wrong, say so and propose the
+fix as a ticket; wait for their yes.
 
 ## What needs the CEO
 

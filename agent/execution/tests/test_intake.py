@@ -55,6 +55,10 @@ Acceptance criteria:
 class FakeJira:
     def __init__(self, open_issues=()):
         self.open_issues, self.created, self.links = list(open_issues), [], []
+        self.comments = []
+
+    def add_comment(self, key, text):
+        self.comments.append((key, text))
 
     def search_issues(self, jql, fields=None, limit=50, raw=False):
         return self.open_issues
@@ -72,7 +76,7 @@ class FakeJira:
 class IntakeTests(unittest.TestCase):
     def test_a_good_work_ticket_lands_in_backlog_with_its_labels_component_and_estimate(self):
         j = FakeJira()
-        out = intake.create(GOOD, jira=j)
+        out = intake.create(GOOD, approval="yes, write it", jira=j)
         self.assertEqual((out["status"], out["where"]), ("created", "Backlog (To Do)"))
         c = j.created[0]
         self.assertEqual(c["labels"], ["intake", "cap:frontend"])
@@ -81,9 +85,19 @@ class IntakeTests(unittest.TestCase):
         self.assertTrue(c["description"].startswith("GOAL:"), "the header is not in the ticket")
         self.assertEqual(j.links, [("KAN-12", "KAN-900")])
 
+    def test_a_ticket_is_never_created_without_the_ceos_own_yes(self):
+        j = FakeJira()
+        for bad in (None, "", " ", "x"):
+            with self.assertRaises(intake.IntakeError) as ctx:
+                intake.create(GOOD, approval=bad, jira=j)
+            self.assertIn("wait for their yes", ctx.exception.problems[0])
+        self.assertEqual(j.created, [])
+        intake.create(GOOD, approval="yes, write it", jira=j)
+        self.assertIn("yes, write it", j.comments[0][1], "the quote is on the ticket")
+
     def test_an_ask_needs_no_component_and_is_labelled_ask(self):
         j = FakeJira()
-        intake.create(ASK, jira=j)
+        intake.create(ASK, approval="go", jira=j)
         self.assertEqual(j.created[0]["labels"], ["intake", "cap:analyst", "ask"])
         self.assertIsNone(j.created[0]["components"])
 
@@ -94,7 +108,7 @@ class IntakeTests(unittest.TestCase):
                   .replace("Acceptance criteria:", "Notes:")
         j = FakeJira()
         with self.assertRaises(intake.IntakeError) as ctx:
-            intake.create(bad, jira=j)
+            intake.create(bad, approval="go", jira=j)
         text = " ".join(ctx.exception.problems)
         for part in ("COMPONENT", "ESTIMATE", "C1 command refused", "Acceptance criteria"):
             self.assertIn(part, text)
@@ -102,20 +116,20 @@ class IntakeTests(unittest.TestCase):
 
     def test_code_work_needs_a_component_because_it_picks_the_owner(self):
         with self.assertRaises(intake.IntakeError) as ctx:
-            intake.create(GOOD.replace("COMPONENT: Listings\n", ""), jira=FakeJira())
+            intake.create(GOOD.replace("COMPONENT: Listings\n", ""), approval="go", jira=FakeJira())
         self.assertIn("decides the owning team", " ".join(ctx.exception.problems))
 
     def test_a_likely_duplicate_is_refused_unless_forced(self):
         j = FakeJira([{"key": "KAN-77", "summary": "Venues list shows distance to each venue",
                        "status": "Ready"}])
         with self.assertRaises(intake.IntakeError) as ctx:
-            intake.create(GOOD, jira=j)
+            intake.create(GOOD, approval="yes, write it", jira=j)
         self.assertIn("KAN-77", ctx.exception.problems[0])
-        self.assertEqual(intake.create(GOOD, jira=j, force_new=True)["status"], "created")
+        self.assertEqual(intake.create(GOOD, approval="go", jira=j, force_new=True)["status"], "created")
 
     def test_at_most_five_per_call(self):
         with self.assertRaises(intake.IntakeError):
-            intake.create_many([GOOD] * 6, jira=FakeJira())
+            intake.create_many([GOOD] * 6, approval="go", jira=FakeJira())
 
     def test_estimates(self):
         self.assertEqual(intake.estimate_seconds("30m"), 1800)

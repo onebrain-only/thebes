@@ -5,7 +5,7 @@ writes: one audited path that checks the ticket, refuses a duplicate, and create
 (To Do). It never moves a ticket to Ready (that is the PM's), never writes code, never touches
 the database. The desk holds no Jira credentials: Thebes's Jira module does the writing.
 
-    python3 -m agent.execution.intake create --file ticket.md [--new]
+    python3 -m agent.execution.intake create --file ticket.md --approved "<the CEO's own words>" [--new]
     python3 -m agent.execution.intake status            # read-only board and teams summary
     python3 -m agent.execution.intake show KAN-123      # one ticket, read-only
     python3 -m agent.execution.intake template [work|ask]
@@ -148,7 +148,13 @@ def duplicates(summary, jira):
     return out
 
 
-def create(text, *, force_new=False, jira=None):
+def create(text, *, approval, force_new=False, jira=None):
+    """`approval` is the CEO's own words saying yes to THIS ticket. A ticket is never created on
+    the first mention of an idea: the desk proposes, the CEO says go, and the quote goes on the
+    ticket as a comment (an audit trail, and friction against creating on a guess)."""
+    if not isinstance(approval, str) or len(approval.strip()) < 2:
+        raise IntakeError(["approval: quote the CEO's words saying go (--approved \"...\"). "
+                           "Propose the ticket in the conversation first and wait for their yes."])
     jira = jira or _jira()
     head, body = parse(text)
     t = validate(head, body)
@@ -161,6 +167,11 @@ def create(text, *, force_new=False, jira=None):
     key = jira.create_issue(PROJECT, t["summary"], body, labels=labels,
                             components=[t["component"]] if t["component"] else None,
                             original_estimate_seconds=t["estimate"], parent=t["parent"])
+    try:
+        jira.add_comment(key, "Created by the desk at the CEO's go: \u201c%s\u201d"
+                         % approval.strip()[:300])
+    except Exception:                                      # noqa: BLE001  never blocks
+        pass
     links = []
     for blocker in t["blocked_by"]:
         jira.link_issues(blocker, key)
@@ -172,10 +183,10 @@ def create(text, *, force_new=False, jira=None):
                     "its owning team. Nothing else to do."}
 
 
-def create_many(texts, **kw):
+def create_many(texts, *, approval, **kw):
     if len(texts) > MAX_PER_CALL:
         raise IntakeError(["at most %d tickets per call" % MAX_PER_CALL])
-    return [create(t, **kw) for t in texts]
+    return [create(t, approval=approval, **kw) for t in texts]
 
 
 # ------------------------------------------------------------------ read-only views
@@ -261,6 +272,7 @@ def main(argv=None):
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     c = sub.add_parser("create"); c.add_argument("--file", required=True, action="append")
+    c.add_argument("--approved", required=True, help="the CEO's own words saying go")
     c.add_argument("--new", action="store_true", help="create even if it looks like a duplicate")
     sub.add_parser("status")
     s = sub.add_parser("show"); s.add_argument("key")
@@ -273,7 +285,7 @@ def main(argv=None):
             return 0
         if ns.cmd == "create":
             texts = [open(f, encoding="utf-8").read() for f in ns.file]
-            out = create_many(texts, force_new=ns.new)
+            out = create_many(texts, approval=ns.approved, force_new=ns.new)
         elif ns.cmd == "status":
             out = status()
         else:
