@@ -111,7 +111,8 @@ class IntegrateTests(unittest.TestCase):
         self.assertEqual((sent["sid"], sent["ticket"]), (MEMPHIS, None))
         for part in ("INTEGRATE", "alpha-luxor @ aaaaaaaaaaaa  (tickets: KAN-1)", "OWN worktree",
                      "flutter analyze --no-pub --no-fatal-infos", "flutter test --no-pub",
-                     "Only if both pass", "Never push or merge Canary or main",
+                     "BY NAME, not by count", "fails only on the merged result",
+                     "Never push or merge Canary or main",
                      "INTEGRATED: <KEY> <branch> <merge-commit-sha>", "do not ask the CEO"):
             self.assertIn(part, sent["text"], part)
         self.assertIn("integrate-alpha:Alpha", sent["text"])

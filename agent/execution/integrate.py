@@ -142,10 +142,14 @@ def brief(group):
               "A conflict you can settle without changing behaviour (imports, formatting, "
               "adjacent additions): settle it and say so. Otherwise git merge --abort, skip that "
               "branch and report the files and hunks.",
-              "3. On the merged result run `flutter analyze --no-pub --no-fatal-infos` and "
-              "`flutter test --no-pub`. Both must pass.",
-              "4. Only if both pass: git -C <worktree> push origin %s:%s. If either fails, push "
-              "NOTHING, reset the worktree to origin/%s and report what failed." % (
+              "3. Run `flutter analyze --no-pub --no-fatal-infos` and `flutter test --no-pub` on the "
+              "UNMERGED origin/%s first, then on the merged result. `analyze` must exit 0. A "
+              "red base does not stop delivery (live 2026-10-09: 59 render tests were already "
+              "failing on Alpha): compare the failing tests BY NAME, not by count. Any test that "
+              "fails only on the merged result blocks the integration." % t["base"],
+              "4. Push only if analyze exits 0 and no test fails only on the merged result: "
+              "git -C <worktree> push origin %s:%s. Otherwise push NOTHING, reset the worktree to "
+              "origin/%s and report the new failures. Save both failing lists in your report." % (
                   t["worktree"], t["base"], t["base"]),
               "5. Never push or merge Canary or main, never force-push, never touch the database.",
               "",
