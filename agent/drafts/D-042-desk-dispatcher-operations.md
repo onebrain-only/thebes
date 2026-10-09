@@ -1,108 +1,147 @@
-# D-042 — DRAFT (not active): the desk, the Ready dispatcher and the Operations lane
+# D-042 — DRAFT (not active): the desk, the Ready dispatcher, domain teams and Operations
 
-**Status:** DRAFT for CEO review, 2026-10-08. Nothing here is built or in force. Agreed in
-conversation with the CEO on the points marked ✔; points marked ? are open or unverified.
+**Status:** DRAFT for CEO review, updated 2026-10-09. Most of it is **built and proven live**
+(marked ✔ built). The desk (§2, §3.1) is not built yet: it is the next step, and this
+decision becomes active once the desk has run end to end. Items marked ? are open.
 
 ## 1. What we are doing
-Work should go from the CEO's ideas to verified, finished tickets with as little of the CEO's
-attention and as few Claude tokens as possible. Thinking and discussion move to a cheap
-front (ChatGPT/Codex, "the desk"); execution stays on Claude; **Jira is the only link** and
-a ticket in `Ready` **is the order**.
+Work goes from the CEO's ideas to verified, finished tickets with as little of the CEO's
+attention and as few Claude tokens as possible. Thinking and discussion happen on a cheap
+front (ChatGPT/Codex, "the desk"); execution stays on Claude; **Jira is the only link**, and a
+ticket in `Ready` **is the order**. Every routine step is code (zero tokens); a model is used
+only where judgement is needed.
 
-## 2. Who runs where ✔
+## 2. Who runs where
 | Role | Runtime | Notes |
 |---|---|---|
-| Discussion, requirements, ticket writing (CPO and PM hats), market research, status answers | **Desk** (ChatGPT/Codex) | Reads git read-only, Jira, Notion; advice only, never binding rulings. Answers itself when it can; creates an `ask` ticket only when Claude is needed |
-| Orchestrator + Jev | **One layer** (Claude model + code) | Dispatcher (code) does the routine; the model handles exceptions and decisions. **Runs no subagents** |
-| Code teams (Karnak, Luxor, …) | Claude, `auto` mode | Work and push on their own branch only. No Supabase writes, no merge into a base branch. A hook enforces it |
-| Operations team (Habu) | Claude, `auto` mode, own settings directory with allow rules | Runs subagents: cto (migrations, schema), devops (integration), analyst, cpo/cxo/po, judge reviewers |
-| Verification | Code (`verify.py`) + one reviewer for `judge` checks | D-041 |
+| Discussion, requirements, ticket writing, market research, status answers | **Desk** (ChatGPT/Codex) — ? not built | Reads git read-only, Jira, Notion. Writes tickets to Backlog only. Advice, never binding rulings |
+| Orchestrator + Jev | **One decision layer** (Claude model + code) ✔ built | Handles exceptions and decisions. Runs **only the PM and the POs**, always in the background |
+| PM (one, all projects) | Subagent of the orchestrator ✔ built | The knowledge hub and the board's priorities (§4) |
+| PO per project | Subagent of the orchestrator ✔ built | `po` = app, `po-2` = design system; later admin, web. Briefs and acceptance for its project only |
+| Code teams | Claude sessions, `auto` mode ✔ built | Five, each owning a domain (§5). Work and push their own branch |
+| Memphis (Operations) | Claude session, `auto` mode ✔ built | The only team that writes to the database and integrates into Alpha. Runs cto, cpo, cxo, qa, devops, analyst as subagents: migrations, integration, rulings, `judge` reviews, questions |
+| Ready dispatcher | Code, background, every 60 s ✔ built | Distributes Ready tickets; raises `priority` requests |
+| Verification | Code (`verify.py`) ✔ built (D-041) | Re-runs declared checks; `judge` checks go to one reviewer |
 
-## 3. Flow ✔
-1. CEO and desk discuss. Desk creates tickets in Jira (`To Do`, label `intake`) through a Thebes
-   `intake` command, the single audited write path: template and CHECKS lint, duplicate search,
-   a cap per call. The desk never holds Jira credentials.
-2. CEO says "go" in the desk → the desk moves tickets that pass the lint to **Ready**. Ready is the order.
-3. The dispatcher (a background process, polls Jira every ~60 s, zero tokens) takes Ready tickets,
-   respects BLOCKS edges and a cap of 3 parallel teams, builds the brief from the ticket and
-   dispatches by capability: code → code teams, no-code and `ask` → Operations.
-4. Results are verified by code (D-041). Pass → Done. Fail → only the failing checks go back, once.
-5. Anything that needs the CEO gets label `needs-ceo` plus a comment; the desk reports it.
+## 3. Flow ✔ built (except 3.1)
+1. **3.1 Desk:** the CEO discusses with the desk, which writes tickets into **Backlog (To Do)**.
+   ? not built: the write path (a Thebes `intake` command or a connector) is the next step.
+2. The dispatcher notices the Backlog changed (or Ready runs short) and raises one
+   `priority_request`; the orchestrator's inbox hands it over and the orchestrator runs the
+   **PM** in the background. At most hourly for board changes; at once for missing briefs.
+3. The PM ranks the Backlog (new tickets, work returned from a failed verification, new
+   sub-tasks), gives each ticket a domain component and an **Original estimate**, and moves only
+   what the free teams can take into **Ready**, in rank order.
+4. The dispatcher sends each Ready ticket to its **owning team** first (§5), in the PM's order.
+   A ticket whose brief is incomplete gets one comment and the label `needs-brief`; the
+   project's PO writes the brief (through a `priority` request) and the ticket is picked up.
+5. The team works on its branch, pushes it, and reports. Verification re-runs the checks:
+   pass → Done; fail → only the failing checks go back, once (D-041).
+6. Anything that needs the CEO gets the label `needs-ceo` and a comment.
 
-## 4. Tickets ✔
-- Types: `work`, `ask`. Field `executor: desk | claude` (default `claude` for anything touching
-  repo or database). The desk may move its own `executor: desk` tickets between To Do, Operations
-  and Done via a Thebes command; every other transition stays with Thebes.
-- One executable ticket = one capability. A feature is a non-executable **parent** with
-  children (design → backend SQL → **ops: apply migration** → frontend), linked by BLOCKS. Each
-  child is verified by its own CHECKS; the parent closes after all children are Done.
-- Every ticket carries GOAL, DECISIONS MADE, AUTHORIZED, FORBIDDEN, CHECKS (D-041 brief).
-- **Ask:** "ask / find out / check / see / compare / analyse" in the desk means an `ask` ticket
-  unless the desk can answer from git, Jira, Notion or the web, then it answers in the chat.
-  An answer never starts execution; work needs a new "go". This is a desk skill.
-- Non-code deliverables get a check of kind `exists` (file or comment present with the
-  required headings) plus `judge` where an eye is needed. ? not built.
+**Proven live:** KAN-441 (code, Luxor), KAN-442 (ask, Memphis), KAN-443 (no brief → brief
+written → Karnak), KAN-444 (CPO + CTO rulings → PM → Ready → Memphis → verified → Done, a
+real production permission change).
 
-## 5. Decisions ✔
-Jev and the orchestrator are one layer. Order of sources:
-1. Written in the ticket (DECISIONS MADE, AUTHORIZED), authored by the CEO and the desk before work.
+## 4. The PM and the POs ✔ built
+- **The PM is the knowledge hub.** It reads, first in every run, its ledger
+  (`python3 -m agent.execution.pm_ledger show`: every ruling by cpo, cto, cxo, the CEO and the
+  decision gate) and its memory (`.claude/agent-memory/pm/`). Answers through the decision gate
+  are logged by code; the orchestrator logs every other ruling at once. A PO that is stuck asks
+  the PM first, and the PM must have the answer or obtain it.
+- **The PM runs the priorities**: it is the one that moves Backlog into Ready. It never
+  dispatches and never picks a team.
+- **POs are per project** and work only on their project: complete briefs, accept work.
+- **Teams can never reserve the PM or a PO** (enforced in the seat pool). So neither is ever
+  busy inside one team while another team or the board needs it.
+- Channels are flexible: anyone may ask the cto directly. The PM is not a gate every ticket
+  passes through; it is the one who always knows.
+
+## 5. Domain teams ✔ built
+Each code team **owns one Jira component** (its domain):
+
+| Team | Component | Domain |
+|---|---|---|
+| Karnak | Auth | Login, sign-up, accounts, users, delete/remove account, permissions |
+| Luxor | Listings | Venues, games, meetups, listings and their creation |
+| Habu | Social | Messages, friends (add/remove), followers, communication |
+| Ramesseum | Money | Wallet, payments |
+| Deir el-Bahari | Platform | Notifications, search, settings |
+| Memphis | — (ops lane) | Operations |
+
+- The owner gets its domain first, in the PM's rank order. A fresh owned ticket waits up to
+  **30 minutes** for a busy owner, then any free team takes it. A team with nothing in its
+  domain takes other work at lower priority.
+- Each code team has a dedicated frontend, backend and ux-engineer seat. ux-engineer was
+  raised from 2 to **5** (ux-engineer-3 Wadjet, -4 Meretseger, -5 Neith).
+- At most 3 code dispatches run in parallel.
+
+## 6. Decisions and rulings ✔ built
+Jev and the orchestrator are one layer. Sources, in order:
+1. Written in the ticket (DECISIONS MADE, AUTHORIZED) before work.
 2. Routine actions: the Jev approval table (D-033).
-3. Everything else: the orchestrator decides; if it needs an investigation it creates an `ask`
-   ticket for Operations and does not block.
-4. Hard stops go to the CEO: main, production **data**, money and secrets, sending outside the company.
+3. Everything else: decided in the orchestrator layer. A **cto, cpo or cxo ruling** is ONE
+   dispatch to **Memphis**, without a ticket, naming every seat it needs; Memphis runs them in
+   parallel and returns one answer. The orchestrator never runs those seats itself.
+4. **`judge` checks** follow the same rule: design fidelity → Memphis (cxo); behaviour →
+   Memphis (qa). Only an acceptance judge on a project's own ticket may use that project's PO.
+5. Hard stops stay with the CEO: main, production **data**, money and secrets, sending outside.
+   **Schema** migrations are delegated (§7); production data and destructive schema stay the CEO's.
 
-Narrowing of the production hard stop: **schema** migrations are delegated; production **data**
-and destructive schema changes stay with the CEO.
+## 7. Migrations ✔ built
+- A migration is its own ticket, applied by Memphis (cto) after review. Code teams write the SQL
+  and probes on their branch and report `needs-ops`.
+- Classes: **A** additive or `CREATE OR REPLACE` → approved in the orchestrator layer.
+  **B** `DROP` of a function, view or policy → approved after checking that `origin/main` and
+  `origin/Canary` do not use the object. **C** `DROP TABLE/COLUMN`, row deletes or updates,
+  `TRUNCATE` → only with an `AUTHORIZED` line naming the migration, written by the CEO;
+  otherwise `needs-ceo`.
+- Before applying, compare the file with the live database: a stale file is reported, never
+  applied (live 2026-10-09: four old files would have overwritten newer functions).
+- Supersedes the 2026-10-08 rule "no DROP / apply_migration on live Supabase".
 
-## 6. Migrations ✔
-- A migration is its own ticket, executed in Operations by the cto subagent after review. Teams
-  write the SQL and probes on their branch; the dispatcher detects `supabase/migrations/*` and
-  creates the Ops ticket if the desk did not.
-- Code extracts a migration request: objects touched, destructive statements, whether `main` or
-  `Canary` use the objects (git grep), rollback notes, probes. Classes:
-  **A** additive or `CREATE OR REPLACE` → orchestrator approves. **B** `DROP` of a function, view
-  or policy → orchestrator approves after the live-app compatibility check passes. **C** `DROP`
-  of a table or column, row deletes or updates, `TRUNCATE` → needs `AUTHORIZED` naming it, written
-  by the CEO, otherwise `needs-ceo`.
-- Supersedes the 2026-10-08 rule "no DROP / apply_migration on live Supabase" once built.
+## 8. Branches ✔ built
+- Base branches: **Alpha, Canary, main** (and `alpha-ds` in the design system).
+- Each team has one branch per base: `<base>-<team>` (e.g. `alpha-karnak`), or
+  `<base>-ds-<team>` in the design system. Not one branch per ticket. The dispatcher fills the
+  team in, whatever the brief says.
+- **Teams push their own branch normally** (CEO 2026-10-09: branches exist so teams never block
+  each other), so commits show on their Jira tickets. Every commit starts with the ticket key.
+- Teams never merge into a base, never push another team's branch, never force-push.
+  Integration into a base is one serial `INTEGRATE` dispatch by Memphis, **Alpha only**;
+  Canary and main stay with the CEO, and main stays frozen (P-030).
 
-## 7. Branches and integration ✔
-- Main branches: **Alpha, Canary, main**. Each team has one branch per base, `<base>-<team>`
-  (e.g. `alpha-karnak`), not one per ticket. First step of every ticket: sync it from the base.
-- Teams push their own branch (CEO 2026-10-09: branches keep teams apart; pushing is normal). They never merge into a base. Integration into a base is one serial `INTEGRATE` dispatch executed
-  by Operations (devops). Delegated for **Alpha only**; Canary and main stay with the CEO, and
-  main stays frozen (P-030).
+## 9. Permissions and the ops guard ✔ built
+- One shared hook, `agent/scripts/ops_guard.py`, decides per session from its team binding:
+  - Database **writes** (`apply_migration`, write SQL, edge-function deploys): Memphis only.
+    Everyone else is refused at once (fail closed), so no session stops on a permission prompt.
+  - **Read-only SQL** (one SELECT/WITH/EXPLAIN/SHOW, no write keyword, no non-allowlisted
+    function call): allowed for every session.
+  - Project-destroying Supabase tools (pause, restore, create project, delete/reset branch):
+    the CEO only, Memphis included.
+  - **Push** from a code team: its own branch only, as in §8.
+- A session's permission mode cannot be changed by another session. `/plan <task>` at the start
+  of a message puts that session in plan mode for that task (proven 2026-10-09); a normal
+  message delivered by resume returns it to `auto`.
+- ? Settings allow rules for pushing team branches and Alpha are the CEO's to add.
 
-## 8. Permissions and modes ✔
-- Code teams: `auto` mode, **deny rules** on Supabase write tools (and push/merge), so a call is
-  refused at once and the team reports `blocked: needs-ops` instead of waiting on a prompt.
-- Operations: its own project directory and settings with allow rules for `apply_migration`,
-  `execute_sql`, `list_migrations`, `list_tables`, `get_advisors`; destructive project tools
-  stay denied. Per the docs an allow rule is resolved before the classifier, and a background
-  session's mode persists across stop/resume. ? verify settings scoping by directory.
-- **A session's mode cannot be changed by another session** (docs). No Planner session.
-  `/plan <task>` at the very start of a message enters plan mode for that task. ? Unverified for
-  our `--bg --resume` delivery; plan mode persists until the plan is approved (which then switches
-  the session to an editing mode) or the user toggles it. Use only for work the CEO wants to
-  approve before it runs; pure planning tickets use a plan-only brief instead. Test first.
-- State `blocked` is never idle: the watchdog reports it at once with the pending tool.
+## 10. Visibility
+- The orchestrator's inbox: results, `verification`, `judge`, `priority`, alerts. The waiter
+  restarts itself when Thebes code changes ✔ built.
+- The `needs-ceo` label in Jira. ? A read-only `status` command for the desk: not built.
+- ? The watchdog does not yet tell a `blocked` session (waiting on a permission) from an idle one.
 
-## 9. Visibility ✔
-A read-only `status` command (teams, state, why blocked, open dispatches, escalations,
-verification), the `needs-ceo` label in Jira, optional pushed critical alerts, and a phone
-notification through the orchestrator. The desk reads these; nothing wakes the desk.
+## 11. Jira and GitHub ✔ built
+GitHub for Jira is connected (all `dabblersport` repos), for display only. Never enable
+automation that moves a status from GitHub events: Thebes owns the lifecycle.
 
-## 10. Jira and GitHub ✔
-Link for display only (GitHub for Jira on the `dabblersport` organisation, `KAN-123:` at the
-start of every commit and PR title). Never enable automation that moves status from GitHub
-events: Thebes owns the lifecycle.
+## 12. Still to build
+1. The desk: ChatGPT/Codex writes tickets into Backlog (write path, ticket template, the `ask`
+   skill, `AGENTS.md`). Then one end-to-end run from a conversation to Done.
+2. A start-up script for the dispatcher, the watchdog and the team sessions after a reboot.
+3. The watchdog's `blocked` state; the read-only `status` command.
+4. Archive `agent/status/po.md` (437 KB; the PM could not read it whole).
 
-## 11. Build order
-1. Fix the watchdog (`blocked` ≠ idle; name the pending tool). 2. Deny rules for code teams and
-the Operations settings directory. 3. Jira↔GitHub link. 4. `intake` command, ticket template,
-`ask` skill, desk `AGENTS.md`. 5. The dispatcher, status command, `lane: code | ops` in the team
-registry. 6. Migration tickets and classes. 7. End-to-end run with one small ticket.
-
-## 12. Supersedes
-D-034 (the orchestrator no longer runs seats), D-038 (the one Codex conversation becomes the
-desk), the routing part of D-039, the "inferred ticket" part of D-040.
+## 13. Supersedes
+D-034 (the orchestrator runs seats), D-038 (one Codex conversation as the front), the routing
+part of D-039, the "inferred ticket" part of D-040, and D-037's rule that a team may hold a PO.
