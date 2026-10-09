@@ -81,12 +81,24 @@ class OpsGuardTests(unittest.TestCase):
         for tool in ("pause_project", "delete_branch", "restore_project"):
             self.assertIn("CEO", self.decide(MEMPHIS, SB + tool))
 
-    def test_code_teams_cannot_push_and_others_keep_their_rules(self):
-        for cmd in ("git push origin alpha-karnak", "cd x && git push",
-                    "git -C Dabbler/dabbler-code push origin Alpha"):
-            self.assertIsNotNone(self.decide(KARNAK, "Bash", command=cmd), cmd)
-            self.assertIsNone(self.decide(MEMPHIS, "Bash", command=cmd), cmd)
-            self.assertIsNone(self.decide(STRANGER, "Bash", command=cmd), cmd)
+    def test_code_teams_push_only_their_own_branch(self):
+        """CEO 2026-10-09: a team pushes its branch normally; it never pushes a base branch,
+        another team's branch, or with force."""
+        for ok in ("git push origin alpha-karnak", "git push -u origin alpha-karnak",
+                   "git -C Dabbler/dabbler-code push origin alpha-karnak",
+                   "git push origin HEAD:alpha-karnak", "cd x && git push origin canary-karnak",
+                   "git -C Dabbler/dabbler-design-system push origin alpha-ds-karnak"):
+            self.assertIsNone(self.decide(KARNAK, "Bash", command=ok), ok)
+        for bad in ("git push origin Alpha", "git push origin main", "git push origin Canary",
+                    "git push origin alpha-luxor", "git push", "git push origin",
+                    "git push -f origin alpha-karnak", "git push --force-with-lease origin alpha-karnak",
+                    "git push origin alpha-karnak:Alpha", "git push --tags origin alpha-karnak",
+                    "git push origin --delete alpha-karnak", "git push origin alpha-ds",
+                    "git push origin alpha-ds-luxor"):
+            self.assertIsNotNone(self.decide(KARNAK, "Bash", command=bad), bad)
+        for cmd in ("git push origin Alpha", "git push"):
+            self.assertIsNone(self.decide(MEMPHIS, "Bash", command=cmd), "Memphis integrates")
+            self.assertIsNone(self.decide(STRANGER, "Bash", command=cmd), "not a team")
         self.assertIsNone(self.decide(KARNAK, "Bash", command="git commit -m 'KAN-1: push it'"))
         self.assertIsNone(self.decide(KARNAK, "Bash", command="git status"))
 
@@ -108,6 +120,7 @@ class OpsGuardTests(unittest.TestCase):
         code = "\n".join(cd.team_block(dict(base, target_seat_id="karnak")))
         ops = "\n".join(cd.team_block(dict(base, target_seat_id="memphis")))
         self.assertIn("you are a CODE team", code)
+        self.assertIn("Push your OWN branch", code)
         self.assertIn("needs-ops", code)
         self.assertIn("OPERATIONS team (Memphis", ops)
         self.assertIn("C: DROP TABLE/COLUMN", ops)

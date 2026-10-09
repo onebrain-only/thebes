@@ -28,7 +28,7 @@ while read -r tid lane display; do
   if [ "$lane" = "ops" ]; then
     role="the Thebes OPERATIONS team (D-042): the only team that applies database migrations, pushes, and integrates team branches into Alpha; you also answer questions and write ticket briefs, running seats as subagents"
   else
-    role="a Thebes code team, an execution island that runs seats as subagents; you never write to the database or push"
+    role="a Thebes code team, an execution island that runs seats as subagents; you push only your own branch, never merge into Alpha, Canary or main, and never write to the database"
   fi
   claude --bg --name "$name" "You are Thebes team $display, $role. Read CLAUDE.md and agent/skills/route-to-seat/SKILL.md. Do nothing now. Reply with one line: $(echo "$display" | tr a-z A-Z) READY, then go idle. Later a THEBES_CONVERSATION_DISPATCH envelope will arrive as a user turn; follow its team, lane and report instructions exactly." >/dev/null
   sid=""

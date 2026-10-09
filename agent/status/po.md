@@ -5157,3 +5157,9 @@ this grant but the fixes themselves are not — the migration/function changes g
 committed as code, and applying them to the live production project is a separate CEO-only step
 this record does not and cannot grant. Flagging it here rather than leaving it implicit in the
 environment_ref alone.
+
+## 2026-10-06 KAN-440 created (po / Horemheb)
+Created KAN-440 (games persona gate, file only), linked Relates to KAN-439 and KAN-427. Ready command run: backend, effort 1, project app, no move-ready. Remaining: not-ready, unverified-jira, surfaces-unassessed. No due_date (no capacity-derived number).
+
+## 2026-10-09 Horemheb: KAN-444 created
+Ops: revoke anon EXECUTE on rpc_create_game. Status To Do (not moved to Ready), component Platform, label cap:cto, original estimate 1h (CEO-ordered figure, not a capacity sitting count), relates to KAN-437. Brief lint: ok (C2 changed from run to judge because only flutter/dart commands are run by Thebes). No due_date, no Work Effort set: not Ready.

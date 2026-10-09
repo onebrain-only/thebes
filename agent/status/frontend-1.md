@@ -593,3 +593,9 @@ Route was PEER (`shared_or_contended_surface: true`, from the two Freezed-genera
 `assignee` remains null, correct for this board where assignee is not execution authority.
 
 **Ownership NOT released** — team-lead handles that after review.
+
+## 2026-10-06 — Action Area commits 2, 3, 4 (CEO order, worktree integ-app, branch alpha-k437)
+- 1181a7a1 commit 2: ShellActionAreaHost over DabblerNavigationStatus; DS lock -> 6df77e0.
+- 0dbef267 commit 3: join game / RSVP retry / check-in on FeedbackCenter.
+- 30834db7 commit 4: ShellAwareToastController bridge (shell toasts -> Action Area; absent -> standard toast).
+- Checks: analyze exit 0 (0 errors/0 warnings, 38 infos); flutter test 1179 passed; gates 74 passed. Not pushed.

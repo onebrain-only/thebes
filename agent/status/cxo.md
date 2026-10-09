@@ -39,3 +39,6 @@ Read-only; nothing created, edited or deleted except this entry. **First task th
 - **Not verified:** the running app (never opened it); whether the four trees are genuinely
   four systems or two plus two façades — that is the `G-011` ruling, not measured here;
   the remaining ~430 installed plugin skills beyond the 16 bodies I opened.
+
+## 2026-10-07 — Listings v2 review (app c7d9cb4e, DS c7f2d160)
+Read-only. PASS 1,2,4 on evidence; 3 mapping PASS (design venuesTheme=main, l.2087), header re-tint unevidenced in theme-switch renders. Ruled: dark brand 400; accent tile DS #3A1730; Venues All tab deferred; shell end-to-end render owed before accept.

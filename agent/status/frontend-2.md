@@ -354,3 +354,6 @@ this is read from the baseline, not from KAN-191's actual content.
 Adjacent finding recorded in `agent/state/discovery-ledger.md`: `SocialConsumer`
 is the only widget that renders a `Squad` and nothing references it — AC3's "no UI
 renders a squad owner" is true, but no UI renders a squad at all.
+
+## 2026-10-06 — CEO order: launch video splash (integ-app, alpha-k437)
+Committed d5550f12 (not pushed). StartupSplash plays assets/Splash.mp4 while bootstrap runs; native/web launch plain #7328CE. analyze 0 err/0 warn, flutter test 1187 pass, build web ok. iOS/Android not run.

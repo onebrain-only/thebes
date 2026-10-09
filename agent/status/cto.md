@@ -3053,3 +3053,6 @@ EXECUTE (flagged as far larger than this ticket and explicitly not settled insid
 real mechanism — overload creation plus default ACL — is invisible unless you check both `pg_proc`
 for the live signature and `pg_default_acl`. A low-effort pass would have ratified "it reverts the
 fix" and missed that the replay lands `anon`-executable.
+
+## 2026-10-08 — favourites shape ruling
+Ruled activity_favorites keyed on public_activities.id; see handback.

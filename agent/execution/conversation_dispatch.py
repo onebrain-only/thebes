@@ -170,9 +170,12 @@ def team_block(record):
         "report_shape: one report for the whole request — what each seat did, evidence (paths, "
         "commands, output), what is blocked or needs a decision, nothing else.",
     ] + (ops_block() if teams.read()[team_id].get("lane") == "ops" else [
-        "lane: you are a CODE team. You never write to the database, push or merge into a base "
-        "branch: a hook refuses it. A migration is SQL plus probes committed on your branch; "
-        "report `blocked` with `needs-ops: <migration file>` and the operations team applies it.",
+        "lane: you are a CODE team. Push your OWN branch when your work is committed "
+        "(`git push origin <base>-<your team>`, no force) so its commits show on the Jira "
+        "ticket. You never merge into a base branch (Alpha, Canary, main), never push another "
+        "branch, and never write to the database: a hook refuses all three. A migration is SQL "
+        "plus probes committed on your branch; report `blocked` with `needs-ops: <migration "
+        "file>` and the operations team applies it.",
     ]) + verify_block(record)
 
 

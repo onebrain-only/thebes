@@ -130,8 +130,38 @@ def decide(payload, state_store=None, teams_mod=None):
         except Exception:                                 # noqa: BLE001
             return None
         if lane == "code":
-            return ("Teams do not push (D-042). Commit on your branch <base>-%s and report; "
-                    "integration and pushing are done by the operations team (Memphis)." % tid)
+            return push_problem(command, tid)
+    return None
+
+
+BASES = ("alpha", "canary", "main")
+PUSH_ARGS = re.compile(r"git(?:\s+-C\s+\S+)*\s+push\b(?P<rest>[^;&|]*)")
+
+
+def push_problem(command, team_id):
+    """A code team pushes ITS OWN branch, `<base>-<team>`, and nothing else (CEO 2026-10-09):
+    branches keep teams apart; merging into Alpha, Canary or main is the operations team's.
+    Explicit refspecs only, no force, no tags. None = allowed."""
+    for m in PUSH_ARGS.finditer(command):
+        words = m.group("rest").split()
+        flags = [w for w in words if w.startswith("-")]
+        args = [w for w in words if not w.startswith("-")]
+        if any(f in ("-f", "--force", "--force-with-lease", "--mirror", "--all", "--tags",
+                     "--delete", "-d") or f.startswith("--force") for f in flags):
+            return ("Teams push without force, tags or deletes (D-042). Push your branch "
+                    "plainly: git push origin <base>-%s" % team_id)
+        refs = args[1:]
+        if not refs:
+            return ("Name the branch when you push (D-042): git push origin <base>-%s. "
+                    "A bare push could push another branch." % team_id)
+        for ref in refs:
+            dst = ref.split(":")[-1].replace("refs/heads/", "").lstrip("+")
+            base = dst.split("-")[0].lower()
+            # `<base>-<team>` in the app, `<base>-ds-<team>` in the design system
+            if base not in BASES or not dst.endswith("-" + team_id) or dst.count("-") > 2:
+                return ("Teams push only their own branch, <base>-%s (e.g. alpha-%s); %r is "
+                        "not yours. Merging into Alpha, Canary or main is done by the operations "
+                        "team (Memphis)." % (team_id, team_id, dst))
     return None
 
 

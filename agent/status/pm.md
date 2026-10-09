@@ -1937,3 +1937,10 @@ in that same table was **not touched** — out of scope for this task, remains a
 separate follow-up.
 
 No other content in either file was touched.
+
+## 2026-10-09 - PM run: Ops migration tickets (KAN-427/438/439/440)
+CEO ordered one Ops ticket per unapplied migration. list_migrations on wtncuzcskpigqpmnxwws shows all six meetups/games files already applied 2026-10-06 (20261006080725 meetups_hardening .. 20261006081813 kan440_games_persona_gate, plus kan441). No tickets created; reported to orchestrator for CEO confirmation. Memory open_items corrected.
+
+## 2026-10-09 pm (Anubis) priority prio-024dcf59
+Backlog had one item: KAN-444 (Platform, 1h, cap:cto). Set due_date 2026-10-10 (1h ops item, Operations lane free; no estimate beyond the 1h on the ticket), moved To Do -> Ready; Jira read-back status = Ready. KAN-437/438 are in flight, nothing else queued.
+Work Effort/executor evidence/surfaces live in Thebes state (execution_profile), set by the claiming seat at preflight, not by PM; not set by me.
