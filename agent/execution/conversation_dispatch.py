@@ -178,6 +178,10 @@ def team_block(record):
         "branch, and never write to the database: a hook refuses all three. A migration is SQL "
         "plus probes committed on your branch; report `blocked` with `needs-ops: <migration "
         "file>` and the operations team applies it.",
+        "design: you never ask the cxo. For UI work, your own ux-engineer (a subagent in this "
+        "session, reserved from the pool) checks design fidelity against the design before you "
+        "report, and any design-fidelity `judge` check is answered by it too, with screenshots "
+        "as the evidence.",
     ]) + verify_block(record)
 
 
