@@ -178,7 +178,8 @@ CEO one precise question and wait for their answer here.
 - Stalled team work: `python3 -m agent.execution.conversation_dispatch stalled`.
 - Resume once by hand: `… conversation_dispatch resume <dispatch_id>`.
 - The watchdog runs in the background (`python3 -m agent.execution.watchdog serve`); if
-  `ps` shows it is not running, tell the CEO it needs `scripts/thebes-up.sh`.
+  `ps` shows it is not running, tell the CEO to run `bash agent/scripts/thebes-up.sh` (it
+  restarts the loops and resumes every session with its own id; `--check` only reports).
 
 ## Never
 
