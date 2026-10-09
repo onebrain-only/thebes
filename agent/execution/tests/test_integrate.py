@@ -84,9 +84,24 @@ class IntegrateTests(unittest.TestCase):
             "status": "delivered", "delivery_status": "DELIVERED"}, rid=did)
         return {"dispatch_id": did}
 
-    def run_dispatch(self, remote):
+    def run_dispatch(self, remote, allowed=True):
+        import json
+        rules = [integrate.push_rule(t) for t in
+                 (integrate.base_for("alpha-x"), integrate.base_for("alpha-ds-x"))] if allowed else []
+        path = os.path.join(self.tmp, "settings.json")
+        with open(path, "w") as fh:
+            json.dump({"permissions": {"allow": rules}}, fh)
         return integrate.dispatch_for(state_store=store, dispatch=self.send,
-                                      runner=fake_git(remote))
+                                      runner=fake_git(remote), settings_files=[path])
+
+    def test_without_the_push_rule_nothing_is_sent_that_would_block_memphis(self):
+        self.root("KAN-1", "alpha-luxor", SHA)
+        out = self.run_dispatch({"alpha-luxor": SHA}, allowed=False)
+        self.assertEqual(out[0]["action"], "waiting")
+        self.assertIn("Bash(git -C * push origin integrate-alpha:Alpha)", out[0]["reason"])
+        self.assertEqual(self.sent, [])
+        self.assertEqual(self.run_dispatch({"alpha-luxor": SHA})[0]["action"], "dispatched",
+                         "the moment the CEO adds the rule, it goes")
 
     def test_verified_pushed_work_is_sent_to_memphis_once_with_the_whole_recipe(self):
         a = self.root("KAN-1", "alpha-luxor", SHA)

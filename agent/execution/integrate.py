@@ -93,6 +93,29 @@ def pending(state_store=store, runner=None):
     return groups
 
 
+def push_rule(target):
+    return "Bash(git -C * push origin %s:%s)" % (target["worktree"], target["base"])
+
+
+def push_allowed(target, settings_files=None):
+    """Memphis can push the base only if the CEO added the allow rule for it: without it the
+    permission check stops Memphis on a prompt nobody can answer, and a blocked ops team stops
+    migrations and rulings too. So the dispatcher waits for the rule instead of sending work
+    that would block (live 2026-10-09). The rule is the CEO's one-time grant."""
+    home = os.path.expanduser("~")
+    files = settings_files or [os.path.join(ROOT, ".claude", "settings.json"),
+                               os.path.join(ROOT, ".claude", "settings.local.json"),
+                               os.path.join(home, ".claude", "settings.json")]
+    for path in files:
+        try:
+            with open(path, encoding="utf-8") as fh:
+                if push_rule(target) in ((json.load(fh).get("permissions") or {}).get("allow") or []):
+                    return True
+        except (OSError, ValueError):
+            continue
+    return False
+
+
 def open_integration(base, state_store=store):
     return next((r for r in state_store.read_all("conversation_dispatch")
                  if r.get("integrates_base") == base
@@ -135,7 +158,7 @@ def brief(group):
     return "\n".join(lines)
 
 
-def dispatch_for(state_store=store, jira=None, dispatch=None, runner=None):
+def dispatch_for(state_store=store, jira=None, dispatch=None, runner=None, settings_files=None):
     """Open at most one integration per base. Returns what it did."""
     from agent.execution import conversation_dispatch as cd
     done = []
@@ -148,6 +171,10 @@ def dispatch_for(state_store=store, jira=None, dispatch=None, runner=None):
             if r.get("status") in store.CONVERSATION_DISPATCH_OPEN}
     for base, group in pending(state_store, runner).items():
         if open_integration(base, state_store):
+            continue
+        if not push_allowed(group["target"], settings_files):
+            done.append({"integrate": base, "action": "waiting",
+                         "reason": "push-rule-missing: %s" % push_rule(group["target"])})
             continue
         if binding["session_id"] in busy:
             done.append({"integrate": base, "action": "waiting", "reason": "ops-team-busy"})
