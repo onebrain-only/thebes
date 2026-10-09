@@ -346,6 +346,42 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None):
     except Exception as exc:                            # noqa: BLE001
         done.append({"action": "jira-retry-failed", "error": str(exc)[:200]})
 
+    # An ops dispatch that stopped on a permission denial is re-sent ONCE with the current
+    # brief (which names the pre-approved push shapes), so the CEO is never the relay.
+    try:
+        for r in state_store.read_all("conversation_dispatch"):
+            key = r.get("jira_key")
+            if (not key or key in open_keys or r.get("permission_retried")
+                    or r.get("status") not in ("decision_required", "blocked")
+                    or teams.read().get(r.get("target_seat_id"), {}).get("lane") != "ops"):
+                continue
+            try:
+                with open(r.get("result_ref") or "", errors="ignore") as fh:
+                    result = fh.read()
+            except OSError:
+                continue
+            if not re.search(r"(?i)denied by permission|permission system|push denied|"
+                             r"permissions?\b[^.\n]{0,40}(denied|refus)", result):
+                continue
+            cur = state_store.read("conversation_dispatch", r["dispatch_id"])
+            state_store.update("conversation_dispatch", cur["dispatch_id"], cur["revision"],
+                               {"permission_retried": True})
+            issue = jira.normalize_issue(jira.get_issue(key, fields=FIELDS, raw=True))
+            if (issue.get("status") or "").lower() == "done":
+                continue
+            sid = (state_store.active_role_session(r["target_seat_id"]) or {}).get("session_id")
+            if not sid or sid in {o["target_session_id"] for o in open_dispatches(state_store)}:
+                continue
+            note = ("RETRY: your last attempt stopped on a push permission denial. The dispatch "
+                    "brief now names the only push shapes that are pre-approved; translate the "
+                    "ticket's push command into one of them. Do not retry anything else.\n\n")
+            out = send(note + prompt_for(issue, r["target_seat_id"]), sid, key,
+                       capability_of(issue, state_store) or "devops")
+            done.append({"key": key, "action": "permission-retry",
+                         "dispatch_id": out.get("dispatch_id")})
+    except Exception as exc:                            # noqa: BLE001
+        done.append({"action": "permission-retry-failed", "error": str(exc)[:200]})
+
     # Verified work reaches Alpha by itself (D-042): settle finished integrations, then open the
     # next one. Never raises into the dispatch loop.
     try:
