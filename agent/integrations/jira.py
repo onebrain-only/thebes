@@ -549,3 +549,36 @@ def update_issue(issue_key, fields):
         raise ValueError("fields is required")
     return _request("PUT", "%s/issue/%s" % (API, urllib.parse.quote(str(issue_key))),
                     body={"fields": dict(fields)})
+
+
+def create_issue(project_key, summary, description, issue_type="Task", labels=None,
+                 components=None, original_estimate_seconds=None, due_date=None, parent=None):
+    """Create an issue in its project's first status (Backlog / To Do). Returns its key.
+
+    A primitive like the others: what to create, and whether, is decided by the caller
+    (agent/execution/intake.py). Plain text in, ADF on the wire."""
+    if not project_key or not summary:
+        raise ValueError("project_key and summary are required")
+    fields = {"project": {"key": project_key}, "summary": summary,
+              "issuetype": {"name": issue_type}, "description": to_adf(description or "")}
+    if labels:
+        fields["labels"] = list(labels)
+    if components:
+        fields["components"] = [{"name": c} for c in components]
+    if original_estimate_seconds:
+        fields["timetracking"] = {"originalEstimate": "%dm" % max(1, original_estimate_seconds // 60)}
+    if due_date:
+        fields["duedate"] = due_date
+    if parent:
+        fields["parent"] = {"key": parent}
+    data = _request("POST", "%s/issue" % API, body={"fields": fields})
+    if not isinstance(data, dict) or not data.get("key"):
+        raise JiraProtocolError("Jira create returned no key")
+    return data["key"]
+
+
+def link_issues(blocker_key, blocked_key, link_type="Blocks"):
+    """`blocker_key` blocks `blocked_key`. Returns None (Jira answers 201 with no body)."""
+    return _request("POST", "%s/issueLink" % API, body={
+        "type": {"name": link_type}, "outwardIssue": {"key": blocker_key},
+        "inwardIssue": {"key": blocked_key}})
