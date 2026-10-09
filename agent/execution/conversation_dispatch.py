@@ -196,6 +196,13 @@ def ops_block():
         "migration at a time, run its probes, stop at the first error and report it.",
         "integration: merge team branches into Alpha only, one at a time, after their "
         "verification passed. Canary and main are the CEO's; never push or merge them.",
+        "pushing a base: the permission system only pre-approves two exact command shapes, so "
+        "any other shape stops on a prompt nobody can answer. Put the commit on a local branch "
+        "named exactly `integrate-alpha` (app) or `integrate-alpha-ds` (design system) and push "
+        "with `git -C <worktree> push origin integrate-alpha:Alpha` or "
+        "`git -C <worktree> push origin integrate-alpha-ds:alpha-ds`. Never push a bare sha, "
+        "`refs/heads/...`, or any other shape, even if the ticket text spells one out; "
+        "translate it to the shape above. If the push is still refused, report blocked once.",
         "no po or pm: the PM and the POs run only in the orchestrator (D-042); ask there.",
     ]
 
