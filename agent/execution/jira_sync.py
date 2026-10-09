@@ -96,21 +96,42 @@ def review_target(record, state_store):
     return board.review_status_for(route) or board.review_status_for(DEFAULT_REVIEW_ROUTE), route
 
 
+def _done(record, phase):
+    """A phase counts as done only if it SUCCEEDED; a failed note is retried (live 2026-10-09:
+    one connection reset left KAN-447 in Ready while its team was working on it)."""
+    return ((record.get("jira_sync") or {}).get(phase) or {}).get("status") == "ok"
+
+
+def _retry(fn, attempts=3, pause=2.0, sleep=None):
+    """Run a Jira call again on a transient failure (connection reset, timeout, 5xx)."""
+    import time as _t
+    sleep = sleep or _t.sleep
+    for n in range(attempts):
+        try:
+            return fn()
+        except Exception as exc:                          # noqa: BLE001
+            transient = (isinstance(exc, (ConnectionError, TimeoutError, OSError))
+                         or exc.__class__.__name__ in ("JiraUnavailable", "JiraRateLimited"))
+            if not transient or n == attempts - 1:
+                raise
+            sleep(pause * (n + 1))
+
+
 def _move(ticket, target, jira, state_store):
     """Transition unless already there; then let Persistent State observe Jira."""
     import board
     board.assert_transition_target(target)
-    before = jira.get_issue(ticket).get("status_id")
+    before = _retry(lambda: jira.get_issue(ticket)).get("status_id")
     moved = False
     if str(before) != str(target):
-        offered = {t["to_status_id"]: t["id"] for t in jira.get_transitions(ticket)}
+        offered = {t["to_status_id"]: t["id"] for t in _retry(lambda: jira.get_transitions(ticket))}
         tid = offered.get(str(target))
         if tid is None:
             raise RuntimeError("Jira offers no transition from %s to %s"
                                % (board.name_for(before) or before, board.name_for(target)))
-        jira.transition_issue(ticket, tid)
+        _retry(lambda: jira.transition_issue(ticket, tid))
         moved = True
-    after = jira.get_issue(ticket).get("status_id")
+    after = _retry(lambda: jira.get_issue(ticket)).get("status_id")
     task = _task(ticket, state_store)
     if task is not None and board.canonical_for(after) is not None:
         try:
@@ -147,7 +168,7 @@ def _note(record, phase, outcome, state_store, alert=True):
 
 def on_start(record, *, state_store=store, jira=None):
     """Called once the team has the work (delivery DELIVERED)."""
-    if not record.get("jira_key") or (record.get("jira_sync") or {}).get("start"):
+    if not record.get("jira_key") or _done(record, "start"):
         return None
     jira = _client(jira, state_store)
     if jira is None:
@@ -173,7 +194,7 @@ def on_start(record, *, state_store=store, jira=None):
 
 def on_finish(record, result_text, *, state_store=store, jira=None, escalated=False):
     """Called once the team's result is settled and not routed for a decision."""
-    if not record.get("jira_key") or (record.get("jira_sync") or {}).get("finish"):
+    if not record.get("jira_key") or _done(record, "finish"):
         return None
     jira = _client(jira, state_store)
     if jira is None:

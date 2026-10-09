@@ -180,6 +180,26 @@ class JiraSyncTests(unittest.TestCase):
         out = self.submit(did, cap, "completed", "ok")
         self.assertEqual(out["status"], "recorded", "the report still lands")
 
+    def test_a_dropped_connection_is_retried_and_a_failed_start_is_tried_again_later(self):
+        class Flaky(FakeJira):
+            drops = 2
+
+            def get_issue(self, key):
+                if Flaky.drops:
+                    Flaky.drops -= 1
+                    raise ConnectionResetError("reset by peer")
+                return FakeJira.get_issue(self, key)
+        self.jira = Flaky()
+        with mock.patch.object(jira_sync.time if hasattr(jira_sync, "time") else __import__("time"),
+                               "sleep", lambda s: None):
+            _, did, cap = self.dispatch(brief_for("KAN-95"), lane_capability="frontend")
+        self.assertEqual(self.jira.moves, [("KAN-95", "10046")], "two resets, then it worked")
+        rec = store.read("conversation_dispatch", did)
+        self.assertEqual(rec["jira_sync"]["start"]["status"], "ok")
+        # a start that failed outright is not considered done
+        self.assertFalse(jira_sync._done({"jira_sync": {"start": {"status": "failed"}}}, "start"))
+        self.assertTrue(jira_sync._done({"jira_sync": {"start": {"status": "ok"}}}, "start"))
+
     def test_a_dispatch_without_a_ticket_touches_nothing(self):
         _, did, cap = self.dispatch("count the Dart files")
         self.submit(did, cap, "completed", "728")

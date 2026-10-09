@@ -329,6 +329,23 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None):
             done.append({"key": key, "action": "dispatched", "team": tid,
                          "owner": owner, "dispatch_id": out.get("dispatch_id")})
 
+    # A Jira move that failed (a dropped connection) is retried while its work is still open.
+    try:
+        from agent.execution import jira_sync
+        for r in opened:
+            note = (r.get("jira_sync") or {}).get("start") or {}
+            if r.get("jira_key") and note.get("status") == "failed" and not r.get("jira_retries", 0) >= 5:
+                cur = state_store.read("conversation_dispatch", r["dispatch_id"])
+                state_store.update("conversation_dispatch", cur["dispatch_id"], cur["revision"],
+                                   {"jira_retries": (cur.get("jira_retries") or 0) + 1})
+                out = jira_sync.on_start(state_store.read("conversation_dispatch",
+                                                          r["dispatch_id"]),
+                                         state_store=state_store, jira=jira)
+                done.append({"key": r["jira_key"], "action": "jira-start-retried",
+                             "status": (out or {}).get("status")})
+    except Exception as exc:                            # noqa: BLE001
+        done.append({"action": "jira-retry-failed", "error": str(exc)[:200]})
+
     # Verified work reaches Alpha by itself (D-042): settle finished integrations, then open the
     # next one. Never raises into the dispatch loop.
     try:
