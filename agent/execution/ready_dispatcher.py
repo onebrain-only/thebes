@@ -329,6 +329,15 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None):
             done.append({"key": key, "action": "dispatched", "team": tid,
                          "owner": owner, "dispatch_id": out.get("dispatch_id")})
 
+    # Verified work reaches Alpha by itself (D-042): settle finished integrations, then open the
+    # next one. Never raises into the dispatch loop.
+    try:
+        from agent.execution import integrate
+        done.extend(integrate.settle(state_store=state_store, jira=jira))
+        done.extend(integrate.dispatch_for(state_store=state_store, dispatch=dispatch))
+    except Exception as exc:                            # noqa: BLE001
+        done.append({"action": "integrate-failed", "error": str(exc)[:200]})
+
     # Ask the PM (and the POs) when the board needs them (D-042).
     reasons = list(brief_reasons)
     try:

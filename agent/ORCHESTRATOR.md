@@ -156,6 +156,15 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
   - **Every ruling you obtain** from cpo, cto, cxo or the CEO goes into the PM's ledger at
     once: `python3 -m agent.execution.pm_ledger add --by <who> --ref <ticket> --text "<one
     line>"`. Answers through the decision gate are logged by code.
+- **Integration into Alpha is automatic.** When a team's work passes verification and its branch
+  is pushed, the dispatcher sends Memphis one integration dispatch (no ticket): merge in its own
+  worktree, analyze and test the merged result, push Alpha only if both pass. You do not decide
+  it and the CEO is not asked. When Memphis comes back `blocked` (a conflict it could not settle,
+  a failing check), that arrives as a plain result: decide what happens next (send the team
+  back, or a second look by Memphis) and tell the CEO in one line only if it changes what they
+  see. Canary and main are never integrated automatically.
+- **`THEBES_WAKE`** is the watchdog restarting you because items waited and your inbox waiter was
+  not running: start the waiter, handle what it hands you, do not reply at length.
 - **`alert`**: the watchdog says a team stopped (usage limit, crash, lost connection) after
   one automatic resume, or a delivery failed. Tell the CEO immediately in one or two plain
   sentences: what stopped, what Thebes tried, the one thing that would unblock it.

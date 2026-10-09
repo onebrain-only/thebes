@@ -172,7 +172,9 @@ def team_block(record):
     ] + (ops_block() if teams.read()[team_id].get("lane") == "ops" else [
         "lane: you are a CODE team. Push your OWN branch when your work is committed "
         "(`git push origin <base>-<your team>`, no force) so its commits show on the Jira "
-        "ticket. You never merge into a base branch (Alpha, Canary, main), never push another "
+        "ticket. First step of every ticket: `git fetch origin` and merge origin/<base> into "
+        "your branch (settle trivial conflicts; report `blocked` for real ones), so you start "
+        "from what the other teams already delivered. You never merge into a base branch (Alpha, Canary, main), never push another "
         "branch, and never write to the database: a hook refuses all three. A migration is SQL "
         "plus probes committed on your branch; report `blocked` with `needs-ops: <migration "
         "file>` and the operations team applies it.",
@@ -537,6 +539,7 @@ def stalled(*, state_store=store, cli=None, now=None):
         state = (rows.get(rec["target_session_id"]) or {}).get("state")
         if age > STALL_SECONDS and state != "working":
             out.append({"dispatch_id": rec["dispatch_id"], "target": rec.get("target_seat_id"),
+                        "target_session_id": rec["target_session_id"],
                         "session_state": state, "open_minutes": int(age // 60)})
     return out
 

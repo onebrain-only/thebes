@@ -65,6 +65,40 @@ def _read(path):
         return None
 
 
+def oldest_waiting(session_id, *, state_store=store, now=None):
+    """(seconds, what) for the OLDEST item waiting uncollected for this orchestrator, or
+    (0, None). The watchdog uses it to tell 'nothing to do' from 'nobody is listening'."""
+    now = now or time.time()
+    best = (0, None)
+    stamps = {}
+    for rec in state_store.read_all("conversation_dispatch"):
+        stamps[rec["dispatch_id"]] = rec.get("outcome_at") or (rec.get("watchdog_alert") or {}).get("at")
+    for item in pending(session_id, state_store=state_store, now=now):
+        kind = item["kind"]
+        if kind == "priority":
+            stamp = (state_store.read("priority_request", item["priority_request_id"]) or {}).get(
+                "created_at")
+        elif kind == "decision":
+            stamp = (state_store.read("decision_request", item["decision_request_id"]) or {}).get(
+                "created_at")
+        else:
+            stamp = stamps.get(item.get("dispatch_id"))
+        age = _age(stamp, now) if stamp else 0
+        if age > best[0]:
+            best = (age, "%s %s" % (kind, item.get("priority_request_id")
+                                    or item.get("decision_request_id")
+                                    or item.get("dispatch_id")))
+    return best
+
+
+def waiter_running():
+    """Is an `inbox wait` process alive on this machine?"""
+    import subprocess
+    done = subprocess.run(["pgrep", "-f", "agent.execution.inbox wait"], capture_output=True,
+                          text=True)
+    return done.returncode == 0 and bool(done.stdout.strip())
+
+
 def _verification_items(rec, seen, now):
     """The verified / exhausted / needs-a-reviewer outcome of a ROOT dispatch (D-041)."""
     ver = rec.get("verification")
