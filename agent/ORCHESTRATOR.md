@@ -130,7 +130,7 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
   with the reason on it. Decide the next step (a different approach, a different team, or a
   CEO question); never just re-dispatch the same work.
 - **`judge`**: the mechanical checks passed; only the `judge` checks are left. Run ONE
-  reviewer (cxo for design fidelity, qa for behaviour) as a subagent over exactly the listed
+  reviewer over exactly the listed
   checks and the evidence the team named: one pass, a PASS/FAIL line per check, no rework,
   no new scenarios. Then record it with the `how` command in the item
   (`verify verdict <id> --pass C2 --fail C3:"reason"`); a pass closes the ticket, a fail
@@ -149,9 +149,13 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
     ruling, dispatch ONE question to Memphis (no `--ticket`) naming every seat it needs; Memphis
     runs them in parallel and returns one answer to your inbox. Then log it in the PM ledger
     and resume. You never run cto, cpo, cxo, qa or any other team seat yourself.
-  - **`judge` checks follow the same rule:** a design-fidelity judge goes to Memphis (cxo), a
-    behaviour judge to Memphis (qa). Only an acceptance judge on a project's own ticket may
-    use that project's PO.
+  - **`judge` checks (CEO 2026-10-09): a team never goes to the cxo.** A design-fidelity
+    judge on a team's ticket is done by THAT team's own ux-engineer (a subagent in the team's
+    session, borrowed from the pool; there are five): send it back to the owning team as a
+    same-team continuation, never to Memphis. A behaviour judge goes to qa. The cxo is for
+    rulings on the design standard itself, not for checking one ticket, because it is a single
+    seat and one long job would hold it for everyone. Only an acceptance judge on a project's
+    own ticket may use that project's PO.
   - A PO that is stuck asks the PM first; the PM must have the answer or get it.
   - **Every ruling you obtain** from cpo, cto, cxo or the CEO goes into the PM's ledger at
     once: `python3 -m agent.execution.pm_ledger add --by <who> --ref <ticket> --text "<one
