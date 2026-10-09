@@ -190,9 +190,14 @@ class ReadyDispatcherTests(unittest.TestCase):
         self.assertEqual(set(req["reasons"]), {"backlog-changed", "ready-short"})
         from agent.execution import inbox
         inbox.collect(ORCH, state_store=store)
-        j.backlog.append("KAN-602")
         self.assertFalse([d for d in self.tick(j) if d.get("action") == "priority-request"],
-                         "rate-limited within the hour")
+                         "nothing new: rate-limited within the hour")
+        j.backlog.append("KAN-602")
+        out = [d for d in self.tick(j) if d.get("action") == "priority-request"]
+        self.assertEqual(out[0]["reasons"], ["new-in-backlog"],
+                         "a NEW ticket from the desk is asked about at once")
+        inbox.collect(ORCH, state_store=store)
+        self.assertFalse([d for d in self.tick(j) if d.get("action") == "priority-request"])
         later = __import__("time").time() + rd.PRIORITY_MIN_SECONDS + 5
         out = rd.tick(state_store=store, jira=j, dispatch=self.dispatch, now=later)
         self.assertTrue([d for d in out if d.get("action") == "priority-request"])

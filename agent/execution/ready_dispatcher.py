@@ -187,7 +187,13 @@ def raise_priority_request(reasons, signature, *, state_store=store, now=None):
     if last and last.get("backlog_signature") == signature:
         reasons = [r for r in reasons if r.get("kind") != "backlog-changed"]
     if last and now - _ts(last.get("created_at")) < PRIORITY_MIN_SECONDS:
-        reasons = [r for r in reasons if r.get("kind") == "needs-brief"]
+        # A NEW ticket in Backlog (live 2026-10-09: the desk's KAN-446 waited for the hourly
+        # limit) is asked about at once; edits to tickets already seen stay rate-limited.
+        seen = {k.split("@")[0] for r in reqs if now - _ts(r.get("created_at")) < PRIORITY_MIN_SECONDS
+                for k in (r.get("backlog_signature") or "").split("|") if k}
+        new_keys = sorted({k.split("@")[0] for k in signature.split("|") if k} - seen)
+        reasons = [r for r in reasons if r.get("kind") == "needs-brief"] + (
+            [{"kind": "new-in-backlog", "keys": new_keys}] if new_keys else [])
     if not reasons:
         return None
     if open_req:
