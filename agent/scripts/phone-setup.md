@@ -1,7 +1,7 @@
 # One-time phone setup (maintenance report 2026-10-10, Fix 1)
 
 State on the CEO's Mac, checked 2026-10-10: CocoaPods installed, `pod install` done, iOS 27 runtime and
-the iPhone 18 Pro simulator present and booted. Missing: the Android SDK and emulator (steps 3).
+the iPhone 18 Pro simulator present and booted. Android installed the same day (command-line tools, JDK 21, SDK 35/36, AVD `thebes_pixel`).
 
 Do this once, outside any ticket. It costs minutes now and nothing per ticket afterwards.
 These are installs on the CEO's Mac, so they are the CEO's to run.
@@ -23,3 +23,10 @@ Then, for a ticket whose diff touches `ios/`, `android/`, `lib/features/app_boot
 Over budget it stops and the ticket passes on web evidence, with "phone check skipped: over
 budget" listed for the CEO. `phone_check log` shows the measured times; after five tickets,
 compare them with the Chrome time and adjust the budget.
+
+## Keep them booted
+
+    xcrun simctl boot "iPhone 18 Pro"
+    export JAVA_HOME=/opt/homebrew/opt/openjdk@21 ANDROID_SDK_ROOT=/opt/homebrew/share/android-commandlinetools
+    export PATH=$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/emulator:$PATH
+    nohup emulator -avd thebes_pixel -no-window -no-audio > /dev/null 2>&1 &
