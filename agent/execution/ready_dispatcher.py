@@ -166,6 +166,7 @@ def _flag_brief(issue, problems, jira, comment=True):
 
 # ------------------------------------------------------------------ priority requests
 PRIORITY_MIN_SECONDS = 3600      # the PM re-plans at most hourly unless a brief is needed
+DONE_JQL = 'project = KAN AND status = "Done" ORDER BY updated DESC'
 BACKLOG_JQL = 'project = KAN AND status = "To Do" ORDER BY rank ASC'
 
 
@@ -185,7 +186,8 @@ def raise_priority_request(reasons, signature, *, state_store=store, now=None):
     open_req = next((r for r in reqs if r.get("status") == "open"), None)
     last = reqs[-1] if reqs else None
     if last and last.get("backlog_signature") == signature:
-        reasons = [r for r in reasons if r.get("kind") != "backlog-changed"]
+        # Malfunction #28: an unchanged Backlog is not news, whatever the free-team count.
+        reasons = [r for r in reasons if r.get("kind") not in ("backlog-changed", "ready-short")]
     if last and now - _ts(last.get("created_at")) < PRIORITY_MIN_SECONDS:
         # A NEW ticket in Backlog (live 2026-10-09: the desk's KAN-446 waited for the hourly
         # limit) is asked about at once; edits to tickets already seen stay rate-limited.
@@ -396,6 +398,11 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None):
     try:
         backlog = jira.search_issues(BACKLOG_JQL, fields=["status", "updated"], limit=100)
         signature = "|".join("%s@%s" % (b["key"], b.get("updated")) for b in backlog)
+        try:                    # a ticket finishing can unblock the Backlog (malfunction #1/#28)
+            finished = jira.search_issues(DONE_JQL, fields=["status"], limit=5)
+            signature += "|done@" + ",".join(f["key"] for f in finished)
+        except Exception:                               # noqa: BLE001
+            pass
         ready_left = len(candidates) - len(taken)
         free_code = sum(1 for t in teams.lane_teams("code")
                         if (state_store.active_role_session(t) or {}).get("session_id")

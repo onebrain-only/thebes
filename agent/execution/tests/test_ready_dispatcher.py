@@ -61,6 +61,8 @@ class FakeJira:
     def search_issues(self, jql, fields=None, limit=50, raw=False):
         if "CHANGED TO" in jql:
             return [{"key": k} for k in self.fresh]
+        if 'status = "Done"' in jql:
+            return [{"key": k} for k in getattr(self, "done", [])]
         if 'status = "To Do"' in jql:
             return [{"key": k, "updated": "u"} for k in self.backlog]
         assert raw and 'status = "Ready"' in jql
@@ -199,6 +201,10 @@ class ReadyDispatcherTests(unittest.TestCase):
         inbox.collect(ORCH, state_store=store)
         self.assertFalse([d for d in self.tick(j) if d.get("action") == "priority-request"])
         later = __import__("time").time() + rd.PRIORITY_MIN_SECONDS + 5
+        out = rd.tick(state_store=store, jira=j, dispatch=self.dispatch, now=later)
+        self.assertFalse([d for d in out if d.get("action") == "priority-request"],
+                         "malfunction #28: an unchanged Backlog is not asked about again")
+        j.done = ["KAN-1"]                       # something finished: the Backlog may be unblocked
         out = rd.tick(state_store=store, jira=j, dispatch=self.dispatch, now=later)
         self.assertTrue([d for d in out if d.get("action") == "priority-request"])
 
