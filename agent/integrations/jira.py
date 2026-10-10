@@ -582,3 +582,30 @@ def link_issues(blocker_key, blocked_key, link_type="Blocks"):
     return _request("POST", "%s/issueLink" % API, body={
         "type": {"name": link_type}, "outwardIssue": {"key": blocker_key},
         "inwardIssue": {"key": blocked_key}})
+
+
+def issue_links(issue_key):
+    """Every link on an issue as {id, type, blocker, blocked} (malfunction #16)."""
+    raw = get_issue(issue_key, fields=["issuelinks"], raw=True)
+    out = []
+    for link in ((raw.get("fields") or {}).get("issuelinks") or []):
+        a = (link.get("outwardIssue") or {}).get("key")
+        b = (link.get("inwardIssue") or {}).get("key")
+        this_is_outward = a is None            # the other end is the inward issue
+        other = a or b
+        name = (link.get("type") or {}).get("name")
+        if name == "Blocks":
+            # outwardIssue is the one that gets blocked in Jira's wording of this API
+            blocker, blocked = ((issue_key, other) if a else (other, issue_key))
+        else:
+            blocker = blocked = None
+        out.append({"id": link.get("id"), "type": name, "other": other,
+                    "blocker": blocker, "blocked": blocked})
+    return out
+
+
+def remove_link(link_id):
+    """Delete one issue link by id. Jira answers 204 with no body."""
+    if not str(link_id).isdigit():
+        raise ValueError("link id must be a number")
+    return _request("DELETE", "%s/issueLink/%s" % (API, link_id))

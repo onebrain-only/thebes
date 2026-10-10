@@ -276,6 +276,12 @@ def main(argv=None):
     c.add_argument("--new", action="store_true", help="create even if it looks like a duplicate")
     sub.add_parser("status")
     s = sub.add_parser("show"); s.add_argument("key")
+    lk = sub.add_parser("links", help="list the links of a ticket, with their ids")
+    lk.add_argument("key")
+    ul = sub.add_parser("unlink", help="remove ONE wrong link by id (see `links`)")
+    ul.add_argument("link_id")
+    ul.add_argument("--approved", required=True,
+                    help="who asked for it: the CEO's words, or the ruling it follows")
     t = sub.add_parser("template"); t.add_argument("kind", nargs="?", default="work",
                                                    choices=sorted(TEMPLATES))
     ns = ap.parse_args(argv)
@@ -286,6 +292,11 @@ def main(argv=None):
         if ns.cmd == "create":
             texts = [open(f, encoding="utf-8").read() for f in ns.file]
             out = create_many(texts, approval=ns.approved, force_new=ns.new)
+        elif ns.cmd == "links":
+            out = {"key": ns.key, "links": _jira().issue_links(ns.key)}
+        elif ns.cmd == "unlink":
+            _jira().remove_link(ns.link_id)
+            out = {"status": "removed", "link_id": ns.link_id, "approved": ns.approved}
         elif ns.cmd == "status":
             out = status()
         else:
