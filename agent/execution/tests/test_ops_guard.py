@@ -77,6 +77,16 @@ class OpsGuardTests(unittest.TestCase):
             self.assertIsNone(self.decide(sid, SB + "list_migrations"))
             self.assertIsNone(self.decide(sid, SB + "list_tables"))
 
+    def test_hyphenated_team_ids_push_their_own_branch(self):
+        """Malfunction #27: `deir-el-bahari` has hyphens of its own."""
+        pg = ops_guard.push_problem
+        for ok in ("git push origin alpha-deir-el-bahari",
+                   "git push origin alpha-ds-deir-el-bahari"):
+            self.assertIsNone(pg(ok, "deir-el-bahari"), ok)
+        for bad in ("git push origin alpha-luxor", "git push origin alpha-deir-el-bahari-x",
+                    "git push origin alpha-ds-luxor"):
+            self.assertIsNotNone(pg(bad, "deir-el-bahari"), bad)
+
     def test_project_destroying_tools_stay_with_the_ceo_even_for_ops(self):
         for tool in ("pause_project", "delete_branch", "restore_project"):
             self.assertIn("CEO", self.decide(MEMPHIS, SB + tool))

@@ -348,6 +348,11 @@ def dispatch(prompt, target_session_id, *, env=None, state_store=store, cli=None
                           % "; ".join(exc.problems))
     elif continuation:
         brief_checks = list(checks or [])
+    if jira_key and not continuation and "Every commit message starts with" not in prompt \
+            and ("TICKET: %s" % jira_key) not in prompt:
+        # Malfunction #24: a by-name dispatch must say the key, or the team guesses one.
+        prompt = ("TICKET: %s - prefix every commit message with `%s:`.\n" % (jira_key, jira_key)
+                  + prompt)
     integrate_base = next(iter((sections.get("INTEGRATE") or "").split()), None)
     branch = next(iter((sections.get("BRANCH") or "").split()), None)
     if branch and branch.lower() == "none":

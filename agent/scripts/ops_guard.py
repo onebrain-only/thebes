@@ -157,8 +157,10 @@ def push_problem(command, team_id):
         for ref in refs:
             dst = ref.split(":")[-1].replace("refs/heads/", "").lstrip("+")
             base = dst.split("-")[0].lower()
-            # `<base>-<team>` in the app, `<base>-ds-<team>` in the design system
-            if base not in BASES or not dst.endswith("-" + team_id) or dst.count("-") > 2:
+            # exactly `<base>-<team_id>` in the app or `<base>-ds-<team_id>` in the design
+            # system; team ids may contain hyphens themselves (deir-el-bahari)
+            if base not in BASES or dst.lower() not in ("%s-%s" % (base, team_id),
+                                                       "%s-ds-%s" % (base, team_id)):
                 return ("Teams push only their own branch, <base>-%s (e.g. alpha-%s); %r is "
                         "not yours. Merging into Alpha, Canary or main is done by the operations "
                         "team (Memphis)." % (team_id, team_id, dst))

@@ -119,6 +119,14 @@ def lint(text, team_id=None):
                 problems.append("CHECKS: %s `run` passes on `exit 0` only" % c["id"])
     if problems:
         raise BriefError(problems)
+    # Malfunction #21: content that passes its own checks can still fail the repo-wide l10n
+    # gate. Any brief that may write lib/l10n always carries the parity test.
+    if "lib/l10n" in (sections.get("ALLOWED PATHS") or "") and not any(
+            "l10n_parity_test" in c["what"] for c in checks):
+        used = {c["id"] for c in checks}
+        n = next(i for i in range(1, 100) if "C%d" % i not in used)
+        checks.append({"id": "C%d" % n, "kind": "run",
+                       "what": "flutter test test/l10n_parity_test.dart", "pass": "exit 0"})
     return sections, checks
 
 
