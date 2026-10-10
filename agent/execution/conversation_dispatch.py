@@ -182,6 +182,14 @@ def team_block(record):
         "session, reserved from the pool) checks design fidelity against the design before you "
         "report, and any design-fidelity `judge` check is answered by it too, with screenshots "
         "as the evidence.",
+        "phone: when your diff touches ios/, android/, lib/features/app_boot/, "
+        "lib/core/services/theme_service.dart or pubspec.yaml (or the ticket says visual:native), "
+        "run `python3 -m agent.execution.phone_check run ios --app <repo> --out ios.png` on the "
+        "already-booted simulator and attach the screenshot. It is timeboxed: if it reports "
+        "skipped, say so in your report and carry on with the web evidence.",
+        "small work: a change of one screen and at most about 5 strings is ONE ticket: your "
+        "content seat writes the ARB keys and your frontend seat wires them on the same branch, "
+        "and test/l10n_parity_test.dart must pass.",
     ]) + verify_block(record)
 
 
