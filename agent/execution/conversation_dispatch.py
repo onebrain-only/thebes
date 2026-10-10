@@ -207,6 +207,9 @@ def ops_block():
         "`git -C <worktree> push origin integrate-alpha-ds:alpha-ds`. Never push a bare sha, "
         "`refs/heads/...`, or any other shape, even if the ticket text spells one out; "
         "translate it to the shape above. If the push is still refused, report blocked once.",
+        "your own tickets: commit the work on your branch `alpha-memphis` and PUSH it plainly "
+        "(`git push origin alpha-memphis`). Thebes integrates a verified branch by itself, but "
+        "only a pushed one; an unpushed ops branch left KAN-465 starting without KAN-464's keys.",
         "no po or pm: the PM and the POs run only in the orchestrator (D-042); ask there.",
     ]
 

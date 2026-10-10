@@ -79,8 +79,20 @@ def lane_of(issue, capability):
     return "code" if capability in CODE_CAPABILITIES else "ops"
 
 
-def blockers(raw_links, jira):
-    """Keys of unfinished tickets that block this one."""
+def _not_on_base(key, state_store):
+    """Malfunction #20/#26: a blocker is Done in Jira, but its verified work was never merged into
+    its base. A ticket that builds on it would start from a base without it."""
+    from agent.execution import integrate
+    for r in state_store.read_all("conversation_dispatch"):
+        v = r.get("verification") or {}
+        if (r.get("jira_key") == key and not r.get("root_dispatch_id") and v.get("verdict") == "pass"
+                and v.get("branch") and integrate.base_for(v["branch"]) and not r.get("integrated_at")):
+            return True
+    return False
+
+
+def blockers(raw_links, jira, state_store=store):
+    """Keys of tickets that block this one: unfinished, or finished but not yet on their base."""
     out = []
     for link in raw_links or []:
         if (link.get("type") or {}).get("name") != "Blocks" or "inwardIssue" not in link:
@@ -89,6 +101,8 @@ def blockers(raw_links, jira):
         cat = (((other.get("fields") or {}).get("status") or {}).get("statusCategory") or {})
         if cat.get("key") != "done":
             out.append(other.get("key"))
+        elif _not_on_base(other.get("key"), state_store):
+            out.append("%s (not on its base yet)" % other.get("key"))
     return out
 
 
@@ -261,7 +275,7 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None):
                 brief_reasons.append({"kind": "needs-brief", "key": key})
                 _label(jira, key, issue["labels"], BRIEF_REQUESTED)
             continue
-        waiting = blockers((issue_raw.get("fields") or {}).get("issuelinks"), jira)
+        waiting = blockers((issue_raw.get("fields") or {}).get("issuelinks"), jira, state_store)
         if waiting:
             done.append({"key": key, "action": "waiting", "blocked_by": waiting})
             continue

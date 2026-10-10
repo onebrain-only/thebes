@@ -234,6 +234,19 @@ class ReadyDispatcherTests(unittest.TestCase):
         out = self.tick(j)
         self.assertEqual((out[0]["action"], out[0]["team"]), ("dispatched", "luxor"))
 
+    def test_a_done_blocker_that_is_not_on_its_base_still_blocks(self):
+        """Malfunction #20: KAN-465 started on an Alpha without KAN-464's work."""
+        link = {"type": {"name": "Blocks"}, "inwardIssue": {"key": "KAN-464", "fields": {
+            "status": {"statusCategory": {"key": "done"}}}}}
+        self.assertEqual(rd.blockers([link], None, store), [])           # nothing verified: free
+        recs = [{"jira_key": "KAN-464", "root_dispatch_id": None,
+                 "verification": {"verdict": "pass", "branch": "alpha-memphis", "sha": "a" * 40}}]
+        fake = mock.Mock()
+        fake.read_all.return_value = recs
+        self.assertEqual(rd.blockers([link], None, fake), ["KAN-464 (not on its base yet)"])
+        recs[0]["integrated_at"] = "2026-10-10T00:00:00Z"
+        self.assertEqual(rd.blockers([link], None, fake), [])
+
     def test_teams_cannot_reserve_the_po_or_the_pm(self):
         with self.assertRaises(store.StateError) as ctx:
             store.reserve_seat("po", "karnak", "cdispatch-x")
