@@ -13,8 +13,8 @@
       "push_canary":             ["push to canary", "push canary", "deploy to canary", "origin canary"],
       "production":              ["production", "apply_migration", "apply the migration", "run the migration", "prod database", "live database"],
       "governance_files":        ["role file", "decisions.md", "contract.md", "manifesto.md", "authority.json"],
-      "money_or_secrets":        ["spend", "pay for", "budget", "api key", "secret", "credential", "token", "permission", "settings.json"],
-      "external_send":           ["send an email", "send email", "slack", "publish", "post to", "notify the user"],
+      "money_or_secrets":        ["spend", "pay for", "budget", "api key", "credential", "settings.json", "re:\\bsecrets?\\b", "re:\\b(api|access|auth|bearer|jwt|service|refresh|personal access|private) tokens?\\b"],
+      "external_send":           ["send an email", "send email", "slack", "notify the user", "re:\\bpublish(ed|ing)?\\b.{0,30}\\b(to|on)\\b.{0,25}\\b(app store|play store|testflight|npm|pub\\.dev|production|the public)", "re:\\bpost to (slack|twitter|linkedin|instagram|social)"],
       "other_repository":        ["another repo", "other repository", "different repo"]
     },
     "routine": {
