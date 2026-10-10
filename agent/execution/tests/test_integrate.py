@@ -119,6 +119,43 @@ class IntegrateTests(unittest.TestCase):
         self.assertEqual(self.run_dispatch({"alpha-luxor": SHA}), [], "never twice")
         self.assertTrue(store.read("conversation_dispatch", a)["integration_dispatch_id"])
 
+    def fast_runner(self, remote, files):
+        base = fake_git(remote)
+
+        def run(argv, **kw):
+            if "diff" in argv:
+                return Done("\n".join(files) + "\n")
+            return base(argv, **kw)
+        return run
+
+    def fast(self, files):
+        import json
+        rules = [integrate.push_rule(integrate.base_for("alpha-x"))]
+        path = os.path.join(self.tmp, "settings.json")
+        with open(path, "w") as fh:
+            json.dump({"permissions": {"allow": rules}}, fh)
+        return integrate.dispatch_for(state_store=store, dispatch=self.send, settings_files=[path],
+                                      runner=self.fast_runner({"alpha-luxor": SHA}, files))
+
+    def test_a_small_verified_ticket_is_merged_by_the_team_that_built_it(self):
+        """Fast lane, CEO 2026-10-10."""
+        self.root("KAN-1", "alpha-luxor", SHA)
+        out = self.fast(["lib/a.dart", "test/a_test.dart"])
+        self.assertEqual((out[0]["action"], out[0]["lane"]), ("dispatched", "team"))
+        self.assertEqual(self.sent[0]["sid"], LUXOR)
+
+    def test_big_or_risky_tickets_stay_with_memphis(self):
+        self.root("KAN-1", "alpha-luxor", SHA)
+        self.assertEqual(self.fast(["f%d.dart" % i for i in range(6)])[0]["lane"], "ops")
+        self.assertEqual(self.sent[0]["sid"], MEMPHIS)
+
+    def test_pubspec_database_and_unknown_are_never_small(self):
+        self.assertFalse(integrate.is_small(["pubspec.yaml"]))
+        self.assertFalse(integrate.is_small(["supabase/migrations/1.sql"]))
+        self.assertFalse(integrate.is_small(None))
+        self.assertFalse(integrate.is_small([]))
+        self.assertTrue(integrate.is_small(["lib/a.dart"]))
+
     def test_only_what_thebes_verified_and_the_team_pushed_is_integrated(self):
         self.root("KAN-1", "alpha-luxor", SHA)
         self.assertEqual(self.run_dispatch({}), [], "not pushed")

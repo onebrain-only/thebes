@@ -53,6 +53,34 @@ def remote_head(repo, branch, runner=None):
     return parts[0] if done.returncode == 0 and parts else None
 
 
+SMALL_MAX_FILES = 5
+NOT_SMALL = ("pubspec.yaml", "pubspec.lock", "supabase/")
+
+
+def changed_files(repo, base, sha, runner=None):
+    """Files `sha` changes against origin/<base>, or None when git cannot say."""
+    run = runner or subprocess.run
+    cwd = os.path.join(ROOT, repo)
+    try:
+        run(["git", "-C", cwd, "fetch", "origin", base], capture_output=True, text=True,
+            timeout=120, stdin=subprocess.DEVNULL)
+        done = run(["git", "-C", cwd, "diff", "--name-only", "origin/%s...%s" % (base, sha)],
+                   capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
+        if done.returncode != 0:
+            return None
+        return [f for f in (done.stdout or "").splitlines() if f.strip()]
+    except Exception:                                      # noqa: BLE001
+        return None
+
+
+def is_small(files):
+    """Fast lane (CEO 2026-10-10): a verified ticket of at most 5 files, no pubspec and no
+    database change is merged by the team that built it. Anything unknown is NOT small."""
+    if files is None or not files or len(files) > SMALL_MAX_FILES:
+        return False
+    return not any(f == n or f.startswith(n) for f in files for n in NOT_SMALL)
+
+
 def pending(state_store=store, runner=None):
     """Verified, pushed, not-yet-integrated work, grouped by base. Never raises.
 
@@ -180,14 +208,23 @@ def dispatch_for(state_store=store, jira=None, dispatch=None, runner=None, setti
             done.append({"integrate": base, "action": "waiting",
                          "reason": "push-rule-missing: %s" % push_rule(group["target"])})
             continue
-        if binding["session_id"] in busy:
+        executor, lane = binding["session_id"], "ops"
+        if len(group["items"]) == 1:                      # fast lane: the builder merges its own
+            item = group["items"][0]
+            root = state_store.read("conversation_dispatch", item["dispatch_id"]) or {}
+            builder = root.get("target_session_id")
+            seat = teams.read().get(root.get("target_seat_id"), {})
+            if (builder and seat.get("lane", "code") == "code" and builder not in busy
+                    and is_small(changed_files(group["target"]["repo"], base, item["sha"], runner))):
+                executor, lane = builder, "team"
+        if executor in busy:
             done.append({"integrate": base, "action": "waiting", "reason": "ops-team-busy"})
             continue
         env = {k: v for k, v in os.environ.items()
                if k not in ("CODEX_THREAD_ID", "CLAUDE_CODE_SESSION_ID")}
         env[cd.CLAUDE_ORIGIN_ENV] = orch
         try:
-            out = (dispatch or cd.dispatch)(brief(group), binding["session_id"], env=env,
+            out = (dispatch or cd.dispatch)(brief(group), executor, env=env,
                                             state_store=state_store, detach=True, ticket=None)
         except cd.Refused as exc:
             done.append({"integrate": base, "action": "refused", "code": exc.code})
@@ -201,8 +238,8 @@ def dispatch_for(state_store=store, jira=None, dispatch=None, runner=None, setti
             root = state_store.read("conversation_dispatch", item["dispatch_id"])
             state_store.update("conversation_dispatch", item["dispatch_id"], root["revision"],
                                {"integration_dispatch_id": did})
-        busy.add(binding["session_id"])
-        done.append({"integrate": base, "action": "dispatched", "dispatch_id": did,
+        busy.add(executor)
+        done.append({"integrate": base, "action": "dispatched", "dispatch_id": did, "lane": lane,
                      "tickets": [i["key"] for i in group["items"]]})
     return done
 

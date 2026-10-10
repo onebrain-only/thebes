@@ -135,6 +135,7 @@ def decide(payload, state_store=None, teams_mod=None):
 
 
 BASES = ("alpha", "canary", "main")
+INTEGRATION_REFS = ("integrate-alpha:Alpha", "integrate-alpha-ds:alpha-ds")
 PUSH_ARGS = re.compile(r"git(?:\s+-C\s+\S+)*\s+push\b(?P<rest>[^;&|]*)")
 
 
@@ -155,6 +156,8 @@ def push_problem(command, team_id):
             return ("Name the branch when you push (D-042): git push origin <base>-%s. "
                     "A bare push could push another branch." % team_id)
         for ref in refs:
+            if ref in INTEGRATION_REFS:       # fast lane (CEO 2026-10-10): the builder merges its own small ticket
+                continue
             dst = ref.split(":")[-1].replace("refs/heads/", "").lstrip("+")
             base = dst.split("-")[0].lower()
             # exactly `<base>-<team_id>` in the app or `<base>-ds-<team_id>` in the design

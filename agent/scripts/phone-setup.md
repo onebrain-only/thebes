@@ -1,5 +1,8 @@
 # One-time phone setup (maintenance report 2026-10-10, Fix 1)
 
+State on the CEO's Mac, checked 2026-10-10: CocoaPods installed, `pod install` done, iOS 27 runtime and
+the iPhone 18 Pro simulator present and booted. Missing: the Android SDK and emulator (steps 3).
+
 Do this once, outside any ticket. It costs minutes now and nothing per ticket afterwards.
 These are installs on the CEO's Mac, so they are the CEO's to run.
 

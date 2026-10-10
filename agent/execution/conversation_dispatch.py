@@ -182,6 +182,12 @@ def team_block(record):
         "session, reserved from the pool) checks design fidelity against the design before you "
         "report, and any design-fidelity `judge` check is answered by it too, with screenshots "
         "as the evidence.",
+        ("integration: THIS dispatch is the fast lane (CEO 2026-10-10): your small verified "
+         "ticket is yours to merge. Follow the integration steps in the brief exactly, in your "
+         "own worktree, and push ONLY `git -C <worktree> push origin integrate-alpha:Alpha` (or "
+         "`integrate-alpha-ds:alpha-ds`); the push rule for exactly that command is the only "
+         "exception to \"never merge into a base\".") if record.get("integrate_base") else
+        "no integration: this dispatch does not merge anything into a base branch.",
         "phone: when your diff touches ios/, android/, lib/features/app_boot/, "
         "lib/core/services/theme_service.dart or pubspec.yaml (or the ticket says visual:native), "
         "run `python3 -m agent.execution.phone_check run ios --app <repo> --out ios.png` on the "

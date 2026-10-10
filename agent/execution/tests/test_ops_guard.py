@@ -87,6 +87,16 @@ class OpsGuardTests(unittest.TestCase):
                     "git push origin alpha-ds-luxor"):
             self.assertIsNotNone(pg(bad, "deir-el-bahari"), bad)
 
+    def test_a_code_team_may_push_only_the_two_integration_refspecs(self):
+        """Fast lane, CEO 2026-10-10."""
+        pg = ops_guard.push_problem
+        for ok in ("git -C /w push origin integrate-alpha:Alpha",
+                   "git -C /w push origin integrate-alpha-ds:alpha-ds"):
+            self.assertIsNone(pg(ok, "karnak"), ok)
+        for bad in ("git push origin alpha-karnak:Alpha", "git push origin integrate-alpha:main",
+                    "git push origin HEAD:Alpha", "git push origin integrate-alpha:Canary"):
+            self.assertIsNotNone(pg(bad, "karnak"), bad)
+
     def test_project_destroying_tools_stay_with_the_ceo_even_for_ops(self):
         for tool in ("pause_project", "delete_branch", "restore_project"):
             self.assertIn("CEO", self.decide(MEMPHIS, SB + tool))
