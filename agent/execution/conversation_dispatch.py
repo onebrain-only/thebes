@@ -361,7 +361,17 @@ def dispatch(prompt, target_session_id, *, env=None, state_store=store, cli=None
     # One writer per target SID: the busy check, the record and the delivery
     # are one critical section, so two dispatches never stop/resume one SID
     # concurrently and a busy worker is never interrupted.
-    with state_store._Lock("claude-target-%s" % target_session_id):
+    # Malfunction #26: a ticket is claimed by whichever dispatch (by name or by the Ready
+    # dispatcher) gets here first; the second is refused, so no two teams work one ticket.
+    with state_store._Lock("ticket-claim-%s" % (jira_key or "none")), \
+            state_store._Lock("claude-target-%s" % target_session_id):
+        if jira_key and not continuation and not integrate_base:
+            for other in state_store.read_all("conversation_dispatch"):
+                if (other.get("jira_key") == jira_key and not other.get("jira_continuation")
+                        and other.get("status") in store.CONVERSATION_DISPATCH_OPEN):
+                    raise Refused("ticket-already-dispatched",
+                                  "%s is already being worked by %s (%s); do not send it again"
+                                  % (jira_key, other.get("target_seat_id"), other["dispatch_id"]))
         busy = open_work_for(target_session_id, state_store)
         if busy:
             from agent.execution.team_pool import free_teams

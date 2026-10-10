@@ -185,7 +185,10 @@ def raise_priority_request(reasons, signature, *, state_store=store, now=None):
     reqs = sorted(state_store.read_all("priority_request"), key=lambda r: r.get("created_at") or "")
     open_req = next((r for r in reqs if r.get("status") == "open"), None)
     last = reqs[-1] if reqs else None
-    if last and last.get("backlog_signature") == signature:
+    # created_at has one-second resolution: requests made in the same second are all "last"
+    latest = {r.get("backlog_signature") for r in reqs
+              if last and r.get("created_at") == last.get("created_at")}
+    if last and signature in latest:
         # Malfunction #28: an unchanged Backlog is not news, whatever the free-team count.
         reasons = [r for r in reasons if r.get("kind") not in ("backlog-changed", "ready-short")]
     if last and now - _ts(last.get("created_at")) < PRIORITY_MIN_SECONDS:
