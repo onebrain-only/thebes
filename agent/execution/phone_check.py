@@ -89,7 +89,7 @@ def record(entry):
         fh.write(json.dumps(entry, sort_keys=True) + "\n")
 
 
-def run(platform, app_dir, out_png, budget=None, runner=subprocess.run):
+def run(platform, app_dir, out_png, budget=None, runner=subprocess.run, bundle="app.dabbler.pro"):
     """Install+launch the debug build on the booted device and take a screenshot, inside the
     budget. Returns {status: ok|skipped|failed, seconds, reason}."""
     budget = budget or PHONE_CHECK_BUDGET_SECONDS
@@ -102,19 +102,27 @@ def run(platform, app_dir, out_png, budget=None, runner=subprocess.run):
             with Lock(device):
                 left = lambda: max(1, int(budget - (time.time() - started)))   # noqa: E731
                 # incremental debug build on an already-built project, then launch + screenshot
-                runner(["flutter", "build", "ios" if platform == "ios" else "apk", "--debug",
-                        "--no-pub"] + (["--simulator"] if platform == "ios" else []),
+                env_file = os.path.join(app_dir, ".env")   # gitignored dev keys: without them the
+                runner(["flutter", "build", "ios" if platform == "ios" else "apk", "--debug",  # app stops on "Missing environment variables"
+                        "--no-pub"] + (["--simulator"] if platform == "ios" else [])
+                       + (["--dart-define-from-file=%s" % env_file]
+                          if os.path.exists(env_file) else []),
                        cwd=app_dir, check=True, timeout=left(), capture_output=True)
                 if platform == "ios":
-                    runner(["flutter", "install", "-d", device, "--no-pub"], cwd=app_dir,
+                    runner(["flutter", "install", "-d", device], cwd=app_dir,
                            check=True, timeout=left(), capture_output=True)
-                    time.sleep(5)
+                    runner(["xcrun", "simctl", "launch", device, bundle], check=True,
+                           timeout=left(), capture_output=True)
+                    time.sleep(6)
                     runner(["xcrun", "simctl", "io", device, "screenshot", out_png],
                            check=True, timeout=left(), capture_output=True)
                 else:
-                    runner(["flutter", "install", "-d", device, "--no-pub"], cwd=app_dir,
+                    runner(["flutter", "install", "-d", device], cwd=app_dir,
                            check=True, timeout=left(), capture_output=True)
-                    time.sleep(5)
+                    runner(["adb", "-s", device, "shell", "monkey", "-p", bundle, "-c",
+                            "android.intent.category.LAUNCHER", "1"], check=True,
+                           timeout=left(), capture_output=True)
+                    time.sleep(6)
                     with open(out_png, "wb") as fh:
                         runner(["adb", "-s", device, "exec-out", "screencap", "-p"],
                                stdout=fh, check=True, timeout=left())
@@ -139,6 +147,7 @@ def main(argv=None):
     n.add_argument("--label", action="append", default=[])
     r = sub.add_parser("run"); r.add_argument("platform", choices=("ios", "android"))
     r.add_argument("--app", required=True); r.add_argument("--out", default="phone-check.png")
+    r.add_argument("--bundle", default="app.dabbler.pro", help="app id to launch")
     sub.add_parser("log")
     ns = ap.parse_args(argv)
     if ns.cmd == "needed":
@@ -149,7 +158,7 @@ def main(argv=None):
         path = os.path.join(RUNTIME, "measured.jsonl")
         print(open(path).read() if os.path.exists(path) else "nothing measured yet")
         return 0
-    out = run(ns.platform, ns.app, ns.out)
+    out = run(ns.platform, ns.app, ns.out, bundle=ns.bundle)
     print(json.dumps(out, indent=2))
     return 0 if out["status"] in ("ok", "skipped") else 2
 
