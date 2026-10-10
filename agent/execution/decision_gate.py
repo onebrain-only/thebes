@@ -339,7 +339,10 @@ def request_envelope(req, capability, question):
     ] if req.get("via") == "orchestrator" else []) + [
         "what_to_do: decide this question within the Role's authority (agent/roles/%s.md). Give "
         "the decision, the reason, and what the asker should do next. If it is genuinely not "
-        "that Role's to decide, say so and name whose it is." % req["accountable_role"],
+        "that Role's to decide, say so and name whose it is." % req["accountable_role"]
+        + (" ACCEPTANCE: start the answer with the single word ACCEPTED or REJECTED; ACCEPTED "
+           "closes the ticket in Jira by itself, REJECTED leaves it for rework."
+           if req.get("decision_class") == "work_acceptance" else ""),
         "report: write your decision to a file and run exactly once: %s"
         % answer_command(req["decision_request_id"], capability),
         "report_rules: one answer per request; never contact the origin or the asker directly; "
@@ -553,6 +556,13 @@ def answer(request_id, answer_text, *, env=None, state_store=store, resume=None)
                       req.get("origin_dispatch_id"), answer_text, state_store=state_store)
     except Exception:                        # noqa: BLE001  the ledger never blocks an answer
         pass
+    if req.get("decision_class") == "work_acceptance":       # malfunction #18
+        try:
+            from agent.execution import jira_sync
+            origin = state_store.read("conversation_dispatch", req.get("origin_dispatch_id")) or {}
+            jira_sync.on_accepted(origin.get("jira_key"), answer_text, state_store=state_store)
+        except Exception:                    # noqa: BLE001  closing a ticket never blocks an answer
+            pass
     cont = _resume_asker(req, answer_text, state_store=state_store, resume=resume)
     return {"status": "answered", "decision_request_id": request_id, "continuation": cont}
 

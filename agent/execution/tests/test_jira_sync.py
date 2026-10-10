@@ -143,6 +143,17 @@ class JiraSyncTests(unittest.TestCase):
         self.assertEqual((sync["start"]["status"], sync["finish"]["status"]), ("ok", "ok"))
         self.assertEqual(self.clean(), [])
 
+    def test_an_acceptance_ruling_that_says_accepted_closes_the_ticket(self):
+        """Malfunction #18: the ticket stayed in Self-review although the PO accepted it."""
+        self.jira.status["KAN-60"] = "10044"
+        out = jira_sync.on_accepted("KAN-60", "ACCEPTED - every criterion met.", state_store=store)
+        self.assertEqual(out["status"], "ok")
+        self.assertEqual(self.jira.moves[-1], ("KAN-60", "10007"))
+        self.jira.moves.clear()
+        self.assertIsNone(jira_sync.on_accepted("KAN-60", "REJECTED - C2 fails.", state_store=store))
+        self.assertIsNone(jira_sync.on_accepted("KAN-60", "Not accepted yet", state_store=store))
+        self.assertEqual(self.jira.moves, [])
+
     def test_a_tracked_ticket_uses_its_own_capability_and_policy_route(self):
         t = store.admit_task("KAN-60", "app", "10008", "backend", "po", "po: api")
         t = store.set_work_profile("KAN-60", t["revision"], "po", "po: two widgets",

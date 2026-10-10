@@ -92,3 +92,29 @@ Reviewer, not executor. Executor was `frontend-2`. Reviewed dabbler-code Canary 
 - AC 1 struck by `po` (comment 10638), not evaluated. No criterion required a database; nothing NOT VERIFIABLE.
 
 No defect found, so PEER FAIL execution transfer does not apply. Wrote no product code, committed nothing, transitioned nothing — recording the verdict is the Orchestrator's act. Review posted as Jira comment **10836**.
+
+## 2026-10-09 KAN-463 (Horus)
+Composer sheets: vibes filtered per post kind (DabblerVibe.contexts = design, 119/119 match), place default (Use current location + empty Recent), game default (joined games via userUpcomingGamesProvider). Commit 82b85ce7f759658a40715d65debcb298fa05c53f on alpha-habu (not pushed). C1=0, C2=0 (composers), dependents=0. Open: current-location tap not wired (decision_required: no existing name source for device location); no recent-places read path.
+
+## 2026-10-09 — KAN-469 (Create Post emoji + 162dp ComposerBox) — decision_required
+Stopped at step 1 per brief STOP rule: sport rows need emoji but lib/core/widgets/sport_selection_sheet.dart (not in allowed paths) hard-wires DabblerSportIcon leading with no builder param. No code changed, no commit. Inventory: /Users/moataz/.claude/jobs/149908a7/tmp/kan469/inventory.md
+
+## 2026-10-09 — KAN-462 Create Post emoji + 162dp ComposerBox (Horus)
+- alpha-habu commit f38618a0514ba5bfddc2bc8559334dd2904127ad (not pushed). Emoji only via DabblerChip.emoji / DabblerBadge.emoji; minFieldHeight replaces minLines 7.
+- C1 analyze exit 0 (0 err/0 warn); C2 composers 81 tests exit 0; l10n parity exit 0; importer tests exit 0.
+- Emoji can't render in flutter test (Apple Color Emoji .ttc draws as boxes); screenshots in tmp/kan462/app show placeholders.
+- Sport-sheet rows untouched (wait for KAN-478).
+
+## 2026-10-09 KAN-478 (commit KAN-476:) Create Post sport-sheet emoji via DabblerInputRow.emoji on alpha-habu; C1/C2 exit 0; Create Game unchanged (73px rows base and after).
+
+## 2026-10-09 KAN-472 Create Game frame (Horus)
+Done on alpha-habu at 0a0d87cbfc6899982b392d70471de085fa9db5d7, not pushed. Meetup-parts frame plus GameComposerSheetPage (DabblerSheetRoute) for the 3 routes. The baseline payload is identical (base-commit run). C1 exit 0, whole analyze exit 0, C2 exit 1 only from 9 pre-existing game_venue_detail_render failures (same set as base). Gates and l10n tests exit 0. Evidence is in jobs/149908a7/tmp/kan472/.
+
+## 2026-10-09 KAN-473 (Horus, team Habu)
+Create Game sub-sheets (format, date, time, venue, skill) moved onto the design's sheet frame. Commit b0a7ad4dc4ee7058e1a6977db992f539ba8628a1 on alpha-habu, in worktree kan-456-habu. Not pushed. C1 exit 0. C2 exit 0 (584 passed). Gate tests exit 0. Evidence is in tmp/kan473. Luxor also logged a start on KAN-473 in Jira.
+
+## 2026-10-10 — KAN-473 judge conditions (Horus)
+Closed C1-C4 from the ux-engineer's PASS WITH CONDITIONS on b0a7ad4. Commit 4ec03c219a85358aed1ee1ba6e59ec911f038faf on alpha-habu (not pushed). Gaps now match the design (format 31/30, date/time 36, venue 24); venue header hairline dropped; header Clear tests added EN/AR. Open: foot-bottom gap (DS safe-area, device-only), time picker shape (DS ticket proposed), AR placeholder ellipsis (KAN-471).
+
+## 2026-10-10 KAN-474 (Horus)
+Wired KAN-471 keys into Create Game (sport tile semantic, duration chips, venue search/empty, create/save/load failure). New test game_composer_l10n_test.dart (13 pass). C1/C2 exit 0. Commit 37a2666465d537e26450eb18032fca2cbf9c126d on alpha-habu, not pushed. Notifier strings retained (KAN-477).

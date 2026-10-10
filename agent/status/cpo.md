@@ -829,3 +829,6 @@ public Jira comment already cites. `po` re-lands `P-043` without renumbering.
 **Not delivered:** the Jira comment on `KAN-176`. The Atlassian MCP returned
 *"requires re-authorization (token expired)"*. The full verdict is in `P-044`; the comment needs
 re-posting once auth is restored.
+
+## 2026-10-09 — KAN-452 Notion messaging/follow report
+Read-only observation report written to /Users/moataz/.claude/jobs/7f6ff1a6/tmp/kan452-report.md. Finding: corpus (11b) lists chat features but no follow/block permission rules; only non-corpus "Play mode" gates chat; conflicts with P-002/P-033 flagged. No rulings, no writes to Notion/Jira/DB.

@@ -5163,3 +5163,55 @@ Created KAN-440 (games persona gate, file only), linked Relates to KAN-439 and K
 
 ## 2026-10-09 Horemheb: KAN-444 created
 Ops: revoke anon EXECUTE on rpc_create_game. Status To Do (not moved to Ready), component Platform, label cap:cto, original estimate 1h (CEO-ordered figure, not a capacity sitting count), relates to KAN-437. Brief lint: ok (C2 changed from run to judge because only flutter/dart commands are run by Thebes). No due_date, no Work Effort set: not Ready.
+
+## 2026-10-09 - Horemheb (po)
+Created KAN-447 "Alpha red baseline: diagnose 59 failing render/measure tests" in To Do (not Ready). Component Platform, label cap:frontend, estimate 1h, due 2026-10-10. Brief linted ok (team karnak, BRANCH alpha-karnak). PM ledger rank 1 (KAN-446 ruling). Verified fields by live read.
+
+## 2026-10-09 - Horemheb (po)
+Created KAN-448 (Ticket A, 3h) and KAN-449 (Ticket B, 2h) from the PM spec for the KAN-447 fixes. Both To Do (not Ready), component Platform, label cap:frontend, both Relate to KAN-447, KAN-448 Blocks KAN-449. Briefs linted ok (team karnak, BRANCH alpha-karnak); A's C1 expanded to the 13 explicit test paths, C3/C4 are judge checks. Fields and links verified by live read. No due_date, no Work Effort: not Ready.
+
+## 2026-10-09 · Horemheb · KAN-437 / KAN-438 stuck-ticket check
+- KAN-437 (Operations): scope delivered on origin/Alpha b744f3a6; AC8 unmet as written (superseded by CEO push rule); Favourites screen not on Alpha (5341a4ca / 122a93d4, push blocked). Comment posted; NOT moved. Recommend new Favourites-integration ticket then close.
+- KAN-438 (Self-review): files/tests present on Alpha; migration applied live by name; live body check refused by ops-guard; AC7 cto verdict never recorded. Comment posted; NOT moved.
+- Cause: umbrella ticket reused for ~20 dispatches (no close step ever ran); 438 had no cto judge step run after self-review.
+
+## 2026-10-09 - Horemheb (po): KAN-450 created, KAN-437 closed (D-035)
+Created KAN-450 "Ship the Favourites screen to Alpha (DS + app)" in To Do (not Ready): component Listings, label cap:devops, original estimate 1h, Relates to KAN-437. Brief linted ok (team memphis, BRANCH alpha-memphis); C1 run analyze, C2 judge. Fields and link verified by live read. No due_date, no Work Effort set.
+KAN-437: comment posted (criteria 1-7 and 9 met, criterion 8 superseded citing D-035, Favourites split to KAN-450), transitioned via id 41 to Done, status read back = Done.
+
+## 2026-10-09 - Horemheb (po): KAN-438 closed
+Closure comment posted (criteria 1-6 per earlier review; C7 PASS from ledger 2026-10-09T07:18:26Z, memphis entry; title "not applied" noted outdated, applied live 2026-10-06 as 20261006080902). Transitioned Self-review -> Done via id 41; status read back = Done. Title left unedited (not asked).
+
+## 2026-10-09 - Horemheb (po): KAN-459 follow-ups ticketed (CEO ruling "everything as in Home Feed")
+Created KAN-460 (A shell/frame, frontend, Social, 4h), KAN-461 (B design system: vibe sheet type, emoji slot, ComposerBox 162dp, ux-engineer, Platform, 3h), KAN-462 (C1 emoji per vibe/sport/tag, frontend, Social, 3h), KAN-463 (C2 vibe filtering by kind + place/game defaults, frontend, Social, 4h), KAN-464 (D1 EN+AR ARB strings, content, Social, High, 2h), KAN-465 (D2 wire localized strings, frontend, Social, High, 1h). All To Do (not Ready), all Relates to KAN-459. Blocks: 461->462, 464->465, 465->463, 464->463. Briefs linted ok (team karnak, BRANCH alpha-karnak; D1 C1 changed from gen-l10n to analyze because only flutter test/analyze are run). C split in two (emoji vs behaviour) and D in two (content strings vs wiring) because content writes no code. No due_date, no Work Effort set: not Ready. No ledger/Jira transition done. Overlap note: KAN-460, 463, 465 all touch the composer sheet files, sequence on alpha-karnak.
+
+## 2026-10-09 KAN-459 closure
+Posted closure comment (decision dreq-eb240a13, follow-ups KAN-460..465) and transitioned KAN-459 Self-review -> Done (transition 41); status read back as Done (10007).
+## 2026-10-09 Horemheb - Create Post hardcoded English tickets
+Created KAN-466 (content, cap:content, Social, 1h, due 2026-10-12, To Do) and KAN-467 (frontend, cap:frontend, Social, 1h, due 2026-10-16, To Do). Links: 466 blocks 467, 463 blocks 467, both relate to 459; no cycle. Briefs linted ok for team karnak (C4 gen-l10n recast as judge: only flutter test/analyze are runnable checks). Design range 470-1000 checked: none of the strings appear, so current English is the source text. Dates are provisional (not capacity-derived); PM to rank. Not moved to Ready (no Work Effort from a sizing seat, surfaces unassessed).
+
+## 2026-10-09 KAN-470 created (po)
+Bug ticket "Meetups render test depends on the time of day": Task, To Do (Backlog), cap:frontend, component Listings, estimate 1h, surfaces label test/features/meetups. No due_date set (capacity-derived at selection; PM ranks). Cause is unproven inference; STEP 1 of brief is to prove it. Seam found: applyMeetupFilters(now:) exists but meetups_screen.dart:260/413 do not pass it.
+
+## 2026-10-09 KAN-462 / KAN-467 BRANCH + executor sentence
+Edited BRANCH line to alpha-<team> and added the Executor (team Habu) sentence to DECISIONS MADE on both. No status change. Read back from the edit response.
+
+## 2026-10-09 — Create Game redesign tickets (ledger ref create-game) — Horemheb
+Created KAN-471 (cap:content strings, due 10-12), KAN-472 (frontend: frame + main form, due 10-20), KAN-473 (frontend: five sheets, due 10-21), KAN-474 (frontend: wire strings, due 10-22). Links read back: 472 blocks 473; 471 and 473 block 474; 460 relates 472. All left in To Do (not moved to Ready; Work Effort left to the executing seat; PM ranks). No DS ticket: alpha-ds c938667 already has DabblerEmojiTile, ComposerRow/Field/Submit, StepperPill(suffix), Calendar, TimePicker. Open rulings (price field, db sports/emoji, route vs sheet, venue space vs place, skill sheet) listed in the report to the caller.
+
+## 2026-10-09 po-2 (Ay) KAN-478
+Created DS ticket KAN-478 (DabblerInputRow emoji slot), Platform, cap:frontend, 2h, due 2026-10-10, status To Do. Linked KAN-478 blocks KAN-462. Not moved to Ready (no sized Execution Profile set; Work Effort is the executing seat's).
+
+## 2026-10-09 po (Horemheb) - KAN-462 sport rows split out; KAN-479 created
+- KAN-462 description edited (status untouched, still Front-end): sport rows removed from GOAL/C3; DECISIONS MADE cites Orchestrator decision D-035 and KAN-479; C3 now asserts emoji display-only, not in post payload (test); sport_selection_sheet.dart added to FORBIDDEN; emoji table must still carry sport emoji.
+- KAN-479 created (To Do, cap:frontend, Social, Habu). Links: KAN-478 blocks KAN-479; KAN-462 blocks KAN-479 (read back). No due_date set (not capacity-derived).
+- Open: legacy link KAN-478 blocks KAN-462 (id 10185) still exists; no delete-link tool available. KAN-462 summary still says "sport".
+
+## 2026-10-09 (Horemheb) counter semantic label follow-up
+Created KAN-480 (cap:content, Social, due 2026-10-12, To Do, for PM to move Ready) and KAN-481 (cap:frontend, Social, team Habu, due 2026-10-18, To Do). KAN-480 blocks KAN-481 (read back: KAN-481 "is blocked by" KAN-480). Note: counterSemanticLabel is at post_composer_screen.dart:572, not 613. No Work Effort/Ready set.
+
+## 2026-10-09 Horemheb (po): KAN-469/475/477 made dispatchable (CEO order, PM ledger board)
+Briefs rewritten in dispatcher form and linted through ready_dispatcher.prompt_for + dispatch_brief.lint (team karnak): ok. Due/estimate: KAN-469 2026-10-14 3h; KAN-475 2026-10-26 2h (PM placeholder); KAN-477 2026-10-23 1h (PM placeholder). Executor sentence changed to "any frontend team" in KAN-472/473/474/477/475/469. Links added: 474 blocks 475, 477 blocks 475 (474 blocks 477 already existed). No BLOCKS for 469/481 (no shared file: 469 edits composer_place_sheet.dart + home_location_picker_sheet.dart, 481 edits post_composer_screen.dart). No status moves.
+
+## 2026-10-10 Horemheb (po): Create Game localization follow-ups (ledger ref create-game)
+Created KAN-483 (cap:content, Listings, 1h, due 2026-10-12: three game_duration_chip_* keys EN+AR) and KAN-484 (cap:frontend, Listings, 3h, due 2026-10-28: wire chips + name_ar-with-fallback for venue/space/format). Links read back from create responses: 483 blocks 484, 477 blocks 484, 475 blocks 484. Both To Do, no status move. Lint via ready_dispatcher.prompt_for + dispatch_brief.lint (team karnak): ok (run on a structural replica of each brief, same sections and C1-C3 command lines, not the stored text). Schema (baseline migration, read-only): venues/venue_spaces/sport_variants.name_ar exist nullable; areas has no name_ar (venues.area is text). Finding: composer sports select (game_composer_screen.dart:213) reads name_en only, contrary to the brief. Dates provisional; PM ranks.

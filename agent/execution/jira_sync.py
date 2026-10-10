@@ -280,3 +280,25 @@ def on_exhausted(root, ver, *, state_store=store, jira=None):
         out = {"status": "failed", "error": str(exc)[:300]}
     _note(root, "exhausted", out, state_store)
     return out
+
+
+ACCEPTED_RE = __import__("re").compile(r"^\W*(accepted|accept|approved)\b", __import__("re").I)
+
+
+def on_accepted(ticket, answer_text, *, state_store=store, jira=None):
+    """A `work_acceptance` ruling whose FIRST word is ACCEPTED closes the ticket
+    (malfunction #18: it stayed in Self-review and blocked the next ticket). Anything else,
+    including REJECTED, leaves it alone. Never raises."""
+    first = (answer_text or "").strip().splitlines()[0] if (answer_text or "").strip() else ""
+    if not ticket or not ACCEPTED_RE.match(first):
+        return None
+    jira = _client(jira, state_store)
+    if jira is None:
+        return None
+    try:
+        moved = _move(ticket, DONE_STATUS_ID, jira, state_store)
+        jira.add_comment(ticket, "Thebes: the acceptance ruling said ACCEPTED, so this ticket is "
+                                 "closed.\n\n%s" % first[:300])
+        return dict(moved, status="ok")
+    except Exception as exc:                                 # noqa: BLE001
+        return {"status": "failed", "error": str(exc)[:300]}
