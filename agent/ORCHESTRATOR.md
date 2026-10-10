@@ -156,6 +156,14 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
     rulings on the design standard itself, not for checking one ticket, because it is a single
     seat and one long job would hold it for everyone. Only an acceptance judge on a project's
     own ticket may use that project's PO.
+  - **A duplicate is discarded, not reworked.** When two teams worked one ticket, keep the
+    first verified one and run `python3 -m agent.execution.verify discard <dispatch_id> --reason
+    "duplicate of ..."` on the other: no rework, never integrated, the ticket is not moved. A
+    `fail` verdict always means rework, so never use it for a duplicate.
+  - **An acceptance ruling starts with ACCEPTED or REJECTED.** ACCEPTED closes the ticket in
+    Jira by itself.
+  - Wrong Jira link: `python3 -m agent.execution.intake links KAN-x` lists ids, `intake unlink
+    <id> --approved "<why>"` removes one. `any-team` on a Ready ticket skips the owner wait.
   - A PO that is stuck asks the PM first; the PM must have the answer or get it.
   - **Every ruling you obtain** from cpo, cto, cxo or the CEO goes into the PM's ledger at
     once: `python3 -m agent.execution.pm_ledger add --by <who> --ref <ticket> --text "<one

@@ -167,6 +167,18 @@ class VerifyTests(unittest.TestCase):
         with self.assertRaises(brief.BriefError):
             brief.lint(BRIEF.replace("flutter analyze lib/home", "git push origin main"), "karnak")
 
+    def test_a_duplicate_can_be_discarded_without_rework_or_integration(self):
+        """Report item 12: a failed verdict always meant rework."""
+        did, cap = self.dispatch()
+        with self.assertRaises(verify.Refused):
+            verify.discard(did, "dup", env={"CLAUDE_CODE_SESSION_ID": LUXOR}, state_store=store)
+        out = verify.discard(did, "KAN-484 duplicate", env={"CLAUDE_CODE_SESSION_ID": ORCH},
+                             state_store=store, jira=mock.Mock())
+        self.assertEqual(out["status"], "discarded")
+        rec = store.read("conversation_dispatch", did)
+        self.assertEqual(rec["verification"]["verdict"], "discarded")
+        self.assertEqual(rec["integrated_at"], "discarded")
+
     def test_only_one_integration_into_a_base_at_a_time(self):
         integ = BRIEF.replace("BRANCH: alpha-karnak", "INTEGRATE: Alpha")
         self.dispatch(integ)

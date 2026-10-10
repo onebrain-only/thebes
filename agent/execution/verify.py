@@ -329,6 +329,36 @@ def judge_verdict(dispatch_id, passed, failed, *, env=None, state_store=store, j
                    jira=jira, dispatcher=dispatcher, launcher=launcher, mark=False)
 
 
+def discard(dispatch_id, reason, *, env=None, state_store=store, jira=None):
+    """The orchestrator discards a DUPLICATE dispatch: no rework, never integrated, the ticket is
+    not moved (the other copy owns it). A failed verdict always means rework; this does not."""
+    env = os.environ if env is None else env
+    from agent.state import teams
+    orch = (state_store.active_role_session(teams.ORCHESTRATOR_ID) or {}).get("session_id")
+    if not orch or env.get("CLAUDE_CODE_SESSION_ID") != orch:
+        raise Refused("not-orchestrator", "only the orchestrator discards a dispatch")
+    root = state_store.read("conversation_dispatch", dispatch_id)
+    if root is None:
+        raise Refused("dispatch-not-found", dispatch_id)
+    if not (reason or "").strip():
+        raise Refused("reason-required", "say why it is discarded")
+    ver = dict(root.get("verification") or {}, verdict="discarded", reason=reason.strip()[:300],
+               at=state_store.now())
+    state_store.update("conversation_dispatch", dispatch_id, root["revision"],
+                       {"verification": ver, "integrated_at": "discarded"})
+    if root.get("jira_key"):
+        try:
+            jira = jira or __import__("agent.execution.jira_sync", fromlist=["_client"])._client(
+                None, state_store)
+            if jira:
+                jira.add_comment(root["jira_key"], "Thebes: dispatch %s (team %s) was discarded "
+                                 "as a duplicate: %s. Its work is not integrated."
+                                 % (dispatch_id, root.get("target_seat_id"), reason.strip()[:200]))
+        except Exception:                                    # noqa: BLE001  a comment never blocks
+            pass
+    return {"status": "discarded", "dispatch_id": dispatch_id}
+
+
 def pending_judge(root):
     ver = root.get("verification") or {}
     return [dict(r, id=i) for i, r in sorted((ver.get("results") or {}).items())
@@ -355,11 +385,15 @@ def main(argv=None):
     v.add_argument("--pass", dest="passed", action="append", default=[])
     v.add_argument("--fail", dest="failed", action="append", default=[],
                    help='C3:"reason" — repeat per failing check')
+    d = sub.add_parser("discard", help="discard a DUPLICATE dispatch: no rework, not integrated")
+    d.add_argument("dispatch_id"); d.add_argument("--reason", required=True)
     s = sub.add_parser("status"); s.add_argument("dispatch_id")
     ns = ap.parse_args(argv)
     try:
         if ns.cmd == "run":
             out = run(ns.dispatch_id, force=ns.force)
+        elif ns.cmd == "discard":
+            out = discard(ns.dispatch_id, ns.reason)
         elif ns.cmd == "verdict":
             failed = {}
             for item in ns.failed:
