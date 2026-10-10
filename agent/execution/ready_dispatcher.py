@@ -13,7 +13,7 @@ Ready tickets and, for each one it can place:
                     so results reach the orchestrator's inbox exactly as before
 
 Ownership (D-042): a code ticket whose component a team owns goes to that team first; a fresh
-one waits up to 30 minutes for its busy owner, then any free team takes it. Owners take their
+one waits up to 10 minutes (or not at all with the `any-team` label) for its busy owner, then any free team takes it. Owners take their
 domain first, in the PM's rank order.
 
 A ticket it cannot place is never retried in a loop: an incomplete brief gets ONE comment and
@@ -45,7 +45,8 @@ MAX_PARALLEL = 3
 JQL = 'project = KAN AND status = "Ready" ORDER BY rank ASC'
 FIELDS = ["summary", "status", "labels", "description", "issuelinks", "duedate", "components",
           "timeoriginalestimate"]
-OWNER_WAIT = "-30m"
+OWNER_WAIT = "-10m"            # was 30; malfunction #25: other teams sat idle
+ANY_TEAM = "any-team"           # board label: no owner wait at all
 FRESH_JQL = ('project = KAN AND status = "Ready" AND status CHANGED TO "Ready" AFTER %s'
              % OWNER_WAIT)
 CODE_CAPABILITIES = ("frontend", "backend", "ux-engineer", "product-designer")
@@ -279,7 +280,7 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None):
         candidates.append((issue, cap))
 
     # Two passes (D-042): owners take their own domain first, in the PM's rank order;
-    # then the rest. A fresh owned ticket waits for its busy owner up to 30 minutes.
+    # then the rest. A fresh owned ticket waits for its busy owner up to 10 minutes (or not at all with the `any-team` label).
     taken = set()
     for pass_no in (1, 2):
         for issue, cap in candidates:
@@ -302,7 +303,7 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None):
                     tid, sid = owner, sid_owner
                 elif pass_no == 1:
                     continue
-                elif key in fresh:
+                elif key in fresh and ANY_TEAM not in issue["labels"]:
                     done.append({"key": key, "action": "waiting",
                                  "reason": "owner-busy:%s" % owner})
                     continue

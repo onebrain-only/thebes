@@ -227,6 +227,13 @@ class ReadyDispatcherTests(unittest.TestCase):
         out = self.tick(j)
         self.assertEqual((out[0]["action"], out[0]["team"]), ("dispatched", "luxor"))
 
+    def test_the_any_team_label_skips_the_owner_wait(self):
+        j = FakeJira([issue("KAN-621", labels=["cap:frontend", "any-team"], component="Auth")])
+        self.dispatch("x", KARNAK, {}, store, True, "KAN-999", "frontend")   # Karnak busy
+        j.fresh = {"KAN-621"}
+        out = self.tick(j)
+        self.assertEqual((out[0]["action"], out[0]["team"]), ("dispatched", "luxor"))
+
     def test_teams_cannot_reserve_the_po_or_the_pm(self):
         with self.assertRaises(store.StateError) as ctx:
             store.reserve_seat("po", "karnak", "cdispatch-x")
