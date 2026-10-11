@@ -57,6 +57,16 @@
             "timeout": 15
           }
         ]
+      },
+      {
+        "matcher": "Bash|mcp__claude_ai_Supabase__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/agent/scripts/ops-guard.sh",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -99,7 +109,11 @@
   },
   "permissions": {
     "allow": [
-      "Bash(git push origin main)"
+      "Bash(git push origin main)",
+      "Bash(git push origin alpha-*)",
+      "Bash(git push -u origin alpha-*)",
+      "Bash(git -C Dabbler/dabbler-code push origin alpha-*)",
+      "Bash(git -C Dabbler/dabbler-design-system push origin alpha-*)"
     ],
     "deny": [
       "Bash(git -C Dabbler/dabbler-code push*main*)",

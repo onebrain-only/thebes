@@ -44,24 +44,53 @@ CEO. Never write Product code.
 
 ## 3. Dispatch work to teams
 
+**Ready tickets dispatch themselves (D-042 draft).** `agent.execution.ready_dispatcher` runs in
+the background and sends every KAN ticket in `Ready` to a free team of the right lane within a
+minute (code → code teams, max 3 in parallel; no-code and `ask` → the ops team). Do not dispatch
+a Ready ticket by hand. A ticket without a complete brief gets one comment and the label
+`needs-brief` instead. You still dispatch questions and work that has no ticket.
+
 ```sh
 python3 -m agent.execution.team_pool free          # free_teams: team_id + session_id
+python3 -m agent.execution.dispatch_brief template --team karnak   # the brief shape
 python3 -m agent.execution.conversation_dispatch dispatch --to <TEAM_SESSION_ID> \
-  --prompt-file <file with the complete, self-contained prompt>
+  --prompt-file <brief file> [--ticket KAN-123 --capability frontend]
 ```
 
-- **Jira follows a ticket automatically (D-040).** Add `--ticket KAN-123` when the work is a
-  ticket, plus `--capability frontend|backend|content|ux-engineer|devops` when Thebes has no
-  record of it. Thebes then moves the ticket to its work lane when the team receives the
-  work, and to its review status when the team reports `completed`. It comments each step
-  with the team's name, and on `failed` or a hard stop it comments without moving the
-  ticket. With no `--ticket`, a prompt naming exactly one KAN key uses that key; if it names
-  several, nothing is synced. A Jira failure arrives as a `jira-sync-failed` alert, and the
-  team's work is unaffected. Don't move a dispatched ticket by hand.
+**A dispatch for a ticket (`--ticket`) carries a brief, or Thebes refuses it and names
+everything missing (D-041).** A question or a lookup needs no brief and no `--ticket`: a prompt
+that merely *mentions* a ticket is never treated as that ticket's work.
+
+```
+GOAL: <the outcome, one or two sentences>
+BRANCH: <base>-<team>        # one branch per team, e.g. alpha-karnak; `none` for no git work
+ALLOWED PATHS: <where it may write>
+FORBIDDEN: <what it must not touch or do>
+DECISIONS MADE: <rulings already taken, or `none`>
+IF BLOCKED: <default: return decision_required with ONE question; no retry loop>
+CHECKS:
+C1 | run   | flutter test test/forms/select_test.dart | exit 0
+C2 | judge | Home matches frame "Home Feed" 1:1        | screenshot vs the frame
+```
+
+- **Decisions come first.** Before dispatching, settle every open question the work depends
+  on (cxo for design, cto for technical, po for scope/acceptance) and write the rulings into
+  DECISIONS MADE. A team that has to stop and ask is a brief that was not finished.
+- **Checks are the agreed scenarios for "done", written before the work.** `run` = a
+  `flutter test|analyze` or `dart test|analyze` command that passes on `exit 0`; Thebes
+  re-runs it itself, once, on the commit the team reports, at zero tokens. `judge` = only
+  what an eye can settle, with the evidence named. Prefer `run` (a golden or widget test
+  beats a reviewer's opinion). Never a check like "looks good".
+- **One branch per team.** Teams never share a checkout or commit to the shared base.
+  Bringing branches together is ONE serial dispatch with `INTEGRATE: <base>` instead of
+  BRANCH; Thebes refuses a second integration into the same base while one is open
+  (`integration-busy`).
+- With `--ticket`, Jira follows the work (D-040): the ticket moves to its lane when the
+  team receives it (`--capability` when Thebes has no record of the ticket), to review when
+  the team reports `completed`, and is closed or sent back by verification (§5). Don't move
+  a dispatched ticket by hand. A Jira failure arrives as a `jira-sync-failed` alert.
 - One request = one team. Several pieces run in parallel on several teams. A busy team
   refuses with `target-session-busy` and names the free ones; never queue on a busy team.
-- The prompt is self-contained: goal, repo/paths, acceptance (what proves it done), the
-  hard stops, and "report once with your envelope's submit command".
 - Your session id is the origin automatically. The accepted response says `reply_mode:
   inline`: do not block on it. Tell the CEO in one line what went where, and make sure the
   inbox waiter is running.
@@ -94,9 +123,67 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
   the full request, including the one-time answer command. Follow it: reserve the named
   seat against the `decision_request_id`, run it, write the decision to a file, run the
   answer command. Thebes resumes the team. Do not bother the CEO (D-035).
+- **`verification`**: a team's `completed` claim was checked (D-041). `verdict: pass` →
+  the ticket is closed (a PEER/QA-route ticket keeps its review status with the verified
+  evidence); tell the CEO in one line: ticket, what was verified, done. `verdict:
+  exhausted` → the checks still fail after the one allowed fix; the ticket stays in review
+  with the reason on it. Decide the next step (a different approach, a different team, or a
+  CEO question); never just re-dispatch the same work.
+- **`judge`**: the mechanical checks passed; only the `judge` checks are left. Run ONE
+  reviewer over exactly the listed
+  checks and the evidence the team named: one pass, a PASS/FAIL line per check, no rework,
+  no new scenarios. Then record it with the `how` command in the item
+  (`verify verdict <id> --pass C2 --fail C3:"reason"`); a pass closes the ticket, a fail
+  sends only that check back to the team.
+- **`priority`** (D-042): the board needs the PM or a PO. Run them **in the background**
+  (Agent tool, `run_in_background`), so you stay free for the CEO. The PM and the POs are the
+  only seats you run; teams can never reserve them.
+  - `needs_brief`: run the PO of each ticket's project (`po` = app, `po-2` = design system)
+    to write the brief into the Jira description and remove the `needs-brief` and
+    `brief-requested` labels. The dispatcher then sends it by itself.
+  - `board`: run the **PM**. It reads its decision ledger and memory first, then re-ranks
+    the Backlog (new tickets, returned work, new sub-tasks), sets a domain component
+    (Auth, Listings, Social, Money, Platform) and an **Original estimate** on each, and
+    moves only what the free teams can take into Ready, in rank order.
+  - **Rulings go to Memphis, never to you.** When the PM, a PO or you need a cto, cpo or cxo
+    ruling, dispatch ONE question to Memphis (no `--ticket`) naming every seat it needs; Memphis
+    runs them in parallel and returns one answer to your inbox. Then log it in the PM ledger
+    and resume. You never run cto, cpo, cxo, qa or any other team seat yourself.
+  - **`judge` checks (CEO 2026-10-09): a team never goes to the cxo.** A design-fidelity
+    judge on a team's ticket is done by THAT team's own ux-engineer (a subagent in the team's
+    session, borrowed from the pool; there are five): send it back to the owning team as a
+    same-team continuation, never to Memphis. A behaviour judge goes to qa. The cxo is for
+    rulings on the design standard itself, not for checking one ticket, because it is a single
+    seat and one long job would hold it for everyone. Only an acceptance judge on a project's
+    own ticket may use that project's PO.
+  - **A duplicate is discarded, not reworked.** When two teams worked one ticket, keep the
+    first verified one and run `python3 -m agent.execution.verify discard <dispatch_id> --reason
+    "duplicate of ..."` on the other: no rework, never integrated, the ticket is not moved. A
+    `fail` verdict always means rework, so never use it for a duplicate.
+  - **An acceptance ruling starts with ACCEPTED or REJECTED.** ACCEPTED closes the ticket in
+    Jira by itself.
+  - Wrong Jira link: `python3 -m agent.execution.intake links KAN-x` lists ids, `intake unlink
+    <id> --approved "<why>"` removes one. `any-team` on a Ready ticket skips the owner wait.
+  - A PO that is stuck asks the PM first; the PM must have the answer or get it.
+  - **Every ruling you obtain** from cpo, cto, cxo or the CEO goes into the PM's ledger at
+    once: `python3 -m agent.execution.pm_ledger add --by <who> --ref <ticket> --text "<one
+    line>"`. Answers through the decision gate are logged by code.
+- **Integration into Alpha is automatic.** When a team's work passes verification and its branch
+  is pushed, the dispatcher sends Memphis one integration dispatch (no ticket): merge in its own
+  worktree, analyze and test the merged result, push Alpha only if both pass. You do not decide
+  it and the CEO is not asked. When Memphis comes back `blocked` (a conflict it could not settle,
+  a failing check), that arrives as a plain result: decide what happens next (send the team
+  back, or a second look by Memphis) and tell the CEO in one line only if it changes what they
+  see. Canary and main are never integrated automatically.
+- **`THEBES_WAKE`** is the watchdog restarting you because items waited and your inbox waiter was
+  not running: start the waiter, handle what it hands you, do not reply at length.
 - **`alert`**: the watchdog says a team stopped (usage limit, crash, lost connection) after
   one automatic resume, or a delivery failed. Tell the CEO immediately in one or two plain
   sentences: what stopped, what Thebes tried, the one thing that would unblock it.
+
+  Alert kinds you may also see: `review-exhausted` (see `verification`), `review-could-not-run`
+  (Thebes could not execute a check, for example Flutter was not found: not the team's
+  fault, nothing was sent back; fix the cause and run `verify run <id> --force`).
 
 Then start the waiter again.
 
@@ -112,7 +199,8 @@ CEO one precise question and wait for their answer here.
 - Stalled team work: `python3 -m agent.execution.conversation_dispatch stalled`.
 - Resume once by hand: `… conversation_dispatch resume <dispatch_id>`.
 - The watchdog runs in the background (`python3 -m agent.execution.watchdog serve`); if
-  `ps` shows it is not running, tell the CEO it needs `scripts/thebes-up.sh`.
+  `ps` shows it is not running, tell the CEO to run `bash agent/scripts/thebes-up.sh` (it
+  restarts the loops and resumes every session with its own id; `--check` only reports).
 
 ## Never
 

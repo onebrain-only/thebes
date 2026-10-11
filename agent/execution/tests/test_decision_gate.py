@@ -328,7 +328,7 @@ class DecisionGateTests(unittest.TestCase):
                                     state_store=store)["status"], "reserved")
         with self.assertRaises(tp.Refused) as ctx:
             tp.reserve("po", rid, env={"CLAUDE_CODE_SESSION_ID": KARNAK}, state_store=store)
-        self.assertEqual(ctx.exception.code, "not-your-dispatch",
+        self.assertEqual(ctx.exception.code, "orchestrator-only-seat",
                          "another island cannot reserve against the orchestrator's request")
         self.assertIsNotNone(store.active_seat_reservation("po"))
         # the orchestrator session answers; po's own session is not the identity

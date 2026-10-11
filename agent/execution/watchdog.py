@@ -81,6 +81,85 @@ def _alert(dispatch, kind, text, *, state_store=store, launcher=None):
     return True
 
 
+WAKE_AFTER_SECONDS = 300       # something waited this long for an orchestrator that is not listening
+WAKE_EVERY_SECONDS = 900       # and the orchestrator is woken at most this often
+WAKE_MESSAGE = ("THEBES_WAKE: your inbox waiter was not running and %s has waited %d minutes "
+                "uncollected (your last turn probably ended on an error while the Mac slept). "
+                "Re-read agent/ORCHESTRATOR.md section 1, start your inbox waiter now (background), "
+                "handle what it hands you, and tell the CEO in one line only if something needs them.")
+
+
+def pending_tool(session_id, projects=None):
+    """The tool call a session is waiting on (its last tool_use without a result), read from its
+    transcript, or None. This is what a `blocked` session is waiting for."""
+    import glob
+    root = projects or os.path.expanduser("~/.claude/projects")
+    files = glob.glob(os.path.join(root, "*", "%s.jsonl" % session_id))
+    if not files:
+        return None
+    open_calls = {}
+    with open(files[0], encoding="utf-8", errors="ignore") as fh:
+        for line in fh:
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                continue
+            msg = rec.get("message") if isinstance(rec.get("message"), dict) else {}
+            content = msg.get("content")
+            for block in content if isinstance(content, list) else []:
+                if not isinstance(block, dict):
+                    continue
+                if block.get("type") == "tool_use":
+                    open_calls[block["id"]] = (block.get("name"),
+                                               json.dumps(block.get("input"))[:160])
+                elif block.get("type") == "tool_result":
+                    open_calls.pop(block.get("tool_use_id"), None)
+    return list(open_calls.values())[-1] if open_calls else None
+
+
+def wake_orchestrator(*, state_store=store, cli=None, now=None, waiter=None, projects=None):
+    """Wake the orchestrator when work waits for it and nobody is listening (D-042).
+
+    Only when it is IDLE (a turn in progress is never touched), no `inbox wait` process exists,
+    and the oldest waiting item is older than WAKE_AFTER_SECONDS. Stop then same-SID resume with
+    a short message: the only wake there is for an idle live session. At most once per
+    WAKE_EVERY_SECONDS. Returns what it did, or None."""
+    import time as _time
+    from agent.execution import inbox
+    from agent.execution.claude_cli import ClaudeCli
+    from agent.state import teams
+    now = now or _time.time()
+    binding = state_store.active_role_session(teams.ORCHESTRATOR_ID)
+    if not binding:
+        return None
+    sid = binding["session_id"]
+    age, what = inbox.oldest_waiting(sid, state_store=state_store, now=now)
+    if age < WAKE_AFTER_SECONDS or (waiter or inbox.waiter_running)():
+        return None
+    marker = os.path.join(state_store.RUNTIME, "orchestrator-wake.json")
+    try:
+        with open(marker, encoding="utf-8") as fh:
+            last = json.load(fh).get("at", 0)
+    except (OSError, ValueError):
+        last = 0
+    if now - last < WAKE_EVERY_SECONDS:
+        return None
+    cli = cli or ClaudeCli()
+    row = cli.find_by_sid(cli.agents(), sid)
+    if row is None or row.get("state") == "working":
+        return None                     # not running (thebes-up's job) or mid-turn: leave it
+    with open(marker, "w", encoding="utf-8") as fh:
+        json.dump({"at": now, "what": what, "waited": int(age)}, fh)
+    try:
+        cli.stop(sid[:8])
+        if not cli.wait_stopped(sid, 30, pid=row.get("pid")):
+            return {"action": "wake-failed", "error": "session did not stop in 30s"}
+        cli.bg_resume(sid, WAKE_MESSAGE % (what, int(age // 60)), binding["stable_home"])
+    except Exception as exc:            # noqa: BLE001
+        return {"action": "wake-failed", "error": str(exc)[:200]}
+    return {"action": "woke-orchestrator", "waiting": what, "minutes": int(age // 60)}
+
+
 def tick(*, state_store=store, cli=None, launcher=None, resume=None, now=None):
     """One pass. Returns a list of what it did, for the log."""
     from agent.execution import conversation_dispatch as cd
@@ -92,6 +171,20 @@ def tick(*, state_store=store, cli=None, launcher=None, resume=None, now=None):
         done.append({"check": "stalled", "error": str(exc)[:200]})
     for s in stalled:
         rec = state_store.read("conversation_dispatch", s["dispatch_id"])
+        if s["session_state"] == "blocked":
+            # Waiting on a permission or a question, not idle: resuming cannot answer it and
+            # "usage limit" would be the wrong diagnosis. Say what it waits for, once.
+            waiting = pending_tool(s["target_session_id"])
+            what = ("%s %s" % waiting) if waiting else "a permission or a question"
+            if _alert(rec, "blocked-on-permission",
+                      "%s is waiting for a decision only the CEO can give, not idle: %s. "
+                      "Open it with `claude attach %s`, approve or deny, and leave with the left "
+                      "arrow. Nothing was resumed."
+                      % (s["target"], what, s["target_session_id"][:8]),
+                      state_store=state_store, launcher=launcher):
+                done.append({"dispatch_id": s["dispatch_id"], "action": "alerted-blocked",
+                             "waiting_for": what})
+            continue
         attempts = sum(1 for d in state_store.read_all("session_delivery")
                        if str(d.get("delivery_id") or "").startswith(s["dispatch_id"] + "-resume"))
         if attempts == 0:
@@ -113,6 +206,13 @@ def tick(*, state_store=store, cli=None, launcher=None, resume=None, now=None):
                     % (s["target"], s["session_state"], s["open_minutes"]),
                     state_store=state_store, launcher=launcher):
             done.append({"dispatch_id": s["dispatch_id"], "action": "alerted-stalled"})
+    woke = None
+    try:
+        woke = wake_orchestrator(state_store=state_store, cli=cli, now=now)
+    except Exception as exc:               # noqa: BLE001
+        done.append({"check": "wake", "error": str(exc)[:200]})
+    if woke:
+        done.append(woke)
     clock = now or time.time()
     for rec in state_store.read_all("conversation_dispatch"):
         if rec.get("status") == "delivery_failed" and _recent(rec, clock) and _alert(

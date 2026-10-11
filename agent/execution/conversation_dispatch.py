@@ -118,6 +118,35 @@ def submit_command(dispatch_id, capability):
             % (ROOT, CAPABILITY_ENV, capability, dispatch_id, "|".join(OUTCOMES)))
 
 
+def workspace_rules(ops=False):
+    """The four workspace rules every team receives (CEO 2026-10-11): one persistent work
+    folder per team, a temporary branch dies with its integration, reports say "on Alpha,
+    sha X", and an idle folder only drops regenerable build output."""
+    lines = [
+        "workspace 1 (one folder): you have ONE persistent work folder (max 5 for the app: "
+        "karnak, habu, luxor, ramesseum, deir-el-bahari). A new task starts in that same "
+        "folder: `git fetch origin Alpha` then `git checkout -B <task-branch> origin/Alpha`. "
+        "Never create a second worktree or folder for a new task.",
+        "workspace 2 (branch dies with its integration): once your task is integrated into "
+        "Alpha, reset your own folder onto origin/Alpha and delete the local task branch: "
+        "`git checkout --detach origin/Alpha` then `git branch -d <task-branch>`. Never "
+        "`--force`. The merged team branch on origin is deleted by operations in the same step "
+        "that integrates it.",
+        "workspace 3 (report on Alpha): say \"on Alpha, sha X\" in reports, never \"run from "
+        "branch Y\". The CEO runs the app from his Alpha folder, which operations syncs as the "
+        "last step of every integration.",
+        "workspace 4 (idle folder): when your work folder has been idle 24 h, remove only "
+        "`build/` and `.dart_tool/` (regenerable). Never any other file.",
+    ]
+    if ops:
+        lines.append(
+            "workspace (operations): your integration worktree is temporary: after every "
+            "`integrate-alpha:Alpha` push, delete the merged team branch on origin (if the "
+            "classifier refuses, stop and report, never retry), remove the integration "
+            "worktree, then sync the CEO's Alpha folder and state SYNCED <sha> or BLOCKED.")
+    return lines
+
+
 def team_block(record):
     """What a TEAM island is told beyond the worker envelope: run seats as
     subagents, reserve each one first, return ONE report. Absent for a seat."""
@@ -169,7 +198,90 @@ def team_block(record):
         % (ROOT, record["dispatch_id"]),
         "report_shape: one report for the whole request — what each seat did, evidence (paths, "
         "commands, output), what is blocked or needs a decision, nothing else.",
+    ] + (ops_block() if teams.read()[team_id].get("lane") == "ops" else [
+        "lane: you are a CODE team. Push your OWN branch when your work is committed "
+        "(`git push origin <base>-<your team>`, no force) so its commits show on the Jira "
+        "ticket. First step of every ticket: `git fetch origin` and merge origin/<base> into "
+        "your branch (settle trivial conflicts; report `blocked` for real ones), so you start "
+        "from what the other teams already delivered. You never merge into a base branch (Alpha, Canary, main), never push another "
+        "branch, and never write to the database: a hook refuses all three. A migration is SQL "
+        "plus probes committed on your branch; report `blocked` with `needs-ops: <migration "
+        "file>` and the operations team applies it.",
+        "design: you never ask the cxo. For UI work, your own ux-engineer (a subagent in this "
+        "session, reserved from the pool) checks design fidelity against the design before you "
+        "report, and any design-fidelity `judge` check is answered by it too, with screenshots "
+        "as the evidence.",
+        ("integration: THIS dispatch is the fast lane (CEO 2026-10-10): your small verified "
+         "ticket is yours to merge. Follow the integration steps in the brief exactly, in your "
+         "own worktree, and push ONLY `git -C <worktree> push origin integrate-alpha:Alpha` (or "
+         "`integrate-alpha-ds:alpha-ds`); the push rule for exactly that command is the only "
+         "exception to \"never merge into a base\".") if record.get("integrate_base") else
+        "no integration: this dispatch does not merge anything into a base branch.",
+        "phone: when your diff touches ios/, android/, lib/features/app_boot/, "
+        "lib/core/services/theme_service.dart or pubspec.yaml (or the ticket says visual:native), "
+        "run `python3 -m agent.execution.phone_check run ios --app <repo> --out ios.png` on the "
+        "already-booted simulator and attach the screenshot. It is timeboxed: if it reports "
+        "skipped, say so in your report and carry on with the web evidence.",
+        "small work: a change of one screen and at most about 5 strings is ONE ticket: your "
+        "content seat writes the ARB keys and your frontend seat wires them on the same branch, "
+        "and test/l10n_parity_test.dart must pass.",
+    ] + workspace_rules()) + verify_block(record)
+
+
+def ops_block():
+    """What the OPERATIONS team (Memphis, D-042) is told on every dispatch."""
+    return [
+        "lane: you are the OPERATIONS team (Memphis, D-042): the only team allowed to apply "
+        "Supabase migrations, push, and integrate team branches into Alpha. You run seats as "
+        "subagents: cto for migrations and schema, devops for integration and push, po for "
+        "briefs and acceptance, analyst / cpo / cxo for questions and analysis.",
+        "migrations: before applying, cto reviews the SQL and classifies it. A: additive or "
+        "CREATE OR REPLACE. B: DROP of a function, view or policy, only after checking that "
+        "origin/main and origin/Canary do not use the object (git grep). C: DROP TABLE/COLUMN, "
+        "DELETE/UPDATE of rows, TRUNCATE: apply ONLY if the ticket's AUTHORIZED line names this "
+        "exact migration; otherwise report outcome blocked with `needs-ceo`. Apply one "
+        "migration at a time, run its probes, stop at the first error and report it.",
+        "integration: merge team branches into Alpha only, one at a time, after their "
+        "verification passed. Canary and main are the CEO's; never push or merge them.",
+        "pushing a base: the permission system only pre-approves two exact command shapes, so "
+        "any other shape stops on a prompt nobody can answer. Put the commit on a local branch "
+        "named exactly `integrate-alpha` (app) or `integrate-alpha-ds` (design system) and push "
+        "with `git -C <worktree> push origin integrate-alpha:Alpha` or "
+        "`git -C <worktree> push origin integrate-alpha-ds:alpha-ds`. Never push a bare sha, "
+        "`refs/heads/...`, or any other shape, even if the ticket text spells one out; "
+        "translate it to the shape above. If the push is still refused, report blocked once.",
+        "your own tickets: commit the work on your branch `alpha-memphis` and PUSH it plainly "
+        "(`git push origin alpha-memphis`). Thebes integrates a verified branch by itself, but "
+        "only a pushed one; an unpushed ops branch left KAN-465 starting without KAN-464's keys.",
+        "no po or pm: the PM and the POs run only in the orchestrator (D-042); ask there.",
+    ] + workspace_rules(ops=True)
+
+
+def verify_block(record):
+    """What the team must return so its claim can be verified, not re-done (D-041)."""
+    if not record.get("checks"):
+        return []
+    lines = [
+        "branching: work ONLY on the branch named in the brief's BRANCH line, in your team's ONE "
+        "persistent work folder (never a new worktree for the task). Never check out or commit "
+        "to the shared base branch; integration into it is a separate, serial dispatch."
+        if record.get("branch") else
+        "branching: the brief names no branch.",
+        "checks: the brief's CHECKS are the agreed scenarios for 'done'. Run each one yourself "
+        "before reporting. Do not invent extra scenarios and do not stop to re-plan them. "
+        "Thebes re-runs every `run` check ONCE on the commit you report, then closes the "
+        "ticket or sends back only the failures. Nobody re-does your work to review it.",
+        "verify_block: put this block in your result file, exactly:",
+        "  VERIFY",
+        "  branch: <the branch>",
+        "  sha: <full 40-character commit>",
+        "  worktree: <absolute path of the worktree at that commit>",
+    ] + ["  %s: PASS|FAIL — <evidence: command and result, or the file you attached>" % c["id"]
+         for c in record["checks"]] + [
+        "  The commit must be committed and the worktree on it. A check you could not run is "
+        "FAIL with the reason — never PASS by assumption.",
     ]
+    return lines
 
 
 def build_envelope(record, capability):
@@ -197,6 +309,12 @@ def build_envelope(record, capability):
     ])
 
 
+def target_session_team(binding, teams_mod):
+    """The team id a branch name must end with, or None for a seat that is not a team."""
+    seat = binding.get("seat_id")
+    return seat if teams_mod.is_team(seat) else None
+
+
 def _codex_origin(thread_id, state_store):
     try:
         return codex_runtime.require_conversation(thread_id, state_store)
@@ -214,7 +332,8 @@ def _codex_origin(thread_id, state_store):
 
 def dispatch(prompt, target_session_id, *, env=None, state_store=store, cli=None, runner=None,
              stop_timeout_seconds=30, detach=False, launcher=None, ticket=None,
-             lane_capability=None, continuation=False):
+             lane_capability=None, continuation=False, root_dispatch_id=None,
+             verify_cycle=None, checks=None):
     """Record one conversation dispatch. CLI use detaches its delivery process.
 
     The origin is CODEX_THREAD_ID from ``env`` only, and it must be an active
@@ -261,11 +380,45 @@ def dispatch(prompt, target_session_id, *, env=None, state_store=store, cli=None
                                  jira_sync.ticket_for(prompt, ticket))
     except ValueError as exc:
         raise Refused("ticket-invalid", str(exc))
+    # D-041: a ticket dispatch carries a brief with the agreed checks for "done". Refused,
+    # naming everything missing, rather than discovered by the team mid-work.
+    from agent.execution import dispatch_brief as brief_mod
+    from agent.state import teams as teams_mod
+    sections, brief_checks = {}, []
+    if jira_key and not continuation:
+        try:
+            sections, brief_checks = brief_mod.lint(
+                prompt, target_session_team(binding, teams_mod))
+        except brief_mod.BriefError as exc:
+            raise Refused("brief-incomplete",
+                          "%s — see `python3 -m agent.execution.dispatch_brief template`"
+                          % "; ".join(exc.problems))
+    elif continuation:
+        brief_checks = list(checks or [])
+    if jira_key and not continuation and "Every commit message starts with" not in prompt \
+            and ("TICKET: %s" % jira_key) not in prompt:
+        # Malfunction #24: a by-name dispatch must say the key, or the team guesses one.
+        prompt = ("TICKET: %s - prefix every commit message with `%s:`.\n" % (jira_key, jira_key)
+                  + prompt)
+    integrate_base = next(iter((sections.get("INTEGRATE") or "").split()), None)
+    branch = next(iter((sections.get("BRANCH") or "").split()), None)
+    if branch and branch.lower() == "none":
+        branch = None
 
     # One writer per target SID: the busy check, the record and the delivery
     # are one critical section, so two dispatches never stop/resume one SID
     # concurrently and a busy worker is never interrupted.
-    with state_store._Lock("claude-target-%s" % target_session_id):
+    # Malfunction #26: a ticket is claimed by whichever dispatch (by name or by the Ready
+    # dispatcher) gets here first; the second is refused, so no two teams work one ticket.
+    with state_store._Lock("ticket-claim-%s" % (jira_key or "none")), \
+            state_store._Lock("claude-target-%s" % target_session_id):
+        if jira_key and not continuation and not integrate_base:
+            for other in state_store.read_all("conversation_dispatch"):
+                if (other.get("jira_key") == jira_key and not other.get("jira_continuation")
+                        and other.get("status") in store.CONVERSATION_DISPATCH_OPEN):
+                    raise Refused("ticket-already-dispatched",
+                                  "%s is already being worked by %s (%s); do not send it again"
+                                  % (jira_key, other.get("target_seat_id"), other["dispatch_id"]))
         busy = open_work_for(target_session_id, state_store)
         if busy:
             from agent.execution.team_pool import free_teams
@@ -274,6 +427,16 @@ def dispatch(prompt, target_session_id, *, env=None, state_store=store, cli=None
             raise Refused("target-session-busy", "%s has open dispatches %s; send this to a "
                           "free team instead: %s — or wait for their results"
                           % (target_session_id, ", ".join(busy), free))
+        if integrate_base:
+            # One integration into a shared branch at a time: two at once is the clash
+            # that blocked 21 of 40 stopped dispatches.
+            for other in state_store.read_all("conversation_dispatch"):
+                if (other.get("integrate_base") == integrate_base
+                        and other.get("status") in store.CONVERSATION_DISPATCH_OPEN):
+                    raise Refused("integration-busy", "%s is already being integrated into %s "
+                                  "by %s; wait for its result"
+                                  % (other["dispatch_id"], integrate_base,
+                                     other.get("target_seat_id")))
         dispatch_id = state_store.new_id("conversation_dispatch")
         capability = secrets.token_urlsafe(32)
         prompt_ref = _ref_path(state_store, "conversation-prompts", dispatch_id)
@@ -289,7 +452,9 @@ def dispatch(prompt, target_session_id, *, env=None, state_store=store, cli=None
             "outcome": None, "result_ref": None, "result_sha256": None,
             "reported_session_id": None, "attested_delivery_id": None, "outcome_at": None,
             "result_event_id": None, "error": None, "jira_key": jira_key,
-            "jira_capability": lane_capability, "jira_continuation": bool(continuation)},
+            "jira_capability": lane_capability, "jira_continuation": bool(continuation),
+            "checks": brief_checks, "branch": branch, "integrate_base": integrate_base,
+            "root_dispatch_id": root_dispatch_id, "verify_cycle": verify_cycle},
             rid=dispatch_id)
         if detach:
             try:
@@ -447,6 +612,7 @@ def stalled(*, state_store=store, cli=None, now=None):
         state = (rows.get(rec["target_session_id"]) or {}).get("state")
         if age > STALL_SECONDS and state != "working":
             out.append({"dispatch_id": rec["dispatch_id"], "target": rec.get("target_seat_id"),
+                        "target_session_id": rec["target_session_id"],
                         "session_state": state, "open_minutes": int(age // 60)})
     return out
 
@@ -543,7 +709,7 @@ DECISION_OUTCOMES = ("decision_required", "blocked", "clarification_required")
 
 
 def submit(dispatch_id, outcome, result_text, *, env=None, state_store=store, launcher=None,
-           decision_router=None):
+           decision_router=None, verify_launcher=None):
     """The worker's single self-report. Identity is CLAUDE_CODE_SESSION_ID and
     the capability, both from ``env``; the result text is explicit."""
     env = os.environ if env is None else env
@@ -575,6 +741,12 @@ def submit(dispatch_id, outcome, result_text, *, env=None, state_store=store, la
                                                           "owner_seat", "decision_request_id")}}
     # Settled. Queueing is idempotent, so an identical repeat (or a re-run
     # after a crash between settling and queueing) completes it exactly once.
+    if created and outcome == "completed" and record.get("checks"):
+        try:                                     # D-041; verify runs detached, never blocks
+            from agent.execution import verify
+            (verify_launcher or verify._detach_run)(dispatch_id)
+        except Exception:                        # noqa: BLE001
+            pass
     if created:
         try:                                     # D-040; never fails the report
             from agent.execution import jira_sync

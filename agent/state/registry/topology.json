@@ -1,22 +1,75 @@
 {
-  "record_type": "topology",
-  "schema_version": 3,
-  "note": "System-owned seat-capacity bounds. A CEILING IS A SAFETY BOUND, NOT A FORECAST: it caps how far the system may expand a capability without a human looking, and nothing here predicts demand. Where no evidence supports a number above current+1, the ceiling IS current+1. Raising a ceiling is SYSTEM MAINTENANCE, not management approval.",
-  "capabilities": {
-    "frontend":         { "defined_seats": 8, "ceiling": 9, "expandable": true },
-    "backend":          { "defined_seats": 8, "ceiling": 9, "expandable": true },
-    "content":          { "defined_seats": 2, "ceiling": 2, "expandable": true },
-    "devops":           { "defined_seats": 1, "ceiling": 2, "expandable": true },
-    "analyst":          { "defined_seats": 1, "ceiling": 2, "expandable": true },
-    "qa":               { "defined_seats": 1, "ceiling": 2, "expandable": true },
-    "ux-engineer":      { "defined_seats": 2, "ceiling": 2, "expandable": true },
-    "product-designer": { "defined_seats": 0, "ceiling": 0, "expandable": false,
-                          "why": "Inactive: the CEO supplies design. No seat, and expansion is not a system decision." },
-    "po":               { "defined_seats": 2, "ceiling": 3, "expandable": true,
-                          "why": "D-037 (CEO 2026-10-02): one PO per active team, so a PO is always free when teams run in parallel. Acceptance authority is per ticket, not per Project: the PO who wrote a ticket's criteria answers for that ticket." },
-    "pm":               { "defined_seats": 1, "ceiling": 1, "expandable": false },
-    "cto":              { "defined_seats": 1, "ceiling": 1, "expandable": false },
-    "cpo":              { "defined_seats": 1, "ceiling": 1, "expandable": false },
-    "cxo":              { "defined_seats": 1, "ceiling": 1, "expandable": false }
+ "record_type": "topology",
+ "schema_version": 3,
+ "note": "System-owned seat-capacity bounds. A CEILING IS A SAFETY BOUND, NOT A FORECAST: it caps how far the system may expand a capability without a human looking, and nothing here predicts demand. Where no evidence supports a number above current+1, the ceiling IS current+1. Raising a ceiling is SYSTEM MAINTENANCE, not management approval.",
+ "capabilities": {
+  "frontend": {
+   "defined_seats": 8,
+   "ceiling": 9,
+   "expandable": true
+  },
+  "backend": {
+   "defined_seats": 8,
+   "ceiling": 9,
+   "expandable": true
+  },
+  "content": {
+   "defined_seats": 2,
+   "ceiling": 2,
+   "expandable": true
+  },
+  "devops": {
+   "defined_seats": 1,
+   "ceiling": 2,
+   "expandable": true
+  },
+  "analyst": {
+   "defined_seats": 1,
+   "ceiling": 2,
+   "expandable": true
+  },
+  "qa": {
+   "defined_seats": 1,
+   "ceiling": 2,
+   "expandable": true
+  },
+  "ux-engineer": {
+   "defined_seats": 5,
+   "ceiling": 5,
+   "expandable": true,
+   "why": "D-042 (CEO 2026-10-09): one ux-engineer per code team (five), so no team waits for a seat another team holds."
+  },
+  "product-designer": {
+   "defined_seats": 0,
+   "ceiling": 0,
+   "expandable": false,
+   "why": "Inactive: the CEO supplies design. No seat, and expansion is not a system decision."
+  },
+  "po": {
+   "defined_seats": 2,
+   "ceiling": 3,
+   "expandable": true,
+   "why": "D-037 (CEO 2026-10-02): one PO per active team, so a PO is always free when teams run in parallel. Acceptance authority is per ticket, not per Project: the PO who wrote a ticket's criteria answers for that ticket."
+  },
+  "pm": {
+   "defined_seats": 1,
+   "ceiling": 1,
+   "expandable": false
+  },
+  "cto": {
+   "defined_seats": 1,
+   "ceiling": 1,
+   "expandable": false
+  },
+  "cpo": {
+   "defined_seats": 1,
+   "ceiling": 1,
+   "expandable": false
+  },
+  "cxo": {
+   "defined_seats": 1,
+   "ceiling": 1,
+   "expandable": false
   }
+ }
 }

@@ -1937,3 +1937,99 @@ in that same table was **not touched** — out of scope for this task, remains a
 separate follow-up.
 
 No other content in either file was touched.
+
+## 2026-10-09 - PM run: Ops migration tickets (KAN-427/438/439/440)
+CEO ordered one Ops ticket per unapplied migration. list_migrations on wtncuzcskpigqpmnxwws shows all six meetups/games files already applied 2026-10-06 (20261006080725 meetups_hardening .. 20261006081813 kan440_games_persona_gate, plus kan441). No tickets created; reported to orchestrator for CEO confirmation. Memory open_items corrected.
+
+## 2026-10-09 pm (Anubis) priority prio-024dcf59
+Backlog had one item: KAN-444 (Platform, 1h, cap:cto). Set due_date 2026-10-10 (1h ops item, Operations lane free; no estimate beyond the 1h on the ticket), moved To Do -> Ready; Jira read-back status = Ready. KAN-437/438 are in flight, nothing else queued.
+Work Effort/executor evidence/surfaces live in Thebes state (execution_profile), set by the claiming seat at preflight, not by PM; not set by me.
+
+## 2026-10-09 pm (Anubis) priority prio-46cb38a7
+Backlog had one item: KAN-445 (read-only game counts, ask lane, cap:analyst, 30m estimate already set, brief complete). Added component Listings, due_date 2026-10-10, moved To Do -> Ready; Jira read-back status = Ready. Nothing else in Backlog; KAN-437/438 in flight.
+
+## 2026-10-09 pm (Anubis) priority prio-9ee36d1d
+Backlog had one item: KAN-446 (Venues distance fallback, code lane, cap:frontend, component Listings, 30m estimate, brief complete with AC + CHECKS). Set due_date 2026-10-10, moved To Do -> Ready; Jira read-back status = Ready. KAN-437/438 in flight, nothing else queued.
+
+## 2026-10-09 pm (Anubis) - Alpha red baseline (59 render/measure tests, 13 files)
+Decision: diagnose first (one 1h frontend ticket, rank 1, root cause: stale expectations vs real regression vs shared env), then fix tickets split by component (Listings 24, Auth 11, Platform 8+, Social/profile ~12, nav shell 4). Returned to orchestrator; cto/cxo questions returned, not asked. No ticket written by me (PO writes).
+
+## 2026-10-09 pm (Anubis) priority prio-68396f04
+Backlog had one item: KAN-447 (Alpha red baseline diagnosis; Platform, 1h, due 2026-10-10, cap:frontend, brief complete). Moved To Do -> Ready; Jira read-back status = Ready. Nothing else in Backlog; KAN-437/438 in flight. Ready was short only because the Backlog is empty: no fix tickets exist until the diagnosis lands (PO writes them then).
+
+## 2026-10-09 pm (Anubis) - KAN-447 fix tickets
+Decision: 2 tickets (not 4). A = merge fixes 1+2 (13 red render files use shared loadRenderFonts via package_config, fail loudly, plus one doc line replacing item 3; Platform, frontend, 3h, rank 1). B = migrate the other 16 sibling-path test files, BLOCKED-BY A (Platform, frontend, 2h, rank 2). Item 3 is not a Thebes task: DS is a git dependency so package_config resolves it in any worktree. Item 4 dropped. PO writes both.
+
+## 2026-10-09 pm (Anubis) prio-d9f2ab2d
+KAN-448 (Platform, 3h, rank 1): due 2026-10-10, moved To Do -> Ready; Jira read-back = Ready. KAN-449 (Platform, 2h, rank 2, BLOCKED-BY KAN-448): due 2026-10-12, stays To Do until KAN-448 is Done (BLOCKS edge).
+
+## 2026-10-09 pm (Anubis) - KAN-449 to Ready (CEO order)
+KAN-448 confirmed Done in Jira; KAN-449 (Platform, 2h, due 2026-10-12) moved To Do -> Ready, read-back status = Ready.
+Possible Thebes gap: no priority request fired when the KAN-448 blocker closed, so KAN-449 sat in To Do until the CEO ordered it; unblocking a BLOCKS edge should trigger a PM priority run.
+
+## 2026-10-09 pm (Anubis) - KAN-450
+KAN-450 (Listings, ops lane, 1h): priority High, due 2026-10-10, To Do -> Ready; read-back status Ready. Known risk: Memphis push to alpha-ds may be denied (malfunction #9); brief says stop and report.
+
+- 2026-10-09 pm: D-042 priority run. KAN-451 (CTO read-only map of live messaging/follows DB; ask lane, Social, 2h, due 2026-10-09) moved Backlog -> Ready (read back: Ready). KAN-452 (cpo Notion report, Social, 2h) left ranked 2nd in Backlog: one ops team, serial. No ruling needed; brief complete.
+- 2026-10-09 pm: re-check: KAN-451 still open (Jira status Operations, due 2026-10-09; team pool shows no open dispatch, Habu not busy). KAN-452 (Social, same owner Habu, serial ops lane) left in To Do, no date set.
+
+- 2026-10-09 pm D-042 priority run: KAN-453 (CXO design study, ask lane, Social, 2h) kept in Backlog behind KAN-451 (running) and KAN-452 (ops lane serial); due 2026-10-10 from lane load. Not moved to Ready. Blocker to watch: claude_design MCP needs /design-login.
+
+## 2026-10-09 Anubis (D-042 prio-dedb91b8)
+KAN-454 (Listings, frontend, 2h, due 2026-10-10, brief complete) and KAN-452 (Social, ask/cpo, 2h, due 2026-10-10) moved To Do -> Ready. KAN-453 (cxo ask, ops lane) held in Backlog: one ops ticket at a time; next after KAN-452.
+
+## 2026-10-09 PM priority prio-ee60a6b3 (D-042)
+KAN-452 confirmed Done. Backlog had one item, KAN-453 (Social, 2h, due 2026-10-10, ops/ask lane, brief complete): moved To Do -> Ready, status read back as Ready. Ready was 0 before; nothing else open.
+
+## 2026-10-09 PM priority prio-7716a31e (D-042)
+KAN-455 (Social, ask/analyst, 2h, brief complete, no repo/db write) given due 2026-10-10 and moved To Do -> Ready, read back as Ready. It was the only open ticket; ops lane free; no ruling needed.
+
+## 2026-10-09 PM priority prio-c53d69e6 (D-042)
+KAN-456 (Social, frontend, 2h, brief complete) given due 2026-10-10 and moved To Do -> Ready, read back as Ready. Only open ticket; no ruling needed.
+
+## 2026-10-09 PM priority prio-1643b631 (D-042)
+KAN-457 (Platform, ux-engineer/DS, 2h) and KAN-458 (Social, cxo ask, 2h), briefs complete, due 2026-10-10, both To Do -> Ready (read back Ready). Defect: Jira link is inverted (KAN-456 blocks KAN-457); should be 457 blocks 456; no delete-link tool, needs removal by a link-capable seat.
+
+## 2026-10-09 PM priority prio-4ef71b02 (D-042)
+KAN-459 (Social, ux-engineer/Habu, 6h, brief complete) given due 2026-10-12 and moved To Do -> Ready, read back Ready. No link to KAN-457 (DS repo, forbidden path in 459; 456 already Done). No ruling needed.
+
+## 2026-10-09 PM priority prio-fbefced6 (D-042)
+KAN-460/461/464 To Do -> Ready (read back Ready); 462/463/465 held in Backlog. Due dates set (461,464: 10-10; 460: 10-13; 465: 10-14; 463: 10-15; 462: 10-16). Links added: 460 blocks 465, 459 blocks 460 (existing: 461>462, 464>465, 464>463, 465>463); chain 459>460>465>463, no cycle. Source-verified comment added to all six. Content lane = ops (Memphis), no dedicated content team; KAN-464 rides the ops lane.
+
+## 2026-10-09 PM run (prio-cc43893d)
+KAN-459/460/461/464 Done. KAN-465 brief amended (game_select_sport_first -> 'Pick a sport first' EN+AR, ARB paths scoped to that key) and moved To Do -> Ready. Added 465 BLOCKS 462 (composer file overlap, no cycle); 462 and 463 stay To Do behind 465.
+
+## 2026-10-09 priority prio-88d31976 (Anubis)
+KAN-463 -> Ready (464/465 on origin/Alpha 2ba5ebe2; added BLOCKS 463->462, serial on shared composer files). KAN-462 NOT moved: KAN-461 DS commit c938667 only on local branch alpha-deir-el-bahari, origin/alpha-ds head is 122a93d, app pins 122a93d; needs devops push + repin. Decision: yes, a new ticket for the remaining hardcoded English on the Create Post screen (PO writes).
+
+## 2026-10-09 (PM, D-042 priority prio-98df37c7) KAN-466/467
+- KAN-466 (content, 1h, due 10-12) moved To Do -> Ready (read back: Ready); the dispatcher sends it to the ops lane (Memphis) when free. KAN-467 kept in To Do (blocked by 466 and 463), due 10-16. KAN-462 kept in To Do: KAN-461 is now Done in Jira, but 462 is still BLOCKED by KAN-463 (in flight) and needs the DS commit pushed+pinned. Ranks unchanged (466 < 467 order holds); due dates (466 10-12, 463 10-15, 462/467 10-16) fit lane load.
+
+## 2026-10-09 - priority prio-53d019aa (KAN-469 backlog re-rank)
+Backlog (To Do): 462, 467, 469 ranked in that order. Ready unchanged (468 only). No transitions: 462 and 467 blocked behind 463/466; 469 deferred, PO must write brief before scheduling. Ledger entry added.
+
+## 2026-10-09 PM run
+- 2026-10-09 PM: KAN-470 -> Ready (frontend, 1 sitting, due 10-10). Order: 470 > 462 > 467 > 469. 468 (content) in progress.
+
+## 2026-10-09 PM priority prio-7ec86982 (Create Game)
+KAN-471 (Listings, content, 1 sitting) set and moved To Do -> Ready (read back Ready), due 10-12. Habu lane order, not Ready: 463 > 462 > 467 > 472 > 473 > 474; PO dates (462/467 10-16, 472 10-20, 473 10-21, 474 10-22) fit 16h serial load after 463 (10-15), kept. 469 deferred. Links 472>473>474 and 471>474 already present. Jira Rank field not edited (no rank tool); order carried by this entry and the ledger.
+
+## 2026-10-09 (D-042 priority prio-b6165415) KAN-475/476/477
+Ranked Habu lane 463>462>467>472>473>474>477; 475 deferred undated; 476 held in To Do until KAN-471 Done (ARB collision), then Ready ~10-14; no ticket moved; no Habu ticket to Ready. 472 needs PO re-estimate for C6/C7. Ledger entry added (ref create-game).
+
+## 2026-10-09 priority prio-8c996787 (D-042)
+Moved to Ready: KAN-478 (frontend, effort 1, project design-system, kept 2h/Platform/due 10-10) and KAN-476 (content, effort 2 from 1d estimate, Listings; KAN-471 Done). Both still show surfaces-unassessed (executing seat assesses). KAN-476 has no due date in Jira; po to set. Habu lane order unchanged. Ledger entry added.
+- 2026-10-09 follow-up prio-8de192d3: KAN-479 ranked after 462; proposed dates logged in ledger; PO to set due dates on 479 and 476.
+
+## 2026-10-09 prio-df6987be (D-042): KAN-480 moved to Ready (content, effort 1, project app). KAN-481 kept in To Do (Habu, blocked by KAN-480, after KAN-479). Habu lane order: KAN-479, 481, 472, 473, 474, 477.
+
+## 2026-10-09 CEO order: backlog to Ready
+Moved KAN-473,474,477,469,475 to Ready (frontend/app). Due/estimate gaps on 469,475,477 left to po.
+
+## PM run 2026-10-10 — KAN-483/484 moved to Ready (status entry)
+
+## 2026-10-10 — prio-08fd6f20 (D-042)
+KAN-485 moved To Do -> Ready (frontend, app, effort 2, 6h, Platform; due date absent, PO to set). Only other open ticket is KAN-484 (in Front-end). Backlog empty; no further work for the free teams. Reasons still open: unverified-jira, surfaces-unassessed (Preflight).
+
+## 2026-10-10 KAN-486/488 to Ready (D-042)
+Moved 486 (content, e1) and 488 (frontend, e2) to Ready; 487 left in To Do (design, awaiting CEO artwork). Ledger logged.

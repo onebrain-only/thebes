@@ -71,3 +71,6 @@ Could not translate into Flutter: neither Apple nor Material names Flutter's `ma
 **Evidence:** `agent/roles/content-manager.md`, `agent/skills/AVAILABLE.md`, `/Users/moatazmustapha/.claude/plugins/marketplaces/marketingskills/skills/{aso,copywriting,copy-editing,emails,onboarding,signup,paywalls,offers}/SKILL.md`
 **Not verified:** did not open `press-release` or `voice-of-customer-miner` SKILL.md bodies (judged from description only, deferred to `pm`). Did not verify the named external RTL/Arabic resources are current or still at those names — flagged as unconfirmed in the reply.
 **Next:** none — survey only, no work claimed.
+
+## 2026-10-09 KAN-464
+Authored EN/AR key table for Create Post (11 NEW_KEY, rest reuse/skip); files in /Users/moataz/.claude/jobs/7f6ff1a6/tmp/kan464-keys.{json,md}. Awaiting dispatcher apply and peer review.

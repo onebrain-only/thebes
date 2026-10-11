@@ -153,7 +153,7 @@ class ClaudeWakeCharacterizationTests(unittest.TestCase):
         )
         with open(fixture_path, encoding="utf-8") as fh:
             fixture = json.load(fh)["seats"]
-        self.assertEqual(29, len(fixture))  # po-2, D-037
+        self.assertEqual(32, len(fixture))  # ux-engineer-3..5, D-042
         for seat, expected in sorted(fixture.items()):
             with self.subTest(seat=seat):
                 wake = prepare_claude_wake(request(

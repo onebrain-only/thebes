@@ -3053,3 +3053,9 @@ EXECUTE (flagged as far larger than this ticket and explicitly not settled insid
 real mechanism — overload creation plus default ACL — is invisible unless you check both `pg_proc`
 for the live signature and `pg_default_acl`. A low-effort pass would have ratified "it reverts the
 fix" and missed that the replay lands `anon`-executable.
+
+## 2026-10-08 — favourites shape ruling
+Ruled activity_favorites keyed on public_activities.id; see handback.
+
+## 2026-10-09 — KAN-451 observation report (read-only)
+Wrote /Users/moataz/.claude/jobs/7f6ff1a6/tmp/kan451-report.md. Live DB evidence from Memphis, not re-run by CTO; code cross-checked at origin/Alpha b1c051a3. Findings: no messaging store; follows gate no communication; friend/vibe RPCs dangling and anon-executable; rpc_block_user overloads inconsistent. No files or DB changed.

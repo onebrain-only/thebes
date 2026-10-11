@@ -31,6 +31,9 @@
     "po-2": {"primary_scope": "project work definition and acceptance"},
     "qa": {"primary_scope": "quality engineering"},
     "ux-engineer-1": {"primary_scope": "experience design and implementation"},
-    "ux-engineer-2": {"primary_scope": "experience design and implementation"}
+    "ux-engineer-2": {"primary_scope": "experience design and implementation"},
+    "ux-engineer-3": {"primary_scope": "experience design and implementation"},
+    "ux-engineer-4": {"primary_scope": "experience design and implementation"},
+    "ux-engineer-5": {"primary_scope": "experience design and implementation"}
   }
 }

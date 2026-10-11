@@ -131,6 +131,10 @@ KINDS = {
     # its accountable role (D-031). Question and answer live in *_ref files;
     # the owner's capability only as a hash. Terminal: answered | escalated.
     "decision_request": ("decision-requests", "dreq"),
+    # A request for the PM to re-prioritise the board (D-042): raised by the Ready
+    # dispatcher when the Backlog changed or Ready runs short, collected by the
+    # orchestrator's inbox, which runs the PM. Never a Jira status.
+    "priority_request": ("priority-requests", "prio"),
 }
 
 CONVERSATION_DISPATCH_OPEN = frozenset({"delivering", "delivered"})
@@ -2524,7 +2528,7 @@ WORK_PROFILE_AUTHORS = ("po", "pm")
 
 
 def admit_task(work_item_id, project_id, jira_status_id, required_capability, author,
-               basis_ref, product_id="dabbler"):
+               basis_ref, product_id="dabbler", work_effort=None):
     """Create the Persistent State record for a Jira ticket Thebes has never seen
     (D-040). It starts with the PO's capability only: no effort, surfaces null. Its
     lifecycle is what Jira says now; nothing here decides anything."""
@@ -2545,10 +2549,13 @@ def admit_task(work_item_id, project_id, jira_status_id, required_capability, au
         "executor_evidence": [],
         "execution_profile": {
             "profile_status": "partial",
-            "effective_fields": ["project_id", "required_capability"],
-            "provenance": {"required_capability": {"by": author, "at": now(),
-                                                   "basis_ref": basis_ref}},
-            "required_capability": required_capability, "work_effort": None}},
+            "effective_fields": ["project_id", "required_capability"]
+                                + (["work_effort"] if work_effort is not None else []),
+            "provenance": dict(
+                {"required_capability": {"by": author, "at": now(), "basis_ref": basis_ref}},
+                **({"work_effort": {"by": author, "at": now(), "basis_ref": basis_ref}}
+                   if work_effort is not None else {})),
+            "required_capability": required_capability, "work_effort": work_effort}},
         rid=work_item_id)
 
 
@@ -3292,6 +3299,12 @@ def reserve_seat(seat_id, team_id, dispatch_id):
         raise StateError("seat %r is not declared in the neutral registry" % seat_id)
     if not teams.is_team(team_id):
         raise StateError("%r is not a declared team" % team_id)
+    seat_role = (roster.read().get(seat_id) or {}).get("role") or \
+        (roster.read().get(seat_id) or {}).get("capability")
+    if seat_role in teams.ORCHESTRATOR_ONLY_ROLES and team_id != teams.ORCHESTRATOR_ID:
+        raise StateError("orchestrator-only-seat: %s is a %s seat; only the orchestrator runs "
+                         "the PM and the POs (D-042). Ask the orchestrator instead."
+                         % (seat_id, seat_role))
     if str(dispatch_id).startswith("ceo-"):
         # D-039: only the orchestrator executes CEO orders itself.
         if team_id != teams.ORCHESTRATOR_ID or not CEO_ORDER_ID.match(str(dispatch_id)):
@@ -4121,7 +4134,8 @@ def _id_field(kind):
             "codex_turn_event": "event_id",
             "conversation_dispatch": "dispatch_id",
             "seat_reservation": "seat_reservation_id",
-            "decision_request": "decision_request_id"}[kind]
+            "decision_request": "decision_request_id",
+            "priority_request": "priority_request_id"}[kind]
 
 
 def _validate_one(kind, record):

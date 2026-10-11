@@ -62,7 +62,7 @@ def set_ready(key, capability, effort, basis, *, project=None, move_ready=False,
             raise store.StateError("%s is new to Thebes: pass --project (app, admin, "
                                    "design-system)" % key)
         task = state_store.admit_task(key, project, issue["status_id"], capability, "po",
-                                      basis)
+                                      basis, work_effort=effort)
         admitted = True
     task = state_store.set_work_profile(key, task["revision"], "po", basis,
                                         required_capability=capability, work_effort=effort)
