@@ -22,6 +22,10 @@ A check is the agreed scenario for "done". `run` checks are re-run by Thebes its
 on the commit the team reports (zero tokens). `judge` checks are things only an eye can
 settle, and go to one reviewer for one pass. Nobody re-does the work to review it.
 
+A brief may not tell a team to create an extra worktree or folder for a task (CEO
+2026-10-11, workspace rules): each team has ONE persistent work folder and starts a task
+in it with `git fetch origin Alpha` then `git checkout -B <task-branch> origin/Alpha`.
+
     python3 -m agent.execution.dispatch_brief template [--team karnak]
     python3 -m agent.execution.dispatch_brief lint --file brief.md --team karnak
 """
@@ -48,6 +52,38 @@ CHECKS:
 C1 | run   | <exact command, e.g. flutter test test/x_test.dart> | exit 0
 C2 | judge | <what an eye must confirm> | <the evidence the reviewer is given>
 """
+
+
+# Workspace rules (CEO 2026-10-11): refuse a brief whose task text tells the team to create a
+# per-task worktree/folder. A negation ("never create a worktree") is the rule itself, not a
+# breach. The single serial integration dispatch (INTEGRATE) may use its own temporary
+# integrate worktree, which is removed after the push.
+WORKTREE_TEXT_SECTIONS = ("GOAL", "DECISIONS MADE", "ALLOWED PATHS", "IF BLOCKED")
+_WORKTREE_CREATE_RE = re.compile(
+    r"\bgit\s+worktree\s+add\b|"
+    r"\b(?:create|add|make|open|set\s*up|spin\s*up|start|use)\b[^.;\n]{0,40}?"
+    r"\b(?:worktrees?|work\s+folders?|working\s+folders?|scratch\s+copy|scratch\s+copies)\b",
+    re.I)
+_NEGATION_RE = re.compile(
+    r"\b(?:never|not|no|don'?t|do\s+not|without|must\s+not|instead\s+of|rather\s+than)\b",
+    re.I)
+
+
+def worktree_problems(sections):
+    """Problems for any section that instructs a new per-task worktree or folder."""
+    problems = []
+    for name in WORKTREE_TEXT_SECTIONS:
+        text = sections.get(name) or ""
+        for m in _WORKTREE_CREATE_RE.finditer(text):
+            before = text[max(0, m.start() - 40):m.start()]
+            if _NEGATION_RE.search(before) or _NEGATION_RE.search(m.group(0)):
+                continue
+            problems.append(
+                "%s: tells the team to create a worktree/folder for a task (%r) - each team has "
+                "ONE persistent work folder; a new task starts there with `git fetch origin Alpha` "
+                "then `git checkout -B <task-branch> origin/Alpha`" % (name, m.group(0).strip()))
+            break
+    return problems
 
 
 class BriefError(Exception):
@@ -102,6 +138,8 @@ def lint(text, team_id=None):
                             "never share a checkout" % (first, team_id))
     if sections.get("INTEGRATE") and not BRANCH_RE.match(sections["INTEGRATE"].split()[0]):
         problems.append("INTEGRATE: needs the base branch name")
+    if not sections.get("INTEGRATE"):
+        problems.extend(worktree_problems(sections))
     if not checks:
         problems.append("CHECKS: needs at least one line `C1 | run|judge | <what> | <pass>` — "
                         "the agreed scenario for 'done'")

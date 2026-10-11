@@ -118,6 +118,35 @@ def submit_command(dispatch_id, capability):
             % (ROOT, CAPABILITY_ENV, capability, dispatch_id, "|".join(OUTCOMES)))
 
 
+def workspace_rules(ops=False):
+    """The four workspace rules every team receives (CEO 2026-10-11): one persistent work
+    folder per team, a temporary branch dies with its integration, reports say "on Alpha,
+    sha X", and an idle folder only drops regenerable build output."""
+    lines = [
+        "workspace 1 (one folder): you have ONE persistent work folder (max 5 for the app: "
+        "karnak, habu, luxor, ramesseum, deir-el-bahari). A new task starts in that same "
+        "folder: `git fetch origin Alpha` then `git checkout -B <task-branch> origin/Alpha`. "
+        "Never create a second worktree or folder for a new task.",
+        "workspace 2 (branch dies with its integration): once your task is integrated into "
+        "Alpha, reset your own folder onto origin/Alpha and delete the local task branch: "
+        "`git checkout --detach origin/Alpha` then `git branch -d <task-branch>`. Never "
+        "`--force`. The merged team branch on origin is deleted by operations in the same step "
+        "that integrates it.",
+        "workspace 3 (report on Alpha): say \"on Alpha, sha X\" in reports, never \"run from "
+        "branch Y\". The CEO runs the app from his Alpha folder, which operations syncs as the "
+        "last step of every integration.",
+        "workspace 4 (idle folder): when your work folder has been idle 24 h, remove only "
+        "`build/` and `.dart_tool/` (regenerable). Never any other file.",
+    ]
+    if ops:
+        lines.append(
+            "workspace (operations): your integration worktree is temporary: after every "
+            "`integrate-alpha:Alpha` push, delete the merged team branch on origin (if the "
+            "classifier refuses, stop and report, never retry), remove the integration "
+            "worktree, then sync the CEO's Alpha folder and state SYNCED <sha> or BLOCKED.")
+    return lines
+
+
 def team_block(record):
     """What a TEAM island is told beyond the worker envelope: run seats as
     subagents, reserve each one first, return ONE report. Absent for a seat."""
@@ -196,7 +225,7 @@ def team_block(record):
         "small work: a change of one screen and at most about 5 strings is ONE ticket: your "
         "content seat writes the ARB keys and your frontend seat wires them on the same branch, "
         "and test/l10n_parity_test.dart must pass.",
-    ]) + verify_block(record)
+    ] + workspace_rules()) + verify_block(record)
 
 
 def ops_block():
@@ -225,7 +254,7 @@ def ops_block():
         "(`git push origin alpha-memphis`). Thebes integrates a verified branch by itself, but "
         "only a pushed one; an unpushed ops branch left KAN-465 starting without KAN-464's keys.",
         "no po or pm: the PM and the POs run only in the orchestrator (D-042); ask there.",
-    ]
+    ] + workspace_rules(ops=True)
 
 
 def verify_block(record):
@@ -233,9 +262,10 @@ def verify_block(record):
     if not record.get("checks"):
         return []
     lines = [
-        "branching: work ONLY on the branch named in the brief's BRANCH line, in your own git "
-        "worktree. Never check out or commit to the shared base branch; integration into it is "
-        "a separate, serial dispatch." if record.get("branch") else
+        "branching: work ONLY on the branch named in the brief's BRANCH line, in your team's ONE "
+        "persistent work folder (never a new worktree for the task). Never check out or commit "
+        "to the shared base branch; integration into it is a separate, serial dispatch."
+        if record.get("branch") else
         "branching: the brief names no branch.",
         "checks: the brief's CHECKS are the agreed scenarios for 'done'. Run each one yourself "
         "before reporting. Do not invent extra scenarios and do not stop to re-plan them. "
