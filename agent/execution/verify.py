@@ -45,7 +45,7 @@ sys.path.insert(0, ROOT)
 
 from agent.state import store                                        # noqa: E402
 
-MAX_CYCLES = 2                    # the first pass and one targeted fix
+MAX_CYCLES = 4                    # CEO 2026-10-13: the loop runs by itself; 3 fixes, then a decision
 CHECK_TIMEOUT_SECONDS = 1200
 TAIL_LINES = 25
 ALLOWED_PREFIXES = (("flutter", "test"), ("flutter", "analyze"), ("dart", "analyze"),
@@ -276,8 +276,8 @@ def fix_brief(root, ver):
             lines += ["%s FAILED — %s" % (cid, r["what"]), "  %s" % r["detail"]]
             if r.get("tail"):
                 lines += ["  last output:"] + ["    " + t for t in r["tail"].splitlines()[-12:]]
-    lines += ["", "This is fix 1 of 1. If it still fails, report `blocked` naming the check — "
-              "do not loop.",
+    lines += ["", "This is fix %d of %d. Fix exactly what failed; if you cannot, report `blocked` "
+              "naming the check." % (ver["cycle"], MAX_CYCLES - 1),
               "Report again with the same VERIFY block (branch, sha, worktree, a line per "
               "failed check). Same branch, same worktree."]
     return "\n".join(lines)
@@ -295,6 +295,19 @@ def _send_back(root, ver, *, state_store, dispatcher=None, launcher=None):
             detach=True, launcher=launcher, ticket=root.get("jira_key"),
             lane_capability=root.get("jira_capability"), continuation=True,
             root_dispatch_id=root["dispatch_id"], verify_cycle=ver["cycle"] + 1, checks=failing)
+        try:                       # the reason is written on the ticket, where everyone sees it
+            from agent.execution import jira_sync
+            jira = jira_sync._client(None, state_store)
+            if jira is not None and root.get("jira_key"):
+                why = "\n".join("%s (%s): %s" % (c["id"], (ver["results"].get(c["id"]) or {}).get("by")
+                                                  or "check", (ver["results"].get(c["id"]) or {}).get("detail")
+                                                  or "failed") for c in failing)
+                jira.add_comment(root["jira_key"],
+                                 "Thebes: returned to development (fix %d of %d), same team %s. "
+                                 "Why:\n%s" % (ver["cycle"], MAX_CYCLES - 1,
+                                               root.get("target_seat_id"), why[:2500]))
+        except Exception:                                    # noqa: BLE001  never blocks the send-back
+            pass
         return {"status": "sent-back", "dispatch_id": out.get("dispatch_id"),
                 "failing": [c["id"] for c in failing]}
     except Exception as exc:                                  # noqa: BLE001
