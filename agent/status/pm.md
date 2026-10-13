@@ -2039,3 +2039,28 @@ KAN-493 (Android signed builds + Play publishing via GitHub Actions; cap:devops,
 
 ## 2026-10-13 — Board re-prioritisation (Anubis)
 Read ledger + Jira. Open: KAN-493 (Operations, in flight), KAN-494 (epic, non-executable, left in To Do), KAN-495 (To Do -> Ready; Platform, 6h, ask lane, brief complete). Backlog otherwise empty; no returned work; no needs-brief tickets; no CEO-decision items Readied. Ledger entry added.
+
+## 2026-10-13 PM run (prio-acc7995e)
+Backlog re-checked: only KAN-494 (epic, non-executable, To Do, created 2026-10-13 10:46) in To Do; KAN-493 in Operations. Nothing new; nothing moved to Ready. Observation: backlog-changed likely keeps firing on KAN-494 alone.
+
+## 2026-10-13 — board pass (D-042)
+New ticket KAN-496. Moved To Do -> Ready: KAN-496 (Platform, 6h, ask/read-only, cap:devops). Left: KAN-494 (epic, non-executable), KAN-493 (already Operations, external date). No tickets written.
+
+## 2026-10-13 KAN-497
+Moved To Do -> Ready (transition 2) on CEO order. Component Platform, Original estimate 1d 4h (43200s = 12h), label cap:backend, brief passes D-041 lint (GOAL/BRANCH/ALLOWED PATHS/FORBIDDEN/DECISIONS MADE/IF BLOCKED/CHECKS C1-C9). Nothing else touched.
+
+## 2026-10-13 · Messaging wave 1 (KAN-494)
+- KAN-502 and KAN-508 moved To Do -> Ready (transition id 2), order 502 then 508. Component, estimate and brief (GOAL/BRANCH/PATHS/FORBIDDEN/CHECKS) read back present on both.
+- KAN-503 held in To Do: required capability product-designer has 0 defined seats (topology.json); not claimable. Needs CEO-supplied design or PO re-route.
+- KAN-499 To Do, unblocked (KAN-497 Done); not Readied this wave. KAN-501 waits for KAN-500 (Self-review) on Alpha.
+- KAN-511 (1w 4h = 44h) recommend split by state set at readying; not split by PM.
+
+## 2026-10-13 - Anubis - KAN-499 and KAN-503 moved To Do -> Ready
+- CEO order: Ready KAN-499 (KAN-497 Done) and KAN-503 if label re-routed. Transition id 2 (Ready, status 10008), read live first.
+- KAN-499: now Ready (transition accepted, not refused). KAN-503: label is cap:ux-engineer (re-route done), component Social; now Ready.
+- Nothing else touched. Dispatcher will hold KAN-499 until KAN-497's commit is on Alpha.
+
+## 2026-10-13 Anubis: KAN-504 To Do -> Ready (transition id 2, accepted first try) on CEO order after KAN-502 Done. Nothing else touched. Next after KAN-504 Done: KAN-506, KAN-507 (only blocker is 504); KAN-505 also needs KAN-499 Done. KAN-501 unblocked (KAN-500 Done), not Readied.
+
+## 2026-10-13 - KAN-501 moved To Do -> Ready (Anubis)
+CEO order: keep free teams busy. Read live transitions (id 2 = Ready, matches board.py 10008), one attempt, accepted. KAN-501 now status Ready (10008), component Social, label cap:frontend. KAN-500 was Done and on Alpha (1e49cec8) per the order. Nothing else readied. Original estimate not visible in default fields; not re-checked.

@@ -48,7 +48,7 @@ class ReviewQueueTests(unittest.TestCase):
             "delivery_id": did, "capability_sha256": "0" * 64, "prompt_ref": "/x",
             "status": "completed", "delivery_status": "DELIVERED", "outcome": "completed",
             "result_ref": "/x", "result_sha256": "0" * 64, "outcome_at": store.now(),
-            "attested_delivery_id": did, "reported_session_id": LUXOR, "jira_key": key,
+            "attested_delivery_id": did, "reported_session_id": LUXOR, "jira_key": key, "branch": "alpha-luxor",
             "checks": [{"id": "C1", "kind": "run", "what": "flutter analyze", "pass": "exit 0"},
                        {"id": "C2", "kind": "judge", "what": "chips equal height",
                         "pass": "screenshot en light"},

@@ -127,6 +127,12 @@ class VerifyTests(unittest.TestCase):
                          decision_router=lambda r, state_store: {"route": "escalate"},
                          verify_launcher=self.verifies.append)
 
+    def codex_pass(self, did, checks=("QA",), failed=None, notes=None):
+        """D-043: the Codex reviewer's verdict (review_queue submit records it this way)."""
+        return verify.judge_verdict(did, list(checks), failed or {}, state_store=store,
+                                    jira=self.jira, reviewer="codex-thread", notes=notes,
+                                    launcher=lambda d, c: self.sent.append((d, c)))
+
     def verify_run(self, did, runner=None, **kw):
         return verify.run(did, state_store=store, runner=runner or FakeRunner(),
                           git_head=lambda wt: self.head, jira=self.jira,
@@ -207,14 +213,16 @@ class VerifyTests(unittest.TestCase):
                          ["flutter test test/home_test.dart", "flutter analyze lib/home"])
         self.assertTrue(all(c[2] is False for c in runner.calls), "never through a shell")
         self.assertTrue(all(c[1] == os.path.realpath(self.wt) for c in runner.calls))
-        got = self.collect()
-        self.assertEqual([i["kind"] for i in got], ["judge"], "not a bare 'completed'")
-        self.assertEqual([p["id"] for p in got[0]["pending"]], ["C3"])
-        with self.assertRaises(verify.Refused):
-            verify.judge_verdict(did, ["C3"], {}, env={"CLAUDE_CODE_SESSION_ID": KARNAK},
+        self.assertEqual(self.collect(), [],
+                         "D-043: product work is never handed to the orchestrator to judge")
+        root = store.read("conversation_dispatch", did)
+        self.assertEqual(sorted(r for r, v in root["verification"]["results"].items()
+                                if v["status"] == "pending-judge"), ["C3", "QA"])
+        with self.assertRaises(verify.Refused) as ctx:
+            verify.judge_verdict(did, ["C3", "QA"], {}, env={"CLAUDE_CODE_SESSION_ID": ORCH},
                                  state_store=store)
-        res = verify.judge_verdict(did, ["C3"], {}, env={"CLAUDE_CODE_SESSION_ID": ORCH},
-                                   state_store=store, jira=self.jira)
+        self.assertEqual(ctx.exception.code, "codex-reviews-product-work")
+        res = self.codex_pass(did, ("C3", "QA"))
         self.assertEqual(res["verdict"], "pass")
         self.assertEqual(self.jira.moves[-1], ("KAN-50", "10007"), "Done")
         self.assertIn("closed this", self.jira.comments[-1][1])
@@ -246,10 +254,39 @@ class VerifyTests(unittest.TestCase):
         out2 = self.verify_run(fix_did, runner)
         self.assertEqual([c[0] for c in runner.calls], ["flutter analyze lib/home"],
                          "only the failed check is re-run")
-        self.assertEqual(out2["verdict"], "pass")
+        self.assertEqual(out2["verdict"], "needs_judge", "then the Codex QA check")
+        self.assertEqual(self.codex_pass(did)["verdict"], "pass")
         self.assertEqual(self.jira.moves[-1], ("KAN-50", "10007"))
         self.assertEqual([i["kind"] for i in self.collect() if i["kind"] != "alert"],
                          ["verification"])
+
+    def test_a_skipped_check_never_closes_the_ticket(self):
+        """Malfunction B1 (KAN-493): a check that was not run must not end in Done."""
+        brief_run_only = "\n".join(l for l in BRIEF.splitlines() if "| judge |" not in l)
+        did, cap = self.dispatch(brief_run_only)
+        self.submit(did, cap, report(wt=self.wt, c=(("C1", "PASS"), ("C2", "PASS"))))
+        self.verify_run(did)
+        out = self.codex_pass(did, notes={"QA": "SKIPPED, not verified: needs-write"})
+        self.assertEqual(out["verdict"], "pass")
+        self.assertNotEqual(self.jira.moves[-1], ("KAN-50", "10007"), "not Done")
+        self.assertIn("could not be verified", self.jira.comments[-1][1])
+
+    def test_a_codex_qa_failure_goes_back_to_the_same_team(self):
+        brief_run_only = "\n".join(l for l in BRIEF.splitlines() if "| judge |" not in l)
+        did, cap = self.dispatch(brief_run_only)
+        self.submit(did, cap, report(wt=self.wt, c=(("C1", "PASS"), ("C2", "PASS"))))
+        self.verify_run(did)
+        out = self.codex_pass(did, checks=(), failed={"QA": "chips 4px taller in Arabic"})
+        self.assertEqual(out["verdict"], "retry")
+        fix_did, _ = self.deliver_sent()
+        fix = store.read("conversation_dispatch", fix_did)
+        self.assertEqual((fix["target_session_id"], fix["root_dispatch_id"]), (KARNAK, did))
+        self.assertIn("chips 4px taller in Arabic", open(fix["prompt_ref"]).read())
+
+    def test_text_work_without_a_branch_is_not_product_and_gets_no_qa_check(self):
+        brief = BRIEF.replace("BRANCH: alpha-karnak", "BRANCH: none")
+        did, cap = self.dispatch(brief)
+        self.assertNotIn("QA", [c["id"] for c in store.read("conversation_dispatch", did)["checks"]])
 
     def test_still_failing_after_the_fix_is_exhausted_not_looped(self):
         brief_run_only = "\n".join(l for l in BRIEF.splitlines() if "| judge |" not in l)
@@ -283,7 +320,7 @@ class VerifyTests(unittest.TestCase):
         self.assertEqual(root["watchdog_alert"]["kind"], "review-could-not-run")
         self.assertEqual(root["verification"]["cycle"], 1, "no review cycle was spent")
         again = self.verify_run(did, FakeRunner(), force=True)
-        self.assertEqual(again["verdict"], "pass")
+        self.assertEqual(again["verdict"], "needs_judge", "checks run; Codex QA is next")
 
     def test_a_claimed_pass_that_fails_when_re_run_is_called_out(self):
         did, cap = self.dispatch()
@@ -316,7 +353,8 @@ class VerifyTests(unittest.TestCase):
         brief_run_only = "\n".join(l for l in BRIEF.splitlines() if "| judge |" not in l)
         did, cap = self.dispatch(brief_run_only)
         self.submit(did, cap, report(wt=self.wt, c=(("C1", "PASS"), ("C2", "PASS"))))
-        out = self.verify_run(did)
+        self.verify_run(did)
+        out = self.codex_pass(did)
         self.assertEqual(out["verdict"], "pass")
         self.assertEqual(self.jira.moves[-1], ("KAN-50", "10045"), "stays in Peer-review")
         self.assertIn("peer reviewer checks only what the checks do not cover",

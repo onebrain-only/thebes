@@ -178,10 +178,11 @@ def team_block(record):
         "branch, and never write to the database: a hook refuses all three. A migration is SQL "
         "plus probes committed on your branch; report `blocked` with `needs-ops: <migration "
         "file>` and the operations team applies it.",
-        "design: you never ask the cxo. For UI work, your own ux-engineer (a subagent in this "
-        "session, reserved from the pool) checks design fidelity against the design before you "
-        "report, and any design-fidelity `judge` check is answered by it too, with screenshots "
-        "as the evidence.",
+        "review (D-043, CEO 2026-10-13): you do NOT review your own work and you do not run a "
+        "judge or a qa seat on it. The Codex reviewer checks design and behaviour in the running "
+        "app (check QA). Your part is evidence: name the screens, attach screenshots (English and "
+        "Arabic, light and dark when it is visual) and the steps to reach them. Leave check QA "
+        "out of your VERIFY block. A QA failure comes back to you as a fix of the same ticket.",
         ("integration: THIS dispatch is the fast lane (CEO 2026-10-10): your small verified "
          "ticket is yours to merge. Follow the integration steps in the brief exactly, in your "
          "own worktree, and push ONLY `git -C <worktree> push origin integrate-alpha:Alpha` (or "
@@ -228,6 +229,21 @@ def ops_block():
     ]
 
 
+QA_CHECK = {"id": "QA", "kind": "judge",
+            "what": "Codex QA: the ticket's acceptance criteria hold in the running app "
+                    "(both languages and themes where it is visual)",
+            "pass": "the Codex reviewer's evidence; the team hands over screenshots and steps"}
+
+
+def is_product(record, teams_mod=None):
+    """Work that changes the product (code-lane team, a branch, not an integration): D-043
+    sends its review to the Codex reviewer, never to the orchestrator."""
+    from agent.state import teams as default_teams
+    t = teams_mod or default_teams
+    return bool(record.get("branch") and not record.get("integrate_base")
+                and t.read().get(record.get("target_seat_id"), {}).get("lane", "code") == "code")
+
+
 def verify_block(record):
     """What the team must return so its claim can be verified, not re-done (D-041)."""
     if not record.get("checks"):
@@ -247,7 +263,7 @@ def verify_block(record):
         "  sha: <full 40-character commit>",
         "  worktree: <absolute path of the worktree at that commit>",
     ] + ["  %s: PASS|FAIL — <evidence: command and result, or the file you attached>" % c["id"]
-         for c in record["checks"]] + [
+         for c in record["checks"] if c.get("id") != QA_CHECK["id"]] + [
         "  The commit must be committed and the worktree on it. A check you could not run is "
         "FAIL with the reason — never PASS by assumption.",
     ]
@@ -374,6 +390,12 @@ def dispatch(prompt, target_session_id, *, env=None, state_store=store, cli=None
     branch = next(iter((sections.get("BRANCH") or "").split()), None)
     if branch and branch.lower() == "none":
         branch = None
+    if (jira_key and not continuation and branch and not integrate_base
+            and teams_mod.read().get(binding["seat_id"], {}).get("lane", "code") == "code"
+            and not any(c.get("id") == QA_CHECK["id"] for c in brief_checks)):
+        # D-043 (CEO 2026-10-13): Claude builds, Codex QAs. Product work is never closed on the
+        # team's own word or on `run` checks alone: the Codex reviewer looks at it in the app.
+        brief_checks = list(brief_checks) + [dict(QA_CHECK)]
 
     # One writer per target SID: the busy check, the record and the delivery
     # are one critical section, so two dispatches never stop/resume one SID

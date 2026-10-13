@@ -221,7 +221,10 @@ def _settle(rec, root, results, cycle, report, *, state_store, jira=None, dispat
     final = "exhausted" if exhausted else ("retry" if verdict == "fail" else verdict)
     if final == "error":
         cycle = max(cycle - 1, 0) or 1        # an infrastructure error spends no cycle
+    unverified = sorted(i for i, r in results.items()
+                        if r.get("status") == "pass" and str(r.get("detail") or "").startswith("SKIPPED"))
     ver = {"cycle": cycle, "results": results, "verdict": final, "at": state_store.now(),
+           "unverified": unverified,
            "branch": report.get("branch") or (root.get("verification") or {}).get("branch"),
            "sha": report.get("sha") or (root.get("verification") or {}).get("sha")}
     cur = state_store.read("conversation_dispatch", root["dispatch_id"])
@@ -317,6 +320,12 @@ def judge_verdict(dispatch_id, passed, failed, *, env=None, state_store=store, j
     root = state_store.read("conversation_dispatch", dispatch_id)
     if root is None or not root.get("checks"):
         raise Refused("dispatch-not-found", dispatch_id)
+    from agent.execution import conversation_dispatch as cd
+    if not reviewer and cd.is_product(root):
+        raise Refused("codex-reviews-product-work",
+                      "%s changes the product: its review belongs to the Codex reviewer "
+                      "(D-043, CEO 2026-10-13). Leave it; do not run a judge or a seat on it."
+                      % (root.get("jira_key") or dispatch_id))
     ver = dict(root.get("verification") or {})
     results = dict(ver.get("results") or {})
     for cid in list(passed) + list(failed):

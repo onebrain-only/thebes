@@ -5218,3 +5218,20 @@ Created KAN-483 (cap:content, Listings, 1h, due 2026-10-12: three game_duration_
 
 ## 2026-10-11 Horemheb: KAN-493 reverted from Done
 KAN-493 moved Done (10007) -> Operations (10049) via transition 12 after an erroneous Done by the verification route (C4 not run). Comment 12151 added with facts. Nothing else changed. Persistent State has no record for KAN-493 (known:false), so no ownership/lease touched.
+
+## 2026-10-13 Horemheb (po) - KAN-497 created
+Created KAN-497 (Task, Platform, cap:backend, 12h, High), standalone, not under KAN-494; left in To Do, no Ready, no due date. Brief linted ok with agent.execution.dispatch_brief (no --team). Source: KAN-496 report s2.1/2.2/D23, LIVE_EVIDENCE E1/E1b/E1c/E8. Component Platform chosen by KAN-444 precedent: no database/security component exists (Auth, Listings, Social, Money, Platform).
+
+## 2026-10-13 — KAN-496 follow-up tickets (Horemheb)
+Created KAN-498 (grant sweep, cap:devops, Platform, 4h, High), KAN-499 (collapse 2-arg rpc_block_user, cap:backend, Platform, 6h, High, blocked by KAN-497), KAN-500 (message_preference serialisation, cap:frontend, Social, 4h, Medium). All under KAN-494, all To Do, no due_date (set at Ready from capacity). Briefs linted ok (dispatch_brief lint). Link read back: KAN-497 blocks KAN-499.
+
+## 2026-10-13 Horemheb: KAN-501 created
+Follow-up to KAN-500 (game_invite_preference cast and 4-to-2 collapse). Parent KAN-494, component Social, label cap:frontend, estimate 3h, To Do. KAN-500 blocks KAN-501 (verified both ends). Brief linted ok with --team habu (branch must end -habu). No Ready, no Work Effort record set; PM readies it. Bug read from privacy_controller.dart:178-179, manage_privacy_usecase.dart:118-122.
+
+## 2026-10-13 Horemheb (po) - messaging P1+P2 tickets KAN-502..KAN-515
+Created 14 tickets under KAN-494 (T3=502, T6=503, T7=504, T8=505, T10=506, T12=507, T13=508, T14=509, T15=510, T16=511, T17=512, T18=513, T19=514, T20=515), all To Do, no due_date, no Ready, no Work Effort record. Labels cap:<x> + messaging; Original estimate set; 19 Blocks links read back from both ends (KAN-497/499 precede KAN-505 and KAN-512). Briefs linted ok on all 14 with --team karnak (BRANCH written Alpha-msg-tN-{team}). Source: KAN-496 consolidated report s5-7, CPO 6.1. Non-Flutter run checks were converted to judge checks because lint refuses them. Open points for PM in the hand-back.
+
+## 2026-10-13 Horemheb - Messaging epic KAN-494 board fixes
+- KAN-503 re-routed cap:product-designer -> cap:ux-engineer (label, DECISIONS MADE, CEO-frames line). Read back: labels cap:ux-engineer,messaging; 6h kept; status was found at Design (10047) on read-back, moved by someone other than PO.
+- KAN-511 split by state set into KAN-516 (20h), KAN-517 (16h), KAN-518 (8h) = 44h, all cap:frontend, Social, under KAN-494, To Do, briefs linted ok (--team karnak, {team} substituted). KAN-511 now a split-parent container (cap label and estimate removed).
+- Links: 507/508/509 -> 516 -> 517 -> 518 -> 514, 515; 503 -> 517, 518. Unresolved: legacy 511->514/515 and 511 blocked-by links cannot be deleted with the PO's tools.

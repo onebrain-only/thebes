@@ -121,3 +121,9 @@ Wired KAN-471 keys into Create Game (sport tile semantic, duration chips, venue 
 
 ## 2026-10-11 KAN-492 app fix (Horus)
 Composer sends area_id (venue area / resolved current-location area; key absent when unknown or no place); setRawLocation takes area/tag (ordering bug fixed); dead setLocationFromPickerResult removed; venue search fixed to real columns (name_en/area/area_id/lat/lng); feed + detail fall back to area name only when it resolves (postAreaNameProvider). Circle RPC still drops place fields (needs backend RPC params). Tests: composer_place_area_test (9), home_post_place_test (10 EN/AR). Worktree alpha-habu.
+
+## 2026-10-13 KAN-500 (Horus)
+message_preference save fix on alpha-habu, commit 56835da37a09bad8db10219bb463babcd09a8ba7 (not pushed). Red run: /Users/moataz/.claude/jobs/149908a7/tmp/kan500/red_run.txt. C1/C2 exit 0; C3 exit 1 on 2 existing infos in files this commit does not touch. Follow-up: gameInvitePreference bool? cast, privacy_controller.dart:181, and its anyone/none collapse in manage_privacy_usecase.dart:132-136.
+
+## 2026-10-13 KAN-501 (game_invite_preference serialisation)
+Committed fc4b0390dbab5371b91d3e04db71b20f45b94996 on alpha-habu (not pushed). Controller bool? cast + use-case bool collapse fixed; params carry CommunicationPreference. Red->green; C1/C2/C3 exit 0; full test 1870 pass.

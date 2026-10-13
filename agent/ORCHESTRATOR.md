@@ -129,12 +129,17 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
   exhausted` → the checks still fail after the one allowed fix; the ticket stays in review
   with the reason on it. Decide the next step (a different approach, a different team, or a
   CEO question); never just re-dispatch the same work.
-- **`judge`**: the mechanical checks passed; only the `judge` checks are left. Run ONE
-  reviewer over exactly the listed
-  checks and the evidence the team named: one pass, a PASS/FAIL line per check, no rework,
-  no new scenarios. Then record it with the `how` command in the item
-  (`verify verdict <id> --pass C2 --fail C3:"reason"`); a pass closes the ticket, a fail
-  sends only that check back to the team.
+- **`judge`** (only for text, report, plan, spec and answer deliverables: ask or ops lane, no
+  branch): the mechanical checks passed; only the `judge` checks are left. Run ONE reviewer
+  over exactly the listed checks and the evidence the team named: one pass, a PASS/FAIL line
+  per check, no rework, no new scenarios. Then `verify verdict <id> --pass C2 --fail C3:"reason"`.
+- **Product work is not yours to review (D-043, CEO 2026-10-13).** Anything that changes the
+  product (a code team's ticket with a branch: code, design system, migrations) is reviewed by
+  the **Codex reviewer** through `agent.execution.review_queue`. Every such dispatch carries a
+  `QA` check that only Codex closes. You get no `judge` item for it, `verify verdict` refuses
+  you (`codex-reviews-product-work`), and you run no seat on a ticket waiting in Review. A QA
+  failure goes back to the same team by itself. Leave it alone and tell the CEO only if it is
+  exhausted.
 - **`priority`** (D-042): the board needs the PM or a PO. Run them **in the background**
   (Agent tool, `run_in_background`), so you stay free for the CEO. The PM and the POs are the
   only seats you run; teams can never reserve them.
@@ -149,13 +154,8 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
     ruling, dispatch ONE question to Memphis (no `--ticket`) naming every seat it needs; Memphis
     runs them in parallel and returns one answer to your inbox. Then log it in the PM ledger
     and resume. You never run cto, cpo, cxo, qa or any other team seat yourself.
-  - **`judge` checks (CEO 2026-10-09): a team never goes to the cxo.** A design-fidelity
-    judge on a team's ticket is done by THAT team's own ux-engineer (a subagent in the team's
-    session, borrowed from the pool; there are five): send it back to the owning team as a
-    same-team continuation, never to Memphis. A behaviour judge goes to qa. The cxo is for
-    rulings on the design standard itself, not for checking one ticket, because it is a single
-    seat and one long job would hold it for everyone. Only an acceptance judge on a project's
-    own ticket may use that project's PO.
+  - **The cxo is for rulings on the design standard itself**, never for checking one ticket.
+    Checking one ticket is the Codex reviewer's (product) or your one judge pass (text).
   - **A duplicate is discarded, not reworked.** When two teams worked one ticket, keep the
     first verified one and run `python3 -m agent.execution.verify discard <dispatch_id> --reason
     "duplicate of ..."` on the other: no rework, never integrated, the ticket is not moved. A

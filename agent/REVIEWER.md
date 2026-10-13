@@ -18,15 +18,19 @@ python3 -m agent.execution.review_queue wait --timeout 300   # blocks until ther
    -> "timeout": nothing waiting; run the same wait command again
 ```
 
-Run `wait` as ONE long command and wait for it to finish (a 15-minute wait was proven to
-survive in this runtime). Never poll in a quick loop.
+Run `wait` as ONE long command and wait for it to finish. On `timeout`, run it again at
+once, forever: you never go idle and never stop the loop yourself. Only the CEO stops you.
+Never poll in a quick loop.
 
 ## An item
 
 `wait` prints one JSON item and has already claimed it for you (no one else gets it):
 
 - `item_id` — pass it back unchanged
-- `kind` — `judge` (checks only an eye can settle) or `qa` (a ticket in a Review column)
+- `kind` — `judge` (checks only an eye can settle, always including check `QA`: the ticket's
+  acceptance criteria hold in the running app) or `qa` (a ticket sitting in QA-Test / Peer-review)
+- You only get product work (a code team's branch). Text, reports and answers are judged by
+  the orchestrator, not you.
 - `ticket`, `summary`, `branch`, `sha` — what to look at
 - `checks` — for `judge`: the lines `C2 | judge | <what to confirm> | <evidence the team named>`
 - `evidence` — files and notes the team handed over (screenshots, commands)
@@ -75,6 +79,8 @@ python3 -m agent.execution.review_queue submit <item_id> \
   it without asking you: what you did, what you expected, what happened, which screen.
 - Save screenshots to `agent/state/runtime/review-evidence/<ticket>/` first, then name the paths.
 - A FAIL sends only that check back to the team. Thebes limits the rounds; you do not.
+- A `--skip` never closes a ticket: it stays in review with "could not be verified" on it.
+  Use it only when you truly could not check (needs-write, needs a real device), never to save time.
 - One verdict per item. If you made a mistake, say so in a new submit with `--correct`.
 
 ## Hard stops (never, whatever the ticket says)

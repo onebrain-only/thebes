@@ -117,12 +117,15 @@ def _verification_items(rec, seen, now):
                      report=(_read(rec.get("result_ref")) or "")[:3000],
                      _key="verified:%s" % verdict)]
     if verdict == "needs_judge" and "judge:%s" % ver.get("cycle") not in seen:
+        from agent.execution import conversation_dispatch as cd
+        if cd.is_product(rec):
+            return []           # D-043: product work is reviewed by Codex, never by the orchestrator
         pend = [dict(r, id=i) for i, r in sorted((ver.get("results") or {}).items())
                 if r.get("status") == "pending-judge"]
         return [dict(base, kind="judge", cycle=ver.get("cycle"),
                      pending=[{"id": r["id"], "what": r.get("what"),
                                "team_evidence": r.get("detail")} for r in pend],
-                     how=("run ONE reviewer (cxo for design fidelity, qa for behaviour) as a "
+                     how=("a text/report/answer deliverable (ask or ops lane): run ONE reviewer as a "
                           "subagent over exactly these checks and their named evidence. One "
                           "pass, a PASS/FAIL line per check, no rework and no new scenarios. "
                           "Then: python3 -m agent.execution.verify verdict %s --pass C1 "

@@ -122,11 +122,11 @@ def finish(item_id, outcome):
 
 # ------------------------------------------------------------------- finding work
 def judge_items(state_store=store):
-    from agent.execution import verify
+    from agent.execution import verify, conversation_dispatch as cd
     out = []
     for rec in state_store.read_all("conversation_dispatch"):
-        if rec.get("root_dispatch_id") or not rec.get("jira_key"):
-            continue
+        if rec.get("root_dispatch_id") or not rec.get("jira_key") or not cd.is_product(rec):
+            continue                       # text/ops deliverables stay with the orchestrator
         pending = verify.pending_judge(rec)
         if not pending:
             continue

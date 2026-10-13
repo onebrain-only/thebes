@@ -246,7 +246,18 @@ def on_verified(root, ver, *, state_store=store, jira=None):
         _, route = review_target(root, state_store)
         where = ("branch %s at %s. " % (ver.get("branch"), (ver.get("sha") or "")[:12])
                  if ver.get("sha") else "")
-        if route == "self":
+        if root.get("integrate_base"):
+            # Malfunction B1 (KAN-493): an integration passing is not the ticket's acceptance.
+            moved = {"moved": False}
+            head = ("Thebes: team %s's integration into %s passed its checks. %sThe ticket's "
+                    "own acceptance is not decided by an integration." % (
+                        team, root["integrate_base"], where))
+        elif ver.get("unverified"):
+            moved = {"moved": False}
+            head = ("Thebes: every check passed EXCEPT %s, which could not be verified (see "
+                    "below). The ticket stays in review until they are; it is not closed. %s"
+                    % (", ".join(ver["unverified"]), where))
+        elif route == "self":
             moved = _move(root["jira_key"], DONE_STATUS_ID, jira, state_store)
             head = ("Thebes verified team %s's work and closed this: every declared check "
                     "passed. %s" % (team, where))
