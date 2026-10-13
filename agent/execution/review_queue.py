@@ -293,6 +293,29 @@ def submit_qa(item_id, verdict, reason, evidence, *, state_store=store, jira=Non
     return {"status": "recorded", "item_id": item_id, "evidence": ev_path}
 
 
+def reopen(dispatch_id, *, state_store=store):
+    """Offer a verified-but-unverified product item to the reviewer again: every check that was
+    SKIPPED goes back to pending, so the ticket can still close by itself."""
+    rec = state_store.read("conversation_dispatch", dispatch_id)
+    ver = dict((rec or {}).get("verification") or {})
+    skipped = [i for i, r in (ver.get("results") or {}).items()
+               if str(r.get("detail") or "").startswith("SKIPPED")]
+    if not rec or not skipped:
+        raise Refused("nothing-to-reopen", "no skipped check on %s" % dispatch_id)
+    results = dict(ver["results"])
+    for i in skipped:
+        results[i] = dict(results[i], status="pending-judge", detail="")
+    ver.update(results=results, verdict="needs_judge", unverified=[])
+    state_store.update("conversation_dispatch", dispatch_id, rec["revision"], {"verification": ver})
+    for name in os.listdir(_dir("done")):
+        if dispatch_id in name:
+            os.unlink(os.path.join(_dir("done"), name))
+    for name in os.listdir(_dir("claims")):
+        if dispatch_id in name:
+            os.unlink(os.path.join(_dir("claims"), name))
+    return {"status": "reopened", "dispatch_id": dispatch_id, "checks": skipped}
+
+
 def status(state_store=store):
     items = candidates(state_store, with_qa=False)
     claims = {}
@@ -319,6 +342,7 @@ def main(argv=None):
     w = sub.add_parser("wait"); w.add_argument("--timeout", type=int, default=300)
     sub.add_parser("next")
     sub.add_parser("status")
+    ro = sub.add_parser("reopen"); ro.add_argument("dispatch_id")
     s = sub.add_parser("submit"); s.add_argument("item_id")
     s.add_argument("--pass", dest="passed", action="append", default=[])
     s.add_argument("--fail", dest="failed", action="append", default=[])
@@ -338,6 +362,9 @@ def main(argv=None):
             return 0
         if ns.cmd == "status":
             print(json.dumps(status(), indent=2))
+            return 0
+        if ns.cmd == "reopen":
+            print(json.dumps(reopen(ns.dispatch_id), indent=2))
             return 0
         if ns.item_id.startswith("qa-"):
             out = submit_qa(ns.item_id, ns.verdict, ns.reason, ns.evidence)

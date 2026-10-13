@@ -79,6 +79,10 @@ python3 -m agent.execution.review_queue submit <item_id> \
   it without asking you: what you did, what you expected, what happened, which screen.
 - Save screenshots to `agent/state/runtime/review-evidence/<ticket>/` first, then name the paths.
 - A FAIL sends only that check back to the team. Thebes limits the rounds; you do not.
+- **Check `QA` = the ticket's acceptance criteria hold.** With a UI, see them in the running app.
+  Without a UI (an API contract, docs, a migration file, a pure domain change), verify each
+  criterion by reading the diff at the sha and running its tests, then PASS or FAIL it like any
+  other check. "There is no screen" is never a reason to skip.
 - A `--skip` never closes a ticket: it stays in review with "could not be verified" on it.
   Use it only when you truly could not check (needs-write, needs a real device), never to save time.
 - One verdict per item. If you made a mistake, say so in a new submit with `--correct`.
