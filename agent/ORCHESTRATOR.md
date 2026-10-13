@@ -140,6 +140,13 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
   you (`codex-reviews-product-work`), and you run no seat on a ticket waiting in Review. A QA
   failure goes back to the same team by itself. Leave it alone and tell the CEO only if it is
   exhausted.
+- **`reviewer_question`** (D-043): the Codex reviewer is stuck on a ticket and is waiting; the
+  item carries `question_id`, `ticket`, `question` and the exact `how`. Answer from the ticket,
+  the PM ledger and the board; for scope or acceptance run that ticket's PO in the background;
+  for a design-standard ruling dispatch ONE question to Memphis. Then
+  `python3 -m agent.execution.review_queue answer <question_id> --text "..."` within 15 minutes,
+  even if the answer is "undecided: verify X, skip Y". You inform the reviewer; you never tell it
+  to pass something, and you never review the work yourself.
 - **`priority`** (D-042): the board needs the PM or a PO. Run them **in the background**
   (Agent tool, `run_in_background`), so you stay free for the CEO. The PM and the POs are the
   only seats you run; teams can never reserve them.

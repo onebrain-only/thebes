@@ -5238,3 +5238,12 @@ Created 14 tickets under KAN-494 (T3=502, T6=503, T7=504, T8=505, T10=506, T12=5
 
 ## 2026-10-13 Horemheb: six non-conflicting tickets created (To Do, not Ready)
 KAN-520 (frontend, Social, 3h) Create Post GPS cap; KAN-521 (frontend, Social, 8h, High) no unprompted location permission; KAN-522 (backend, Platform, 6h, High) rpc_restrict_* reject blocked; KAN-523 (backend, Platform, 4h) revoke PUBLIC/anon on notify_admins_of_block; KAN-524 (backend, Social, 6h) create_post keeps place; KAN-525 (frontend, Social, 3h) circle posts send place, blocked by KAN-524 (Blocks link read back from both ends). All six D-041 briefs pass `dispatch_brief lint --team karnak`. No Work Effort/Persistent State set; PM readies.
+
+## 2026-10-13 Horemheb: any-team label (CEO order)
+Added label `any-team` (existing labels kept) to KAN-520, 521, 522, 523, 524, 525, 505, 509, 510, 512, 513, 514, 515, 516, 517, 518 via Jira editJiraIssue. Read back by JQL (labels = any-team): all 16 carry it. No status moved, no other field changed. KAN-522 was in Back-end (not Ready) at edit time.
+
+## 2026-10-13 Horemheb - location rule change (KAN-521, KAN-520, KAN-526)
+- KAN-521 rewritten: single OS prompt per device, persisted "asked" flag, no automatic/periodic requests; estimate 8h -> 10h. Lint ok (karnak).
+- KAN-526 created (To Do, cap:frontend, any-team, 12h): Set location drawer on four surfaces; KAN-521 blocks KAN-526, link read back both ends.
+- KAN-520: location-rule line added, still cap-only. No status changed by me.
+- WARNING: KAN-521 was already in Front-end (10046) when my edit landed; worker may hold the old brief.

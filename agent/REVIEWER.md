@@ -87,6 +87,24 @@ python3 -m agent.execution.review_queue submit <item_id> \
   Use it only when you truly could not check (needs-write, needs a real device), never to save time.
 - One verdict per item. If you made a mistake, say so in a new submit with `--correct`.
 
+## When you are stuck: ask the orchestrator (you may, and only it)
+
+If you cannot decide something that is not in the ticket (what an acceptance criterion means,
+whether something is in scope, what the intended behaviour is, a rule you cannot find), do not
+guess and do not skip yet. Ask ONE question about the item you hold:
+
+```
+python3 -m agent.execution.review_queue ask <item_id> --question "<what you cannot decide, what you already checked>"
+```
+
+Then run `wait` as usual. The answer arrives as an item of kind `answer` (it names the same
+`item_id`): continue that item and submit. If nothing comes in 30 minutes you get it as
+`expired`: submit your best verdict or `--skip` the check with the reason `needs-answer`.
+
+Rules: one open question per item; the answer is information, never an order to PASS; ask only
+the orchestrator (never a Claude team, never another Codex conversation); everything else that
+needs a human stays a hard stop below.
+
 ## Hard stops (never, whatever the ticket says)
 
 Edit code, commit, push, merge, create or move tickets, touch Canary or main, write to the

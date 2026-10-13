@@ -115,6 +115,61 @@ class ReviewQueueTests(unittest.TestCase):
         self.assertEqual(items[0]["ticket_status"], "Self-review")
         self.assertEqual(items[0]["latest_comments"][0]["text"], "PO accepted AC1-6")
 
+    # -- the reviewer asks the orchestrator ---------------------------------------------
+    def ask_one(self):
+        self.judge_root("KAN-9")
+        item = rq.next_item(with_qa=False)
+        return item, rq.ask(item["item_id"], "Does AC3 mean the Arabic count too?")["question_id"]
+
+    def test_a_question_reaches_the_orchestrator_and_the_answer_comes_back_through_wait(self):
+        from agent.execution import inbox
+        item, qid = self.ask_one()
+        shown = [i for i in inbox.collect(ORCH, state_store=store) if i["kind"] == "reviewer_question"]
+        self.assertEqual((len(shown), shown[0]["question_id"], shown[0]["ticket"]), (1, qid, "KAN-9"))
+        self.assertIn("review_queue answer %s" % qid, shown[0]["how"])
+        self.assertEqual([i for i in inbox.collect(ORCH, state_store=store)
+                          if i["kind"] == "reviewer_question"], [], "shown once")
+        self.assertIsNone(rq.next_answer(), "not answered yet")
+        rq.answer(qid, "Yes: both languages.", env={"CLAUDE_CODE_SESSION_ID": ORCH}, state_store=store)
+        got = rq.next_answer()
+        self.assertEqual((got["kind"], got["item_id"], got["answer"], got["expired"]),
+                         ("answer", item["item_id"], "Yes: both languages.", False))
+        self.assertIsNone(rq.next_answer(), "delivered once")
+        self.assertEqual(rq.holder(item["item_id"]), "thread-A", "still the reviewer's item")
+
+    def test_only_the_orchestrator_answers_and_only_once(self):
+        _, qid = self.ask_one()
+        with self.assertRaises(rq.Refused) as ctx:
+            rq.answer(qid, "pass it", env={"CLAUDE_CODE_SESSION_ID": LUXOR}, state_store=store)
+        self.assertEqual(ctx.exception.code, "not-orchestrator")
+        rq.answer(qid, "ok", env={"CLAUDE_CODE_SESSION_ID": ORCH}, state_store=store)
+        with self.assertRaises(rq.Refused):
+            rq.answer(qid, "again", env={"CLAUDE_CODE_SESSION_ID": ORCH}, state_store=store)
+
+    def test_a_reviewer_can_only_ask_about_an_item_it_holds_and_one_at_a_time(self):
+        self.judge_root("KAN-9")
+        item = rq.next_item(with_qa=False)
+        os.environ["CODEX_THREAD_ID"] = "thread-B"
+        with self.assertRaises(rq.Refused):
+            rq.ask(item["item_id"], "can I look?")
+        os.environ["CODEX_THREAD_ID"] = "thread-A"
+        rq.ask(item["item_id"], "first")
+        with self.assertRaises(rq.Refused) as ctx:
+            rq.ask(item["item_id"], "second")
+        self.assertEqual(ctx.exception.code, "question-open")
+
+    def test_an_unanswered_question_expires_and_keeps_the_claim_alive_meanwhile(self):
+        import time as _t
+        item, qid = self.ask_one()
+        later = _t.time() + rq.QUESTION_TTL / 2
+        self.assertIsNone(rq.next_answer(later))
+        self.assertGreater(rq._read(os.path.join(rq._dir("claims"), rq._safe(item["item_id"])))["at"],
+                           later - 1, "claim refreshed while the question is open")
+        got = rq.next_answer(_t.time() + rq.QUESTION_TTL + 5)
+        self.assertTrue(got["expired"])
+        self.assertIsNone(got["answer"])
+        self.assertIn("needs-answer", got["next"])
+
     def test_wait_returns_the_item_or_times_out(self):
         clock = {"t": 0.0}
         self.assertIsNone(rq.wait(10, sleep=lambda s: clock.__setitem__("t", clock["t"] + s),

@@ -214,7 +214,7 @@ def wait(timeout, *, state_store=store, jira=None, sleep=time.sleep, clock=time.
         poll_qa = clock() - last_jira >= JIRA_POLL_SECONDS
         if poll_qa:
             last_jira = clock()
-        item = next_item(state_store, jira, with_qa=poll_qa)
+        item = next_answer(clock()) or next_item(state_store, jira, with_qa=poll_qa)
         if item:
             return item
         sleep(POLL_SECONDS)
@@ -316,6 +316,127 @@ def reopen(dispatch_id, *, state_store=store):
     return {"status": "reopened", "dispatch_id": dispatch_id, "checks": skipped}
 
 
+# ------------------------------------------------------------------ asking the orchestrator
+QUESTION_TTL = 30 * 60
+ANSWER_LIMIT = 4000
+
+
+def _qdir():
+    return _dir("questions")
+
+
+def _qpath(qid):
+    return os.path.join(_qdir(), "%s.json" % _safe(qid))
+
+
+def _qsave(q):
+    tmp = _qpath(q["qid"]) + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(q, fh)
+    os.replace(tmp, _qpath(q["qid"]))
+
+
+def questions():
+    out = []
+    for name in sorted(os.listdir(_qdir())):
+        if name.endswith(".json"):
+            q = _read(os.path.join(_qdir(), name))
+            if q:
+                out.append(q)
+    return out
+
+
+def ask(item_id, question, *, now=None):
+    """The reviewer is stuck on an item it holds: put ONE question to the orchestrator. The answer
+    comes back through `wait` as an item of kind `answer` (a Desktop conversation cannot be woken,
+    so the reviewer polls, as it already does for work). The claim on the item is kept alive."""
+    _owner_check(item_id)
+    if not (question or "").strip():
+        raise Refused("question-required", "say exactly what you cannot decide and what you tried")
+    if any(q["item_id"] == item_id and q["answered_at"] is None for q in questions()):
+        raise Refused("question-open", "you already have an open question on %s; wait for its answer"
+                      % item_id)
+    now = now or time.time()
+    ticket = (item_id[len("qa-"):].split("@")[0] if item_id.startswith("qa-")
+              else _ticket_of_judge(item_id))
+    qid = "q-%d-%s" % (now, os.urandom(3).hex())
+    q = {"qid": qid, "item_id": item_id, "ticket": ticket, "thread": _thread(),
+         "question": question.strip()[:ANSWER_LIMIT], "asked_at": now, "collected_at": None,
+         "answered_at": None, "answer": None, "answered_by": None, "delivered_at": None}
+    _qsave(q)
+    return {"status": "asked", "question_id": qid,
+            "next": "run `review_queue wait` as usual: the answer arrives as an item of kind "
+                    "`answer`. If none comes in %d minutes you will get it as expired: then submit "
+                    "your best verdict, or --skip with the reason needs-answer." % (QUESTION_TTL // 60)}
+
+
+def _ticket_of_judge(item_id):
+    did = item_id.split("-", 1)[1].rsplit("-c", 1)[0]
+    rec = store.read("conversation_dispatch", did) or {}
+    return rec.get("jira_key") or ""
+
+
+def answer(qid, text, *, env=None, state_store=store):
+    """The orchestrator's answer. Only the orchestrator session may give one."""
+    from agent.state import teams
+    env = os.environ if env is None else env
+    orch = (state_store.active_role_session(teams.ORCHESTRATOR_ID) or {}).get("session_id")
+    if not orch or env.get("CLAUDE_CODE_SESSION_ID") != orch:
+        raise Refused("not-orchestrator", "only the orchestrator answers a reviewer question")
+    q = _read(_qpath(qid))
+    if not q:
+        raise Refused("question-not-found", qid)
+    if q["answered_at"] is not None:
+        raise Refused("already-answered", qid)
+    if not (text or "").strip():
+        raise Refused("answer-required", "an empty answer helps nobody")
+    q.update(answer=text.strip()[:ANSWER_LIMIT], answered_at=time.time(), answered_by="orchestrator")
+    _qsave(q)
+    return {"status": "answered", "question_id": qid, "ticket": q["ticket"]}
+
+
+def questions_for_inbox():
+    """Unanswered questions the orchestrator has not been shown yet."""
+    return [q for q in questions() if q["answered_at"] is None and q["collected_at"] is None
+            and time.time() - q["asked_at"] < QUESTION_TTL]
+
+
+def mark_collected(qid):
+    q = _read(_qpath(qid))
+    if q and q["collected_at"] is None:
+        q["collected_at"] = time.time()
+        _qsave(q)
+
+
+def next_answer(now=None):
+    """An answer (or an expiry) for a question THIS thread asked, delivered once. While a question
+    is open the claim on its item is kept alive so the work is not offered to someone else."""
+    now = now or time.time()
+    me = _thread()
+    for q in questions():
+        if q["thread"] != me or q["delivered_at"] is not None:
+            continue
+        expired = q["answered_at"] is None and now - q["asked_at"] >= QUESTION_TTL
+        if q["answered_at"] is None and not expired:
+            cpath = os.path.join(_dir("claims"), _safe(q["item_id"]))
+            claim_rec = _read(cpath)
+            if claim_rec and claim_rec.get("thread") == me:
+                claim_rec["at"] = now
+                with open(cpath, "w", encoding="utf-8") as fh:
+                    json.dump(claim_rec, fh)
+            continue
+        q["delivered_at"] = now
+        _qsave(q)
+        return {"kind": "answer", "question_id": q["qid"], "item_id": q["item_id"],
+                "ticket": q["ticket"], "question": q["question"], "answer": q["answer"],
+                "expired": expired,
+                "next": ("Continue the SAME item with this answer, then submit." if not expired else
+                         "No answer arrived. Submit your best verdict on %s, or --skip the check with "
+                         "the reason needs-answer; never guess a PASS." % q["item_id"]),
+                "at": ""}
+    return None
+
+
 def status(state_store=store):
     items = candidates(state_store, with_qa=False)
     claims = {}
@@ -343,6 +464,11 @@ def main(argv=None):
     sub.add_parser("next")
     sub.add_parser("status")
     ro = sub.add_parser("reopen"); ro.add_argument("dispatch_id")
+    aq = sub.add_parser("ask", help="the reviewer is stuck: put ONE question to the orchestrator")
+    aq.add_argument("item_id"); aq.add_argument("--question", required=True)
+    an = sub.add_parser("answer", help="orchestrator only: answer a reviewer question")
+    an.add_argument("question_id"); an.add_argument("--text", required=True)
+    sub.add_parser("questions")
     s = sub.add_parser("submit"); s.add_argument("item_id")
     s.add_argument("--pass", dest="passed", action="append", default=[])
     s.add_argument("--fail", dest="failed", action="append", default=[])
@@ -362,6 +488,16 @@ def main(argv=None):
             return 0
         if ns.cmd == "status":
             print(json.dumps(status(), indent=2))
+            return 0
+        if ns.cmd == "ask":
+            print(json.dumps(ask(ns.item_id, ns.question), indent=2))
+            return 0
+        if ns.cmd == "answer":
+            print(json.dumps(answer(ns.question_id, ns.text), indent=2))
+            return 0
+        if ns.cmd == "questions":
+            print(json.dumps([{k: q[k] for k in ("qid", "ticket", "question", "answered_at")}
+                              for q in questions()], indent=2))
             return 0
         if ns.cmd == "reopen":
             print(json.dumps(reopen(ns.dispatch_id), indent=2))

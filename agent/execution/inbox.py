@@ -81,6 +81,13 @@ def oldest_waiting(session_id, *, state_store=store, now=None):
         elif kind == "decision":
             stamp = (state_store.read("decision_request", item["decision_request_id"]) or {}).get(
                 "created_at")
+        elif kind == "reviewer_question":
+            from agent.execution import review_queue
+            asked = next((q["asked_at"] for q in review_queue.questions()
+                          if q["qid"] == item["question_id"]), now)
+            if now - asked > best[0]:
+                best = (now - asked, "reviewer_question %s" % item["question_id"])
+            continue
         else:
             stamp = stamps.get(item.get("dispatch_id"))
         age = _age(stamp, now) if stamp else 0
@@ -182,6 +189,21 @@ def pending(session_id, *, state_store=store, now=None):
                                 "(including returned work and new sub-tasks) and move what the "
                                 "free teams can take into Ready, in rank order, with an "
                                 "Original estimate and a domain component on each.")})
+    try:
+        from agent.execution import review_queue
+        for q in review_queue.questions_for_inbox():
+            out.append({"kind": "reviewer_question", "question_id": q["qid"], "ticket": q["ticket"],
+                        "question": q["question"],
+                        "how": ("The Codex reviewer is stuck on %s and is WAITING. Answer from the "
+                                "ticket, the PM ledger and the board; for scope or acceptance run "
+                                "that ticket's PO (po = app, po-2 = design system) in the "
+                                "background; for a design-standard ruling dispatch ONE question to "
+                                "Memphis. Then: python3 -m agent.execution.review_queue answer %s "
+                                "--text \"<the answer>\". Answer within 15 minutes even if the "
+                                "answer is 'undecided: verify X only and skip Y'. You answer; you "
+                                "never tell the reviewer to pass something." % (q["ticket"], q["qid"]))})
+    except Exception:                                       # noqa: BLE001  never blocks the inbox
+        pass
     for req in requests:
         if (req.get("status") == "open" and req.get("delivery") == "inbox"
                 and req.get("owner_session_id") == session_id
@@ -212,6 +234,11 @@ def collect(session_id, *, state_store=store, now=None):
         try:
             if item["kind"] == "decision":
                 taken.append(_collect_decision(item, state_store))
+                continue
+            if item["kind"] == "reviewer_question":
+                from agent.execution import review_queue
+                review_queue.mark_collected(item["question_id"])
+                taken.append(item)
                 continue
             if item["kind"] == "priority":
                 pr = state_store.read("priority_request", item["priority_request_id"])
