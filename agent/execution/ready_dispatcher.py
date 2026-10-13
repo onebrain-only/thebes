@@ -119,7 +119,7 @@ def fill_branch(text, team_id):
             return m.group(0)
         head = branch.split("-")[0]
         base = head if head.lower() in BASES else branch.replace("<team>", "").rstrip("-")
-        return "%s%s-%s" % (m.group(1), base, team_id)
+        return "%s%s-%s" % (m.group(1), base.lower(), team_id)   # B8: one case on macOS
     return re.sub(r"(?im)^(BRANCH:\s*)(\S.*)$", repl, text)
 
 
@@ -182,7 +182,20 @@ def _flag_brief(issue, problems, jira, comment=True):
 # ------------------------------------------------------------------ priority requests
 PRIORITY_MIN_SECONDS = 3600      # the PM re-plans at most hourly unless a brief is needed
 DONE_JQL = 'project = KAN AND status = "Done" ORDER BY updated DESC'
-BACKLOG_JQL = 'project = KAN AND status = "To Do" ORDER BY rank ASC'
+# Epics are not executable: an open epic alone used to wake the PM forever (B2, KAN-494).
+BACKLOG_JQL = 'project = KAN AND status = "To Do" AND issuetype != Epic ORDER BY rank ASC'
+BACKLOG_SETTLE_SECONDS = 120     # a PO writing a batch: ask once, after it settles (B2)
+
+
+def _jira_ts(stamp):
+    import calendar
+    import re as _re
+    m = _re.match(r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.\d+)?([+-]\d\d)(\d\d)$", stamp or "")
+    if not m:
+        return 0
+    base = calendar.timegm(time.strptime(m.group(1), "%Y-%m-%dT%H:%M:%S"))
+    sign = 1 if m.group(2)[0] == "+" else -1
+    return base - sign * (abs(int(m.group(2))) * 3600 + int(m.group(3)) * 60)
 
 
 def _ts(stamp):
@@ -415,6 +428,11 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None):
     reasons = list(brief_reasons)
     try:
         backlog = jira.search_issues(BACKLOG_JQL, fields=["status", "updated"], limit=100)
+        newest = max([_jira_ts(b.get("updated")) for b in backlog] or [0])
+        if newest and (now or time.time()) - newest < BACKLOG_SETTLE_SECONDS:
+            backlog_settling = True       # still being written: ask on a later tick
+        else:
+            backlog_settling = False
         signature = "|".join("%s@%s" % (b["key"], b.get("updated")) for b in backlog)
         try:                    # a ticket finishing can unblock the Backlog (malfunction #1/#28)
             finished = jira.search_issues(DONE_JQL, fields=["status"], limit=5)
@@ -426,12 +444,13 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None):
                         if (state_store.active_role_session(t) or {}).get("session_id")
                         not in {r["target_session_id"] for r in open_dispatches(state_store)}
                         and state_store.active_role_session(t))
-        if backlog:
+        if backlog and not backlog_settling:
             reasons.append({"kind": "backlog-changed", "count": len(backlog)})
             if ready_left < free_code:
                 reasons.append({"kind": "ready-short", "ready": ready_left,
                                 "free_code_teams": free_code})
-        req = raise_priority_request(reasons, signature, state_store=state_store, now=now)
+        req = None if (backlog_settling and not brief_reasons) else \
+            raise_priority_request(reasons, signature, state_store=state_store, now=now)
         if req:
             done.append({"action": "priority-request",
                          "priority_request_id": req["priority_request_id"],

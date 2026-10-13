@@ -77,6 +77,28 @@ def read_only_sql(query):
     return True
 
 
+GIT_WRITE = re.compile(r"(^|[;&|(\s])git(\s+-C\s+\S+)*\s+(checkout|switch|commit|merge|rebase|"
+                       r"reset|stash|cherry-pick|pull|restore|clean|am|revert)(\s|$)")
+CEO_FOLDERS = tuple(os.path.realpath(os.path.join(ROOT, "Dabbler", d))
+                    for d in ("dabbler-code", "dabbler-design-system"))
+
+
+def in_ceo_folder(command, cwd):
+    """Does a git write in `command` act on one of the CEO's own checkouts?"""
+    dirs = []
+    m = re.match(r"\s*cd\s+(\S+)\s*&&", command)
+    base = os.path.join(cwd, m.group(1)) if m else cwd
+    for c in re.findall(r"git((?:\s+-C\s+\S+)+)\s+(?:checkout|switch|commit|merge|rebase|reset|"
+                        r"stash|cherry-pick|pull|restore|clean|am|revert)\b", command):
+        target = base
+        for d in re.findall(r"-C\s+(\S+)", c):
+            target = os.path.join(target, d.strip("'\""))
+        dirs.append(target)
+    if not dirs:
+        dirs.append(base)
+    return any(os.path.realpath(d) in CEO_FOLDERS for d in dirs)
+
+
 PUSH = re.compile(r"(^|[;&|(\s])git(\s+-C\s+\S+)*\s+push(\s|$)")
 
 
@@ -123,6 +145,16 @@ def decide(payload, state_store=None, teams_mod=None):
                 % (tid or "This session", name))
     if tool == "Bash":
         command = (payload.get("tool_input") or {}).get("command") or ""
+        if GIT_WRITE.search(command):
+            try:
+                tid, lane = team_of(sid, state_store, teams_mod)
+            except Exception:                             # noqa: BLE001
+                tid, lane = None, None
+            if lane and in_ceo_folder(command, payload.get("cwd") or ROOT):
+                return ("The CEO's folders (Dabbler/dabbler-code, Dabbler/dabbler-design-system) "
+                        "are never a team's checkout: they may hold the CEO's unsaved work "
+                        "(B15, Ramesseum 2026-10-13). Work in your own worktree: git -C "
+                        "Dabbler/dabbler-code worktree add <your folder> <branch>.")
         if not PUSH.search(command):
             return None
         try:

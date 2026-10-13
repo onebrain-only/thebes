@@ -241,11 +241,32 @@ def tick(*, state_store=store, cli=None, launcher=None, resume=None, now=None):
     return done
 
 
+def ensure_dispatcher(*, running=None, start=None):
+    """B3: the Ready dispatcher died silently and KAN-495 sat in Ready. The watchdog brings
+    it back (detached, its own session, so a closed terminal or a background timeout cannot
+    kill it). Returns what it did, or None."""
+    import subprocess
+    running = running or (lambda: subprocess.run(
+        ["pgrep", "-f", "agent.execution.ready_dispatcher serve"], capture_output=True).returncode == 0)
+    if running():
+        return None
+    def _start():
+        with open(os.path.join(store.RUNTIME, "ready-dispatcher.out"), "a") as out:
+            subprocess.Popen([sys.executable, "-m", "agent.execution.ready_dispatcher", "serve"],
+                             cwd=ROOT, stdin=subprocess.DEVNULL, stdout=out, stderr=out,
+                             start_new_session=True)
+    (start or _start)()
+    return {"action": "restarted-ready-dispatcher"}
+
+
 def serve(interval=INTERVAL):
     log = os.path.join(store.RUNTIME, "watchdog.log")
     while True:
         try:
             done = tick()
+            restarted = ensure_dispatcher()
+            if restarted:
+                done = list(done or []) + [restarted]
             if done:
                 with open(log, "a", encoding="utf-8") as fh:
                     fh.write(json.dumps({"at": store.now(), "done": done}, default=str) + "\n")

@@ -145,5 +145,17 @@ class WatchdogTests(unittest.TestCase):
                           if any(k in e for k in ("conversation", "codex", "decision"))], [])
 
 
+
+class DispatcherSupervisionTests(unittest.TestCase):
+    def test_a_dead_dispatcher_is_restarted_and_a_live_one_left_alone(self):
+        """B3: KAN-495 sat in Ready because the dispatcher had died."""
+        started = []
+        self.assertIsNone(wd.ensure_dispatcher(running=lambda: True, start=lambda: started.append(1)))
+        self.assertEqual(wd.ensure_dispatcher(running=lambda: False,
+                                                    start=lambda: started.append(1)),
+                         {"action": "restarted-ready-dispatcher"})
+        self.assertEqual(started, [1])
+
+
 if __name__ == "__main__":
     unittest.main()

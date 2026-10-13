@@ -81,6 +81,18 @@ def is_small(files):
     return not any(f == n or f.startswith(n) for f in files for n in NOT_SMALL)
 
 
+def already_on_base(repo, base, sha, runner=None):
+    """True when `sha` is already contained in origin/<base>. Unknown -> False (integrate)."""
+    try:
+        done = (runner or subprocess.run)(
+            ["git", "-C", os.path.join(ROOT, repo), "merge-base", "--is-ancestor", sha,
+             "origin/%s" % base], capture_output=True, text=True, timeout=60,
+            stdin=subprocess.DEVNULL)
+        return done.returncode == 0
+    except Exception:                                      # noqa: BLE001
+        return False
+
+
 def pending(state_store=store, runner=None):
     """Verified, pushed, not-yet-integrated work, grouped by base. Never raises.
 
@@ -111,6 +123,13 @@ def pending(state_store=store, runner=None):
             except Exception:                              # noqa: BLE001
                 head_ok[branch] = False
         if not head_ok[branch]:
+            continue
+        if already_on_base(target["repo"], target["base"], latest[branch], runner):
+            # B5: the orchestrator's own integration already merged this tip; an automatic
+            # second one made Memphis do an empty pass. Record it and move on.
+            cur = state_store.read("conversation_dispatch", rec["dispatch_id"])
+            state_store.update("conversation_dispatch", cur["dispatch_id"], cur["revision"],
+                               {"integrated_at": state_store.now(), "integrated_sha": latest[branch]})
             continue
         groups.setdefault(target["base"], {"target": target, "items": []})["items"].append(
             {"dispatch_id": rec["dispatch_id"], "key": rec["jira_key"], "branch": branch,

@@ -64,7 +64,7 @@ class FakeJira:
         if 'status = "Done"' in jql:
             return [{"key": k} for k in getattr(self, "done", [])]
         if 'status = "To Do"' in jql:
-            return [{"key": k, "updated": "u"} for k in self.backlog]
+            return [{"key": k, "updated": getattr(self, "updated", "u")} for k in self.backlog]
         assert raw and 'status = "Ready"' in jql
         return self.issues
 
@@ -208,6 +208,18 @@ class ReadyDispatcherTests(unittest.TestCase):
         out = rd.tick(state_store=store, jira=j, dispatch=self.dispatch, now=later)
         self.assertTrue([d for d in out if d.get("action") == "priority-request"])
 
+    def test_a_backlog_still_being_written_is_not_asked_about_yet(self):
+        """B2: a PO creating KAN-502..518 woke the PM once per ticket."""
+        import time as _t
+        j = FakeJira([], backlog=["KAN-700"])
+        j.updated = _t.strftime("%Y-%m-%dT%H:%M:%S.000+0000", _t.gmtime())
+        self.assertFalse([d for d in self.tick(j) if d.get("action") == "priority-request"])
+        j.updated = "2020-01-01T00:00:00.000+0000"
+        self.assertTrue([d for d in self.tick(j) if d.get("action") == "priority-request"])
+
+    def test_epics_are_not_backlog_work(self):
+        self.assertIn("issuetype != Epic", rd.BACKLOG_JQL)
+
     def test_the_owner_team_gets_its_domain_first(self):
         j = FakeJira([issue("KAN-610", labels=["cap:frontend"], component="Listings"),
                       issue("KAN-611", labels=["cap:frontend"])])
@@ -284,8 +296,9 @@ class ReadyDispatcherTests(unittest.TestCase):
         self.assertIn("BRANCH: none", rd.fill_branch("BRANCH: none", "luxor"))
         self.assertIn("BRANCH: alpha-karnak", rd.fill_branch("BRANCH: alpha-frontend-1", "karnak"),
                       "live 2026-10-09: a seat name in the branch became alpha-frontend-1-karnak")
-        self.assertIn("BRANCH: Alpha-luxor", rd.fill_branch("BRANCH: Alpha-<team> (team branch)",
-                                                            "luxor"))
+        self.assertIn("BRANCH: alpha-luxor", rd.fill_branch("BRANCH: Alpha-<team> (team branch)",
+                                                            "luxor"),
+                      "B8: one case everywhere; Alpha-memphis and alpha-memphis collide on macOS")
 
 
 if __name__ == "__main__":

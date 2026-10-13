@@ -97,6 +97,19 @@ class OpsGuardTests(unittest.TestCase):
                     "git push origin HEAD:Alpha", "git push origin integrate-alpha:Canary"):
             self.assertIsNotNone(pg(bad, "karnak"), bad)
 
+    def test_teams_never_write_git_in_the_ceo_folders(self):
+        """B15: Ramesseum ran a task inside Dabbler/dabbler-code."""
+        code = os.path.join(ops_guard.ROOT, "Dabbler", "dabbler-code")
+        for bad in ("git -C Dabbler/dabbler-code checkout alpha-karnak",
+                    "cd Dabbler/dabbler-code && git commit -m x"):
+            self.assertIsNotNone(self.decide(KARNAK, "Bash", command=bad), bad)
+        self.assertIsNotNone(ops_guard.decide({"tool_name": "Bash", "session_id": KARNAK,
+                                               "cwd": code, "tool_input": {"command": "git switch x"}},
+                                              state_store=store), "cwd is the CEO folder")
+        for ok in ("git -C /tmp/wt/karnak commit -m x", "git -C Dabbler/dabbler-code fetch origin",
+                   "git -C Dabbler/dabbler-code worktree add /tmp/wt x"):
+            self.assertIsNone(self.decide(KARNAK, "Bash", command=ok), ok)
+
     def test_project_destroying_tools_stay_with_the_ceo_even_for_ops(self):
         for tool in ("pause_project", "delete_branch", "restore_project"):
             self.assertIn("CEO", self.decide(MEMPHIS, SB + tool))

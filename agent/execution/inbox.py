@@ -257,6 +257,24 @@ def wait(timeout=DEFAULT_TIMEOUT, *, env=None, state_store=store, sleep=None):
         raise Refused("not-orchestrator", "only the orchestrator session (%s) reads its inbox"
                       % orch)
     sleep = sleep or time.sleep
+    # B4: one waiter at a time. Several after a restart split the items and lost wakes.
+    import fcntl
+    os.makedirs(state_store.RUNTIME, exist_ok=True)
+    lock = open(os.path.join(state_store.RUNTIME, "inbox-wait.lock"), "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        lock.close()
+        return {"status": "already-waiting", "items": [],
+                "next": "another inbox waiter is already running; do not start a second one"}
+    try:
+        return _wait_loop(session_id, timeout, state_store, sleep)
+    finally:
+        fcntl.flock(lock, fcntl.LOCK_UN)
+        lock.close()
+
+
+def _wait_loop(session_id, timeout, state_store, sleep):
     deadline = time.time() + timeout
     code_stamp = _code_stamp()
     while True:

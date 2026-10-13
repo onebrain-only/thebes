@@ -36,6 +36,8 @@ class Done:
 def fake_git(remote):
     """remote: {branch: sha} for ls-remote."""
     def run(argv, **kw):
+        if "merge-base" in argv:                       # not on the base yet unless marked
+            return Done("", 0 if argv[-2] in remote.get("_on_base", ()) else 1)
         return Done("%s\trefs/heads/%s\n" % (remote[argv[-1]], argv[-1]) if argv[-1] in remote else "")
     return run
 
@@ -155,6 +157,13 @@ class IntegrateTests(unittest.TestCase):
         self.assertFalse(integrate.is_small(None))
         self.assertFalse(integrate.is_small([]))
         self.assertTrue(integrate.is_small(["lib/a.dart"]))
+
+    def test_a_tip_already_on_the_base_is_marked_integrated_not_sent_again(self):
+        """B5: an automatic integration re-merged what the orchestrator had already merged."""
+        a = self.root("KAN-1", "alpha-luxor", SHA)
+        out = self.run_dispatch({"alpha-luxor": SHA, "_on_base": (SHA,)})
+        self.assertEqual((out, self.sent), ([], []))
+        self.assertTrue(store.read("conversation_dispatch", a)["integrated_at"])
 
     def test_only_what_thebes_verified_and_the_team_pushed_is_integrated(self):
         self.root("KAN-1", "alpha-luxor", SHA)
