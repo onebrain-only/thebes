@@ -140,6 +140,13 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
   you (`codex-reviews-product-work`), and you run no seat on a ticket waiting in Review. A QA
   failure goes back to the same team by itself. Leave it alone and tell the CEO only if it is
   exhausted.
+- **`review_stalled`** (D-043): product work has waited 30+ minutes with nobody holding it, so the
+  review channel is probably out of tokens or closed. Tell the CEO in ONE line. **Never switch
+  the channel yourself.** Only on his explicit order: `python3 -m agent.execution.review_queue
+  channel claude --by "<his words>"` (Codex out of tokens: this releases Codex's claims and wakes
+  Edfu, the Claude QA conversation, to take the queue); `channel codex --by "<his words>"` sends it
+  back and stands Edfu down. `review_queue channel` with no argument shows the current one. You
+  still never review product work yourself, on either channel.
 - **`reviewer_question`** (D-043): the Codex reviewer is stuck on a ticket and is waiting; the
   item carries `question_id`, `ticket`, `question` and the exact `how`. Answer from the ticket,
   the PM ledger and the board; for scope or acceptance run that ticket's PO in the background;

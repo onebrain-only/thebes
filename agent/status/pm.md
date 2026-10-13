@@ -2074,3 +2074,6 @@ Moved KAN-505, 509, 512, 510, 513, 516, 517, 518, 515, 514 to Ready in that orde
 
 ## 2026-10-13 Anubis - six tickets To Do -> Ready (CEO order)
 Transition id 2 (Ready, status 10008, global) read live on KAN-521, then applied once each to KAN-521, 522, 520, 523, 524, 525. All six returned status Ready; no refusals. No other ticket touched. Calls were issued in one parallel batch in the ordered list, so the Ready rank is for the orchestrator's `intake order`. KAN-525 is held by its Blocks link to KAN-524 (dispatcher).
+
+## 2026-10-13 Anubis: KAN-526 To Do -> Ready
+Transition id 2 (status 10008) from live getTransitions, accepted first try. Status now Ready. Blocked by KAN-521 (dispatcher holds). No other ticket touched.

@@ -62,7 +62,88 @@ def _safe(item_id):
 
 
 def _thread():
-    return os.environ.get("CODEX_THREAD_ID") or ""
+    """Who is asking: a Codex conversation, or (the fallback QA conversation) a Claude session."""
+    if os.environ.get("CODEX_THREAD_ID"):
+        return os.environ["CODEX_THREAD_ID"]
+    sid = os.environ.get("CLAUDE_CODE_SESSION_ID")
+    return "claude:%s" % sid if sid else ""
+
+
+def reviewer_kind(thread=None):
+    return "claude" if (thread if thread is not None else _thread()).startswith("claude:") else "codex"
+
+
+# ------------------------------------------------------------------ which channel reviews
+CHANNELS = ("codex", "claude")
+
+
+def _channel_path():
+    return os.path.join(store.RUNTIME, "review", "channel.json")
+
+
+def get_channel():
+    """`codex` (the default) or `claude`. Only the CEO's explicit order, through the orchestrator,
+    ever changes it; the channel that is not active stands by and takes no work."""
+    return (_read(_channel_path()) or {}).get("channel") or "codex"
+
+
+def set_channel(channel, by, *, env=None, state_store=store, notify=True, dispatch=None):
+    """Switch the review channel (CEO 2026-10-13: Codex is the default; when Codex has no tokens
+    the CEO tells the orchestrator to run QA from Claude Code, and back). Orchestrator only.
+    Claims held by the OTHER channel are released so nothing is stranded, and the fallback QA
+    conversation (Edfu) is woken to start, or told to stop."""
+    from agent.state import teams
+    env = os.environ if env is None else env
+    orch = (state_store.active_role_session(teams.ORCHESTRATOR_ID) or {}).get("session_id")
+    if not orch or env.get("CLAUDE_CODE_SESSION_ID") != orch:
+        raise Refused("not-orchestrator", "only the orchestrator switches the review channel, and "
+                      "only on the CEO's explicit order")
+    if channel not in CHANNELS:
+        raise Refused("channel-invalid", "channel is codex or claude")
+    if not (by or "").strip():
+        raise Refused("order-required", "quote the CEO's words ordering the switch (--by)")
+    before = get_channel()
+    os.makedirs(os.path.dirname(_channel_path()), exist_ok=True)
+    with open(_channel_path(), "w", encoding="utf-8") as fh:
+        json.dump({"channel": channel, "by": by.strip()[:300], "at": time.time()}, fh)
+    released = []
+    for name in os.listdir(_dir("claims")):
+        c = _read(os.path.join(_dir("claims"), name)) or {}
+        if c.get("thread") and reviewer_kind(c["thread"]) != channel and not is_done(c.get("item_id", "")):
+            os.unlink(os.path.join(_dir("claims"), name))
+            released.append(c.get("item_id"))
+    out = {"status": "switched", "from": before, "to": channel, "released_claims": released}
+    if notify:
+        out["edfu"] = _wake_edfu(channel, state_store, dispatch)
+    return out
+
+
+def _wake_edfu(channel, state_store, dispatch=None):
+    from agent.state import teams
+    edfu = next(iter(teams.lane_teams("qa")), None)
+    sid = (state_store.active_role_session(edfu) or {}).get("session_id") if edfu else None
+    if not sid:
+        return {"status": "not-started",
+                "next": "Edfu has no session: the CEO runs `bash agent/scripts/start-teams.sh edfu`"}
+    if channel == "claude":
+        text = ("THEBES REVIEW CHANNEL: CLAUDE. The CEO ordered QA to run from Claude Code. Follow "
+                "agent/REVIEWER.md (Claude variant) now: start `python3 -m agent.execution."
+                "review_queue wait --timeout 3600` with run_in_background, handle every item it "
+                "returns, submit verdicts, and start the wait again each time. Report in one line "
+                "that the loop is running, then end your turn.")
+    else:
+        text = ("THEBES REVIEW CHANNEL: CODEX. The CEO sent QA back to Codex. Stop your review "
+                "loop now: do not start another `review_queue wait`, finish any item you have "
+                "already submitted, report in one line that you stood down, and go idle.")
+    from agent.execution import conversation_dispatch as cd
+    env = {k: v for k, v in os.environ.items() if k not in ("CODEX_THREAD_ID", "CLAUDE_CODE_SESSION_ID")}
+    env[cd.CLAUDE_ORIGIN_ENV] = (state_store.active_role_session(teams.ORCHESTRATOR_ID) or {}).get("session_id")
+    try:
+        out = (dispatch or cd.dispatch)(text, sid, env=env, state_store=state_store, detach=True, ticket=None)
+        return {"status": "notified", "dispatch_id": out.get("dispatch_id")}
+    except Exception as exc:                                # noqa: BLE001
+        return {"status": "notify-failed", "error": str(exc)[:200],
+                "next": "dispatch the same text to Edfu by hand (conversation_dispatch dispatch --to %s)" % sid}
 
 
 def _read(path):
@@ -202,6 +283,8 @@ def candidates(state_store=store, jira=None, with_qa=True):
 
 
 def next_item(state_store=store, jira=None, with_qa=True):
+    if reviewer_kind() != get_channel():
+        return None                                         # this channel is standing by
     for item in candidates(state_store, jira, with_qa):
         if claim(item["item_id"]):
             return item
@@ -210,6 +293,11 @@ def next_item(state_store=store, jira=None, with_qa=True):
 
 def wait(timeout, *, state_store=store, jira=None, sleep=time.sleep, clock=time.time):
     start, last_jira, with_qa = clock(), -JIRA_POLL_SECONDS, True
+    if reviewer_kind() != get_channel():
+        return {"standby": True, "channel": get_channel(),
+                "next": "The review channel is %s, not yours: do not start another wait; go idle "
+                        "until the orchestrator or the CEO tells you the channel is yours."
+                        % get_channel()}
     while clock() - start < timeout:
         poll_qa = clock() - last_jira >= JIRA_POLL_SECONDS
         if poll_qa:
@@ -437,13 +525,45 @@ def next_answer(now=None):
     return None
 
 
+STALL_SECONDS = 30 * 60
+
+
+def stalled(state_store=store, now=None):
+    """Product items waiting for review longer than STALL_SECONDS with nobody holding them (the
+    channel is probably out of tokens or closed). The orchestrator tells the CEO; it never
+    switches the channel by itself."""
+    import calendar
+    now = now or time.time()
+    out = []
+    for item in judge_items(state_store):
+        if is_done(item["item_id"]) or holder(item["item_id"]):
+            continue
+        try:
+            age = now - calendar.timegm(time.strptime(item["at"], "%Y-%m-%dT%H:%M:%SZ"))
+        except (TypeError, ValueError):
+            continue
+        if age >= STALL_SECONDS:
+            out.append({"item_id": item["item_id"], "ticket": item["ticket"], "age_min": int(age / 60)})
+    return out
+
+
+def mark_stalled_alerted(item_id):
+    with open(os.path.join(_dir("stalled-alerted"), _safe(item_id)), "w") as fh:
+        fh.write("1")
+
+
+def stalled_unalerted(state_store=store, now=None):
+    return [i for i in stalled(state_store, now)
+            if not os.path.exists(os.path.join(_dir("stalled-alerted"), _safe(i["item_id"])))]
+
+
 def status(state_store=store):
     items = candidates(state_store, with_qa=False)
     claims = {}
     for name in os.listdir(_dir("claims")):
         c = _read(os.path.join(_dir("claims"), name)) or {}
         claims[c.get("item_id")] = c
-    return {"waiting_judge_items": [i["item_id"] for i in items],
+    return {"channel": get_channel(), "waiting_judge_items": [i["item_id"] for i in items],
             "claimed": {k: {"thread": v.get("thread"), "age_s": int(time.time() - v.get("at", 0))}
                         for k, v in claims.items() if k and not is_done(k)}}
 
@@ -469,6 +589,10 @@ def main(argv=None):
     an = sub.add_parser("answer", help="orchestrator only: answer a reviewer question")
     an.add_argument("question_id"); an.add_argument("--text", required=True)
     sub.add_parser("questions")
+    ch = sub.add_parser("channel", help="show the review channel, or (orchestrator, on the CEO's "
+                        "explicit order) switch it to codex or claude")
+    ch.add_argument("to", nargs="?", choices=CHANNELS)
+    ch.add_argument("--by", default="", help="the CEO's words ordering the switch")
     s = sub.add_parser("submit"); s.add_argument("item_id")
     s.add_argument("--pass", dest="passed", action="append", default=[])
     s.add_argument("--fail", dest="failed", action="append", default=[])
@@ -481,13 +605,17 @@ def main(argv=None):
             item = wait(ns.timeout)
             print(json.dumps(item if item else {"status": "timeout", "waited_s": ns.timeout},
                              indent=2, ensure_ascii=False))
-            return 0 if item else 3
+            return 0 if (item and not item.get("standby")) else 3
         if ns.cmd == "next":
             item = next_item()
             print(json.dumps(item if item else {"status": "empty"}, indent=2, ensure_ascii=False))
             return 0
         if ns.cmd == "status":
             print(json.dumps(status(), indent=2))
+            return 0
+        if ns.cmd == "channel":
+            out = (set_channel(ns.to, ns.by) if ns.to else {"channel": get_channel()})
+            print(json.dumps(out, indent=2))
             return 0
         if ns.cmd == "ask":
             print(json.dumps(ask(ns.item_id, ns.question), indent=2))

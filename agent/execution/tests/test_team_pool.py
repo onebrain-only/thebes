@@ -84,8 +84,9 @@ class TeamPoolTests(unittest.TestCase):
     def test_registry_names_five_temples_memphis_and_a_team_binds_like_a_session(self):
         self.assertEqual([t["display_name"] for t in sorted(teams.delivery_teams().values(),
                                                             key=lambda t: t["number"])],
-                         ["Karnak", "Habu", "Luxor", "Ramesseum", "Deir el-Bahari", "Memphis"])
+                         ["Karnak", "Habu", "Luxor", "Ramesseum", "Deir el-Bahari", "Memphis", "Edfu"])
         self.assertEqual(list(teams.lane_teams("ops")), ["memphis"], "D-042: one ops team")
+        self.assertEqual(list(teams.lane_teams("qa")), ["edfu"], "D-043: one fallback QA conversation")
         self.assertTrue(teams.is_orchestrator("orchestrator"))
         self.assertFalse(teams.is_orchestrator("karnak"))
         self.assertNotIn("orchestrator", teams.delivery_teams(), "Codex never sends WORK to it")

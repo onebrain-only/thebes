@@ -81,6 +81,10 @@ def oldest_waiting(session_id, *, state_store=store, now=None):
         elif kind == "decision":
             stamp = (state_store.read("decision_request", item["decision_request_id"]) or {}).get(
                 "created_at")
+        elif kind == "review_stalled":
+            if item["waited_min"] * 60 > best[0]:
+                best = (item["waited_min"] * 60, "review_stalled %s" % ",".join(item["tickets"]))
+            continue
         elif kind == "reviewer_question":
             from agent.execution import review_queue
             asked = next((q["asked_at"] for q in review_queue.questions()
@@ -191,6 +195,19 @@ def pending(session_id, *, state_store=store, now=None):
                                 "Original estimate and a domain component on each.")})
     try:
         from agent.execution import review_queue
+        late = review_queue.stalled_unalerted(state_store, now)
+        if late:
+            out.append({"kind": "review_stalled", "tickets": [i["ticket"] for i in late],
+                        "items": [i["item_id"] for i in late], "channel": review_queue.get_channel(),
+                        "waited_min": max(i["age_min"] for i in late),
+                        "how": ("Review of %s has waited %d+ minutes and nobody holds it: the %s "
+                                "channel is probably out of tokens or closed. Tell the CEO in ONE "
+                                "line. Do NOT switch the channel yourself: only on his explicit "
+                                "order, run python3 -m agent.execution.review_queue channel "
+                                "claude --by \"<his words>\" (back: channel codex). Say nothing "
+                                "else." % (", ".join(i["ticket"] for i in late),
+                                           max(i["age_min"] for i in late),
+                                           review_queue.get_channel()))})
         for q in review_queue.questions_for_inbox():
             out.append({"kind": "reviewer_question", "question_id": q["qid"], "ticket": q["ticket"],
                         "question": q["question"],
@@ -234,6 +251,12 @@ def collect(session_id, *, state_store=store, now=None):
         try:
             if item["kind"] == "decision":
                 taken.append(_collect_decision(item, state_store))
+                continue
+            if item["kind"] == "review_stalled":
+                from agent.execution import review_queue
+                for iid in item["items"]:
+                    review_queue.mark_stalled_alerted(iid)
+                taken.append(item)
                 continue
             if item["kind"] == "reviewer_question":
                 from agent.execution import review_queue

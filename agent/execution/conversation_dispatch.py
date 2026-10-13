@@ -169,7 +169,8 @@ def team_block(record):
         % (ROOT, record["dispatch_id"]),
         "report_shape: one report for the whole request — what each seat did, evidence (paths, "
         "commands, output), what is blocked or needs a decision, nothing else.",
-    ] + (ops_block() if teams.read()[team_id].get("lane") == "ops" else [
+    ] + (qa_block() if teams.read()[team_id].get("lane") == "qa" else
+         ops_block() if teams.read()[team_id].get("lane") == "ops" else [
         "lane: you are a CODE team. Push your OWN branch when your work is committed "
         "(`git push origin <base>-<your team>`, no force) so its commits show on the Jira "
         "ticket. First step of every ticket: `git fetch origin` and merge origin/<base> into "
@@ -198,6 +199,15 @@ def team_block(record):
         "content seat writes the ARB keys and your frontend seat wires them on the same branch, "
         "and test/l10n_parity_test.dart must pass.",
     ]) + verify_block(record)
+
+
+def qa_block():
+    """What the QA conversation (Edfu, D-043 fallback) is told on every dispatch."""
+    return [
+        "lane: you are the QA conversation (Edfu). You review; you never build, fix, push, merge "
+        "or touch the database. Follow agent/REVIEWER.md, the Claude variant: the orchestrator's "
+        "dispatch tells you to start or stop the review loop; report in one line that you did.",
+    ]
 
 
 def ops_block():

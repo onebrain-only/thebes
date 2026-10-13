@@ -170,6 +170,84 @@ class ReviewQueueTests(unittest.TestCase):
         self.assertIsNone(got["answer"])
         self.assertIn("needs-answer", got["next"])
 
+    # -- the review channel (CEO 2026-10-13): Codex by default, Claude QA on his explicit order ----
+    def as_claude(self, sid="edfu-session"):
+        os.environ.pop("CODEX_THREAD_ID", None)
+        os.environ["CLAUDE_CODE_SESSION_ID"] = sid
+
+    def tearDownClaude(self):
+        os.environ.pop("CLAUDE_CODE_SESSION_ID", None)
+
+    def test_codex_is_the_default_and_the_other_channel_stands_by(self):
+        self.judge_root("KAN-9")
+        self.assertEqual(rq.get_channel(), "codex")
+        self.as_claude()
+        try:
+            self.assertIsNone(rq.next_item(with_qa=False), "Claude QA takes no work while Codex reviews")
+            self.assertTrue(rq.wait(5, sleep=lambda s: None)["standby"])
+        finally:
+            self.tearDownClaude()
+            os.environ["CODEX_THREAD_ID"] = "thread-A"
+        self.assertEqual(rq.next_item(with_qa=False)["kind"], "judge")
+
+    def test_only_the_orchestrator_switches_and_only_with_the_ceos_words(self):
+        for env, by, code in (({"CLAUDE_CODE_SESSION_ID": LUXOR}, "x", "not-orchestrator"),
+                              ({"CLAUDE_CODE_SESSION_ID": ORCH}, " ", "order-required"),
+                              ({"CLAUDE_CODE_SESSION_ID": ORCH}, "go", None)):
+            if code:
+                with self.assertRaises(rq.Refused) as ctx:
+                    rq.set_channel("claude", by, env=env, state_store=store, notify=False)
+                self.assertEqual(ctx.exception.code, code)
+        with self.assertRaises(rq.Refused):
+            rq.set_channel("gemini", "go", env={"CLAUDE_CODE_SESSION_ID": ORCH}, state_store=store, notify=False)
+        self.assertEqual(rq.get_channel(), "codex")
+
+    def test_switching_to_claude_releases_codex_claims_and_hands_the_queue_to_edfu(self):
+        self.judge_root("KAN-9")
+        item = rq.next_item(with_qa=False)                       # Codex thread-A holds it
+        out = rq.set_channel("claude", "run QA from Claude Code", env={"CLAUDE_CODE_SESSION_ID": ORCH},
+                             state_store=store, notify=False)
+        self.assertEqual((out["from"], out["to"], out["released_claims"]), ("codex", "claude", [item["item_id"]]))
+        self.assertIsNone(rq.next_item(with_qa=False), "Codex now stands by")
+        self.as_claude()
+        try:
+            got = rq.next_item(with_qa=False)
+            self.assertEqual(got["item_id"], item["item_id"])
+            self.assertTrue(rq.holder(got["item_id"]).startswith("claude:"))
+            with mock.patch.object(jira_sync, "on_verified", return_value=None):
+                done = rq.submit_judge(got["item_id"], ["C2", "C3"], {}, {}, "checked in Chrome",
+                                       state_store=store, jira=mock.Mock(), dispatcher=mock.Mock(),
+                                       launcher=mock.Mock())
+            self.assertEqual(done["status"], "recorded")
+        finally:
+            self.tearDownClaude()
+
+    def test_the_switch_wakes_edfu_to_start_and_to_stop(self):
+        store.bind_role_session("edfu", "claude", "0eeeeeee-0000-7000-8000-0000000000e1", HOME, "ceo")
+        sent = []
+        fake = lambda text, sid, **kw: sent.append((sid, text)) or {"dispatch_id": "cdispatch-x"}
+        out = rq.set_channel("claude", "go", env={"CLAUDE_CODE_SESSION_ID": ORCH}, state_store=store,
+                             dispatch=fake)
+        self.assertEqual(out["edfu"]["status"], "notified")
+        self.assertIn("review_queue wait", sent[0][1])
+        rq.set_channel("codex", "back to codex", env={"CLAUDE_CODE_SESSION_ID": ORCH}, state_store=store,
+                       dispatch=fake)
+        self.assertIn("stop your review loop", sent[1][1].lower())
+
+    def test_a_review_nobody_holds_for_half_an_hour_is_reported_once_and_never_switched(self):
+        from agent.execution import inbox
+        import time as _t
+        self.judge_root("KAN-9")
+        self.assertEqual(rq.stalled(now=_t.time()), [], "fresh")
+        late = _t.time() + rq.STALL_SECONDS + 60
+        self.assertEqual([i["ticket"] for i in rq.stalled(now=late)], ["KAN-9"])
+        got = [i for i in inbox.collect(ORCH, state_store=store, now=late) if i["kind"] == "review_stalled"]
+        self.assertEqual((len(got), got[0]["tickets"]), (1, ["KAN-9"]))
+        self.assertIn("Do NOT switch", got[0]["how"])
+        self.assertEqual([i for i in inbox.collect(ORCH, state_store=store, now=late)
+                          if i["kind"] == "review_stalled"], [], "once")
+        self.assertEqual(rq.get_channel(), "codex", "the system never switches by itself")
+
     def test_wait_returns_the_item_or_times_out(self):
         clock = {"t": 0.0}
         self.assertIsNone(rq.wait(10, sleep=lambda s: clock.__setitem__("t", clock["t"] + s),

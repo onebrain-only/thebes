@@ -161,6 +161,8 @@ def decide(payload, state_store=None, teams_mod=None):
             tid, lane = team_of(sid, state_store, teams_mod)
         except Exception:                                 # noqa: BLE001
             return None
+        if lane == "qa":
+            return "The QA lane (%s) reviews; it never pushes (D-043)." % tid
         if lane == "code":
             return push_problem(command, tid)
     return None

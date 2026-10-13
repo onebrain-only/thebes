@@ -40,7 +40,7 @@ def read(path=TEAMS_JSON):
         if kind not in ("team", "orchestrator"):
             raise TeamRegistryError("team %r has unknown kind %r" % (team_id, kind))
         lane = entry.get("lane", "code")
-        if lane not in ("code", "ops"):
+        if lane not in ("code", "ops", "qa"):
             raise TeamRegistryError("team %r has unknown lane %r" % (team_id, lane))
         owns = entry.get("owns", [])
         if not isinstance(owns, list) or not all(isinstance(c, str) and c for c in owns):
@@ -72,7 +72,7 @@ def delivery_teams(path=TEAMS_JSON):
 
 
 def lane_teams(lane, path=TEAMS_JSON):
-    """Delivery teams of one lane (D-042): `code` executes product code; `ops` runs
+    """Delivery teams of one lane (D-042): `code` executes product code; `qa` is the fallback reviewer (D-043); `ops` runs
     migrations, integration, questions and analysis as subagents."""
     return {t: e for t, e in delivery_teams(path).items() if e.get("lane", "code") == lane}
 
