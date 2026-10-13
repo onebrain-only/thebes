@@ -133,12 +133,12 @@
     },
     "ux-engineer-1": {
       "role": "ux-engineer",
-      "model": "sonnet",
+      "model": "opus",
       "effort": "medium"
     },
     "ux-engineer-2": {
       "role": "ux-engineer",
-      "model": "sonnet",
+      "model": "opus",
       "effort": "medium"
     },
     "po-2": {
@@ -148,17 +148,17 @@
     },
     "ux-engineer-3": {
       "role": "ux-engineer",
-      "model": "sonnet",
+      "model": "opus",
       "effort": "medium"
     },
     "ux-engineer-4": {
       "role": "ux-engineer",
-      "model": "sonnet",
+      "model": "opus",
       "effort": "medium"
     },
     "ux-engineer-5": {
       "role": "ux-engineer",
-      "model": "sonnet",
+      "model": "opus",
       "effort": "medium"
     }
   },
