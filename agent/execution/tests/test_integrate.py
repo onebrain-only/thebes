@@ -165,6 +165,65 @@ class IntegrateTests(unittest.TestCase):
         self.assertEqual((out, self.sent), ([], []))
         self.assertTrue(store.read("conversation_dispatch", a)["integrated_at"])
 
+    # -- 2026-10-13: false "not on its base yet" blockers ------------------------------
+    def repo_runner(self, on_base=(), in_ds=()):
+        """cat-file: the commit lives in the app repo unless it is listed in `in_ds`."""
+        def run(argv, **kw):
+            repo = "design-system" if "dabbler-design-system" in " ".join(argv) else "app"
+            if "cat-file" in argv:
+                sha = argv[-1].split("^")[0]
+                return Done("", 0 if (sha in in_ds) == (repo == "design-system") else 1)
+            if "merge-base" in argv:
+                return Done("", 0 if (repo, argv[-2]) in on_base else 1)
+            return Done("")
+        return run
+
+    def test_a_design_system_commit_on_an_Alpha_named_branch_is_checked_against_alpha_ds(self):
+        """KAN-508: Alpha-deir-el-bahari lived in the design system, merged as alpha-ds 280c53ca."""
+        did = self.root("KAN-508", "Alpha-deir-el-bahari", SHA2)
+        run = self.repo_runner(on_base={("design-system", SHA2)}, in_ds={SHA2})
+        self.assertEqual(integrate.target_for("Alpha-deir-el-bahari", SHA2, run)["base"], "alpha-ds")
+        self.assertEqual(integrate.target_for("Alpha-deir-el-bahari", SHA, run)["base"], "Alpha")
+        out = integrate.reconcile(state_store=store, runner=run, fetch=False)
+        self.assertEqual([o["reconciled"] for o in out], ["KAN-508"])
+        rec = store.read("conversation_dispatch", did)
+        self.assertEqual((rec["integrated_sha"], rec["integrated_via"]), (SHA2, "ancestor-of-alpha-ds"))
+
+    def test_an_app_tip_that_is_an_ancestor_of_Alpha_is_integrated_whoever_merged_it(self):
+        """KAN-497: merged by hand (3879a977), integrated_at stayed None for hours."""
+        did = self.root("KAN-497", "Alpha-deir-el-bahari", SHA)
+        out = integrate.reconcile(state_store=store, fetch=False,
+                                  runner=self.repo_runner(on_base={("app", SHA)}))
+        self.assertEqual([o["base"] for o in out], ["Alpha"])
+        self.assertTrue(store.read("conversation_dispatch", did)["integrated_at"])
+        self.assertEqual(integrate.reconcile(state_store=store, fetch=False,
+                                             runner=self.repo_runner(on_base={("app", SHA)})), [],
+                         "once")
+
+    def test_not_yet_on_the_base_stays_pending_and_canary_is_never_touched(self):
+        self.root("KAN-1", "alpha-luxor", SHA)
+        self.root("KAN-2", "canary-luxor", SHA)
+        self.assertEqual(integrate.reconcile(state_store=store, fetch=False,
+                                             runner=self.repo_runner()), [])
+
+    def test_mark_integrated_needs_evidence_and_git_must_agree(self):
+        did = self.root("KAN-497", "Alpha-deir-el-bahari", SHA)
+        run = self.repo_runner(on_base={("app", SHA), ("app", SHA2)})
+        for args in (("Alpha", SHA2, " "), ("nope", SHA2, "x"), ("alpha-ds", SHA2, "x")):
+            with self.assertRaises(ValueError):
+                integrate.mark_integrated(did[:14], args[0], args[1], args[2], state_store=store,
+                                          runner=run, fetch=False, jira=mock.Mock())
+        self.assertFalse(store.read("conversation_dispatch", did).get("integrated_at"))
+        with self.assertRaises(ValueError):          # the --sha is not in the base
+            integrate.mark_integrated(did, "Alpha", "c" * 40, "merge 3879a977", state_store=store,
+                                      runner=run, fetch=False, jira=mock.Mock())
+        out = integrate.mark_integrated(did[:14], "Alpha", SHA2, "merge 3879a977 on Alpha",
+                                        state_store=store, runner=run, fetch=False, jira=mock.Mock())
+        self.assertEqual(out["status"], "marked")
+        rec = store.read("conversation_dispatch", did)
+        self.assertEqual((rec["integrated_sha"], rec["integrated_via"]), (SHA2, "manual-mark"))
+        self.assertIn("3879a977", rec["integration_evidence"])
+
     def test_only_what_thebes_verified_and_the_team_pushed_is_integrated(self):
         self.root("KAN-1", "alpha-luxor", SHA)
         self.assertEqual(self.run_dispatch({}), [], "not pushed")

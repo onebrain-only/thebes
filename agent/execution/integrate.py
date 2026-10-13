@@ -19,6 +19,7 @@ import json
 import os
 import re
 import subprocess
+import time
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -42,6 +43,42 @@ def base_for(branch):
         if branch.lower().startswith(prefix):        # "Alpha-karnak" from before B8 too
             return {"repo": repo, "base": base, "worktree": worktree, "prefix": prefix}
     return None
+
+
+def _targets():
+    return [{"repo": repo, "base": base, "worktree": worktree, "prefix": prefix}
+            for prefix, repo, base, worktree in BASES]
+
+
+def has_commit(repo, sha, runner=None):
+    """Does this repo hold the commit? (A local check; no network.)"""
+    try:
+        done = (runner or subprocess.run)(
+            ["git", "-C", os.path.join(ROOT, repo), "cat-file", "-e", "%s^{commit}" % sha],
+            capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL)
+        return done.returncode == 0
+    except Exception:                                      # noqa: BLE001
+        return False
+
+
+def target_for(branch, sha=None, runner=None):
+    """The base a verified branch@sha integrates into, by WHICH REPO HOLDS THE COMMIT.
+
+    A branch name alone cannot say: `Alpha-deir-el-bahari` exists in the app and in the design
+    system (KAN-508 lived in the design system and was never seen as integrated). An explicit
+    `alpha-ds-` name is the design system; otherwise the repo that has the sha, the name's own
+    repo first."""
+    named = base_for(branch or "")
+    if named is None:                      # canary-*, main, anything else: never auto-integrated
+        return None
+    if named["prefix"] == "alpha-ds-":
+        return named
+    if sha:
+        order = [named] + [t for t in _targets() if t != named]
+        for t in order:
+            if has_commit(t["repo"], sha, runner):
+                return t
+    return named
 
 
 def remote_head(repo, branch, runner=None):
@@ -93,6 +130,87 @@ def already_on_base(repo, base, sha, runner=None):
         return False
 
 
+_FETCHED = {}
+FETCH_EVERY = 300
+
+
+def _fetch_base(repo, base, runner=None, now=None):
+    """Refresh origin/<base> at most every FETCH_EVERY seconds per repo."""
+    now = now or time.time()
+    if now - _FETCHED.get((repo, base), 0) < FETCH_EVERY:
+        return
+    _FETCHED[(repo, base)] = now
+    try:
+        (runner or subprocess.run)(["git", "-C", os.path.join(ROOT, repo), "fetch", "origin", base],
+                                   capture_output=True, text=True, timeout=120,
+                                   stdin=subprocess.DEVNULL)
+    except Exception:                                      # noqa: BLE001
+        pass
+
+
+def reconcile(state_store=store, runner=None, fetch=True):
+    """Verified work whose commit IS an ancestor of its base is integrated, whoever merged it
+    (malfunction 2026-10-13: KAN-497 and KAN-508 held their dependants for hours because only
+    Memphis's own report ever set integrated_at). Repo-aware; never raises."""
+    done = []
+    try:
+        for rec in state_store.read_all("conversation_dispatch"):
+            v = rec.get("verification") or {}
+            if (v.get("verdict") != "pass" or not rec.get("jira_key") or rec.get("root_dispatch_id")
+                    or rec.get("integrated_at") or rec.get("integration_dispatch_id")
+                    or not v.get("branch") or not v.get("sha")):
+                continue
+            t = target_for(v["branch"], v["sha"], runner)
+            if not t:
+                continue
+            if fetch:
+                _fetch_base(t["repo"], t["base"], runner)
+            if already_on_base(t["repo"], t["base"], v["sha"], runner):
+                cur = state_store.read("conversation_dispatch", rec["dispatch_id"])
+                state_store.update("conversation_dispatch", cur["dispatch_id"], cur["revision"],
+                                   {"integrated_at": state_store.now(), "integrated_sha": v["sha"],
+                                    "integrated_via": "ancestor-of-%s" % t["base"]})
+                done.append({"reconciled": rec["jira_key"], "base": t["base"], "sha": v["sha"][:12]})
+    except Exception:                                      # noqa: BLE001
+        pass
+    return done
+
+
+def mark_integrated(dispatch_id, base, sha, evidence, *, state_store=store, runner=None,
+                    fetch=True, jira=None):
+    """Record by hand that a verified dispatch is in `base` (a manual or Memphis integration
+    Thebes did not see). Refused unless git agrees: the verified commit AND `sha` must both be
+    contained in origin/<base> of the repo that base belongs to."""
+    if not (evidence or "").strip():
+        raise ValueError("evidence is required: say who integrated it and where you saw it")
+    matches = [r for r in state_store.read_all("conversation_dispatch")
+               if r["dispatch_id"] == dispatch_id or r["dispatch_id"].startswith(dispatch_id)]
+    if len(matches) != 1:
+        raise ValueError("%r matches %d dispatches" % (dispatch_id, len(matches)))
+    rec = matches[0]
+    v = rec.get("verification") or {}
+    if rec.get("root_dispatch_id") or v.get("verdict") != "pass" or not v.get("sha"):
+        raise ValueError("%s is not a verified (pass) root dispatch" % rec["dispatch_id"])
+    target = next((t for t in _targets() if t["base"].lower() == (base or "").lower()), None)
+    if target is None:
+        raise ValueError("base must be one of: %s" % ", ".join(t["base"] for t in _targets()))
+    if fetch:
+        _FETCHED.pop((target["repo"], target["base"]), None)
+        _fetch_base(target["repo"], target["base"], runner)
+    for what, ref in (("the verified commit", v["sha"]), ("--sha", sha)):
+        if not already_on_base(target["repo"], target["base"], ref, runner):
+            raise ValueError("%s %s is not contained in origin/%s of %s: nothing recorded"
+                             % (what, ref[:12], target["base"], target["repo"]))
+    cur = state_store.read("conversation_dispatch", rec["dispatch_id"])
+    state_store.update("conversation_dispatch", cur["dispatch_id"], cur["revision"], {
+        "integrated_at": state_store.now(), "integrated_sha": sha,
+        "integrated_via": "manual-mark", "integration_evidence": evidence.strip()[:500]})
+    _comment(jira, rec["jira_key"], "recorded as integrated into %s at %s. Evidence: %s"
+             % (target["base"], sha[:12], evidence.strip()[:300]))
+    return {"status": "marked", "dispatch_id": rec["dispatch_id"], "ticket": rec["jira_key"],
+            "base": target["base"], "sha": sha}
+
+
 def pending(state_store=store, runner=None):
     """Verified, pushed, not-yet-integrated work, grouped by base. Never raises.
 
@@ -103,37 +221,48 @@ def pending(state_store=store, runner=None):
     roots = [r for r in state_store.read_all("conversation_dispatch")
              if (r.get("verification") or {}).get("verdict") == "pass" and r.get("jira_key")
              and not r.get("root_dispatch_id")]
+    memo = {}
+
+    def tgt(r):
+        v = r["verification"]
+        key = (v.get("branch"), v.get("sha"))
+        if key not in memo:
+            memo[key] = target_for(v.get("branch") or "", v.get("sha"), runner)
+        return memo[key]
+
     latest = {}
     for r in sorted(roots, key=lambda r: r.get("verified_at") or r.get("outcome_at") or ""):
         v = r["verification"]
-        if v.get("branch") and v.get("sha"):
-            latest[v["branch"]] = v["sha"]
+        t = tgt(r) if v.get("branch") and v.get("sha") else None
+        if t:
+            latest[(t["repo"], v["branch"])] = v["sha"]
     groups, head_ok = {}, {}
     for rec in roots:
         if (rec.get("integrated_at") or rec.get("integration_dispatch_id")
                 or (rec.get("integration_attempts") or 0) >= MAX_ATTEMPTS):
             continue
         branch = rec["verification"].get("branch")
-        target = base_for(branch or "")
-        if not target or branch not in latest:
+        target = tgt(rec)
+        if not target or (target["repo"], branch) not in latest:
             continue
-        if branch not in head_ok:
+        lkey = (target["repo"], branch)
+        if lkey not in head_ok:
             try:
-                head_ok[branch] = remote_head(target["repo"], branch, runner) == latest[branch]
+                head_ok[lkey] = remote_head(target["repo"], branch, runner) == latest[lkey]
             except Exception:                              # noqa: BLE001
-                head_ok[branch] = False
-        if not head_ok[branch]:
+                head_ok[lkey] = False
+        if not head_ok[lkey]:
             continue
-        if already_on_base(target["repo"], target["base"], latest[branch], runner):
+        if already_on_base(target["repo"], target["base"], latest[lkey], runner):
             # B5: the orchestrator's own integration already merged this tip; an automatic
             # second one made Memphis do an empty pass. Record it and move on.
             cur = state_store.read("conversation_dispatch", rec["dispatch_id"])
             state_store.update("conversation_dispatch", cur["dispatch_id"], cur["revision"],
-                               {"integrated_at": state_store.now(), "integrated_sha": latest[branch]})
+                               {"integrated_at": state_store.now(), "integrated_sha": latest[lkey]})
             continue
         groups.setdefault(target["base"], {"target": target, "items": []})["items"].append(
             {"dispatch_id": rec["dispatch_id"], "key": rec["jira_key"], "branch": branch,
-             "sha": latest[branch], "at": rec.get("verified_at") or rec.get("outcome_at") or ""})
+             "sha": latest[lkey], "at": rec.get("verified_at") or rec.get("outcome_at") or ""})
     for g in groups.values():
         g["items"].sort(key=lambda i: i["at"])
         g["items"] = g["items"][:MAX_BATCH]
@@ -263,9 +392,9 @@ def dispatch_for(state_store=store, jira=None, dispatch=None, runner=None, setti
     return done
 
 
-def settle(state_store=store, jira=None):
+def settle(state_store=store, jira=None, runner=None):
     """Read finished integration dispatches: mark integrated tickets, release the rest."""
-    done = []
+    done = reconcile(state_store, runner)
     for rec in state_store.read_all("conversation_dispatch"):
         if (not rec.get("integrates_base") or rec.get("settled_at")
                 or rec.get("status") not in store.CONVERSATION_RESULT_OUTCOMES):

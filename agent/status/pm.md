@@ -2064,3 +2064,10 @@ Moved To Do -> Ready (transition 2) on CEO order. Component Platform, Original e
 
 ## 2026-10-13 - KAN-501 moved To Do -> Ready (Anubis)
 CEO order: keep free teams busy. Read live transitions (id 2 = Ready, matches board.py 10008), one attempt, accepted. KAN-501 now status Ready (10008), component Social, label cap:frontend. KAN-500 was Done and on Alpha (1e49cec8) per the order. Nothing else readied. Original estimate not visible in default fields; not re-checked.
+
+## 2026-10-13 Anubis: KAN-506, KAN-507 To Do -> Ready (transition id 2, first try, both confirmed Ready 10008). Both component Social, estimates 14h/8h. Left: KAN-505 (KAN-499 still Self-review), KAN-512 (499 + KAN-509 open), KAN-509 onward (blockers To Do). Untouched: 511, 514, 515, 498, non-494.
+
+## 2026-10-13 Anubis: full board sweep, no transitions. 18 open tickets, none Ready-able (all To Do blocked by non-Done blockers). Reported to orchestrator.
+
+## 2026-10-13 - Ready all executable To Do (CEO order)
+Moved KAN-505, 509, 512, 510, 513, 516, 517, 518, 515, 514 to Ready in that order (transition 2; no refusals). All Social, estimates set, briefs present. KAN-511/494 untouched (non-executable). No Rank tool: priority = move order. Held by Blocks links until blockers Done. CEO to delete legacy KAN-511 links on KAN-514/515.

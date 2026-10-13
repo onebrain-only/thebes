@@ -278,6 +278,16 @@ def main(argv=None):
     s = sub.add_parser("show"); s.add_argument("key")
     lk = sub.add_parser("links", help="list the links of a ticket, with their ids")
     lk.add_argument("key")
+    mi = sub.add_parser("mark-integrated", help="record that a verified dispatch is already in its "
+                        "base (git must agree); frees the tickets it was holding")
+    mi.add_argument("dispatch_id"); mi.add_argument("--base", required=True, help="Alpha or alpha-ds")
+    mi.add_argument("--sha", required=True, help="the commit in the base that contains it")
+    mi.add_argument("--evidence", required=True)
+    rk = sub.add_parser("rank", help="move a ticket before/after another in the board rank")
+    rk.add_argument("key"); g = rk.add_mutually_exclusive_group(required=True)
+    g.add_argument("--before"); g.add_argument("--after")
+    od = sub.add_parser("order", help="put these tickets in this order in the board rank")
+    od.add_argument("keys", nargs="+")
     ul = sub.add_parser("unlink", help="remove ONE wrong link by id (see `links`)")
     ul.add_argument("link_id")
     ul.add_argument("--approved", required=True,
@@ -294,6 +304,19 @@ def main(argv=None):
             out = create_many(texts, approval=ns.approved, force_new=ns.new)
         elif ns.cmd == "links":
             out = {"key": ns.key, "links": _jira().issue_links(ns.key)}
+        elif ns.cmd == "mark-integrated":
+            from agent.execution import integrate
+            try:
+                out = integrate.mark_integrated(ns.dispatch_id, ns.base, ns.sha, ns.evidence)
+            except ValueError as exc:
+                raise IntakeError([str(exc)])
+        elif ns.cmd == "rank":
+            _jira().rank_issue(ns.key, before=ns.before, after=ns.after)
+            out = {"status": "ranked", "key": ns.key, "before": ns.before, "after": ns.after}
+        elif ns.cmd == "order":
+            for prev, key in zip(ns.keys, ns.keys[1:]):
+                _jira().rank_issue(key, after=prev)
+            out = {"status": "ordered", "keys": ns.keys}
         elif ns.cmd == "unlink":
             _jira().remove_link(ns.link_id)
             out = {"status": "removed", "link_id": ns.link_id, "approved": ns.approved}

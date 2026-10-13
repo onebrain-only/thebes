@@ -609,3 +609,17 @@ def remove_link(link_id):
     if not str(link_id).isdigit():
         raise ValueError("link id must be a number")
     return _request("DELETE", "%s/issueLink/%s" % (API, link_id))
+
+
+AGILE = "/rest/agile/1.0"
+
+
+def rank_issue(issue_key, before=None, after=None):
+    """Move one issue in the board rank, immediately before or after another (Jira Software
+    API). Ready is dispatched in rank order, so this is how the PM orders it. 204, no body."""
+    if bool(before) == bool(after):
+        raise ValueError("give exactly one of before= or after=")
+    body = {"issues": [issue_key]}
+    body["rankBeforeIssue" if before else "rankAfterIssue"] = before or after
+    return _request("PUT", "%s/issue/rank" % AGILE, body=body)
+

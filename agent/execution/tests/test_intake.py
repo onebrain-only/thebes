@@ -5,6 +5,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__)))))
@@ -154,6 +155,30 @@ class IntakeTests(unittest.TestCase):
         finally:
             store.RUNTIME, store.LOCKS, validate.RUNTIME = old
             shutil.rmtree(tmp, ignore_errors=True)
+
+
+class RankTests(unittest.TestCase):
+    def test_rank_issue_sends_the_agile_rank_request_and_refuses_an_ambiguous_one(self):
+        from agent.integrations import jira
+        with mock.patch.object(jira, "_request") as req:
+            jira.rank_issue("KAN-9", after="KAN-5")
+            jira.rank_issue("KAN-9", before="KAN-5")
+        self.assertEqual(req.call_args_list[0].args[:2], ("PUT", "/rest/agile/1.0/issue/rank"))
+        self.assertEqual(req.call_args_list[0].kwargs["body"],
+                         {"issues": ["KAN-9"], "rankAfterIssue": "KAN-5"})
+        self.assertEqual(req.call_args_list[1].kwargs["body"],
+                         {"issues": ["KAN-9"], "rankBeforeIssue": "KAN-5"})
+        for kw in ({}, {"before": "A", "after": "B"}):
+            with self.assertRaises(ValueError):
+                jira.rank_issue("KAN-9", **kw)
+
+    def test_order_ranks_each_ticket_after_the_previous_one(self):
+        from agent.execution import intake
+        fake = mock.Mock()
+        with mock.patch.object(intake, "_jira", return_value=fake):
+            intake.main(["order", "KAN-1", "KAN-2", "KAN-3"])
+        self.assertEqual([(c.args, c.kwargs) for c in fake.rank_issue.call_args_list],
+                         [(("KAN-2",), {"after": "KAN-1"}), (("KAN-3",), {"after": "KAN-2"})])
 
 
 if __name__ == "__main__":
