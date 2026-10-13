@@ -108,6 +108,7 @@ class ReviewQueueTests(unittest.TestCase):
         jira = mock.Mock()
         jira.get_issue.return_value = {"status": "Done"}
         self.assertEqual(rq.candidates(jira=jira, with_qa=False), [])
+        self.judge_root("KAN-10")                 # the Done one is marked finished for good
         jira.get_issue.return_value = {"status": "Self-review"}
         jira.get_comments.return_value = [{"created": "t", "body": "PO accepted AC1-6"}]
         items = rq.candidates(jira=jira, with_qa=False)
