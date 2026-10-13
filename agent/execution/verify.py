@@ -308,14 +308,50 @@ def _send_back(root, ver, *, state_store, dispatcher=None, launcher=None):
                                                root.get("target_seat_id"), why[:2500]))
         except Exception:                                    # noqa: BLE001  never blocks the send-back
             pass
+        _set_pending(root, False, state_store)
         return {"status": "sent-back", "dispatch_id": out.get("dispatch_id"),
                 "failing": [c["id"] for c in failing]}
     except Exception as exc:                                  # noqa: BLE001
-        from agent.execution import watchdog
-        watchdog._alert(root, "review-send-back-failed",
-                        "Verification failed but the fix could not be sent back to the team: %s"
-                        % exc, state_store=state_store)
+        # Live 2026-10-13 (KAN-506): the team was busy with another ticket, the send-back was
+        # refused, and nothing ever tried again. Keep it pending: retry_send_backs resends it the
+        # moment the team is free. One alert, not one per retry.
+        cur = state_store.read("conversation_dispatch", root["dispatch_id"]) or root
+        if not cur.get("sendback_pending"):
+            from agent.execution import watchdog
+            watchdog._alert(root, "review-send-back-failed",
+                            "Verification failed but the fix could not be sent back to the team: "
+                            "%s. Thebes keeps it pending and resends it when the team is free."
+                            % exc, state_store=state_store)
+        _set_pending(root, True, state_store)
         return {"status": "send-back-failed", "error": str(exc)[:300]}
+
+
+def _set_pending(root, flag, state_store):
+    cur = state_store.read("conversation_dispatch", root["dispatch_id"])
+    if cur and bool(cur.get("sendback_pending")) != flag:
+        state_store.update("conversation_dispatch", cur["dispatch_id"], cur["revision"],
+                           {"sendback_pending": flag})
+
+
+def retry_send_backs(*, state_store=store, dispatcher=None, launcher=None):
+    """Resend every failed verification whose send-back could not be delivered, as soon as the
+    owning team has no open dispatch. Never raises; the Ready dispatcher calls it every tick."""
+    from agent.execution import conversation_dispatch as cd
+    done = []
+    try:
+        for root in state_store.read_all("conversation_dispatch"):
+            ver = root.get("verification") or {}
+            if not root.get("sendback_pending") or ver.get("verdict") != "retry":
+                continue
+            if cd.open_work_for(root["target_session_id"], state_store):
+                continue                                  # still busy: try next tick
+            out = _send_back(root, ver, state_store=state_store, dispatcher=dispatcher,
+                             launcher=launcher)
+            done.append({"key": root.get("jira_key"), "action": "send-back-retried",
+                         "status": out["status"]})
+    except Exception as exc:                                 # noqa: BLE001
+        done.append({"action": "send-back-retry-failed", "error": str(exc)[:200]})
+    return done
 
 
 # --------------------------------------------------------------- the judge

@@ -283,6 +283,38 @@ class VerifyTests(unittest.TestCase):
         self.assertEqual((fix["target_session_id"], fix["root_dispatch_id"]), (KARNAK, did))
         self.assertIn("chips 4px taller in Arabic", open(fix["prompt_ref"]).read())
 
+    def test_a_send_back_refused_because_the_team_is_busy_is_kept_and_resent_when_it_is_free(self):
+        """KAN-506 (2026-10-13): Habu was on another ticket, the fix was never handed back."""
+        brief_run_only = "\n".join(l for l in BRIEF.splitlines() if "| judge |" not in l)
+        did, cap = self.dispatch(brief_run_only)
+        self.submit(did, cap, report(wt=self.wt, c=(("C1", "PASS"), ("C2", "PASS"))))
+        self.verify_run(did)
+        # the team picks up another ticket before the Codex verdict arrives
+        other = store.create("conversation_dispatch", {
+            "dispatch_id": "cdispatch-busy0001", "origin_provider": "claude", "origin_thread_id": ORCH,
+            "target_provider": "claude", "target_session_id": KARNAK, "target_seat_id": "karnak",
+            "delivery_id": "cdispatch-busy0001", "capability_sha256": "0" * 64, "prompt_ref": "/x",
+            "status": "delivered", "delivery_status": "DELIVERED"}, rid="cdispatch-busy0001")
+        out = self.codex_pass(did, checks=(), failed={"QA": "guard bypassed on line 55"})
+        self.assertEqual(out["verdict"], "retry")
+        self.assertEqual(out["continuation"]["status"], "send-back-failed")
+        root = store.read("conversation_dispatch", did)
+        self.assertTrue(root["sendback_pending"])
+        self.assertEqual(root["watchdog_alert"]["kind"], "review-send-back-failed")
+        self.assertEqual(verify.retry_send_backs(state_store=store,
+                                                 launcher=lambda d, c: self.sent.append((d, c))), [],
+                         "still busy: nothing sent, no second alert")
+        store.update("conversation_dispatch", "cdispatch-busy0001", other["revision"],
+                     {"status": "withdrawn"})
+        done = verify.retry_send_backs(state_store=store,
+                                       launcher=lambda d, c: self.sent.append((d, c)))
+        self.assertEqual([d["status"] for d in done], ["sent-back"])
+        fix_did, _ = self.deliver_sent()
+        self.assertIn("guard bypassed on line 55",
+                      open(store.read("conversation_dispatch", fix_did)["prompt_ref"]).read())
+        self.assertFalse(store.read("conversation_dispatch", did)["sendback_pending"])
+        self.assertEqual(verify.retry_send_backs(state_store=store), [], "once")
+
     def test_text_work_without_a_branch_is_not_product_and_gets_no_qa_check(self):
         brief = BRIEF.replace("BRANCH: alpha-karnak", "BRANCH: none")
         did, cap = self.dispatch(brief)

@@ -479,10 +479,16 @@ def _resume_asker(req, answer_text, *, state_store=store, resume=None):
             env[cd.CLAUDE_ORIGIN_ENV] = req["origin_thread_id"]
         else:
             env["CODEX_THREAD_ID"] = req["origin_thread_id"]
+        # The answer continues the SAME work, so it keeps the same review: the origin's checks,
+        # its root and its cycle. Without them (live 2026-10-13, KAN-499) the finished work had
+        # no VERIFY block, was never verified, and never reached the reviewer.
         out = cd.dispatch(text, req["asker_session_id"], env=env, state_store=state_store,
                           detach=True, ticket=origin.get("jira_key"),
                           lane_capability=origin.get("jira_capability"),
-                          continuation=True)
+                          continuation=True, checks=origin.get("checks") or None,
+                          root_dispatch_id=origin.get("root_dispatch_id")
+                          or (origin.get("dispatch_id") if origin.get("checks") else None),
+                          verify_cycle=origin.get("verify_cycle"))
     cur = state_store.read("decision_request", req["decision_request_id"])
     state_store.update("decision_request", cur["decision_request_id"], cur["revision"],
                        {"status": "answered", "continuation_dispatch_id": out.get("dispatch_id")})

@@ -2071,3 +2071,6 @@ CEO order: keep free teams busy. Read live transitions (id 2 = Ready, matches bo
 
 ## 2026-10-13 - Ready all executable To Do (CEO order)
 Moved KAN-505, 509, 512, 510, 513, 516, 517, 518, 515, 514 to Ready in that order (transition 2; no refusals). All Social, estimates set, briefs present. KAN-511/494 untouched (non-executable). No Rank tool: priority = move order. Held by Blocks links until blockers Done. CEO to delete legacy KAN-511 links on KAN-514/515.
+
+## 2026-10-13 Anubis - six tickets To Do -> Ready (CEO order)
+Transition id 2 (Ready, status 10008, global) read live on KAN-521, then applied once each to KAN-521, 522, 520, 523, 524, 525. All six returned status Ready; no refusals. No other ticket touched. Calls were issued in one parallel batch in the ordered list, so the Ready rank is for the orchestrator's `intake order`. KAN-525 is held by its Blocks link to KAN-524 (dispatcher).

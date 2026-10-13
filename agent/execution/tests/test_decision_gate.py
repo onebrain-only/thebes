@@ -390,5 +390,28 @@ class DecisionGateTests(unittest.TestCase):
         self.assertEqual(self.launched, [THREAD])
 
 
+class DecisionKeepsTheReviewTests(unittest.TestCase):
+    def test_the_answer_continuation_inherits_the_origin_checks_root_and_cycle(self):
+        """KAN-499 (2026-10-13): the continuation had no checks, so no VERIFY and no review."""
+        from unittest import mock
+        checks = [{"id": "C1", "kind": "run", "what": "flutter analyze", "pass": "exit 0"}]
+        origin = {"dispatch_id": "cdispatch-origin", "origin_provider": "claude",
+                  "jira_key": "KAN-499", "jira_capability": "backend", "checks": checks,
+                  "root_dispatch_id": None, "verify_cycle": None}
+        st = mock.Mock()
+        st.read.side_effect = lambda kind, rid: (origin if kind == "conversation_dispatch" else
+                                                 {"decision_request_id": rid, "revision": 1})
+        req = {"decision_request_id": "dreq-1", "origin_dispatch_id": "cdispatch-origin",
+               "asker_session_id": "sid", "origin_thread_id": "t", "asker_seat_id": "karnak",
+               "decision_class": "x", "accountable_role": "cto", "owner_seat": "cto", "origin_outcome": "decision_required", "asker_seat_id": "karnak",
+               "owner_session_id": "o", "capability_sha256": "0" * 64}
+        with mock.patch("agent.execution.conversation_dispatch.dispatch",
+                        return_value={"dispatch_id": "cdispatch-next"}) as disp:
+            dg._resume_asker(req, "yes, go", state_store=st)
+        kw = disp.call_args.kwargs
+        self.assertTrue(kw["continuation"])
+        self.assertEqual((kw["checks"], kw["root_dispatch_id"]), (checks, "cdispatch-origin"))
+
+
 if __name__ == "__main__":
     unittest.main()
