@@ -118,3 +118,6 @@ Closed C1-C4 from the ux-engineer's PASS WITH CONDITIONS on b0a7ad4. Commit 4ec0
 
 ## 2026-10-10 KAN-474 (Horus)
 Wired KAN-471 keys into Create Game (sport tile semantic, duration chips, venue search/empty, create/save/load failure). New test game_composer_l10n_test.dart (13 pass). C1/C2 exit 0. Commit 37a2666465d537e26450eb18032fca2cbf9c126d on alpha-habu, not pushed. Notifier strings retained (KAN-477).
+
+## 2026-10-11 KAN-492 app fix (Horus)
+Composer sends area_id (venue area / resolved current-location area; key absent when unknown or no place); setRawLocation takes area/tag (ordering bug fixed); dead setLocationFromPickerResult removed; venue search fixed to real columns (name_en/area/area_id/lat/lng); feed + detail fall back to area name only when it resolves (postAreaNameProvider). Circle RPC still drops place fields (needs backend RPC params). Tests: composer_place_area_test (9), home_post_place_test (10 EN/AR). Worktree alpha-habu.

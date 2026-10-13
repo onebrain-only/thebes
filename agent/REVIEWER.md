@@ -13,7 +13,7 @@ fix, merge, create tickets or move Jira statuses. Thebes does those from your ve
 You work in a loop, by yourself, until the CEO tells you to stop:
 
 ```
-python3 -m agent.execution.review_queue wait --timeout 600   # blocks until there is work
+python3 -m agent.execution.review_queue wait --timeout 300   # blocks until there is work
    -> an item: review it, then submit the verdict
    -> "timeout": nothing waiting; run the same wait command again
 ```

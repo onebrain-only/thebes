@@ -5215,3 +5215,6 @@ Briefs rewritten in dispatcher form and linted through ready_dispatcher.prompt_f
 
 ## 2026-10-10 Horemheb (po): Create Game localization follow-ups (ledger ref create-game)
 Created KAN-483 (cap:content, Listings, 1h, due 2026-10-12: three game_duration_chip_* keys EN+AR) and KAN-484 (cap:frontend, Listings, 3h, due 2026-10-28: wire chips + name_ar-with-fallback for venue/space/format). Links read back from create responses: 483 blocks 484, 477 blocks 484, 475 blocks 484. Both To Do, no status move. Lint via ready_dispatcher.prompt_for + dispatch_brief.lint (team karnak): ok (run on a structural replica of each brief, same sections and C1-C3 command lines, not the stored text). Schema (baseline migration, read-only): venues/venue_spaces/sport_variants.name_ar exist nullable; areas has no name_ar (venues.area is text). Finding: composer sports select (game_composer_screen.dart:213) reads name_en only, contrary to the brief. Dates provisional; PM ranks.
+
+## 2026-10-11 Horemheb: KAN-493 reverted from Done
+KAN-493 moved Done (10007) -> Operations (10049) via transition 12 after an erroneous Done by the verification route (C4 not run). Comment 12151 added with facts. Nothing else changed. Persistent State has no record for KAN-493 (known:false), so no ownership/lease touched.

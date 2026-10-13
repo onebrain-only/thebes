@@ -2033,3 +2033,9 @@ KAN-485 moved To Do -> Ready (frontend, app, effort 2, 6h, Platform; due date ab
 
 ## 2026-10-10 KAN-486/488 to Ready (D-042)
 Moved 486 (content, e1) and 488 (frontend, e2) to Ready; 487 left in To Do (design, awaiting CEO artwork). Ledger logged.
+
+## 2026-10-11 — prio-b1fb9c45 (D-042)
+KAN-493 (Android signed builds + Play publishing via GitHub Actions; cap:devops, Platform, 6h, no due date) moved To Do -> Ready. Only open ticket on the board; Backlog otherwise empty. Not Readied (no ticket, CEO pending): KAN-492 production migration, circle-post place loss, card_event_result pin, uncapped GPS / Geolocator prompts. pm_ledger add was denied by the auto-mode classifier; ledger entry not written.
+
+## 2026-10-13 — Board re-prioritisation (Anubis)
+Read ledger + Jira. Open: KAN-493 (Operations, in flight), KAN-494 (epic, non-executable, left in To Do), KAN-495 (To Do -> Ready; Platform, 6h, ask lane, brief complete). Backlog otherwise empty; no returned work; no needs-brief tickets; no CEO-decision items Readied. Ledger entry added.
