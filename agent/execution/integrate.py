@@ -39,7 +39,7 @@ FINAL_SHA = re.compile(r"^BASE_SHA:\s*([0-9a-f]{7,40})", re.M)
 
 def base_for(branch):
     for prefix, repo, base, worktree in BASES:
-        if branch.startswith(prefix):
+        if branch.lower().startswith(prefix):        # "Alpha-karnak" from before B8 too
             return {"repo": repo, "base": base, "worktree": worktree, "prefix": prefix}
     return None
 
