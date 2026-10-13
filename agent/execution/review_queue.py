@@ -163,8 +163,36 @@ def qa_items(jira=None):
     return out
 
 
+def _enrich_judges(items, jira=None):
+    """A judge item whose ticket is already Done in Jira is stale (live 2026-10-13: a 5-day-old
+    KAN-438 item the PO had closed with live-DB evidence was reviewed and failed). Drop those;
+    for the rest add the ticket's status and latest comments so the reviewer sees the context."""
+    if not items:
+        return items
+    if jira is None:
+        from agent.execution import jira_sync
+        jira = jira_sync._client(None, store)
+    if jira is None:
+        return items
+    out = []
+    for item in items:
+        try:
+            issue = jira.get_issue(item["ticket"])
+            if (issue.get("status") or "").lower() == "done":
+                finish(item["item_id"], {"skipped": "ticket-already-done"})
+                continue
+            item["ticket_status"] = issue.get("status")
+            item["latest_comments"] = [
+                {"at": c.get("created") or c.get("at"), "text": (c.get("body") or c.get("text") or "")[:500]}
+                for c in (jira.get_comments(item["ticket"], limit=50) or [])[-3:]]
+        except Exception:                                   # noqa: BLE001  Jira down: keep as is
+            pass
+        out.append(item)
+    return out
+
+
 def candidates(state_store=store, jira=None, with_qa=True):
-    items = judge_items(state_store)
+    items = _enrich_judges(judge_items(state_store), jira)
     if with_qa:
         try:
             items += qa_items(jira)

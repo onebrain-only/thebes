@@ -102,6 +102,18 @@ class ReviewQueueTests(unittest.TestCase):
         self.assertIsNone(rq.next_item(with_qa=False), "a settled item is never offered again")
         self.assertTrue(rq.is_done(item["item_id"]))
 
+    def test_an_item_whose_ticket_is_already_done_is_dropped(self):
+        """Live 2026-10-13: a stale KAN-438 item the PO had closed was reviewed and failed."""
+        self.judge_root("KAN-9")
+        jira = mock.Mock()
+        jira.get_issue.return_value = {"status": "Done"}
+        self.assertEqual(rq.candidates(jira=jira, with_qa=False), [])
+        jira.get_issue.return_value = {"status": "Self-review"}
+        jira.get_comments.return_value = [{"created": "t", "body": "PO accepted AC1-6"}]
+        items = rq.candidates(jira=jira, with_qa=False)
+        self.assertEqual(items[0]["ticket_status"], "Self-review")
+        self.assertEqual(items[0]["latest_comments"][0]["text"], "PO accepted AC1-6")
+
     def test_wait_returns_the_item_or_times_out(self):
         clock = {"t": 0.0}
         self.assertIsNone(rq.wait(10, sleep=lambda s: clock.__setitem__("t", clock["t"] + s),

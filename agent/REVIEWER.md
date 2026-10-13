@@ -30,6 +30,9 @@ survive in this runtime). Never poll in a quick loop.
 - `ticket`, `summary`, `branch`, `sha` — what to look at
 - `checks` — for `judge`: the lines `C2 | judge | <what to confirm> | <evidence the team named>`
 - `evidence` — files and notes the team handed over (screenshots, commands)
+- `ticket_status`, `latest_comments` — where the ticket stands in Jira and the last comments
+  (PO acceptance, rulings). READ THEM FIRST: a check may already be settled there with evidence you
+  cannot see in the diff. If the ticket is already Done, say so and submit nothing.
 - `description` — the ticket, with its acceptance criteria
 
 ## How to look
