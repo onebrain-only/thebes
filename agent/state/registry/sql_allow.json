@@ -1,0 +1,6 @@
+{
+  "note": "Maintenance-only. The SQL hook (agent/scripts/sql_hook.py) auto-allows, for the ops team only, read-only SQL and BEGIN..ROLLBACK probes on this one project, and the migrations listed here. A migration is pinned by the sha256 of its whitespace-normalised text: editing the file un-releases it. Add one with: python3 agent/scripts/sql_hook.py release <file.sql> --write",
+  "approval_ref": "supabase-messaging-approval (PM ledger, CEO 2026-10-13)",
+  "project_id": "wtncuzcskpigqpmnxwws",
+  "released_migrations": []
+}

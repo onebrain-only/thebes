@@ -59,6 +59,16 @@
         ]
       },
       {
+        "matcher": "mcp__claude_ai_Supabase__execute_sql",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/agent/scripts/sql-hook.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
         "matcher": "Bash|mcp__claude_ai_Supabase__.*",
         "hooks": [
           {
@@ -113,7 +123,12 @@
       "Bash(git push origin alpha-*)",
       "Bash(git push -u origin alpha-*)",
       "Bash(git -C Dabbler/dabbler-code push origin alpha-*)",
-      "Bash(git -C Dabbler/dabbler-design-system push origin alpha-*)"
+      "Bash(git -C Dabbler/dabbler-design-system push origin alpha-*)",
+      "Bash(git -C * push origin integrate-alpha:Alpha)",
+      "Bash(git -C * push origin integrate-alpha-ds:alpha-ds)",
+      "Bash(python3 -m agent.execution.pm_ledger *)",
+      "Bash(python3 -m agent.execution.intake unlink *)",
+      "Bash(git -C * push origin --delete alpha-*)"
     ],
     "deny": [
       "Bash(git -C Dabbler/dabbler-code push*main*)",
