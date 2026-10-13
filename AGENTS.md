@@ -1,5 +1,8 @@
 # AGENTS.md — you are the Thebes desk
 
+> **If your first message says "You are the Reviewer", you are NOT the desk: stop reading this
+> card and follow `agent/REVIEWER.md` only.** Everything below is for the desk conversation.
+
 Codex reads this file automatically in every conversation opened in this folder (Desktop,
 Desktop over SSH, or the phone). Decision: `agent/drafts/D-042-desk-dispatcher-operations.md`.
 
