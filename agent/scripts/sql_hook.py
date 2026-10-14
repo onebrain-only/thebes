@@ -153,7 +153,7 @@ AUTH_SECRET_COLS = re.compile(r"\b(email|phone|encrypted_password|raw_user_meta_
                               r"identity_data)\b|\*")
 DELETE = re.compile(r"\bdelete\s+from\b")
 WHERE = re.compile(r"\bwhere\b")
-DYNAMIC = re.compile(r"\bexecute\b")
+DYNAMIC = re.compile(r"\bexecute\b(?!\s+(on|function|procedure)\b)")   # the privilege / trigger forms are not dynamic SQL
 BEGIN = re.compile(r"^(begin|start\s+transaction)(\s+(work|transaction))?"
                    r"(\s+(isolation\s+level\s+\w+(\s+\w+)?|read\s+(write|only)|(not\s+)?deferrable))*$")
 ROLLBACK = re.compile(r"^(rollback|abort)(\s+(work|transaction))?$")
@@ -201,6 +201,105 @@ def registry(path=None):
             return json.load(fh)
     except (OSError, ValueError):
         return {}
+
+
+# ---------------------------------------------------- integrated migrations (auto-decision)
+# CEO 2026-10-14: a technical approval is the CTO's, not the CEO's. By the time Memphis applies a
+# migration it has passed the CTO's review, the team's checks, QA and integration into Alpha, so
+# the proof of approval is that the SQL IS, byte for byte, a statement of a migration file
+# committed on origin/Alpha. That is what the hook checks, instead of asking a human. Only
+# additive/ACL statement classes qualify; anything else keeps the normal prompt.
+APP_REPO = os.path.join(ROOT, "Dabbler", "dabbler-code")
+MIGRATIONS_REF, MIGRATIONS_DIR, RECENT_FILES = "origin/Alpha", "supabase/migrations", 80
+AUTO_CLASSES = re.compile(
+    r"^(create\s+(or\s+replace\s+)?function\b|alter\s+function\b|revoke\b|grant\b|"
+    r"comment\s+on\b|do\b|begin\b|start\s+transaction\b|commit\b|end\b|"
+    r"create\s+(unique\s+)?index\s+(concurrently\s+)?if\s+not\s+exists\b|"
+    r"create\s+table\s+if\s+not\s+exists\b|create\s+policy\b|"
+    r"alter\s+table\s+\S+\s+(add\s+column\s+if\s+not\s+exists\b|enable\s+row\s+level\s+security\b))", re.I)
+
+
+def split_statements(text):
+    """Top-level statements of a SQL file, original text, split on ';' outside comments, strings
+    and dollar quotes. Raises LexError when it cannot tell."""
+    out, buf, i, n = [], [], 0, len(text)
+    while i < n:
+        two, c = text[i:i + 2], text[i]
+        if two == "--":
+            j = text.find("\n", i); j = n if j < 0 else j
+            buf.append(text[i:j]); i = j
+        elif two == "/*":
+            j = text.find("*/", i + 2)
+            if j < 0:
+                raise LexError("unterminated block comment")
+            buf.append(text[i:j + 2]); i = j + 2
+        elif c in "'\"":
+            j = i + 1
+            while True:
+                if j >= n:
+                    raise LexError("unterminated quote")
+                if text[j] == c:
+                    if text[j + 1:j + 2] == c:
+                        j += 2; continue
+                    break
+                j += 1
+            buf.append(text[i:j + 1]); i = j + 1
+        elif c == "$" and _DOLLAR.match(text, i) and not (i and (text[i - 1].isalnum() or text[i - 1] == "_")):
+            m = _DOLLAR.match(text, i)
+            j = text.find(m.group(0), m.end())
+            if j < 0:
+                raise LexError("unterminated dollar quote")
+            buf.append(text[i:j + len(m.group(0))]); i = j + len(m.group(0))
+        elif c == ";":
+            stmt = "".join(buf).strip()
+            if stmt:
+                out.append(stmt)
+            buf = []; i += 1
+        else:
+            buf.append(c); i += 1
+    tail = "".join(buf).strip()
+    if tail and re.sub(r"--[^\n]*|/\*.*?\*/", "", tail, flags=re.S).strip():
+        out.append(tail)
+    return out
+
+
+def _skeleton(stmt):
+    return re.sub(r"\s+", " ", re.sub(r"--[^\n]*|/\*.*?\*/", " ", stmt, flags=re.S)).strip()
+
+
+def integrated_migrations(runner=None):
+    """[(file, text)] for the most recent migration files committed on origin/Alpha (local ref)."""
+    import subprocess
+    run = runner or subprocess.run
+    ls = run(["git", "-C", APP_REPO, "ls-tree", "--name-only", MIGRATIONS_REF, MIGRATIONS_DIR + "/"],
+             capture_output=True, text=True, timeout=5)
+    files = sorted(f for f in ls.stdout.split() if f.endswith(".sql"))[-RECENT_FILES:]
+    out = []
+    for f in files:
+        got = run(["git", "-C", APP_REPO, "show", "%s:%s" % (MIGRATIONS_REF, f)],
+                  capture_output=True, text=True, timeout=5)
+        if got.returncode == 0:
+            out.append((f, got.stdout))
+    return out
+
+
+def in_integrated_migration(query, migrations=None):
+    """The migration file that contains this SQL exactly (the whole file, or one statement of it)
+    and whose statements are all of the auto-allowed classes; else None."""
+    want = normalise(query)
+    for name, text in (migrations if migrations is not None else integrated_migrations()):
+        try:
+            stmts = split_statements(text)
+        except LexError:
+            continue
+        if not stmts or not all(AUTO_CLASSES.match(_skeleton(x)) for x in stmts):
+            continue
+        if want == normalise(text) or any(want == normalise(x) for x in stmts):
+            return name
+        parts = [x for x in split_statements(query)] if want else []
+        if parts and all(any(normalise(p) == normalise(x) for x in stmts) for p in parts):
+            return name
+    return None
 
 
 def released(query, reg):
@@ -274,7 +373,13 @@ def decide(payload, state_store=None, teams_mod=None, allow_path=None):
     elif released(query, reg):
         kind = "released-migration"
     else:
-        return done(None, "unlisted-write", None)
+        try:
+            src = in_integrated_migration(query, (payload.get("_migrations")))
+        except Exception:                                  # noqa: BLE001  git trouble: ask
+            src = None
+        if not src:
+            return done(None, "unlisted-write", None)
+        kind = "integrated-migration:%s" % os.path.basename(src)
     return done("allow", kind, "SQL hook: %s on the approved project (supabase-messaging-approval)." % kind)
 
 

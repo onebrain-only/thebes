@@ -32,11 +32,14 @@ class SqlHookTests(unittest.TestCase):
         validate.RUNTIME = store.RUNTIME
         store.bind_role_session("karnak", "claude", KARNAK, "/h", "ceo")
         store.bind_role_session("memphis", "claude", MEMPHIS, "/h", "ceo")
+        self._real_mig = sql_hook.integrated_migrations
+        sql_hook.integrated_migrations = lambda runner=None: []     # never hit git in tests
         self.reg = os.path.join(self.tmp, "sql_allow.json")
         with open(self.reg, "w") as fh:
             json.dump({"project_id": OK, "released_migrations": []}, fh)
 
     def tearDown(self):
+        sql_hook.integrated_migrations = self._real_mig
         store.RUNTIME, store.LOCKS, validate.RUNTIME = self.old
         shutil.rmtree(self.tmp, ignore_errors=True)
 
@@ -123,6 +126,53 @@ class SqlHookTests(unittest.TestCase):
         self.assertEqual(self.kind("  " + sql.replace(" ", "  ") + "\n"), "allow", "whitespace only")
         self.assertEqual(self.kind(sql.replace("select 1", "select 2")), "ask", "edited: un-released")
         self.assertEqual(self.kind("drop function f();"), "deny")
+
+    # -- integrated migrations: a technical approval is not the CEO's (2026-10-14) ----------
+    MIG = ("-- KAN-522\nbegin;\ncreate or replace function public.f() returns int language sql as "
+           "$$ select 1; $$;\nrevoke all on function public.f() from public;\n"
+           "grant execute on function public.f() to authenticated;\n"
+           "do $$ begin assert true; end $$;\ncommit;\n")
+
+    def dm(self, query, files, sid=MEMPHIS):
+        r = sql_hook.decide({"session_id": sid, "tool_name": TOOL, "_migrations": files,
+                             "tool_input": {"project_id": OK, "query": query}},
+                            state_store=store, allow_path=self.reg)
+        return r["decision"] if r else "ask"
+
+    def test_sql_that_is_a_statement_or_the_whole_of_an_integrated_migration_needs_no_human(self):
+        files = [("supabase/migrations/20261013_x.sql", self.MIG)]
+        stmt = "create or replace function public.f() returns int language sql as $$ select 1; $$"
+        self.assertEqual(self.dm(stmt, files), "allow", "one statement")
+        self.assertEqual(self.dm("revoke all on function public.f() from public;", files), "allow")
+        self.assertEqual(self.dm(self.MIG, files), "allow", "the whole file")
+        self.assertEqual(self.dm("  " + stmt.replace(" ", "   ") + " ;", files), "allow", "whitespace only")
+
+    def test_anything_not_in_an_integrated_file_still_asks_or_is_denied(self):
+        files = [("supabase/migrations/20261013_x.sql", self.MIG)]
+        self.assertEqual(self.dm("create or replace function public.f() returns int language sql as "
+                                 "$$ select 2; $$", files), "ask", "edited text")
+        self.assertEqual(self.dm("create or replace function public.g() returns int language sql as "
+                                 "$$ select 1; $$", files), "ask", "a different function")
+        self.assertEqual(self.dm("select 1", []), "allow", "read-only is allowed anyway")
+        self.assertEqual(self.dm("update t set a = 1", files), "ask")
+        self.assertEqual(self.dm("drop function public.f()", files), "deny")
+        self.assertEqual(self.dm("create or replace function public.f() returns int language sql as "
+                                 "$$ select 1; $$", files, sid=KARNAK), "ask", "code teams never")
+
+    def test_a_migration_with_data_changes_or_drops_never_qualifies(self):
+        for body in ("update t set a = 1;", "insert into t values (1);", "drop table t;",
+                     "alter table t drop column a;", "delete from t where a = 1;"):
+            mig = self.MIG + body
+            files = [("supabase/migrations/20261013_y.sql", mig)]
+            stmt = "revoke all on function public.f() from public"
+            self.assertEqual(self.dm(stmt, files), "ask", body)
+        self.assertEqual(self.dm("select 'x'", []), "allow")
+
+    def test_the_statement_splitter_respects_quotes_comments_and_dollar_bodies(self):
+        text = "select 'a;b'; -- c;d\ncreate function f() returns int as $$ select 1; select 2; $$ language sql; select 3"
+        self.assertEqual(sql_hook.split_statements(text), [
+            "select 'a;b'", "-- c;d\ncreate function f() returns int as $$ select 1; select 2; $$ language sql",
+            "select 3"])
 
     # -- the log -----------------------------------------------------------------------
     def test_every_decision_is_logged_without_literals_or_secrets(self):
