@@ -832,3 +832,4 @@ re-posting once auth is restored.
 
 ## 2026-10-09 — KAN-452 Notion messaging/follow report
 Read-only observation report written to /Users/moataz/.claude/jobs/7f6ff1a6/tmp/kan452-report.md. Finding: corpus (11b) lists chat features but no follow/block permission rules; only non-corpus "Play mode" gates chat; conflicts with P-002/P-033 flagged. No rulings, no writes to Notion/Jira/DB.
+- 2026-10-15 cpo: product plan for CEO order 'open game chat to everyone + Home entry'; read-only; verdict ALIGNED WITH CONSEQUENCE (reverses KAN-516 no-inbox/no-unread and P2 internal-only cohort; needs D1/P-002/P-020 ruling). Plan returned to orchestrator.

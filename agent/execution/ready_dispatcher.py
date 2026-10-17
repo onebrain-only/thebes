@@ -422,6 +422,13 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None):
     except Exception as exc:                            # noqa: BLE001
         done.append({"action": "send-back-retry-failed", "error": str(exc)[:200]})
 
+    # A review waiting for the headless Codex reviewer wakes it (zero tokens until there is work).
+    try:
+        from agent.execution import review_queue
+        done.extend(review_queue.nudge(state_store=state_store, jira=jira))
+    except Exception as exc:                            # noqa: BLE001
+        done.append({"action": "review-nudge-failed", "error": str(exc)[:200]})
+
     # Verified work reaches Alpha by itself (D-042): settle finished integrations, then open the
     # next one. Never raises into the dispatch loop.
     try:

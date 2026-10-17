@@ -127,3 +127,23 @@ message_preference save fix on alpha-habu, commit 56835da37a09bad8db10219bb463ba
 
 ## 2026-10-13 KAN-501 (game_invite_preference serialisation)
 Committed fc4b0390dbab5371b91d3e04db71b20f45b94996 on alpha-habu (not pushed). Controller bool? cast + use-case bool collapse fixed; params carry CommunicationPreference. Red->green; C1/C2/C3 exit 0; full test 1870 pass.
+
+## 2026-10-14 KAN-526 (Horus)
+Manual Set location drawer on Games/Meetups/Venues/Home/ExploreScreen; persisted useManualPoint. Commit 99116b56d7a91266a2d02da9e52fc8edde817e8e on alpha-habu (not pushed). C1/C2/full test/analyze exit 0.
+
+## 2026-10-14 — KAN-516 (Messaging T16a: game-chat thread + composer), team Habu
+Built in worktree /Users/moataz/.claude/jobs/149908a7/wt/kan-456-habu (uncommitted). GameChatScreen (DS thread, pager, skeleton, composer, connection notice), thread mapping, flag-gated GameChatEntry on GameDetailScreen, controller loadOlder->bool + refreshNewest (polling), 17 ARB keys EN/AR. 27 new widget tests (5 states x LTR/RTL/200%) + entry gate tests; route test updated (placeholder -> screen). Gaps: no end_at/display name in Conversation/Message; AdaptiveScaffold absent (DabblerPage used); stale package_config fixed by pub get --offline.
+
+## 2026-10-15 — KAN-550 (Messaging W1: real MessagingRepository), team Habu — STOPPED on contract/Worker mismatch
+Read openapi.yaml, domain, fake, providers, controller, environment, cloudflare-build.sh, workers/messaging/src. No code written (worktree untouched). The Worker routes only GET/POST /v1/conversations/{id}/messages and POST /v1/messages/{id}/report; GET /games/{gameId}/conversation and PUT/DELETE /conversations/{id}/mute are absent (fall through to reasonError("not_found")). Per brief, raised ONE question instead of coding. Also noted: Worker sends 403 no-reason for messaging_off (brief already covers); msg_my_conversations is not in SupabaseConfig (out of allowed paths).
+
+## 2026-10-15 — KAN-550 (Team Habu) real MessagingRepository
+Built WorkerMessagingRepository (6 contract ops + listMyConversations over msg_my_conversations), MessagingHttpClient, UnavailableMessagingRepository, backend selection providers (fake / worker / unavailable), MESSAGING_API_BASE_URL env + build-script forwarding. Worktree kan-456-habu, uncommitted. messaging tests, analyze (0 err/0 warn) and full suite green.
+
+## 2026-10-15 — KAN-562 (Messaging DMs F2), Team Habu worktree alpha-habu
+- Built DM rows in the Messages list, MyConversation v2 fields, DmRepository (startDm/setMuted) in fake/worker/unavailable, dm_cap_reached as DmCapReachedFailure, 7 new l10n keys. Not committed.
+- messaging tests exit 0 (493), l10n parity exit 0, analyze exit 0 (0 errors/warnings), full suite exit 0 (2750).
+- Deviations: DmRepository sibling interface; dm_cap_reached not added to MessagingReason (contract pin); DS row has no photo slot (design gap); DM tap routes to game chat route until messagingThread exists.
+
+## 2026-10-16 — KAN-552 (Team Habu) admin message Reports screen
+Built in worktree /Users/moataz/.claude/jobs/149908a7/wt/kan-456-habu (alpha-habu), uncommitted. New ModerationReportsRepository sibling interface (list via msg_list_message_reports RPC, read via GET /v1/moderation/reports/{id}/message), NotAModeratorFailure (typed reason enum untouched), admin screen + panel (text held only in panel State, cleared on dispose), route /admin/message-reports with session/flags/is_admin redirect, one gated row on Safety Overview, 37 admin_message_reports_* l10n keys. Admin tests 609 green, full suite 2855 green, analyze 0 errors/0 warnings, parity green.

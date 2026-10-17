@@ -1137,3 +1137,13 @@ Verdict recorded via `store.record_review_result('KAN-194', 11, 'backend-3', 'pa
 Note: Jira was returning "trouble completing this action" on every `getJiraIssue`
 for KAN-194 across five attempts, so the AC list was taken from the review brief
 rather than read live. Every AC named there is evidenced above.
+
+## 2026-10-14 — Team Habu (alpha-habu): KAN-523 sort test relaxed, KAN-525 create_post caller count updated, KAN-505 README reason contract. flutter test test/supabase exit 0 (174), analyze exit 0. Not committed.
+
+## 2026-10-14 — KAN-509 (Messaging T14, Worker send/list) — STOPPED on one contract question
+- Read openapi.yaml, worker skeleton, KAN-505 msg_authorize. No code written; worktree unchanged.
+- Blocker: msg_authorize returns `read_only` for both ended and cancelled games; contract requires
+  `game_ended` vs `game_cancelled` (409) on send, and Worker must not compute lifecycle. Asked caller which source decides.
+
+## 2026-10-15 KAN-546 (Habu worktree)
+CORS +https://app.dabbler.pro; wrangler env staging->production (name/db unchanged); README production + keep_vars doc (not added to toml, docs ambiguous for var also in committed vars); tests 242/242. Not committed.

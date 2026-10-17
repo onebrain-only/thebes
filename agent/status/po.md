@@ -5247,3 +5247,78 @@ Added label `any-team` (existing labels kept) to KAN-520, 521, 522, 523, 524, 52
 - KAN-526 created (To Do, cap:frontend, any-team, 12h): Set location drawer on four surfaces; KAN-521 blocks KAN-526, link read back both ends.
 - KAN-520: location-rule line added, still cap-only. No status changed by me.
 - WARNING: KAN-521 was already in Front-end (10046) when my edit landed; worker may hold the old brief.
+
+## 2026-10-14 Horemheb: KAN-521 and KAN-520 accepted
+No visual/copy/theme criterion in either; all ACs functional and evidenced (review-evidence verdicts). Commented and moved both to Done (transition 41). KAN-520 denied/timeout path unit-tested only, not device-driven. No other ticket touched.
+
+## 2026-10-14 — Horemheb — KAN-527 and KAN-528 created (To Do)
+- KAN-527 (backend, Platform, 6h, Medium, cap:backend, any-team): revoke PUBLIC/anon EXECUTE from trigger functions in public. Sweep file was readable (174 trigger fns); excludes notify_admins_of_block (KAN-523) and msg_*/KAN-499/505. Migration ts 20261014090000, no "newest" assertion.
+- KAN-528 (frontend, Social, 3h, Low, cap:frontend, any-team): manual drawer strings to l10n EN+AR. KAN-526 blocks KAN-528 (link read back from both ends).
+- Both briefs pass dispatch_brief lint --team karnak (status ok). Nothing moved to Ready; PM readies. Work Effort/capability not set in Persistent State (labels and Original estimate only).
+
+## 2026-10-14 KAN-526 acceptance
+Accepted at alpha-habu be9900075e23. Jira comment 12334, moved to Done (transition 41). Blank canvas was a cold dev-server load, reproduced on Alpha. Noted: sports_screen.dart has no dedicated widget test; renders exist only for Games.
+
+## 2026-10-14 Horemheb - Habu finding on non-circle createPost (KAN-524/525)
+Decision: not a defect, no ticket. KAN-525 AC1-AC3 and KAN-524 scope name only the two circle call sites. Repo createPost (post_repository_impl.dart:861-899 on origin/Alpha) has no place parameters except locationTagId and has no live caller (only PostService -> PostActionsNotifier.createPost, which nothing in lib/ or test/ invokes); the composer uses createFullPost, whose non-circle insert already writes place (:1021-1025). Latent gap only; ticket if a caller is ever wired.
+
+## 2026-10-14 Horemheb: KAN-529 created
+KAN-529 (msg_authorize closed-game reasons) created, Ready, ranked after KAN-509. Backend, 3h, 1 sitting, due 2026-10-16 (KAN-509 undated; re-date when it lands). Links: blocks KAN-517; blocked by KAN-509; relates KAN-505, KAN-509. Read origin/Alpha only; no code touched.
+
+## 2026-10-14 — Design-conformance cleanup tickets: NOT written (premise false on Alpha)
+Measured origin/Alpha 1bbbd8b: 0 `Colors.<name>`, 0 `Color(0x`, 0 `Color.fromARGB`, 0 off-grid EdgeInsets/SizedBox literals in lib/ (excl. messaging). Canonical sources are package:dabbler_design_system (pubspec.yaml:45-48) `DabblerColors.of(context)` / `DabblerSpacing` (3dp-based scale 3,6,9,12,15,18,21,24,30,36,48 — dabbler_geometry.dart:23-34 on alpha-ds). AppTheme/AppSpacing/colorScheme do not exist on Alpha (CLAUDE.md figures are Canary-era). No tickets created, nothing ranked. Returned to caller for CEO.
+## 2026-10-14 — Option 2 re-measure (Alpha 1bbbd8b, excl. messaging): still nothing to ticket
+Radius literals 0 (DabblerRadius 29 uses); numeric width/height/size/elevation literals 0; Material visual widgets (Scaffold/AppBar/buttons/Card/ListTile/CircleAvatar/Chip/TextField/AlertDialog/SnackBar/progress/Divider/Switch/Checkbox) 0; TextStyle( 0, fontSize literal 0; BoxDecoration 4 (all composer_drawer_kit.dart, token-based). No tickets written; no Jira/state writes.
+
+## 2026-10-14 KAN-529 brief completed
+Brief already carried GOAL/DECISIONS/BRANCH/CHECKS/paths/AC. Fixed: BRANCH placeholder {team} (lint-refused), C3 npm command (not a Thebes-run command, now judge), named workers/messaging/src/auth.ts + tests, widened AC6, KAN-509 landed 4eb5143f. Removed labels needs-brief, brief-requested. Lint ok.
+
+## 2026-10-14 Horemheb: KAN-496 closure check
+Checked KAN-496 ACs against KAN-496_CONSOLIDATED_REPORT.md and KAN-505..518, 529. NOT closed; status left at Operations (10049). Unmet: C4/AC2 runtime tests T1-T9 not run (report s0, s3.5; approval now permits them), C1 Cloudflare billing/alerts unverified, AC6 all roles at low effort (D30 independent review recommended), report not posted on the ticket. No Jira write made.
+
+## 2026-10-14 KAN-496 comment 12398
+Posted CEO Cloudflare billing check record on KAN-496 (comment only; no status, description or ticket change). Notifications alert policies and Pages "webapp" account membership remain UNVERIFIED. Messaging Worker/D1 not approved.
+
+## 2026-10-14 KAN-496 comment
+Added comment 12399 to KAN-496 (Cloudflare budget alert created, CEO). No ticket created; status and description unchanged. Open item left on the ticket: whether Pages project "webapp" is on this account.
+
+## 2026-10-14 Horemheb: KAN-496 comment 12401 (Cloudflare Pages check, status/description untouched). KAN-530 created (Task, parent KAN-494, backend, any-team, Social, 3h, due 2026-10-16), relates KAN-512 and KAN-513, Ready via ready set (cap backend, effort 1), ranked after KAN-529. Measured on origin/Alpha 4eb5143f: report_content baseline_schema.sql:10037-10068, mr_self_insert :32593, details column :2593. Note: intake create refused BRANCH not ending -karnak, so the ticket was created directly in Jira as KAN-529 was.
+
+## 2026-10-14 po (Horemheb) - KAN-531
+Created KAN-531 (Games header tint bug): Ready, ranked first, due 2026-10-15 (frontend 8/8 seats free, 2h = one sitting). Cause: games_screen.dart:203 head: DabblerListingHead.none; fix tint. Design Listings.dc.html:2088 gamesHead tint under sectionThemes.
+
+## 2026-10-14 - KAN-496 closing (Horemheb)
+- Created KAN-532 (Backlog, parent KAN-494, capability ops, blocked until Worker deployed): T1-T9 + T-A1..A4 as AC1-AC10.
+- Posted closing comment 12420 on KAN-496 (AC-to-comment map; C4 moves to KAN-532; D30 review not run).
+- KAN-496 already Done in live Jira (set by Thebes at comment 12419); transition 41 read back, no transition issued.
+- Capability/work_effort not set on KAN-532 (Backlog, blocked; sizing by executing seat at Preflight).
+
+## 2026-10-14 KAN-531 C1 fix
+Edited KAN-531 CHECKS C1 to `flutter analyze --no-pub --no-fatal-infos` (CI gate form), rest verbatim. KAN-529/530/532 checked: no bare form (530 already correct; 529 and 532 have no analyze check). No status changes.
+
+## 2026-10-14 po (Horemheb)
+Created KAN-533 (Social, frontend, any-team, epic KAN-494, estimate 1d, due 2026-10-16, effort 2 sittings), moved to Ready, ranked first (sole Ready item). Evidence: 8 messaging_reason_* keys used by no file under lib/features or test on origin/Alpha 65f64e14.
+
+## 2026-10-14 Horemheb: Cloudflare staging chain ticketed (KAN-494)
+Created KAN-534 (T-B, devops, Ready), KAN-535 (T-C backend PEER), KAN-536 (T-D devops), KAN-537 (T-E CEO checklist, no capability, unassigned), KAN-538 (T-F CORS allowlist, backend), KAN-539 (T-G wire KAN-510, backend PEER), KAN-540 (T-H Vault, Backlog). Blocks chain 534>535>536>537>538>539>532>540. Comment 12499 on KAN-532 (description untouched). KAN-534 set via ready set (devops, effort 1) and moved to Ready; others Backlog. Slip: KAN-534 description contains the Supabase project ref (public, in CLAUDE.md); descriptions cannot be edited under the rules, so left and flagged.
+
+## 2026-10-14 Horemheb: Messaging Realtime tickets R1-R5
+Created KAN-541 (R1 msg_notify, backend, PEER), KAN-542 (R2 msg_system_notify sync wake), KAN-543 (R3 Worker wake call), KAN-544 (R4 Flutter provider, flag messagingRealtime), KAN-545 (R5 T1-T9 runner), all under KAN-494, component Social. Blocks: 541->542, 541->543, 543->544, 542/543/544->545. KAN-541 moved to Ready; the rest are in Backlog (To Do). Comment added on KAN-532 (description untouched). Dates 10-21, 10-22, 10-23, 10-27, 10-28 follow the KAN-540 chain; not capacity.py-derived (not run), so the PM should re-date if capacity says otherwise. CEO-action note for "Allow public access" is in KAN-545.
+
+- 2026-10-15 · po (Horemheb) · board clean-up (CEO order): KAN-540 and KAN-511 moved to Done (transition 41, read back); KAN-532 found already Done with T2/T4/T8 ACs unmet, commented only; KAN-534..539, 541..545 already Done; KAN-494 left open.
+
+## 2026-10-15 - KAN-532 comment
+Added comment 12617 to KAN-532 recording the orchestrator decision (T2 waived N/A, T8 waived by CEO, T4 deferred). No status or description change.
+
+## 2026-10-15 Horemheb: Messaging launch tickets KAN-546..554 (parent KAN-494, Social)
+Created in Ready, ranked in order: KAN-546 A1 CORS+prod env (backend), 547 B1 msg_my_conversations (backend), 548 R1 rate limits (backend), 549 F1 Home icon+Messages list (frontend), 550 W1 real MessagingRepository (frontend; ADDED by PO: Alpha has only the fake), 551 M1a admin report list RPC (backend), 552 M1b Reports screen (frontend), 553 Q1 kill-switch drill (devops), 554 L1 launch (devops, needs recorded CEO go-live). Created directly via jira.create_issue (intake labels/BRANCH rules do not fit); ready set --move-ready for each. Dates 10-16..10-27 are sitting counts along the Blocks chain, not capacity.py output. Findings: admin = is_admin() (role_grants), not app_admins; member_user_id index already exists; no real Dart repository on Alpha.
+
+## 2026-10-15 Horemheb: launch-ticket links fixed; DM tickets KAN-555..562
+- Root cause of inverted Blocks links: agent/integrations/jira.py link_issues sends outwardIssue=blocker, but Jira's Blocks wants inwardIssue=blocker. Not fixed by PO (code); workaround used: call link_issues(blocked, blocker). Needs a System Maintenance fix.
+- Deleted the 16 inverted links (ids 10249-10264) via intake unlink; recreated 16 correct links. Read back all 17 tickets: no inverted link remains.
+- Created KAN-555 (B3), 556 (F3), 557 (F4), 558 (meetup B4, Backlog), 559 (meetup F5, Backlog), 560 (B2), 561 (W2), 562 (F2). 555,556,557,560,561,562 moved to Ready with capability and effort 3.
+- Comments (not descriptions): design source on 549, 552, 556, 557, 559, 562; CEO rule on 553; A1 clarification on 546.
+- Added 546->550, 548->553, 561->553. ready_dispatcher tick now returns skipped: system-frozen.
+
+## 2026-10-15 po (Horemheb): KAN-563 created
+Created KAN-563 (backend, effort 3, Ready): Worker getGameConversation + PUT/DELETE mute per openapi.yaml. KAN-561 overlap: its POST /mute {muted} -> 200 differs from contract; 563 reuses setMuted, keeps POST. Link verified: KAN-563 blocks KAN-554. 561 is Done but alpha-karnak not yet in Alpha.

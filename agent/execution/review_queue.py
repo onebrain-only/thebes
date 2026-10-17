@@ -525,6 +525,103 @@ def next_answer(now=None):
     return None
 
 
+# ------------------------------------------------------------------ waking the reviewer
+# A Codex Desktop conversation cannot be woken from outside, so a reviewer that lives there only
+# works while its own wait loop runs: it dies with a restart, a sleep, a closed app or empty
+# tokens, and the whole flow stands still (CEO 2026-10-17). The alternative is a HEADLESS reviewer:
+# a Codex thread Thebes itself owns (codex_runtime), woken with one turn per review item and idle,
+# at zero tokens, in between. `reviewer.json` says which kind is in use.
+RENUDGE_SECONDS = 30 * 60
+TURN_STALE_SECONDS = 20 * 60
+
+
+def _reviewer_path():
+    return os.path.join(store.RUNTIME, "review", "reviewer.json")
+
+
+def reviewer_config():
+    return _read(_reviewer_path()) or {"mode": "desktop"}
+
+
+def set_reviewer(mode, thread_id=None, *, state_store=store):
+    """`desktop` (the reviewer runs its own wait loop) or `headless` (Thebes wakes `thread_id`)."""
+    if mode not in ("desktop", "headless"):
+        raise Refused("mode-invalid", "mode is desktop or headless")
+    if mode == "headless":
+        conv = state_store.read("codex_conversation", thread_id or "none")
+        if not conv or conv.get("status") != "active":
+            raise Refused("thread-not-registered", "%s is not an active conversation Thebes owns; "
+                          "create it with codex_runtime new-conversation first" % thread_id)
+    os.makedirs(os.path.dirname(_reviewer_path()), exist_ok=True)
+    with open(_reviewer_path(), "w", encoding="utf-8") as fh:
+        json.dump({"mode": mode, "thread_id": thread_id if mode == "headless" else None,
+                   "at": time.time()}, fh)
+    return {"status": "set", "mode": mode, "thread_id": thread_id}
+
+
+def _age(stamp, now):
+    import calendar
+    try:
+        return now - calendar.timegm(time.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ"))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _thread_busy(thread_id, state_store, now):
+    for ev in state_store.read_all("codex_turn_event"):
+        if ev.get("thread_id") != thread_id or ev.get("status") not in ("queued", "running"):
+            continue
+        if _age(ev.get("updated_at") or ev.get("created_at"), now) < TURN_STALE_SECONDS:
+            return True                      # a dead "running" turn stops counting after 20 min
+    return False
+
+
+def nudge_text(item):
+    return "\n".join([
+        "THEBES_REVIEW_REQUEST (you are the Thebes reviewer; this turn is for ONE review item).",
+        "Read agent/REVIEWER.md and follow it, with this change: do NOT run `review_queue wait` "
+        "(it would hold this turn). Run `python3 -m agent.execution.review_queue next`, review "
+        "exactly the item it returns, submit your verdict with `review_queue submit`, then END the "
+        "turn with one line saying what you decided. If `next` returns empty, say so and end the turn.",
+        "Waiting: %s %s" % (item.get("kind"), item.get("ticket")),
+    ])
+
+
+def nudge(*, state_store=store, jira=None, now=None, enqueue_fn=None, launcher=None):
+    """Zero tokens until there is work: wake the headless reviewer once per waiting review item.
+    Does nothing for a Desktop reviewer (which polls by itself) or when Codex is not the channel.
+    Never raises; the Ready dispatcher calls it every tick."""
+    now = now or time.time()
+    try:
+        cfg = reviewer_config()
+        if cfg.get("mode") != "headless" or get_channel() != "codex":
+            return []
+        thread = cfg.get("thread_id")
+        if _thread_busy(thread, state_store, now):
+            return []
+        from agent.execution import codex_runtime
+        for item in candidates(state_store, jira):
+            if holder(item["item_id"]):
+                continue
+            marker = os.path.join(_dir("nudged"), _safe(item["item_id"]))
+            try:
+                last = float(open(marker).read())
+            except (OSError, ValueError):
+                last = None
+            if last is not None and now - last < RENUDGE_SECONDS:
+                continue
+            (enqueue_fn or codex_runtime.enqueue)(
+                thread, "alert", nudge_text(item), state_store=state_store,
+                event_id="cevt-review-%s-%d" % (_safe(item["item_id"])[:60], int(now)))
+            with open(marker, "w") as fh:
+                fh.write(str(now))
+            (launcher or codex_runtime._detach_drain)(thread)
+            return [{"action": "review-nudged", "ticket": item["ticket"], "kind": item["kind"]}]
+    except Exception as exc:                                 # noqa: BLE001
+        return [{"action": "review-nudge-failed", "error": str(exc)[:200]}]
+    return []
+
+
 STALL_SECONDS = 30 * 60
 
 
@@ -589,6 +686,10 @@ def main(argv=None):
     an = sub.add_parser("answer", help="orchestrator only: answer a reviewer question")
     an.add_argument("question_id"); an.add_argument("--text", required=True)
     sub.add_parser("questions")
+    rv = sub.add_parser("reviewer", help="show or set how the Codex reviewer is woken: "
+                        "desktop (it polls) or headless (a Thebes-owned thread, woken per item)")
+    rv.add_argument("mode", nargs="?", choices=("desktop", "headless")); rv.add_argument("--thread")
+    sub.add_parser("nudge", help="wake the headless reviewer now if an item waits (the dispatcher does this every tick)")
     ch = sub.add_parser("channel", help="show the review channel, or (orchestrator, on the CEO's "
                         "explicit order) switch it to codex or claude")
     ch.add_argument("to", nargs="?", choices=CHANNELS)
@@ -612,6 +713,12 @@ def main(argv=None):
             return 0
         if ns.cmd == "status":
             print(json.dumps(status(), indent=2))
+            return 0
+        if ns.cmd == "reviewer":
+            print(json.dumps(set_reviewer(ns.mode, ns.thread) if ns.mode else reviewer_config(), indent=2))
+            return 0
+        if ns.cmd == "nudge":
+            print(json.dumps(nudge(), indent=2))
             return 0
         if ns.cmd == "channel":
             out = (set_channel(ns.to, ns.by) if ns.to else {"channel": get_channel()})

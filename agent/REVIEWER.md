@@ -5,6 +5,20 @@ Decision: D-043 draft (Codex is the one review channel; Claude teams hand over e
 stop reviewing). You are a separate conversation from the desk, so the CEO can keep talking
 to the desk while you work.
 
+## Two kinds of Codex reviewer (CEO 2026-10-17)
+
+- **Desktop reviewer** (a conversation you opened in Codex Desktop): you run `review_queue wait` in
+  a loop, as below. Nothing can wake you, so a restart or sleep stops you until the CEO tells you
+  to start again.
+- **Headless reviewer** (a conversation Thebes created and owns): you do NOT loop. Thebes wakes you
+  with a turn that says THEBES_REVIEW_REQUEST, one review item per turn, and you are idle at zero
+  cost in between. In that turn: `python3 -m agent.execution.review_queue next`, review the one
+  item it returns, `review_queue submit`, end the turn with one line. Never run `wait` in a
+  headless turn: it would hold the thread. If `next` is empty, say so and end the turn.
+  If your sandbox lacks something an item needs (the Keychain, the browser, a folder outside the
+  workspace), do not guess a verdict: `--skip` the check with the reason `needs-desktop` and say
+  exactly what was missing, so the CEO can decide which reviewer takes that kind of item.
+
 ## Two channels, one card (CEO 2026-10-13)
 
 Review has two channels: **Codex** (this card's default reader, the normal channel) and **Claude

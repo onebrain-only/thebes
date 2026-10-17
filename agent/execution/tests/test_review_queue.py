@@ -248,6 +248,72 @@ class ReviewQueueTests(unittest.TestCase):
                           if i["kind"] == "review_stalled"], [], "once")
         self.assertEqual(rq.get_channel(), "codex", "the system never switches by itself")
 
+    # -- waking a headless reviewer (CEO 2026-10-17) ------------------------------------
+    def headless(self, thread="01a0f777-d0e4-7000-8000-000000000001"):
+        store.create("codex_conversation", {"thread_id": thread, "runtime_id": "thebes",
+                                            "label": "reviewer-headless", "registered_by": "ceo",
+                                            "status": "active", "runtime_socket_path": "/x",
+                                            "bootstrap_event_id": None, "bootstrap_sha256": None},
+                     rid=thread)
+        rq.set_reviewer("headless", thread, state_store=store)
+        return thread
+
+    def test_a_desktop_reviewer_is_never_nudged(self):
+        self.judge_root("KAN-9")
+        self.assertEqual(rq.reviewer_config()["mode"], "desktop")
+        self.assertEqual(rq.nudge(state_store=store, enqueue_fn=lambda *a, **k: self.fail("woke")), [])
+
+    def test_headless_mode_needs_a_thread_thebes_owns(self):
+        with self.assertRaises(rq.Refused) as ctx:
+            rq.set_reviewer("headless", "01a0f777-d0e4-7000-8000-00000000dead", state_store=store)
+        self.assertEqual(ctx.exception.code, "thread-not-registered")
+
+    def test_a_waiting_item_wakes_the_headless_reviewer_once_and_only_when_it_is_free(self):
+        thread = self.headless()
+        self.judge_root("KAN-9")
+        sent, drains = [], []
+        enq = lambda t, kind, text, **kw: sent.append((t, kind, text, kw["event_id"]))
+        jira = mock.Mock(); jira.get_issue.return_value = {"status": "Self-review"}
+        jira.get_comments.return_value = []; jira.search_issues.return_value = []
+        out = rq.nudge(state_store=store, jira=jira, enqueue_fn=enq, launcher=drains.append, now=1000.0)
+        self.assertEqual([o["action"] for o in out], ["review-nudged"])
+        self.assertEqual((sent[0][0], sent[0][1]), (thread, "alert"))
+        self.assertIn("review_queue next", sent[0][2])
+        self.assertIn("do NOT run `review_queue wait`", sent[0][2])
+        self.assertEqual(drains, [thread])
+        self.assertEqual(rq.nudge(state_store=store, jira=jira, enqueue_fn=enq, launcher=drains.append,
+                                  now=1100.0), [], "not again for the same item")
+        self.assertEqual(len(sent), 1)
+        again = rq.nudge(state_store=store, jira=jira, enqueue_fn=enq, launcher=drains.append,
+                         now=1000.0 + rq.RENUDGE_SECONDS + 5)
+        self.assertEqual([o["action"] for o in again], ["review-nudged"], "a quiet reviewer is woken again")
+
+    def test_it_waits_while_a_turn_is_running_and_ignores_a_dead_one(self):
+        thread = self.headless()
+        self.judge_root("KAN-9")
+        ev = store.create("codex_turn_event", {
+            "event_id": "cevt-busy-1", "thread_id": thread, "event_kind": "alert", "status": "running",
+            "text_ref": "/x", "seq": 1, "turn_ref": None, "response_summary": None, "error": None,
+            "completed_at": None}, rid="cevt-busy-1")
+        jira = mock.Mock(); jira.get_issue.return_value = {"status": "Self-review"}
+        jira.get_comments.return_value = []; jira.search_issues.return_value = []
+        enq = lambda *a, **k: None
+        self.assertEqual(rq.nudge(state_store=store, jira=jira, enqueue_fn=enq, launcher=lambda t: None), [])
+        far = __import__("time").time() + rq.TURN_STALE_SECONDS + 60
+        out = rq.nudge(state_store=store, jira=jira, enqueue_fn=enq, launcher=lambda t: None, now=far)
+        self.assertEqual([o["action"] for o in out], ["review-nudged"])
+
+    def test_a_held_item_and_the_claude_channel_are_left_alone(self):
+        self.headless()
+        self.judge_root("KAN-9")
+        rq.next_item(with_qa=False)                          # thread-A holds it
+        jira = mock.Mock(); jira.get_issue.return_value = {"status": "Self-review"}
+        jira.get_comments.return_value = []; jira.search_issues.return_value = []
+        fail = lambda *a, **k: self.fail("woke")
+        self.assertEqual(rq.nudge(state_store=store, jira=jira, enqueue_fn=fail), [])
+        rq.set_channel("claude", "go", env={"CLAUDE_CODE_SESSION_ID": ORCH}, state_store=store, notify=False)
+        self.assertEqual(rq.nudge(state_store=store, jira=jira, enqueue_fn=fail), [])
+
     def test_wait_returns_the_item_or_times_out(self):
         clock = {"t": 0.0}
         self.assertIsNone(rq.wait(10, sleep=lambda s: clock.__setitem__("t", clock["t"] + s),
