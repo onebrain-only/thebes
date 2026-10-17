@@ -5,6 +5,8 @@
     "~/.pub-cache",
     "~/.dart-tool",
     "~/.dart",
-    "~/Library/Caches/Pub"
+    "~/Library/Caches/Pub",
+    "~/.config/flutter",
+    "~/.flutter-devtools"
   ]
 }
