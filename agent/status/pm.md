@@ -2077,3 +2077,6 @@ Transition id 2 (Ready, status 10008, global) read live on KAN-521, then applied
 
 ## 2026-10-13 Anubis: KAN-526 To Do -> Ready
 Transition id 2 (status 10008) from live getTransitions, accepted first try. Status now Ready. Blocked by KAN-521 (dispatcher holds). No other ticket touched.
+
+## 2026-10-17 · Anubis · Backlog prioritisation (CEO order)
+Backlog (To Do) held KAN-494 (epic, stays), KAN-567, KAN-558, KAN-559. All briefs pass the D-041 lint; all carry component and Original estimate. Moved KAN-567, KAN-558, KAN-559 to Ready (capabilities devops, backend, frontend; effort 1 sitting each). Rank order: 567, 565, 566, 558, 559. No ticket created or edited; nothing dispatched.

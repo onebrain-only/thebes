@@ -81,15 +81,60 @@ def target_for(branch, sha=None, runner=None):
     return named
 
 
-def remote_head(repo, branch, runner=None):
-    """The sha of origin/<branch>, or None."""
+def remote_heads(repo, branch, runner=None):
+    """Every sha origin holds for this branch name, ignoring case (live 2026-10-16: Karnak pushes
+    `Alpha-karnak`, Thebes asked for `alpha-karnak`, and KAN-561/563 were skipped silently)."""
     done = (runner or subprocess.run)(["git", "-C", os.path.join(ROOT, repo), "ls-remote",
-                                       "--heads", "origin", branch], capture_output=True,
+                                       "--heads", "origin"], capture_output=True,
                                       text=True, timeout=60, stdin=subprocess.DEVNULL)
-    parts = (done.stdout or "").split()
-    return parts[0] if done.returncode == 0 and parts else None
+    if done.returncode != 0:
+        return []
+    want = "refs/heads/%s" % branch.lower()
+    out = []
+    for line in (done.stdout or "").splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[1].lower() == want:
+            out.append(parts[0])
+    return out
 
 
+def remote_head(repo, branch, runner=None):
+    """The sha of origin/<branch> (case-insensitive), or None."""
+    heads = remote_heads(repo, branch, runner)
+    return heads[0] if heads else None
+
+
+def ticket_commits_on_base(repo, base, sha, key, runner=None):
+    """True when none of this ticket's commits that `sha` carries is missing from origin/<base>,
+    even if base holds them under another sha: a cherry-pick of one ticket out of a shared team
+    branch (live 2026-10-14, KAN-505: mark-integrated refused it and KAN-509 stayed blocked).
+    A commit is the ticket's when its subject starts with `KAN-n:`. `git cherry` marks commits of
+    `sha` that base lacks "+" and those it has under another sha (same patch-id) "-"; a commit
+    already reachable from base is not listed at all. Needs at least one such commit. Unknown ->
+    False (the work is then integrated normally)."""
+    if not key:
+        return False
+    run = runner or subprocess.run
+    cwd = os.path.join(ROOT, repo)
+    try:
+        ch = run(["git", "-C", cwd, "cherry", "origin/%s" % base, sha], capture_output=True,
+                 text=True, timeout=60, stdin=subprocess.DEVNULL)
+        lg = run(["git", "-C", cwd, "log", "--format=%H %s", "-n", "400", sha],
+                 capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
+        if ch.returncode != 0 or lg.returncode != 0:
+            return False
+        mine = {l.split(" ", 1)[0] for l in (lg.stdout or "").splitlines()
+                if l.split(" ", 1)[-1].startswith("%s:" % key)}
+        missing = {l[2:].strip() for l in (ch.stdout or "").splitlines() if l.startswith("+ ")}
+        return bool(mine) and not (mine & missing)
+    except Exception:                                      # noqa: BLE001
+        return False
+
+
+# CEO 2026-10-10 let a team merge its own small ticket. In practice it fails: a code team may not
+# work in the CEO's folders, and `git worktree add` there is refused (Ramesseum, KAN-531,
+# 2026-10-14). Integration is the ops team's (Memphis) only, whichever team built the branch.
+FAST_LANE = False
 SMALL_MAX_FILES = 5
 NOT_SMALL = ("pubspec.yaml", "pubspec.lock", "supabase/")
 
@@ -118,20 +163,44 @@ def is_small(files):
     return not any(f == n or f.startswith(n) for f in files for n in NOT_SMALL)
 
 
-def already_on_base(repo, base, sha, runner=None):
-    """True when `sha` is already contained in origin/<base>. Unknown -> False (integrate)."""
+def already_on_base(repo, base, sha, runner=None, key=None):
+    """True when `sha` is already contained in origin/<base>, or (with `key`) when every commit of
+    that ticket on it is already there under another sha. Unknown -> False (integrate)."""
     try:
         done = (runner or subprocess.run)(
             ["git", "-C", os.path.join(ROOT, repo), "merge-base", "--is-ancestor", sha,
              "origin/%s" % base], capture_output=True, text=True, timeout=60,
             stdin=subprocess.DEVNULL)
-        return done.returncode == 0
+        if done.returncode == 0:
+            return True
     except Exception:                                      # noqa: BLE001
         return False
+    return ticket_commits_on_base(repo, base, sha, key, runner)
 
 
 _FETCHED = {}
 FETCH_EVERY = 300
+
+
+def _skipped(report, state_store, reason, key):
+    """Say, once per 6 hours per (ticket, reason), that verified work is not being integrated and
+    why, instead of skipping it silently."""
+    if report is None:
+        return
+    marker = os.path.join(state_store.RUNTIME, "review", "integrate-skip-%s" %
+                          "".join(c if c.isalnum() else "_" for c in "%s-%s" % (key, reason))[:120])
+    try:
+        if time.time() - float(open(marker).read()) < 6 * 3600:
+            return
+    except (OSError, ValueError):
+        pass
+    try:
+        os.makedirs(os.path.dirname(marker), exist_ok=True)
+        with open(marker, "w") as fh:
+            fh.write(str(time.time()))
+    except OSError:
+        pass
+    report.append({"integrate": "skipped", "key": key, "reason": reason})
 
 
 def _fetch_base(repo, base, runner=None, now=None):
@@ -165,7 +234,7 @@ def reconcile(state_store=store, runner=None, fetch=True):
                 continue
             if fetch:
                 _fetch_base(t["repo"], t["base"], runner)
-            if already_on_base(t["repo"], t["base"], v["sha"], runner):
+            if already_on_base(t["repo"], t["base"], v["sha"], runner, rec.get("jira_key")):
                 cur = state_store.read("conversation_dispatch", rec["dispatch_id"])
                 state_store.update("conversation_dispatch", cur["dispatch_id"], cur["revision"],
                                    {"integrated_at": state_store.now(), "integrated_sha": v["sha"],
@@ -198,7 +267,7 @@ def mark_integrated(dispatch_id, base, sha, evidence, *, state_store=store, runn
         _FETCHED.pop((target["repo"], target["base"]), None)
         _fetch_base(target["repo"], target["base"], runner)
     for what, ref in (("the verified commit", v["sha"]), ("--sha", sha)):
-        if not already_on_base(target["repo"], target["base"], ref, runner):
+        if not already_on_base(target["repo"], target["base"], ref, runner, rec.get("jira_key")):
             raise ValueError("%s %s is not contained in origin/%s of %s: nothing recorded"
                              % (what, ref[:12], target["base"], target["repo"]))
     cur = state_store.read("conversation_dispatch", rec["dispatch_id"])
@@ -211,7 +280,7 @@ def mark_integrated(dispatch_id, base, sha, evidence, *, state_store=store, runn
             "base": target["base"], "sha": sha}
 
 
-def pending(state_store=store, runner=None):
+def pending(state_store=store, runner=None, skipped=None):
     """Verified, pushed, not-yet-integrated work, grouped by base. Never raises.
 
     A team's branch carries its tickets one after another, so a branch's head is the LATEST
@@ -248,12 +317,17 @@ def pending(state_store=store, runner=None):
         lkey = (target["repo"], branch)
         if lkey not in head_ok:
             try:
-                head_ok[lkey] = remote_head(target["repo"], branch, runner) == latest[lkey]
+                heads = remote_heads(target["repo"], branch, runner)
+                head_ok[lkey] = latest[lkey] in heads
+                why = ("branch-not-found-on-origin" if not heads else
+                       None if head_ok[lkey] else "branch-moved-past-the-verified-commit")
             except Exception:                              # noqa: BLE001
-                head_ok[lkey] = False
+                head_ok[lkey], why = False, "git-error"
+            if why:
+                _skipped(skipped, state_store, "branch %s: %s" % (branch, why), rec.get("jira_key"))
         if not head_ok[lkey]:
             continue
-        if already_on_base(target["repo"], target["base"], latest[lkey], runner):
+        if already_on_base(target["repo"], target["base"], latest[lkey], runner, rec.get("jira_key")):
             # B5: the orchestrator's own integration already merged this tip; an automatic
             # second one made Memphis do an empty pass. Record it and move on.
             cur = state_store.read("conversation_dispatch", rec["dispatch_id"])
@@ -349,7 +423,10 @@ def dispatch_for(state_store=store, jira=None, dispatch=None, runner=None, setti
         return done
     busy = {r["target_session_id"] for r in state_store.read_all("conversation_dispatch")
             if r.get("status") in store.CONVERSATION_DISPATCH_OPEN}
-    for base, group in pending(state_store, runner).items():
+    skipped = []
+    groups = pending(state_store, runner, skipped)
+    done.extend(skipped)
+    for base, group in groups.items():
         if open_integration(base, state_store):
             continue
         if not push_allowed(group["target"], settings_files):
@@ -357,7 +434,7 @@ def dispatch_for(state_store=store, jira=None, dispatch=None, runner=None, setti
                          "reason": "push-rule-missing: %s" % push_rule(group["target"])})
             continue
         executor, lane = binding["session_id"], "ops"
-        if len(group["items"]) == 1:                      # fast lane: the builder merges its own
+        if FAST_LANE and len(group["items"]) == 1:        # fast lane: the builder merges its own
             item = group["items"][0]
             root = state_store.read("conversation_dispatch", item["dispatch_id"]) or {}
             builder = root.get("target_session_id")

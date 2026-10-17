@@ -1147,3 +1147,6 @@ rather than read live. Every AC named there is evidenced above.
 
 ## 2026-10-15 KAN-546 (Habu worktree)
 CORS +https://app.dabbler.pro; wrangler env staging->production (name/db unchanged); README production + keep_vars doc (not added to toml, docs ambiguous for var also in committed vars); tests 242/242. Not committed.
+
+## 2026-10-17 KAN-558 fix 1 (left_at_seq on meetup cancel) - STOPPED, no edits
+Seq lives only in D1 (conversation_seq); no Postgres source. Game path has no writer either (registry comment says Worker/service_role writes it; workers/messaging/src has no such write). Reported options to caller.

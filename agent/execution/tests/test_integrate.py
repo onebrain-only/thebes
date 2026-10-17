@@ -38,7 +38,10 @@ def fake_git(remote):
     def run(argv, **kw):
         if "merge-base" in argv:                       # not on the base yet unless marked
             return Done("", 0 if argv[-2] in remote.get("_on_base", ()) else 1)
-        return Done("%s\trefs/heads/%s\n" % (remote[argv[-1]], argv[-1]) if argv[-1] in remote else "")
+        if "ls-remote" in argv:
+            return Done("".join("%s\trefs/heads/%s\n" % (v, k) for k, v in remote.items()
+                                if not k.startswith("_")))
+        return Done("")
     return run
 
 
@@ -139,10 +142,17 @@ class IntegrateTests(unittest.TestCase):
         return integrate.dispatch_for(state_store=store, dispatch=self.send, settings_files=[path],
                                       runner=self.fast_runner({"alpha-luxor": SHA}, files))
 
-    def test_a_small_verified_ticket_is_merged_by_the_team_that_built_it(self):
-        """Fast lane, CEO 2026-10-10."""
+    def test_integration_goes_to_memphis_only_even_for_a_small_ticket(self):
+        """2026-10-14: a code team may not work in the CEO's folders; the fast lane is off."""
         self.root("KAN-1", "alpha-luxor", SHA)
         out = self.fast(["lib/a.dart", "test/a_test.dart"])
+        self.assertEqual((out[0]["action"], out[0]["lane"]), ("dispatched", "ops"))
+        self.assertEqual(self.sent[0]["sid"], MEMPHIS)
+
+    def test_the_fast_lane_still_works_when_it_is_switched_on(self):
+        self.root("KAN-1", "alpha-luxor", SHA)
+        with mock.patch.object(integrate, "FAST_LANE", True):
+            out = self.fast(["lib/a.dart", "test/a_test.dart"])
         self.assertEqual((out[0]["action"], out[0]["lane"]), ("dispatched", "team"))
         self.assertEqual(self.sent[0]["sid"], LUXOR)
 
@@ -224,14 +234,62 @@ class IntegrateTests(unittest.TestCase):
         self.assertEqual((rec["integrated_sha"], rec["integrated_via"]), (SHA2, "manual-mark"))
         self.assertIn("3879a977", rec["integration_evidence"])
 
+    def test_a_branch_pushed_with_another_letter_case_is_found(self):
+        """2026-10-16: Karnak pushes Alpha-karnak, the verified name was alpha-karnak."""
+        self.root("KAN-561", "alpha-karnak", SHA)
+        out = self.run_dispatch({"Alpha-karnak": SHA})
+        self.assertEqual([o["action"] for o in out if "action" in o and o.get("integrate") != "skipped"],
+                         ["dispatched"])
+
+    def test_verified_work_that_is_skipped_says_why_instead_of_vanishing(self):
+        self.root("KAN-562", "alpha-luxor", SHA)
+        out = self.run_dispatch({})
+        self.assertEqual((out[0]["integrate"], out[0]["key"]), ("skipped", "KAN-562"))
+        self.assertIn("branch-not-found-on-origin", out[0]["reason"])
+        again = self.run_dispatch({})
+        self.assertEqual([o for o in again if o.get("integrate") == "skipped"], [], "once per 6 hours")
+
+    def cherry_runner(self, cherry, log):
+        def run(argv, **kw):
+            if "cherry" in argv:
+                return Done(cherry)
+            if "log" in argv:
+                return Done(log)
+            if "merge-base" in argv:
+                return Done("", 1)
+            if "ls-remote" in argv:
+                return Done("")
+            return Done("")
+        return run
+
+    def test_a_cherry_picked_ticket_counts_as_integrated(self):
+        """2026-10-14, KAN-505: another ticket's commits stayed out, the ticket's own went in."""
+        run = self.cherry_runner("- aaa111\n+ bbb222\n",
+                                 "bbb222 KAN-506: other work\naaa111 KAN-505: the migration\n")
+        self.assertTrue(integrate.ticket_commits_on_base("Dabbler/dabbler-code", "Alpha", SHA, "KAN-505", run))
+        self.assertFalse(integrate.ticket_commits_on_base("Dabbler/dabbler-code", "Alpha", SHA, "KAN-506", run),
+                         "its own commit is still missing")
+        self.assertFalse(integrate.ticket_commits_on_base("Dabbler/dabbler-code", "Alpha", SHA, "KAN-999", run),
+                         "no commit of that ticket at all")
+        self.assertFalse(integrate.ticket_commits_on_base("Dabbler/dabbler-code", "Alpha", SHA, None, run))
+
+    def test_mark_integrated_accepts_a_cherry_pick_with_evidence(self):
+        did = self.root("KAN-505", "Alpha-deir-el-bahari", SHA)
+        run = self.cherry_runner("- aaa111\n+ bbb222\n",
+                                 "bbb222 KAN-506: other\naaa111 KAN-505: the migration\n")
+        out = integrate.mark_integrated(did, "Alpha", SHA2, "cherry-picked as 5a2264a0 from 20db6a4e",
+                                        state_store=store, runner=run, fetch=False, jira=mock.Mock())
+        self.assertEqual(out["status"], "marked")
+
     def test_only_what_thebes_verified_and_the_team_pushed_is_integrated(self):
         self.root("KAN-1", "alpha-luxor", SHA)
-        self.assertEqual(self.run_dispatch({}), [], "not pushed")
-        self.assertEqual(self.run_dispatch({"alpha-luxor": SHA2}), [],
+        acts = lambda out: [o for o in out if o.get("integrate") != "skipped"]
+        self.assertEqual(acts(self.run_dispatch({})), [], "not pushed")
+        self.assertEqual(acts(self.run_dispatch({"alpha-luxor": SHA2})), [],
                          "the branch moved on past what was verified")
         self.root("KAN-2", "canary-luxor", SHA)
         self.root("KAN-3", "alpha-luxor", SHA, verdict="exhausted")
-        self.assertEqual(self.run_dispatch({"canary-luxor": SHA, "alpha-luxor": SHA2}), [],
+        self.assertEqual(acts(self.run_dispatch({"canary-luxor": SHA, "alpha-luxor": SHA2})), [],
                          "Canary and main are never auto-integrated; failed work is never merged")
 
     def test_the_design_system_goes_to_alpha_ds_and_each_base_has_its_own_integration(self):
