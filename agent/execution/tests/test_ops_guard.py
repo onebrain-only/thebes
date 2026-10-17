@@ -49,7 +49,9 @@ class OpsGuardTests(unittest.TestCase):
         self.assertNotIn("memphis", teams.lane_teams("code"))
 
     def test_only_the_ops_team_may_write_to_the_database(self):
-        for tool in ("apply_migration", "execute_sql"):
+        self.assertIn("apply_migration is not used", self.decide(MEMPHIS, SB + "apply_migration"),
+                      "refused for everyone, ops included (it hangs sessions)")
+        for tool in ("execute_sql",):
             self.assertIsNone(self.decide(MEMPHIS, SB + tool), tool)
             for sid in (KARNAK, ORCH, STRANGER, None):
                 why = self.decide(sid, SB + tool)
@@ -109,6 +111,24 @@ class OpsGuardTests(unittest.TestCase):
         for ok in ("git -C /tmp/wt/karnak commit -m x", "git -C Dabbler/dabbler-code fetch origin",
                    "git -C Dabbler/dabbler-code worktree add /tmp/wt x"):
             self.assertIsNone(self.decide(KARNAK, "Bash", command=ok), ok)
+
+    def test_the_ops_team_may_integrate_and_delete_merged_team_branches_and_nothing_dangerous(self):
+        """CEO 2026-10-14: refuse the dangerous automatically, allow the routine without a prompt."""
+        pg = ops_guard.ops_push_problem
+        for ok in ("git -C /w push origin integrate-alpha:Alpha",
+                   "git -C /w push origin integrate-alpha-ds:alpha-ds",
+                   "git -C /w push origin --delete alpha-karnak",
+                   "git push origin --delete Alpha-karnak alpha-ds-habu", "git push origin alpha-memphis"):
+            self.assertIsNone(pg(ok), ok)
+        for bad in ("git push --force origin integrate-alpha:Alpha", "git push -f origin Alpha",
+                    "git push --force-with-lease origin Alpha", "git push origin main",
+                    "git push origin integrate-alpha:main", "git push origin HEAD:Canary",
+                    "git push origin master", "git push --tags origin Alpha", "git push --mirror",
+                    "git push origin --delete Alpha", "git push origin --delete main",
+                    "git push origin --delete feature-x", "git push origin :alpha-karnak"):
+            self.assertIsNotNone(pg(bad), bad)
+        self.assertIsNone(self.decide(MEMPHIS, "Bash", command="git push origin Alpha"))
+        self.assertIsNotNone(self.decide(MEMPHIS, "Bash", command="git push --force origin Alpha"))
 
     def test_project_destroying_tools_stay_with_the_ceo_even_for_ops(self):
         for tool in ("pause_project", "delete_branch", "restore_project"):

@@ -175,7 +175,15 @@ def pending(session_id, *, state_store=store, now=None):
                 continue                       # the gate is still routing it
             if req is not None and req.get("status") != "escalated":
                 continue                       # decided inside Thebes; the continuation reports
+        asked = rec.get("status") in ("decision_required", "blocked", "clarification_required")
         out.append({"kind": "result", "dispatch_id": rec["dispatch_id"],
+                    "ticket": rec.get("jira_key"),
+                    "how": (("The team asked a question and is idle. YOU answer it (CEO 2026-10-14: "
+                             "decisions are the orchestrator's; only money, secrets, main and "
+                             "sending outside the company are the CEO's). Answer with: "
+                             "python3 -m agent.execution.ticket_ruling %s --text-file <file> "
+                             "(it adds your ruling to the ticket and sends it back to a team)."
+                             % rec.get("jira_key")) if asked and rec.get("jira_key") else None),
                     "team": rec.get("target_seat_id"), "outcome": rec.get("status"),
                     "escalated": (req or {}).get("escalation_reason") if req else None,
                     "error": rec.get("error") if rec.get("status") == "delivery_failed" else None,

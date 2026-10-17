@@ -129,6 +129,10 @@ def decide(payload, state_store=None, teams_mod=None):
         if name in CEO_ONLY_TOOLS:
             return ("%s is the CEO's to run (D-042): it changes the Supabase project itself. "
                     "Report it as a hard stop instead." % name)
+        if name == "apply_migration":
+            return ("apply_migration is not used (it hangs sessions and is outside the approved "
+                    "route). Run the migration's statements through execute_sql, one at a time; "
+                    "statements of a migration integrated on Alpha are allowed automatically.")
         if name not in WRITE_TOOLS:
             return None
         if name == "execute_sql" and read_only_sql((payload.get("tool_input") or {}).get("query")):
@@ -161,6 +165,8 @@ def decide(payload, state_store=None, teams_mod=None):
             tid, lane = team_of(sid, state_store, teams_mod)
         except Exception:                                 # noqa: BLE001
             return None
+        if lane == "ops":
+            return ops_push_problem(command)
         if lane == "qa":
             return "The QA lane (%s) reviews; it never pushes (D-043)." % tid
         if lane == "code":
@@ -171,6 +177,34 @@ def decide(payload, state_store=None, teams_mod=None):
 BASES = ("alpha", "canary", "main")
 INTEGRATION_REFS = ("integrate-alpha:Alpha", "integrate-alpha-ds:alpha-ds")
 PUSH_ARGS = re.compile(r"git(?:\s+-C\s+\S+)*\s+push\b(?P<rest>[^;&|]*)")
+
+
+PROTECTED = ("main", "master", "canary")
+ALPHA_BRANCH = re.compile(r"^alpha(-ds)?-[a-z0-9][a-z0-9-]*$", re.I)
+
+
+def ops_push_problem(command):
+    """The ops team (Memphis) integrates into Alpha and deletes merged team branches, nothing
+    else: no force, no tags, nothing to main, master or Canary, and a branch delete only for an
+    `alpha-*` team branch (CEO 2026-10-14: refuse the dangerous automatically; allow the routine)."""
+    for m in PUSH_ARGS.finditer(command):
+        words = m.group("rest").split()
+        flags = [w for w in words if w.startswith("-")]
+        args = [w for w in words if not w.startswith("-")]
+        if any(f in ("-f", "--force", "--force-with-lease", "--mirror", "--all", "--tags")
+               or f.startswith("--force") or f.startswith("--force-with-lease") for f in flags):
+            return "No force push, mirror, --all or tags (CEO 2026-10-14): push plainly."
+        deleting = any(f in ("--delete", "-d") for f in flags)
+        for ref in args[1:]:
+            dst = ref.split(":")[-1].replace("refs/heads/", "").lstrip("+")
+            if dst.lower() in PROTECTED or dst.lower().startswith(("main-", "master-")):
+                return ("Pushing %r is the CEO's (main, master, Canary). Memphis pushes Alpha and "
+                        "alpha-ds only." % dst)
+            if deleting and not ALPHA_BRANCH.match(dst):
+                return "A branch delete is only for a merged `alpha-*` team branch, not %r." % dst
+            if not deleting and ref.startswith(":"):
+                return "A refspec that deletes (%r) must use --delete." % ref
+    return None
 
 
 def push_problem(command, team_id):

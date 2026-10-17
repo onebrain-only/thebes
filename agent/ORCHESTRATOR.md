@@ -154,6 +154,22 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
   `python3 -m agent.execution.review_queue answer <question_id> --text "..."` within 15 minutes,
   even if the answer is "undecided: verify X, skip Y". You inform the reviewer; you never tell it
   to pass something, and you never review the work yourself.
+- **A team asked a question and is idle** (a `result` item with `outcome: decision_required` /
+  `blocked` and a `how` line). You decide (CEO 2026-10-14: decisions are yours; he approves what he
+  is sent unread, so only money, secrets, `main` and sending outside the company reach him; a
+  recorded CEO approval in the PM ledger covers the in-scope steps after it). Answer with
+  `python3 -m agent.execution.ticket_ruling KAN-n --text-file <file>`: it appends your ruling to
+  the description and sends the ticket back to a free team. A decision request that did open
+  (`decision` item) is answered with `decision_gate answer` as before.
+- **When you run a PO:** tell it, in its prompt, to change ONE line of a ticket with
+  `python3 -m agent.execution.intake edit-line KAN-n --old "<line>" --new "<line>" --by po` (the
+  old line must match exactly once) and never to resend a whole description (the permission
+  classifier refuses that as Instruction Poisoning).
+- **Housekeeping you may do yourself:** `conversation_dispatch withdraw <id>` works for any open
+  dispatch from your session (a stale one holds a team and a slot; Thebes also reaps open
+  dispatches of Done tickets after 30 minutes); `intake mark-integrated` records work merged by
+  hand or cherry-picked (git must agree); `intake unlink <id>` removes a wrong link; the label
+  `ceo-action` marks a step only the CEO can do (never dispatched).
 - **`priority`** (D-042): the board needs the PM or a PO. Run them **in the background**
   (Agent tool, `run_in_background`), so you stay free for the CEO. The PM and the POs are the
   only seats you run; teams can never reserve them.

@@ -367,6 +367,37 @@ def answer_envelope(req, answer_text):
     ])
 
 
+def recorded_approval(state_store=store, cfg=None):
+    """Has the CEO recorded an approval that covers in-scope production work? A line in the PM
+    ledger written by `ceo` under one of the configured refs (e.g. supabase-messaging-approval)."""
+    cfg = cfg or config()
+    refs = set((cfg.get("approval") or {}).get("recorded_refs") or [])
+    try:
+        from agent.execution import pm_ledger
+        with open(pm_ledger.path(state_store), encoding="utf-8") as fh:
+            for line in fh:
+                parts = [x.strip() for x in line.lstrip("- ").split(" · ", 3)]
+                if len(parts) >= 3 and parts[1] == "ceo" and parts[2] in refs:
+                    return True
+    except OSError:
+        pass
+    return False
+
+
+def decides_inside(approval, state_store=store, cfg=None):
+    """CEO 2026-10-14: a prompt that reaches the CEO is approved without being read, so it is not a
+    safety check; only money, secrets, main and sending outside the company are his. A deny-list
+    hit in any other category is the ORCHESTRATOR's to decide (and `production` too once a CEO
+    approval is recorded). Returns True for those categories."""
+    cfg = cfg or config()
+    a = cfg.get("approval") or {}
+    cat = str(approval.get("reason") or "").split(":", 1)[-1]
+    if cat in (a.get("orchestrator_decides") or []):
+        return True
+    return cat in (a.get("orchestrator_decides_with_recorded_approval") or []) and \
+        recorded_approval(state_store, cfg)
+
+
 def route(record, *, state_store=store, env=None, cfg=None, deliver=None, resume=None):
     """Called once a dispatch settled with a decision outcome. Returns a dict
     with `route` in {owner, task-owner, escalate} and what was done."""
@@ -376,7 +407,19 @@ def route(record, *, state_store=store, env=None, cfg=None, deliver=None, resume
     # resumes at once — no owner, no CEO, no Claude session woken. The deny-list
     # inside approval_verdict runs before any model and wins over any score.
     approval = approval_verdict(question, cfg=cfg, env=env)
-    if approval["verdict"] == "ceo":
+    if approval["verdict"] == "ceo" and decides_inside(approval, state_store, cfg):
+        resolved = classify_and_resolve(question, cfg=cfg, env=env, state_store=state_store)
+        if resolved["route"] == "escalate":              # no gate answer: still the orchestrator's
+            from agent.state import teams
+            orch = state_store.active_role_session(teams.ORCHESTRATOR_ID)
+            if orch and orch.get("provider") == "claude":
+                resolved = dict(resolved, route="owner", via="orchestrator", owner_seat=None,
+                                owner_session_id=orch["session_id"],
+                                owner_stable_home=orch.get("stable_home"),
+                                decision_class=resolved.get("decision_class") or "technical_architecture",
+                                accountable_role=resolved.get("accountable_role") or "cto")
+        resolved["reason"] = "orchestrator-decides:%s" % approval["reason"]
+    elif approval["verdict"] == "ceo":
         resolved = {"route": "escalate", "reason": approval["reason"], "gate": "policy",
                     "decision_class": None, "accountable_role": CEO, "confidence": None}
     elif approval["verdict"] == "approved":
@@ -482,17 +525,69 @@ def _resume_asker(req, answer_text, *, state_store=store, resume=None):
         # The answer continues the SAME work, so it keeps the same review: the origin's checks,
         # its root and its cycle. Without them (live 2026-10-13, KAN-499) the finished work had
         # no VERIFY block, was never verified, and never reached the reviewer.
-        out = cd.dispatch(text, req["asker_session_id"], env=env, state_store=state_store,
-                          detach=True, ticket=origin.get("jira_key"),
-                          lane_capability=origin.get("jira_capability"),
-                          continuation=True, checks=origin.get("checks") or None,
-                          root_dispatch_id=origin.get("root_dispatch_id")
-                          or (origin.get("dispatch_id") if origin.get("checks") else None),
-                          verify_cycle=origin.get("verify_cycle"))
+        try:
+            out = cd.dispatch(text, req["asker_session_id"], env=env, state_store=state_store,
+                              detach=True, ticket=origin.get("jira_key"),
+                              lane_capability=origin.get("jira_capability"),
+                              continuation=True, checks=origin.get("checks") or None,
+                              root_dispatch_id=origin.get("root_dispatch_id")
+                              or (origin.get("dispatch_id") if origin.get("checks") else None),
+                              verify_cycle=origin.get("verify_cycle"))
+        except cd.Refused as exc:
+            if exc.code != "target-session-busy":
+                raise
+            # The asker is on another dispatch right now. The answer must not be lost (2026-10-14):
+            # keep it, mark the request, and retry_resumes() sends it the moment the team is free.
+            path = _ref(state_store, "decision-resume", req["decision_request_id"])
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(text)
+            cur = state_store.read("decision_request", req["decision_request_id"])
+            state_store.update("decision_request", cur["decision_request_id"], cur["revision"],
+                               {"status": "answered", "pending_resume_ref": path})
+            return {"status": "queued", "reason": str(exc)[:200]}
     cur = state_store.read("decision_request", req["decision_request_id"])
     state_store.update("decision_request", cur["decision_request_id"], cur["revision"],
                        {"status": "answered", "continuation_dispatch_id": out.get("dispatch_id")})
     return out
+
+
+def retry_resumes(*, state_store=store, dispatch=None):
+    """Send every answer that was queued because its asker was busy, as soon as it is free.
+    Never raises; the Ready dispatcher calls it every tick."""
+    from agent.execution import conversation_dispatch as cd
+    done = []
+    try:
+        for req in state_store.read_all("decision_request"):
+            ref = req.get("pending_resume_ref")
+            if not ref or req.get("continuation_dispatch_id"):
+                continue
+            if cd.open_work_for(req["asker_session_id"], state_store):
+                continue
+            origin = state_store.read("conversation_dispatch", req["origin_dispatch_id"]) or {}
+            env = {k: v for k, v in os.environ.items()
+                   if k not in ("CODEX_THREAD_ID", cd.CLAUDE_ORIGIN_ENV)}
+            if origin.get("origin_provider") == "claude":
+                env[cd.CLAUDE_ORIGIN_ENV] = req["origin_thread_id"]
+            else:
+                env["CODEX_THREAD_ID"] = req["origin_thread_id"]
+            with open(ref, encoding="utf-8") as fh:
+                text = fh.read()
+            out = (dispatch or cd.dispatch)(
+                text, req["asker_session_id"], env=env, state_store=state_store, detach=True,
+                ticket=origin.get("jira_key"), lane_capability=origin.get("jira_capability"),
+                continuation=True, checks=origin.get("checks") or None,
+                root_dispatch_id=origin.get("root_dispatch_id")
+                or (origin.get("dispatch_id") if origin.get("checks") else None),
+                verify_cycle=origin.get("verify_cycle"))
+            cur = state_store.read("decision_request", req["decision_request_id"])
+            state_store.update("decision_request", cur["decision_request_id"], cur["revision"],
+                               {"continuation_dispatch_id": out.get("dispatch_id"),
+                                "pending_resume_ref": None})
+            done.append({"action": "answer-delivered", "key": origin.get("jira_key"),
+                         "request": req["decision_request_id"][-8:]})
+    except Exception as exc:                               # noqa: BLE001
+        done.append({"action": "answer-retry-failed", "error": str(exc)[:200]})
+    return done
 
 
 def redeliver(request_id, *, state_store=store, deliver=None):

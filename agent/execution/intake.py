@@ -174,13 +174,39 @@ def create(text, *, approval, force_new=False, jira=None):
         pass
     links = []
     for blocker in t["blocked_by"]:
-        jira.link_issues(blocker, key)
+        jira.link_issues_verified(blocker, key)
         links.append(blocker)
     return {"status": "created", "key": key, "where": "Backlog (To Do)",
             "component": t["component"], "capability": t["capability"],
             "blocked_by": links,
             "next": "The PM ranks the Backlog and moves it to Ready; the dispatcher sends it to "
                     "its owning team. Nothing else to do."}
+
+
+def edit_line(key, old, new, *, jira=None, by=""):
+    """Change ONE line of a ticket's description, server-side. Editing a description replaces the
+    whole text, so a PO resent a full block for one changed line and the permission classifier
+    refused it as Instruction Poisoning (KAN-514/515/516). The line must match exactly once."""
+    jira = jira or _jira()
+    old, new = (old or "").strip(), (new or "").strip()
+    if not old or "\n" in old or "\n" in new:
+        raise IntakeError(["--old and --new are each ONE line"])
+    if old == new:
+        raise IntakeError(["--old and --new are the same"])
+    desc = jira.get_issue(key).get("description") or ""
+    lines = desc.split("\n")
+    hits = [i for i, ln in enumerate(lines) if ln.strip() == old]
+    if len(hits) != 1:
+        raise IntakeError(["the line matches %d times in %s (it must match exactly once): %r"
+                           % (len(hits), key, old[:80])])
+    lines[hits[0]] = new
+    jira.update_issue(key, {"description": jira.to_adf("\n".join(lines))})
+    try:
+        jira.add_comment(key, "Thebes: one description line edited%s.\nBefore: %s\nAfter: %s"
+                         % (" by %s" % by if by else "", old[:300], new[:300]))
+    except Exception:                                      # noqa: BLE001  the audit note never blocks
+        pass
+    return {"status": "edited", "key": key, "line": hits[0] + 1}
 
 
 def create_many(texts, *, approval, **kw):
@@ -278,6 +304,9 @@ def main(argv=None):
     s = sub.add_parser("show"); s.add_argument("key")
     lk = sub.add_parser("links", help="list the links of a ticket, with their ids")
     lk.add_argument("key")
+    el = sub.add_parser("edit-line", help="change ONE line of a ticket description (exact match, once)")
+    el.add_argument("key"); el.add_argument("--old", required=True); el.add_argument("--new", required=True)
+    el.add_argument("--by", default="")
     mi = sub.add_parser("mark-integrated", help="record that a verified dispatch is already in its "
                         "base (git must agree); frees the tickets it was holding")
     mi.add_argument("dispatch_id"); mi.add_argument("--base", required=True, help="Alpha or alpha-ds")
@@ -304,6 +333,8 @@ def main(argv=None):
             out = create_many(texts, approval=ns.approved, force_new=ns.new)
         elif ns.cmd == "links":
             out = {"key": ns.key, "links": _jira().issue_links(ns.key)}
+        elif ns.cmd == "edit-line":
+            out = edit_line(ns.key, ns.old, ns.new, by=ns.by)
         elif ns.cmd == "mark-integrated":
             from agent.execution import integrate
             try:

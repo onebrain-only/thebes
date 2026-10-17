@@ -97,7 +97,12 @@ def run_command(command, cwd, timeout=CHECK_TIMEOUT_SECONDS, runner=None):
     started = time.time()
     env = {k: v for k, v in os.environ.items() if k not in SCRUBBED}
     try:
-        done = (runner or subprocess.run)(shlex.split(command), cwd=cwd, env=env,
+        argv = shlex.split(command)
+        if argv[:2] == ["flutter", "analyze"]:
+            # A bare `flutter analyze` exits 1 on the pre-existing infos and failed KAN-531 and
+            # KAN-515 for nothing (2026-10-14). Thebes always runs it the way the gate does.
+            argv += [f for f in ("--no-pub", "--no-fatal-infos") if f not in argv]
+        done = (runner or subprocess.run)(argv, cwd=cwd, env=env,
                                           stdin=subprocess.DEVNULL, capture_output=True,
                                           text=True, timeout=timeout, shell=False)
         out = ((done.stdout or "") + (done.stderr or "")).strip().splitlines()

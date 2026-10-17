@@ -45,6 +45,7 @@ MAX_PARALLEL = 3
 JQL = 'project = KAN AND status = "Ready" ORDER BY rank ASC'
 FIELDS = ["summary", "status", "labels", "description", "issuelinks", "duedate", "components",
           "timeoriginalestimate"]
+CEO_ACTION = "ceo-action"      # label: a step only the CEO can do; never dispatched
 OWNER_WAIT = "-10m"            # was 30; malfunction #25: other teams sat idle
 ANY_TEAM = "any-team"           # board label: no owner wait at all
 FRESH_JQL = ('project = KAN AND status = "Ready" AND status CHANGED TO "Ready" AFTER %s'
@@ -283,6 +284,11 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None):
         key = issue["key"]
         if key in open_keys:
             continue
+        if CEO_ACTION in issue["labels"]:
+            # The CEO's own step (set a secret in a dashboard): it sits in Ready in its place in the
+            # chain, is never dispatched, never needs a brief and never needs a capability.
+            done.append({"key": key, "action": "ceo-step"})
+            continue
         if NEEDS_BRIEF in issue["labels"]:
             if BRIEF_REQUESTED not in issue["labels"]:
                 brief_reasons.append({"kind": "needs-brief", "key": key})
@@ -414,6 +420,19 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None):
                          "dispatch_id": out.get("dispatch_id")})
     except Exception as exc:                            # noqa: BLE001
         done.append({"action": "permission-retry-failed", "error": str(exc)[:200]})
+
+    # An open dispatch whose ticket is already Done is closed, so it stops holding a team and a slot.
+    try:
+        done.extend(cd.reap_stale(jira=jira, state_store=state_store, now=now))
+    except Exception as exc:                            # noqa: BLE001
+        done.append({"action": "reap-failed", "error": str(exc)[:200]})
+
+    # A decision answer that waited for a busy team is sent as soon as the team is free.
+    try:
+        from agent.execution import decision_gate
+        done.extend(decision_gate.retry_resumes(state_store=state_store))
+    except Exception as exc:                            # noqa: BLE001
+        done.append({"action": "answer-retry-failed", "error": str(exc)[:200]})
 
     # A failed review whose fix could not be handed back (the team was busy) is resent now.
     try:

@@ -210,7 +210,7 @@ class VerifyTests(unittest.TestCase):
         out = self.verify_run(did, runner)
         self.assertEqual(out["verdict"], "needs_judge")
         self.assertEqual([c[0] for c in runner.calls],
-                         ["flutter test test/home_test.dart", "flutter analyze lib/home"])
+                         ["flutter test test/home_test.dart", "flutter analyze lib/home --no-pub --no-fatal-infos"])
         self.assertTrue(all(c[2] is False for c in runner.calls), "never through a shell")
         self.assertTrue(all(c[1] == os.path.realpath(self.wt) for c in runner.calls))
         self.assertEqual(self.collect(), [],
@@ -235,7 +235,7 @@ class VerifyTests(unittest.TestCase):
         brief_run_only = "\n".join(l for l in BRIEF.splitlines() if "| judge |" not in l)
         did, cap = self.dispatch(brief_run_only)
         self.submit(did, cap, report(wt=self.wt, c=(("C1", "PASS"), ("C2", "PASS"))))
-        out = self.verify_run(did, FakeRunner(failing={"flutter analyze lib/home"}))
+        out = self.verify_run(did, FakeRunner(failing={"flutter analyze lib/home --no-pub --no-fatal-infos"}))
         self.assertEqual(out["verdict"], "retry")
         self.assertEqual(out["continuation"]["failing"], ["C2"])
         fix_did, fix_cap = self.deliver_sent()
@@ -252,7 +252,7 @@ class VerifyTests(unittest.TestCase):
         self.submit(fix_did, fix_cap, report(sha=SHA2, wt=self.wt, c=(("C2", "PASS"),)))
         runner = FakeRunner()
         out2 = self.verify_run(fix_did, runner)
-        self.assertEqual([c[0] for c in runner.calls], ["flutter analyze lib/home"],
+        self.assertEqual([c[0] for c in runner.calls], ["flutter analyze lib/home --no-pub --no-fatal-infos"],
                          "only the failed check is re-run")
         self.assertEqual(out2["verdict"], "needs_judge", "then the Codex QA check")
         self.assertEqual(self.codex_pass(did)["verdict"], "pass")

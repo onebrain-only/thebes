@@ -7,6 +7,9 @@
   "approval": {
     "note": "D-033. `ceo_only` patterns are matched in plain code BEFORE any model is asked; a hit always escalates to the CEO. `routine` names the actions Jev may approve alone (one typed Choice over these plus `not_routine`); a confident routine match resumes the worker at once with an approval. Patterns are lowercase substrings.",
     "threshold": 0.7,
+    "orchestrator_decides": ["destructive_git", "governance_files", "other_repository", "push_canary"],
+    "orchestrator_decides_with_recorded_approval": ["production"],
+    "recorded_refs": ["supabase-messaging-approval", "messaging-launch", "cloudflare-messaging-approval"],
     "ceo_only": {
       "merge_or_push_main":      ["to main", "into main", "onto main", "push main", "origin main", "main branch"],
       "destructive_git":         ["--force", "force push", "force-push", "reset --hard", "branch -d", "re:\\b(delete|remove|drop)\\b.{0,40}\\bbranch", "re:\\bbranch\\b.{0,40}\\b(delete|remove|drop)"],

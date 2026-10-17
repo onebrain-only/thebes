@@ -73,6 +73,10 @@ class FakeJira:
     def link_issues(self, blocker, blocked):
         self.links.append((blocker, blocked))
 
+    def link_issues_verified(self, blocker, blocked):
+        self.link_issues(blocker, blocked)
+        return {"link_id": "1", "flipped": False}
+
 
 class IntakeTests(unittest.TestCase):
     def test_a_good_work_ticket_lands_in_backlog_with_its_labels_component_and_estimate(self):
@@ -155,6 +159,50 @@ class IntakeTests(unittest.TestCase):
         finally:
             store.RUNTIME, store.LOCKS, validate.RUNTIME = old
             shutil.rmtree(tmp, ignore_errors=True)
+
+
+class LinkDirectionTests(unittest.TestCase):
+    """2026-10-15: links made by link_issues came out inverted and tickets started early."""
+
+    def fake(self, inverts):
+        """A Jira whose POST puts the blocker on the wrong side when `inverts` is true."""
+        from agent.integrations import jira
+        store = {}                                     # link id -> (blocker, blocked)
+        ids = iter(range(100, 200))
+
+        def link_issues(a, b, link_type="Blocks"):
+            lid = str(next(ids))
+            store[lid] = (b, a) if inverts else (a, b)
+
+        def remove_link(lid):
+            store.pop(lid)
+
+        def issue_links(key):
+            out = []
+            for lid, (blocker, blocked) in store.items():
+                if key in (blocker, blocked):
+                    other = blocked if key == blocker else blocker
+                    out.append({"id": lid, "type": "Blocks", "other": other,
+                                "blocker": blocker, "blocked": blocked})
+            return out
+        return mock.patch.multiple(jira, link_issues=link_issues, remove_link=remove_link,
+                                   issue_links=issue_links), store
+
+    def test_a_correct_link_is_kept_and_an_inverted_one_is_flipped(self):
+        from agent.integrations import jira
+        for inverts in (False, True):
+            patch, store = self.fake(inverts)
+            with patch:
+                out = jira.link_issues_verified("KAN-1", "KAN-2")
+            self.assertEqual(list(store.values()), [("KAN-1", "KAN-2")], inverts)
+            self.assertEqual(out["flipped"], inverts)
+
+    def test_a_link_that_never_reads_back_right_raises(self):
+        from agent.integrations import jira
+        with mock.patch.multiple(jira, link_issues=lambda *a, **k: None, remove_link=lambda i: None,
+                                 issue_links=lambda k: []):
+            with self.assertRaises(jira.JiraProtocolError):
+                jira.link_issues_verified("KAN-1", "KAN-2")
 
 
 class RankTests(unittest.TestCase):

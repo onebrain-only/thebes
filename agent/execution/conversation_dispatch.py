@@ -33,6 +33,7 @@ import os
 import re
 import secrets
 import subprocess
+import time
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -777,12 +778,64 @@ def submit(dispatch_id, outcome, result_text, *, env=None, state_store=store, la
 
 
 def withdraw(dispatch_id, *, env=None, state_store=store):
+    """The origin conversation withdraws its own open dispatch. The orchestrator may withdraw ANY
+    open dispatch (it owns every ticket; B8, 2026-10-14: its own withdraw was refused with
+    not-origin-thread because only CODEX_THREAD_ID was read, so a stale dispatch held a slot)."""
     env = os.environ if env is None else env
+    caller = env.get("CODEX_THREAD_ID")
+    sid = env.get("CLAUDE_CODE_SESSION_ID")
     try:
-        rec = state_store.withdraw_conversation_dispatch(dispatch_id, env.get("CODEX_THREAD_ID"))
+        if not caller and sid:
+            from agent.state import teams
+            orch = (state_store.active_role_session(teams.ORCHESTRATOR_ID) or {}).get("session_id")
+            cur = state_store.read("conversation_dispatch", dispatch_id)
+            if cur is not None and sid == orch:
+                caller = cur.get("origin_thread_id")        # the orchestrator's authority
+            else:
+                caller = sid                                 # a Claude origin withdrawing its own
+        rec = state_store.withdraw_conversation_dispatch(dispatch_id, caller)
     except state_store.StateError as exc:
         raise Refused(str(exc).split(":", 1)[0], str(exc))
     return {"status": "withdrawn", "dispatch_id": dispatch_id, "record": rec}
+
+
+STALE_OPEN_SECONDS = 30 * 60
+
+
+def reap_stale(*, jira=None, state_store=store, now=None):
+    """Withdraw open dispatches whose ticket is already Done in Jira (nothing is left for the team
+    to do) once they are 30 minutes old: they hold the team's session ("target-session-busy") and
+    a parallel slot for ever. Never raises; the Ready dispatcher calls it every tick."""
+    import calendar
+    now = now or time.time()
+    out = []
+    try:
+        if jira is None:
+            from agent.execution import jira_sync
+            jira = jira_sync._client(None, state_store)
+        if jira is None:
+            return out
+        for r in state_store.read_all("conversation_dispatch"):
+            if r.get("status") not in store.CONVERSATION_DISPATCH_OPEN or not r.get("jira_key"):
+                continue
+            try:
+                age = now - calendar.timegm(time.strptime(r.get("updated_at") or r["created_at"],
+                                                          "%Y-%m-%dT%H:%M:%SZ"))
+            except (TypeError, ValueError):
+                continue
+            if age < STALE_OPEN_SECONDS:
+                continue
+            try:
+                done = (jira.get_issue(r["jira_key"]).get("status") or "").lower() == "done"
+                if done:
+                    state_store.withdraw_conversation_dispatch(r["dispatch_id"], r["origin_thread_id"])
+                    out.append({"action": "reaped-stale-dispatch", "key": r["jira_key"],
+                                "dispatch_id": r["dispatch_id"], "team": r.get("target_seat_id")})
+            except Exception:                              # noqa: BLE001  one ticket never stops the rest
+                continue
+    except Exception:                                      # noqa: BLE001
+        pass
+    return out
 
 
 # ---------------------------------------------------------------- CLI

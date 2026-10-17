@@ -259,6 +259,14 @@ class ReadyDispatcherTests(unittest.TestCase):
         recs[0]["integrated_at"] = "2026-10-10T00:00:00Z"
         self.assertEqual(rd.blockers([link], None, fake), [])
 
+    def test_a_ceo_step_sits_in_ready_and_is_never_dispatched_or_flagged(self):
+        """2026-10-14, KAN-537: the CEO's own step had no capability and was flagged as unknown."""
+        j = FakeJira([issue("KAN-720", labels=["ceo-action"])])
+        out = self.tick(j)
+        self.assertEqual(out[0], {"key": "KAN-720", "action": "ceo-step"})
+        self.assertEqual(j.comments, [])
+        self.assertEqual(j.updates, [], "no needs-brief label either")
+
     def test_teams_cannot_reserve_the_po_or_the_pm(self):
         with self.assertRaises(store.StateError) as ctx:
             store.reserve_seat("po", "karnak", "cdispatch-x")

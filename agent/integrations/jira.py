@@ -584,6 +584,33 @@ def link_issues(blocker_key, blocked_key, link_type="Blocks"):
         "inwardIssue": {"key": blocked_key}})
 
 
+def link_issues_verified(blocker_key, blocked_key, link_type="Blocks"):
+    """Create a Blocks link and PROVE its direction by reading it back (2026-10-15: links made by
+    `link_issues` came out inverted and the Ready dispatcher released KAN-553/554 early; Jira's
+    inward/outward wording is easy to get backwards). If the blocked ticket does not read back as
+    blocked by the blocker, the link is deleted and made the other way round, then checked again.
+    Raises JiraProtocolError if it still reads wrong. Returns {"link_id", "flipped"}."""
+    def readback():
+        for link in issue_links(blocked_key):
+            if link["other"] == blocker_key and link["blocked"] == blocked_key:
+                return link["id"], True
+            if link["other"] == blocker_key and link["blocker"] == blocked_key:
+                return link["id"], False
+        return None, None
+    link_issues(blocker_key, blocked_key, link_type)
+    lid, ok = readback()
+    if ok:
+        return {"link_id": lid, "flipped": False}
+    if lid is not None:                               # created the wrong way round: undo and redo
+        remove_link(lid)
+        link_issues(blocked_key, blocker_key, link_type)
+        lid, ok = readback()
+        if ok:
+            return {"link_id": lid, "flipped": True}
+    raise JiraProtocolError("could not create %s blocks %s with the right direction"
+                            % (blocker_key, blocked_key))
+
+
 def issue_links(issue_key):
     """Every link on an issue as {id, type, blocker, blocked} (malfunction #16)."""
     raw = get_issue(issue_key, fields=["issuelinks"], raw=True)
