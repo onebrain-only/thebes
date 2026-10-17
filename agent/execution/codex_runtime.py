@@ -73,6 +73,25 @@ class RuntimeError_(Exception):
         self.code = code
 
 
+def sandbox_policy():
+    """The turn sandbox: write inside the Thebes folder, network on, plus the extra writable roots
+    in registry/codex_sandbox.json that actually exist (flutter and dart caches). Nothing else."""
+    roots = []
+    try:
+        with open(os.path.join(ROOT, "agent", "state", "registry", "codex_sandbox.json"),
+                  encoding="utf-8") as fh:
+            for r in json.load(fh).get("writable_roots") or []:
+                r = os.path.expanduser(r)
+                if os.path.isabs(r) and os.path.isdir(r):
+                    roots.append(r)
+    except (OSError, ValueError):
+        pass
+    policy = {"type": "workspaceWrite", "networkAccess": True}
+    if roots:
+        policy["writableRoots"] = roots
+    return policy
+
+
 def socket_path(state_store=store):
     d = os.path.join(state_store.RUNTIME, "codex")
     os.makedirs(d, exist_ok=True)
@@ -692,8 +711,7 @@ def _run_one(client, ev, state_store, turn_timeout):
     try:
         started = client.request("turn/start", {"threadId": ev["thread_id"],
                                                 "input": [{"type": "text", "text": text}],
-                                                "sandboxPolicy": {"type": "workspaceWrite",
-                                                                  "networkAccess": True},
+                                                "sandboxPolicy": sandbox_policy(),
                                                 "approvalPolicy": "never"},
                                  timeout=120)
         turn_id = (started.get("turn") or {}).get("id")

@@ -29,8 +29,13 @@ class ReviewQueueTests(unittest.TestCase):
         store.bind_role_session("orchestrator", "claude", ORCH, HOME, "ceo")
         store.bind_role_session("luxor", "claude", LUXOR, HOME, "ceo")
         os.environ["CODEX_THREAD_ID"] = "thread-A"
+        self.paths = ["supabase/migrations/1.sql", "test/x_test.dart"]       # not a UI change
+        self._cp = rq.changed_paths
+        rq.changed_paths = lambda branch, sha, runner=None: self.paths
+        rq._FILES.clear()
 
     def tearDown(self):
+        rq.changed_paths = self._cp
         os.environ.pop("CODEX_THREAD_ID", None)
         store.RUNTIME, store.LOCKS, validate.RUNTIME = self.old
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -302,6 +307,35 @@ class ReviewQueueTests(unittest.TestCase):
         far = __import__("time").time() + rq.TURN_STALE_SECONDS + 60
         out = rq.nudge(state_store=store, jira=jira, enqueue_fn=enq, launcher=lambda t: None, now=far)
         self.assertEqual([o["action"] for o in out], ["review-nudged"])
+
+    def test_which_changes_need_a_browser(self):
+        for f in ("lib/features/social/presentation/screens/post.dart", "lib/widgets/chip.dart",
+                  "lib/features/app_boot/startup_splash.dart", "ios/Runner/Info.plist",
+                  "lib/l10n/app_ar.arb", "lib/core/design_system/tokens.dart"):
+            self.assertTrue(rq.UI_PATH.search(f), f)
+        for f in ("supabase/migrations/1.sql", "workers/messaging/load.mjs", "docs/messaging/api.yaml",
+                  "test/features/x_test.dart", "lib/data/repositories/block_repository.dart",
+                  "lib/features/messaging/domain/models/message.dart"):
+            self.assertFalse(rq.UI_PATH.search(f), f)
+        rq.changed_paths = self._cp
+        self.assertTrue(rq.needs_browser("alpha-x", "a" * 40, runner=lambda *a, **k: (_ for _ in ()).throw(OSError())),
+                        "cannot tell: assume it must be seen")
+
+    def test_the_headless_reviewer_never_gets_an_item_that_must_be_seen_in_the_app(self):
+        thread = self.headless()
+        self.judge_root("KAN-9")
+        self.paths = ["lib/features/social/presentation/screens/post.dart"]
+        rq._FILES.clear()
+        jira = mock.Mock(); jira.get_issue.return_value = {"status": "Self-review"}
+        jira.get_comments.return_value = []; jira.search_issues.return_value = []
+        self.assertTrue(rq.candidates(jira=jira, with_qa=False)[0]["needs_browser"])
+        os.environ["CODEX_THREAD_ID"] = thread
+        self.assertTrue(rq.is_headless_thread())
+        self.assertIsNone(rq.next_item(jira=jira, with_qa=False), "headless leaves UI work alone")
+        self.assertEqual(rq.nudge(state_store=store, jira=jira,
+                                  enqueue_fn=lambda *a, **k: self.fail("woke for a UI item")), [])
+        os.environ["CODEX_THREAD_ID"] = "thread-A"                 # the Desktop reviewer
+        self.assertEqual(rq.next_item(jira=jira, with_qa=False)["ticket"], "KAN-9")
 
     def test_a_held_item_and_the_claude_channel_are_left_alone(self):
         self.headless()

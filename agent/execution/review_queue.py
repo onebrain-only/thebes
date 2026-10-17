@@ -28,6 +28,7 @@ pass whose detail says SKIPPED, so the Jira comment shows what was not verified.
 import argparse
 import json
 import os
+import re
 import sys
 import time
 
@@ -202,6 +203,40 @@ def finish(item_id, outcome):
 
 
 # ------------------------------------------------------------------- finding work
+# A headless reviewer has a shell, repo history, the Keychain and (with the registry's extra
+# roots) flutter, but NO browser (probe 2026-10-17). Work that has to be SEEN in the running app is
+# the Desktop reviewer's: any change under a screen/widget/presentation folder, boot code, native
+# folders, the design system's assets, or an ARB file.
+UI_PATH = re.compile(r"(^|/)(presentation|widgets|screens|app_boot)/|^lib/core/design_system/|"
+                     r"^(ios|android|web|assets)/|\.arb$")
+_FILES = {}
+
+
+def changed_paths(branch, sha, runner=None):
+    """Files this verified commit changes against its base (local refs, no network), or None."""
+    key = (branch, sha)
+    if key not in _FILES:
+        try:
+            from agent.execution import integrate
+            t = integrate.target_for(branch or "", sha, runner)
+            _FILES[key] = (integrate.changed_files(t["repo"], t["base"], sha, runner, fetch=False)
+                           if t else None)
+        except Exception:                                  # noqa: BLE001
+            _FILES[key] = None
+    return _FILES[key]
+
+
+def needs_browser(branch, sha, runner=None):
+    """True when the change must be looked at in the app (or when we cannot tell)."""
+    files = changed_paths(branch, sha, runner)
+    return True if files is None else any(UI_PATH.search(f) for f in files)
+
+
+def is_headless_thread():
+    cfg = reviewer_config()
+    return cfg.get("mode") == "headless" and bool(cfg.get("thread_id")) and _thread() == cfg["thread_id"]
+
+
 def judge_items(state_store=store):
     from agent.execution import verify, conversation_dispatch as cd
     out = []
@@ -220,6 +255,7 @@ def judge_items(state_store=store):
             "checks": [{"id": p["id"], "what": (by_id.get(p["id"]) or {}).get("what") or p.get("what"),
                         "evidence_named": (by_id.get(p["id"]) or {}).get("pass")}
                        for p in pending],
+            "needs_browser": needs_browser(ver.get("branch"), ver.get("sha")),
             "team_report": _text(rec.get("result_ref")),
             "brief": _text(rec.get("prompt_ref")),
             "at": rec.get("outcome_at") or rec.get("created_at") or ""})
@@ -238,7 +274,7 @@ def qa_items(jira=None):
         issue = jira.normalize_issue(raw)
         key = issue["key"]
         out.append({"item_id": "qa-%s@%s" % (key, (raw.get("fields") or {}).get("updated")),
-                    "kind": "qa", "ticket": key, "summary": issue.get("summary"),
+                    "kind": "qa", "ticket": key, "needs_browser": True, "summary": issue.get("summary"),
                     "status": issue.get("status"), "description": (issue.get("description") or "")[:TEXT_LIMIT],
                     "at": (raw.get("fields") or {}).get("updated") or ""})
     return out
@@ -285,7 +321,10 @@ def candidates(state_store=store, jira=None, with_qa=True):
 def next_item(state_store=store, jira=None, with_qa=True):
     if reviewer_kind() != get_channel():
         return None                                         # this channel is standing by
+    headless = is_headless_thread()
     for item in candidates(state_store, jira, with_qa):
+        if headless and item.get("needs_browser"):
+            continue                       # it has no browser: that item is the Desktop reviewer's
         if claim(item["item_id"]):
             return item
     return None
@@ -601,8 +640,8 @@ def nudge(*, state_store=store, jira=None, now=None, enqueue_fn=None, launcher=N
             return []
         from agent.execution import codex_runtime
         for item in candidates(state_store, jira):
-            if holder(item["item_id"]):
-                continue
+            if holder(item["item_id"]) or item.get("needs_browser"):
+                continue                     # held, or a UI item only the Desktop reviewer can see
             marker = os.path.join(_dir("nudged"), _safe(item["item_id"]))
             try:
                 last = float(open(marker).read())

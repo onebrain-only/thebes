@@ -139,13 +139,14 @@ SMALL_MAX_FILES = 5
 NOT_SMALL = ("pubspec.yaml", "pubspec.lock", "supabase/")
 
 
-def changed_files(repo, base, sha, runner=None):
+def changed_files(repo, base, sha, runner=None, fetch=True):
     """Files `sha` changes against origin/<base>, or None when git cannot say."""
     run = runner or subprocess.run
     cwd = os.path.join(ROOT, repo)
     try:
-        run(["git", "-C", cwd, "fetch", "origin", base], capture_output=True, text=True,
-            timeout=120, stdin=subprocess.DEVNULL)
+        if fetch:
+            run(["git", "-C", cwd, "fetch", "origin", base], capture_output=True, text=True,
+                timeout=120, stdin=subprocess.DEVNULL)
         done = run(["git", "-C", cwd, "diff", "--name-only", "origin/%s...%s" % (base, sha)],
                    capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
         if done.returncode != 0:

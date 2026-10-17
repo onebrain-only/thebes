@@ -132,6 +132,15 @@ class CodexRuntimeTests(unittest.TestCase):
             return cr.attach_conversation(thread_id, "desktop", "ceo", state_store=store,
                                           route_ready=True, alive=lambda path: alive)
 
+    def test_the_turn_sandbox_adds_only_the_registry_roots_that_exist(self):
+        """Probe 2026-10-17: flutter could not write its cache from the headless reviewer."""
+        pol = cr.sandbox_policy()
+        self.assertEqual((pol["type"], pol["networkAccess"]), ("workspaceWrite", True))
+        roots = pol.get("writableRoots") or []
+        self.assertTrue(all(os.path.isabs(r) and os.path.isdir(r) for r in roots))
+        self.assertFalse([r for r in roots if r in (os.path.expanduser("~"), "/", "/Users")],
+                         "never the whole home or the disk")
+
     def test_attach_registers_a_desktop_thread_on_the_daemon_with_a_visible_bootstrap(self):
         out = self.attach()
         conv = out["conversation"]

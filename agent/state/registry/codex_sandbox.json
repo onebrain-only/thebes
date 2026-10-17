@@ -1,0 +1,10 @@
+{
+  "note": "Maintenance 2026-10-17. The Thebes-owned Codex runtime (the headless reviewer) runs in a workspace-write sandbox: it can write inside the Thebes folder only. `flutter` and `dart` also write to their own caches, which the probe of 2026-10-17 showed it cannot (`flutter --version`: sandbox-denied cache writes). These extra roots are added to every turn's sandbox policy and nothing else is opened: no home folder, no keychain files, no other repository. ~ is expanded at run time and a root that does not exist is ignored.",
+  "writable_roots": [
+    "/opt/homebrew/share/flutter/bin/cache",
+    "~/.pub-cache",
+    "~/.dart-tool",
+    "~/.dart",
+    "~/Library/Caches/Pub"
+  ]
+}
