@@ -93,6 +93,14 @@ def review_target(record, state_store):
     import board
     task = _task(record["jira_key"], state_store) or {}
     route = (task.get("execution_profile") or {}).get("validation_route") or DEFAULT_REVIEW_ROUTE
+    if route == "self":
+        # D-043 (CEO 2026-10-20): work that changes the product is reviewed by the Codex reviewer, and
+        # Codex looks for tickets in QA-Test. A team's finished product work therefore goes to
+        # QA-Test, never to Self-review (where nobody looks). The route stays `self`: when the
+        # Codex QA check passes, Thebes closes the ticket as it does for any self-route ticket.
+        from agent.execution import conversation_dispatch as cd
+        if cd.is_product(record):
+            return board.review_status_for("qa"), route
     return board.review_status_for(route) or board.review_status_for(DEFAULT_REVIEW_ROUTE), route
 
 

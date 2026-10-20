@@ -348,6 +348,50 @@ class ReviewQueueTests(unittest.TestCase):
         rq.set_channel("claude", "go", env={"CLAUDE_CODE_SESSION_ID": ORCH}, state_store=store, notify=False)
         self.assertEqual(rq.nudge(state_store=store, jira=jira, enqueue_fn=fail), [])
 
+    # -- status alignment (CEO 2026-10-20) ----------------------------------------------
+    def test_a_product_ticket_left_in_self_review_is_moved_to_qa_test(self):
+        self.judge_root("KAN-9")
+        jira = mock.Mock()
+        jira.get_issue.return_value = {"status_id": "10044", "status": "Self-review"}
+        with mock.patch.object(jira_sync, "_move") as move:
+            out = rq.align_statuses(state_store=store, jira=jira)
+        self.assertEqual(out, [{"action": "moved-to-qa-test", "key": "KAN-9"}])
+        self.assertEqual(move.call_args.args[:2], ("KAN-9", "10009"))
+        self.assertIn("QA-Test", jira.add_comment.call_args.args[1])
+
+    def test_tickets_already_in_qa_test_or_elsewhere_are_left_alone(self):
+        self.judge_root("KAN-9")
+        jira = mock.Mock()
+        for sid in ("10009", "10046", "10045"):
+            jira.get_issue.return_value = {"status_id": sid}
+            with mock.patch.object(jira_sync, "_move") as move:
+                self.assertEqual(rq.align_statuses(state_store=store, jira=jira), [])
+            move.assert_not_called()
+
+    def test_a_ticket_with_a_judge_item_is_not_also_offered_as_a_qa_item(self):
+        """A second item would close it without its checks."""
+        self.judge_root("KAN-9")
+        jira = mock.Mock()
+        jira.get_issue.return_value = {"status": "QA-Test"}
+        jira.get_comments.return_value = []
+        raw = {"key": "KAN-9", "fields": {"updated": "2026-10-20T10:00:00.000+0000"}}
+        jira.search_issues.return_value = [raw, dict(raw, key="KAN-77")]
+        jira.normalize_issue.side_effect = lambda r: {"key": r["key"], "summary": "s", "status": "QA-Test", "description": "d"}
+        kinds = sorted((c["kind"], c["ticket"]) for c in rq.candidates(jira=jira))
+        self.assertEqual(kinds, [("judge", "KAN-9"), ("qa", "KAN-77")])
+
+    def test_a_stalled_review_gets_one_mac_notification_with_the_wake_prompt(self):
+        self.judge_root("KAN-9")
+        calls = []
+        late = __import__("time").time() + rq.STALL_SECONDS + 60
+        run = lambda argv, **kw: calls.append(argv)
+        out = rq.notify_stalled(state_store=store, now=late, runner=run)
+        self.assertEqual(out[0]["tickets"], ["KAN-9"])
+        self.assertIn("Reviewer wake", calls[0][2])
+        self.assertEqual(rq.notify_stalled(state_store=store, now=late, runner=run), [], "once")
+        self.assertIn("review_queue wait", rq.wake_prompt(["KAN-9", "KAN-10"]))
+        self.assertIn("KAN-9, KAN-10", rq.wake_prompt(["KAN-9", "KAN-10"]))
+
     def test_wait_returns_the_item_or_times_out(self):
         clock = {"t": 0.0}
         self.assertIsNone(rq.wait(10, sleep=lambda s: clock.__setitem__("t", clock["t"] + s),

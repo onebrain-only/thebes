@@ -205,7 +205,7 @@ class VerifyTests(unittest.TestCase):
         did, cap = self.dispatch()
         self.submit(did, cap, report(wt=self.wt))
         self.assertEqual(self.verifies, [did], "verification starts by itself")
-        self.assertEqual(self.jira.moves[-1], ("KAN-50", "10044"), "review on report")
+        self.assertEqual(self.jira.moves[-1], ("KAN-50", "10009"), "QA-Test on report (D-043: Codex looks there)")
         runner = FakeRunner()
         out = self.verify_run(did, runner)
         self.assertEqual(out["verdict"], "needs_judge")

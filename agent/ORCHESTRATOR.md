@@ -140,8 +140,13 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
   you (`codex-reviews-product-work`), and you run no seat on a ticket waiting in Review. A QA
   failure goes back to the same team by itself. Leave it alone and tell the CEO only if it is
   exhausted.
+- **Review status (CEO 2026-10-20):** a team's finished product work goes to **QA-Test**, never to
+  Self-review: Codex looks in QA-Test. Thebes now does this itself (and moves stragglers from
+  Self-review to QA-Test). If you ever move or create a product ticket for review by hand, use
+  QA-Test.
 - **`review_stalled`** (D-043): product work has waited 30+ minutes with nobody holding it, so the
-  review channel is probably out of tokens or closed. Tell the CEO in ONE line. **Never switch
+  review channel is probably out of tokens or closed. Tell the CEO in ONE line **and give him the item's `wake_prompt` verbatim** (he pastes it into the
+  Desktop Reviewer conversation: nothing else can wake a Desktop Codex conversation). **Never switch
   the channel yourself.** Only on his explicit order: `python3 -m agent.execution.review_queue
   channel claude --by "<his words>"` (Codex out of tokens: this releases Codex's claims and wakes
   Edfu, the Claude QA conversation, to take the queue); `channel codex --by "<his words>"` sends it

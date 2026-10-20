@@ -308,11 +308,50 @@ def _enrich_judges(items, jira=None):
     return out
 
 
+SELF_REVIEW_ID = "10044"
+QA_TEST_ID = "10009"
+
+
+def align_statuses(*, state_store=store, jira=None):
+    """A product ticket waiting for the Codex reviewer must sit in QA-Test, where the reviewer looks
+    (CEO 2026-10-20: Claude still left some in Self-review and Codex never saw them). Moves every
+    such ticket from Self-review to QA-Test and says so on it. Idempotent; never raises."""
+    done = []
+    try:
+        if jira is None:
+            from agent.execution import jira_sync
+            jira = jira_sync._client(None, state_store)
+        if jira is None:
+            return done
+        from agent.execution import jira_sync
+        seen = set()
+        for item in judge_items(state_store):
+            key = item["ticket"]
+            if key in seen or is_done(item["item_id"]):
+                continue
+            seen.add(key)
+            try:
+                if str(jira.get_issue(key).get("status_id")) != SELF_REVIEW_ID:
+                    continue
+                jira_sync._move(key, QA_TEST_ID, jira, state_store)
+                jira.add_comment(key, "Thebes: moved from Self-review to QA-Test. Product work is "
+                                      "reviewed by the Codex reviewer, which looks in QA-Test.")
+                done.append({"action": "moved-to-qa-test", "key": key})
+            except Exception:                              # noqa: BLE001  one ticket never stops the rest
+                continue
+    except Exception:                                      # noqa: BLE001
+        pass
+    return done
+
+
 def candidates(state_store=store, jira=None, with_qa=True):
     items = _enrich_judges(judge_items(state_store), jira)
     if with_qa:
         try:
-            items += qa_items(jira)
+            judged = {i["ticket"] for i in items}
+            # a ticket with a pending judge item is reviewed through it (its dispatch carries the
+            # checks); a second `qa` item for the same ticket would close it without them
+            items += [q for q in qa_items(jira) if q["ticket"] not in judged]
         except Exception:                                   # noqa: BLE001  Jira down: judges only
             pass
     return sorted((i for i in items if not is_done(i["item_id"])), key=lambda i: i["at"])
@@ -661,7 +700,7 @@ def nudge(*, state_store=store, jira=None, now=None, enqueue_fn=None, launcher=N
     return []
 
 
-STALL_SECONDS = 30 * 60
+STALL_SECONDS = 15 * 60
 
 
 def stalled(state_store=store, now=None):
@@ -681,6 +720,41 @@ def stalled(state_store=store, now=None):
         if age >= STALL_SECONDS:
             out.append({"item_id": item["item_id"], "ticket": item["ticket"], "age_min": int(age / 60)})
     return out
+
+
+WAKE_PROMPT = ("Reviewer wake: review work is waiting ({tickets}). Re-read agent/REVIEWER.md if you "
+               "lost it, then run `python3 -m agent.execution.review_queue wait --timeout 300` and keep "
+               "running it: review each item it returns, submit, and wait again. Do not stop on your own.")
+
+
+def wake_prompt(tickets):
+    """The one prompt the CEO pastes into the Desktop Reviewer conversation. A Desktop Codex
+    conversation cannot be woken from outside, so Thebes names the exact text and tells the CEO."""
+    return WAKE_PROMPT.format(tickets=", ".join(tickets) or "see review_queue status")
+
+
+def notify_stalled(*, state_store=store, now=None, runner=None):
+    """A macOS notification (zero tokens) once per stalled review, with the wake prompt in it, for
+    when the CEO is at the Mac. Never raises."""
+    import subprocess
+    late = []
+    try:
+        for i in stalled(state_store, now):
+            m = os.path.join(_dir("stalled-notified"), _safe(i["item_id"]))
+            if not os.path.exists(m):
+                late.append((i, m))
+        if not late:
+            return []
+        tickets = [i["ticket"] for i, _ in late]
+        text = "Review waiting %s: send 'Reviewer wake' to the Reviewer chat in Codex" % ", ".join(tickets)
+        (runner or subprocess.run)(["osascript", "-e", 'display notification "%s" with title "Thebes"'
+                                    % text.replace('"', "'")], capture_output=True, timeout=10)
+        for _, m in late:
+            with open(m, "w") as fh:
+                fh.write("1")
+        return [{"action": "review-stalled-notified", "tickets": tickets}]
+    except Exception:                                      # noqa: BLE001
+        return []
 
 
 def mark_stalled_alerted(item_id):

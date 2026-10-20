@@ -208,14 +208,18 @@ def pending(session_id, *, state_store=store, now=None):
             out.append({"kind": "review_stalled", "tickets": [i["ticket"] for i in late],
                         "items": [i["item_id"] for i in late], "channel": review_queue.get_channel(),
                         "waited_min": max(i["age_min"] for i in late),
+                        "wake_prompt": review_queue.wake_prompt([i["ticket"] for i in late]),
                         "how": ("Review of %s has waited %d+ minutes and nobody holds it: the %s "
-                                "channel is probably out of tokens or closed. Tell the CEO in ONE "
-                                "line. Do NOT switch the channel yourself: only on his explicit "
+                                "reviewer is probably not running (a Desktop Codex conversation "
+                                "cannot be woken from outside). Tell the CEO in ONE line and give "
+                                "him this exact text to paste into the Reviewer conversation: "
+                                "\"%s\". Do NOT switch the channel yourself: only on his explicit "
                                 "order, run python3 -m agent.execution.review_queue channel "
                                 "claude --by \"<his words>\" (back: channel codex). Say nothing "
                                 "else." % (", ".join(i["ticket"] for i in late),
                                            max(i["age_min"] for i in late),
-                                           review_queue.get_channel()))})
+                                           review_queue.get_channel(),
+                                           review_queue.wake_prompt([i["ticket"] for i in late])))})
         for q in review_queue.questions_for_inbox():
             out.append({"kind": "reviewer_question", "question_id": q["qid"], "ticket": q["ticket"],
                         "question": q["question"],

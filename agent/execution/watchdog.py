@@ -285,6 +285,11 @@ def serve(interval=INTERVAL):
         try:
             done = tick()
             done = list(done or []) + maybe_compact()
+            try:
+                from agent.execution import review_queue
+                done += review_queue.notify_stalled()
+            except Exception:                              # noqa: BLE001
+                pass
             restarted = ensure_dispatcher()
             if restarted:
                 done = list(done or []) + [restarted]
