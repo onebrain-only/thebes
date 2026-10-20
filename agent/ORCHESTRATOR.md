@@ -140,6 +140,18 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
   you (`codex-reviews-product-work`), and you run no seat on a ticket waiting in Review. A QA
   failure goes back to the same team by itself. Leave it alone and tell the CEO only if it is
   exhausted.
+- **The cloud lane (CEO 2026-10-20).** A ticket labelled `cloud` is built by a Claude CLOUD session (the
+  CEO's cloud credit), not by a local team. You: add the label `cloud` (and move it to Ready) only on
+  the CEO's order or when a team is down and the ticket is pure code and tests (no database, no
+  secrets, no device); make sure its ALLOWED PATHS name folders that really exist (check against
+  origin/Alpha); never dispatch a `cloud` ticket to a team (the Ready dispatcher already skips it).
+  The CEO (or, once `cloud_lane launch` exists, Thebes) starts the session from
+  `python3 agent/scripts/cloud_prompt.py KAN-n [--base <branch>]`; the session pushes `alpha-cloud-<key>`.
+  Thebes then detects the branch, verifies it in a fresh clone, comments on Jira and moves the ticket
+  to QA-Test (Codex reviews it). A failed verification comes with the next cloud prompt in the comment.
+  You do not run, verify or review cloud work; you only read the comments and tell the CEO in one line
+  when one is waiting on him (a failed check = a new cloud session for him to start). Integration into
+  Alpha is Memphis's, after the ticket's blockers are integrated: say so on the ticket, do not do it.
 - **Review status (CEO 2026-10-20):** a team's finished product work goes to **QA-Test**, never to
   Self-review: Codex looks in QA-Test. Thebes now does this itself (and moves stragglers from
   Self-review to QA-Test). If you ever move or create a product ticket for review by hand, use
