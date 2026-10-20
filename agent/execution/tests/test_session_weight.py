@@ -78,6 +78,21 @@ class SessionWeightTests(unittest.TestCase):
         self.assertEqual(got["tokens"], 200305)
         self.assertGreater(got["at"], 0)
 
+    def test_a_session_compacted_since_its_last_answer_reports_unknown_not_stale(self):
+        d = os.path.join(self.tmp, "home2", ".claude", "projects", "p")
+        os.makedirs(d)
+        with open(os.path.join(d, MEMPHIS + ".jsonl"), "w") as fh:
+            fh.write(json.dumps({"type": "assistant", "timestamp": "2026-10-20T08:00:00.000Z", "message": {
+                "usage": {"input_tokens": 1, "cache_read_input_tokens": 540000, "cache_creation_input_tokens": 0}}}) + "\n")
+            fh.write(json.dumps({"type": "system", "subtype": "compact_boundary",
+                                 "timestamp": "2026-10-20T10:19:50.000Z"}) + "\n")
+        with mock.patch.dict(os.environ, {"HOME": os.path.join(self.tmp, "home2")}):
+            got = sw.context_of(MEMPHIS)
+        self.assertTrue(got["compacted"])
+        self.assertIsNone(got["tokens"])
+        cli = FakeCli(self.rows(**{MEMPHIS: "idle"}))
+        self.assertEqual(self.run_pass(cli, lambda sid: got), [], "never compacted twice")
+
     def test_a_heavy_idle_team_with_a_warm_cache_is_compacted(self):
         cli = FakeCli(self.rows(**{KARNAK: "idle"}))
         out = self.run_pass(cli, self.ctx(260_000, 10))

@@ -63,6 +63,15 @@ def context_of(session_id):
         return None
     import calendar
     for line in reversed(tail.splitlines()):
+        if "compact_boundary" in line or '"isCompactSummary":true' in line.replace(" ", ""):
+            # compacted since the last answer: the old usage is stale and the new size is only
+            # known after the session's next turn
+            try:
+                stamp = json.loads(line).get("timestamp") or ""
+                at = calendar.timegm(time.strptime(stamp[:19], "%Y-%m-%dT%H:%M:%S"))
+            except (ValueError, TypeError):
+                at = 0
+            return {"tokens": None, "at": at, "path": path, "compacted": True}
         if '"usage"' not in line:
             continue
         try:
@@ -122,8 +131,8 @@ def compact_idle(*, state_store=store, cli=None, now=None, context_fn=None, team
                     or compacting(sid, now) or now - _stamp(_marker("last", sid)) < COMPACT_EVERY):
                 continue
             ctx = context_fn(sid)
-            if not ctx or ctx["tokens"] < COMPACT_ABOVE:
-                continue
+            if not ctx or ctx.get("tokens") is None or ctx["tokens"] < COMPACT_ABOVE:
+                continue                                     # unknown or just compacted: leave it
             if now - ctx["at"] > WARM_SECONDS and ctx["tokens"] < COMPACT_COLD_ABOVE:
                 continue
             with open(run, "w") as fh:
