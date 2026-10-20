@@ -454,6 +454,13 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None):
     except Exception as exc:                            # noqa: BLE001
         done.append({"action": "send-back-retry-failed", "error": str(exc)[:200]})
 
+    # The cloud lane: verify a cloud ticket's branch when its cloud session has stopped pushing.
+    try:
+        from agent.execution import cloud_lane
+        done.extend(cloud_lane.scan(jira=jira))
+    except Exception as exc:                            # noqa: BLE001
+        done.append({"action": "cloud-scan-failed", "error": str(exc)[:200]})
+
     # Product tickets waiting for the Codex reviewer must be in QA-Test, where it looks.
     try:
         from agent.execution import review_queue

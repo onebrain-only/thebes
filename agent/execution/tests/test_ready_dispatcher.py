@@ -59,6 +59,8 @@ class FakeJira:
         self.normalize_issue = real.normalize_issue
 
     def search_issues(self, jql, fields=None, limit=50, raw=False):
+        if "labels = cloud" in jql:
+            return []
         if "CHANGED TO" in jql:
             return [{"key": k} for k in self.fresh]
         if 'status = "Done"' in jql:

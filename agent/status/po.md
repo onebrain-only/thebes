@@ -5328,3 +5328,6 @@ ACCEPTED: AC1/AC2 evidenced by 17 widget tests (insets 0/24/34/48); AC3 device e
 
 ## 2026-10-20 po (Horemheb)
 Drafted offline ticket set from KAN-599 to /Users/moataz/.claude/jobs/c49d2414/tmp/tickets-599.md (12 tickets, draft only; nothing created in Jira).
+
+## 2026-10-20 KAN-603 work_acceptance (Horemheb)
+ACCEPTED at Alpha 82db0c74 (origin/Alpha): AC1-AC5 verified against code; analyze exit 0, 620+ targeted tests pass. Non-blocking notes: splash backstop (20 s) shows localized BootstrapErrorApp rather than proceeding; mapper vs Failure.from differ on PGRST301/403 category. Device TCs deferred to beta. Read-only; no Jira/code edits. Noted CEO rule: verify ALLOWED PATHS exist on origin/Alpha (mark new) in tickets I write.

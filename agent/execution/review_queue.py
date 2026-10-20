@@ -273,8 +273,15 @@ def qa_items(jira=None):
                                   limit=20, raw=True):
         issue = jira.normalize_issue(raw)
         key = issue["key"]
+        cloud = None
+        try:
+            from agent.execution import cloud_lane
+            cloud = cloud_lane.cloud_info(key)
+        except Exception:                                   # noqa: BLE001
+            pass
         out.append({"item_id": "qa-%s@%s" % (key, (raw.get("fields") or {}).get("updated")),
                     "kind": "qa", "ticket": key, "needs_browser": True, "summary": issue.get("summary"),
+                    **(cloud or {}),
                     "status": issue.get("status"), "description": (issue.get("description") or "")[:TEXT_LIMIT],
                     "at": (raw.get("fields") or {}).get("updated") or ""})
     return out

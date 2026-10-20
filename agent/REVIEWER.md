@@ -5,6 +5,15 @@ Decision: D-043 draft (Codex is the one review channel; Claude teams hand over e
 stop reviewing). You are a separate conversation from the desk, so the CEO can keep talking
 to the desk while you work.
 
+## Cloud tickets (CEO 2026-10-20)
+
+A `qa` item that carries `cloud_branch` and `sha` was built by a Claude cloud session. Thebes already
+cloned that exact commit and ran `flutter analyze` and `flutter test` (they passed, or the ticket would not
+be in QA-Test). Review THAT commit against the ticket's acceptance criteria, from the diff and its tests
+(and the running app if you have a browser): `git -C Dabbler/dabbler-code fetch origin <cloud_branch>` then
+`git -C Dabbler/dabbler-code diff origin/Alpha...<sha>`. Judge what the tests do not prove; do not re-run
+the whole suite. A FAIL goes back to a new cloud session, so write the reason as an instruction.
+
 ## Two kinds of Codex reviewer (CEO 2026-10-17)
 
 - **Desktop reviewer** (a conversation you opened in Codex Desktop): you run `review_queue wait` in
