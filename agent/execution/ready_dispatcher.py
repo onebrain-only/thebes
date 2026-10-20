@@ -45,6 +45,7 @@ MAX_PARALLEL = 3
 JQL = 'project = KAN AND status = "Ready" ORDER BY rank ASC'
 FIELDS = ["summary", "status", "labels", "description", "issuelinks", "duedate", "components",
           "timeoriginalestimate"]
+CLOUD_LANE = "cloud"            # label: runs in a Claude cloud session; never dispatched to a team
 CEO_ACTION = "ceo-action"      # label: a step only the CEO can do; never dispatched
 OWNER_WAIT = "-10m"            # was 30; malfunction #25: other teams sat idle
 ANY_TEAM = "any-team"           # board label: no owner wait at all
@@ -294,6 +295,12 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None):
             # The CEO's own step (set a secret in a dashboard): it sits in Ready in its place in the
             # chain, is never dispatched, never needs a brief and never needs a capability.
             done.append({"key": key, "action": "ceo-step"})
+            continue
+        if CLOUD_LANE in issue["labels"]:
+            # CEO 2026-10-20: this ticket runs in a Claude cloud session the CEO starts (the
+            # $250 cloud credit). It sits in Ready in its place in the chain and is never given
+            # to a local team, so the two never work the same ticket.
+            done.append({"key": key, "action": "cloud-lane"})
             continue
         if NEEDS_BRIEF in issue["labels"]:
             if BRIEF_REQUESTED not in issue["labels"]:

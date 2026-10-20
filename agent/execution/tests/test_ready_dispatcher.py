@@ -267,6 +267,15 @@ class ReadyDispatcherTests(unittest.TestCase):
         self.assertEqual(j.comments, [])
         self.assertEqual(j.updates, [], "no needs-brief label either")
 
+    def test_a_cloud_ticket_sits_in_ready_and_no_local_team_gets_it(self):
+        """CEO 2026-10-20: the cloud credit runs these; a team must never take the same ticket."""
+        j = FakeJira([issue("KAN-730", labels=["cap:frontend", "cloud"]),
+                      issue("KAN-731", labels=["cap:frontend"])])
+        out = self.tick(j)
+        self.assertEqual(out[0], {"key": "KAN-730", "action": "cloud-lane"})
+        got = {d["key"]: d["action"] for d in out if d.get("action") in ("dispatched", "cloud-lane")}
+        self.assertEqual(got, {"KAN-730": "cloud-lane", "KAN-731": "dispatched"})
+
     def test_teams_cannot_reserve_the_po_or_the_pm(self):
         with self.assertRaises(store.StateError) as ctx:
             store.reserve_seat("po", "karnak", "cdispatch-x")

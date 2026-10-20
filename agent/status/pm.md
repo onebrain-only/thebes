@@ -2083,3 +2083,6 @@ Backlog (To Do) held KAN-494 (epic, stays), KAN-567, KAN-558, KAN-559. All brief
 
 ## 2026-10-20 · Anubis · priority prio-7a9c9911 (D-042)
 Moved to Ready: KAN-602 (Auth, 4h), KAN-603 (Platform, 6h), KAN-611 (Social, 8h, backend, independent), KAN-609 (Platform, 3h, content). Left: KAN-605/606/607/608/610/612/613 blocked by unfinished Blocks; KAN-604 needs-design; KAN-613 parked; KAN-585 already Ready, blocked by KAN-584.
+
+## 2026-10-20 pm (Anubis) D-042 prio-0ea8facb
+Backlog read (13 To Do). Moved 0 to Ready: every executable ticket is Blocks-gated by KAN-603 (Self-review), KAN-611 (Back-end) or KAN-605 (To Do); 604 needs-design; 494/573-576 are parent epics. No Jira writes made.
