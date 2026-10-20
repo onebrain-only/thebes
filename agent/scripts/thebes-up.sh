@@ -11,6 +11,7 @@
 # start-teams.sh. Run it from your own terminal: Claude Code does not let a session create
 # background sessions itself.
 set -u
+export CLAUDE_AUTOCOMPACT_PCT_OVERRIDE="${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-20}"   # compact sessions near 200k, not 900k (2026-10-20)
 cd "$(dirname "$0")/../.." || exit 1
 CHECK=0
 [ "${1:-}" = "--check" ] && CHECK=1

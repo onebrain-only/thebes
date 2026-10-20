@@ -147,3 +147,9 @@ Built WorkerMessagingRepository (6 contract ops + listMyConversations over msg_m
 
 ## 2026-10-16 — KAN-552 (Team Habu) admin message Reports screen
 Built in worktree /Users/moataz/.claude/jobs/149908a7/wt/kan-456-habu (alpha-habu), uncommitted. New ModerationReportsRepository sibling interface (list via msg_list_message_reports RPC, read via GET /v1/moderation/reports/{id}/message), NotAModeratorFailure (typed reason enum untouched), admin screen + panel (text held only in panel State, cleared on dispose), route /admin/message-reports with session/flags/is_admin redirect, one gated row on Safety Overview, 37 admin_message_reports_* l10n keys. Admin tests 609 green, full suite 2855 green, analyze 0 errors/0 warnings, parity green.
+
+## 2026-10-19 KAN-572 (Habu) - game chat route without endAt
+No lib change needed: route already maps non-DateTime extra to null; thread_items treats null endAt as not finished; read-only comes from the conversation status. Added test/features/messaging/presentation/game_chat_route_extra_test.dart (8 tests, EN+AR). messaging tests 0, analyze 0 (0 errors/warnings, 39 infos), full flutter test 0 (2996). Not committed.
+
+## 2026-10-20 — KAN-596 (team Habu) bottom-drawer scrim slides with panel
+Worktree kan-456-habu / alpha-habu @ a08947bc, uncommitted. Root cause DS sheet_route.dart:149-165 (route SlideTransition over a page that contains the scrim). Fix: lib/utils/transitions/app_sheet_route.dart (AppSheetRoute/showAppSheet drives DabblerSheet.open; no route slide; keyboard lifts the sheet), 62 call sites in 46 files routed through it; reduced motion added to BottomSheetTransitionPage/AdaptiveModalPage. New test test/utils/transitions/app_sheet_route_test.dart (11). analyze exit 0 (0 err/0 warn, 39 infos = baseline); flutter test exit 0, +3034. Not committed/pushed per brief.

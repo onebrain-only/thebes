@@ -1150,3 +1150,12 @@ CORS +https://app.dabbler.pro; wrangler env staging->production (name/db unchang
 
 ## 2026-10-17 KAN-558 fix 1 (left_at_seq on meetup cancel) - STOPPED, no edits
 Seq lives only in D1 (conversation_seq); no Postgres source. Game path has no writer either (registry comment says Worker/service_role writes it; workers/messaging/src has no such write). Reported options to caller.
+
+## 2026-10-19 KAN-572 (server half)
+Root cause: msg_notify only Realtime, no notifications row/push for chat. Authored (not applied) 20261019120000_kan572_msg_push.sql + probes/rollback + static test. npm/flutter test/analyze exit 0. Needs PEER backend review + ops apply.
+
+## 2026-10-20 KAN-595 backend half (Active stream RPC)
+Authored (not applied, not committed) public.active_stream read RPC in worktree kan-456-habu: migration 20261020120000_kan595_active_stream.sql, supabase/tests/active_stream/{probes,rollback}.sql + README, test/supabase/active_stream_migration_test.dart; one-line cut-off fix in messaging_registry_migration_test.dart. flutter test test/supabase exit 0 (388), analyze exit 0. Flags: is_profile_publicly_visible hides profiles with no user_status row; no transition timestamps (scheduled times used). Route PEER, waits for a backend reviewer.
+
+## 2026-10-20 — KAN-611 (team Habu) idempotent creates — DECISION_REQUIRED, nothing written
+None of create_post (20261013125000), rpc_create_game (20261008140000) or rpc_create_meetup (latest def, RENAME-to-legacy at line 447 of its migration) takes a params jsonb object; request_id needs a new parameter on all three => new signature. Per brief (b), stopped and asked one question. No files authored in worktree alpha-habu.

@@ -259,11 +259,32 @@ def ensure_dispatcher(*, running=None, start=None):
     return {"action": "restarted-ready-dispatcher"}
 
 
+COMPACT_CHECK_EVERY = 300
+
+
+def maybe_compact(*, state_store=store, now=None):
+    """Run the session-weight policy at most every COMPACT_CHECK_EVERY seconds."""
+    import time as _time
+    now = now or _time.time()
+    marker = os.path.join(state_store.RUNTIME, "compaction", "checked")
+    try:
+        if now - float(open(marker).read()) < COMPACT_CHECK_EVERY:
+            return []
+    except (OSError, ValueError):
+        pass
+    os.makedirs(os.path.dirname(marker), exist_ok=True)
+    with open(marker, "w") as fh:
+        fh.write(str(now))
+    from agent.execution import session_weight
+    return session_weight.compact_idle(state_store=state_store, now=now)
+
+
 def serve(interval=INTERVAL):
     log = os.path.join(store.RUNTIME, "watchdog.log")
     while True:
         try:
             done = tick()
+            done = list(done or []) + maybe_compact()
             restarted = ensure_dispatcher()
             if restarted:
                 done = list(done or []) + [restarted]

@@ -2080,3 +2080,6 @@ Transition id 2 (status 10008) from live getTransitions, accepted first try. Sta
 
 ## 2026-10-17 · Anubis · Backlog prioritisation (CEO order)
 Backlog (To Do) held KAN-494 (epic, stays), KAN-567, KAN-558, KAN-559. All briefs pass the D-041 lint; all carry component and Original estimate. Moved KAN-567, KAN-558, KAN-559 to Ready (capabilities devops, backend, frontend; effort 1 sitting each). Rank order: 567, 565, 566, 558, 559. No ticket created or edited; nothing dispatched.
+
+## 2026-10-20 · Anubis · priority prio-7a9c9911 (D-042)
+Moved to Ready: KAN-602 (Auth, 4h), KAN-603 (Platform, 6h), KAN-611 (Social, 8h, backend, independent), KAN-609 (Platform, 3h, content). Left: KAN-605/606/607/608/610/612/613 blocked by unfinished Blocks; KAN-604 needs-design; KAN-613 parked; KAN-585 already Ready, blocked by KAN-584.

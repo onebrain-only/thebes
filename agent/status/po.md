@@ -5322,3 +5322,9 @@ Created in Ready, ranked in order: KAN-546 A1 CORS+prod env (backend), 547 B1 ms
 
 ## 2026-10-15 po (Horemheb): KAN-563 created
 Created KAN-563 (backend, effort 3, Ready): Worker getGameConversation + PUT/DELETE mute per openapi.yaml. KAN-561 overlap: its POST /mute {muted} -> 200 differs from contract; 563 reuses setMuted, keeps POST. Link verified: KAN-563 blocks KAN-554. 561 is Done but alpha-karnak not yet in Alpha.
+
+## 2026-10-20 KAN-578 work_acceptance (Horemheb)
+ACCEPTED: AC1/AC2 evidenced by 17 widget tests (insets 0/24/34/48); AC3 device evidence deferred to beta (Android gesture, three-button, iOS home indicator) by Codex QA/CEO, same treatment as KAN-598/600/586/584. Read-only; no Jira/code edits.
+
+## 2026-10-20 po (Horemheb)
+Drafted offline ticket set from KAN-599 to /Users/moataz/.claude/jobs/c49d2414/tmp/tickets-599.md (12 tickets, draft only; nothing created in Jira).

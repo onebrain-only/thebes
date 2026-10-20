@@ -22,6 +22,7 @@ EOF
 )
 [ -z "$unbound" ] && { echo "Every requested team already has a session."; exit 0; }
 
+export CLAUDE_AUTOCOMPACT_PCT_OVERRIDE="${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-20}"   # compact sessions near 200k (2026-10-20)
 while read -r tid lane display; do
   name="thebes-team-$tid"
   echo "Starting $display ($name, lane $lane) ..."

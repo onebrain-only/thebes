@@ -37,6 +37,9 @@ def _pid_alive(pid):
     return True
 
 
+AUTOCOMPACT_PCT = "20"
+
+
 class ClaudeCliError(Exception):
     pass
 
@@ -46,6 +49,10 @@ class ClaudeCli:
         self._run = runner or subprocess.run
         self._binary = binary
         self._env = env                     # None inherits the caller's environment
+        if env is None and os.environ.get("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE") is None:
+            # CEO 2026-10-20: sessions grew to 350k-540k tokens and every wake after the cache
+            # expired re-sent all of it. 20% of a 1M window = compact at about 200k.
+            self._env = dict(os.environ, CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=AUTOCOMPACT_PCT)
 
     def _exec(self, args, cwd=None, timeout=120):
         kw = {} if self._env is None else {"env": self._env}

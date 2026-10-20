@@ -110,6 +110,12 @@ def open_work_for(session_id, state_store=store):
             and r.get("status") in store.CONVERSATION_DISPATCH_OPEN]
     product = [r["dispatch_id"] for r in state_store.read_all("session_dispatch")
                if r.get("session_id") == session_id and r.get("status") == "dispatched"]
+    try:
+        from agent.execution import session_weight
+        if session_weight.compacting(session_id):
+            conv.append("compacting")            # a compaction turn is running: never stop it
+    except Exception:                            # noqa: BLE001
+        pass
     return sorted(conv + product)
 
 

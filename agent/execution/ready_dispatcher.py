@@ -132,8 +132,14 @@ def open_dispatches(state_store=store):
 def free_team(lane, state_store=store):
     from agent.execution import team_pool
     busy = {r["target_session_id"] for r in open_dispatches(state_store)}
+    try:
+        from agent.execution import session_weight
+    except Exception:                                   # noqa: BLE001
+        session_weight = None
     for tid in sorted(teams.lane_teams(lane), key=lambda t: teams.read()[t]["number"]):
         binding = state_store.active_role_session(tid)
+        if binding and session_weight and session_weight.compacting(binding["session_id"]):
+            continue                                    # being compacted: try the next team
         if binding and binding["session_id"] not in busy:
             return tid, binding["session_id"]
     return None, None
