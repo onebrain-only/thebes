@@ -1,0 +1,6 @@
+{
+  "name": "thebes-context",
+  "version": "0.1.0",
+  "description": "Keeps a Thebes session's context small: compacts itself between turns when heavy, shows its context and quota in a band with a Compact button, and /teams tracks every team session with a Compact button each.",
+  "types": "./types/index.d.ts"
+}

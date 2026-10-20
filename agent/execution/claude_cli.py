@@ -38,6 +38,8 @@ def _pid_alive(pid):
 
 
 AUTOCOMPACT_PCT = "20"
+MODS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                        "agent", "mods", "thebes-context")
 
 
 class ClaudeCliError(Exception):
@@ -49,10 +51,14 @@ class ClaudeCli:
         self._run = runner or subprocess.run
         self._binary = binary
         self._env = env                     # None inherits the caller's environment
-        if env is None and os.environ.get("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE") is None:
+        if env is None:
             # CEO 2026-10-20: sessions grew to 350k-540k tokens and every wake after the cache
-            # expired re-sent all of it. 20% of a 1M window = compact at about 200k.
-            self._env = dict(os.environ, CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=AUTOCOMPACT_PCT)
+            # expired re-sent all of it. 20% of a 1M window = auto-compact at about 200k, and the
+            # thebes-context mod (agent/mods) compacts a heavy session from inside, at the end of
+            # a turn while its cache is warm, and shows its weight above the prompt.
+            self._env = dict(os.environ)
+            self._env.setdefault("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", AUTOCOMPACT_PCT)
+            self._env.setdefault("CLAUDE_CODE_PLUGIN_DIRS", MODS_DIR)
 
     def _exec(self, args, cwd=None, timeout=120):
         kw = {} if self._env is None else {"env": self._env}

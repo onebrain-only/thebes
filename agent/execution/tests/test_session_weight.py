@@ -129,6 +129,15 @@ class SessionWeightTests(unittest.TestCase):
         self.run_pass(cli, self.ctx(400_000, 5))
         self.assertIn("compacting", cd.open_work_for(KARNAK, store))
 
+    def test_compact_team_is_the_trackers_button_and_refuses_what_it_must(self):
+        cli = FakeCli(self.rows(**{KARNAK: "idle", MEMPHIS: "working"}))
+        self.assertIn("orchestrator compacts itself", sw.compact_team("orchestrator", state_store=store, cli=cli)["reason"])
+        self.assertIn("middle of a turn", sw.compact_team("memphis", state_store=store, cli=cli)["reason"])
+        self.assertEqual(sw.compact_team("karnak", state_store=store, cli=cli, now=self.now)["action"], "compact-started")
+        self.assertEqual([c[0] for c in cli.calls], ["stop", "resume"])
+        self.assertIn("compacting", sw.compact_team("karnak", state_store=store, cli=cli)["reason"],
+                      "already running: refused, not stopped again")
+
     def test_a_failed_stop_clears_the_marker_and_reports(self):
         cli = FakeCli(self.rows(**{KARNAK: "idle"}))
         cli.wait_stopped = lambda *a, **k: False

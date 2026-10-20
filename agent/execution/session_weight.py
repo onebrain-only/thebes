@@ -9,6 +9,7 @@ context at the cached price, and every later wake then rebuilds only the small s
 
     python3 -m agent.execution.session_weight report      # read-only: context per session
     python3 -m agent.execution.session_weight compact     # one pass of the policy below
+    python3 -m agent.execution.session_weight compact-team <team>   # one team now (the tracker's button)
 
 Policy (the watchdog runs it every few minutes, zero tokens to decide):
     a delivery team, with no open dispatch, not mid-turn, whose context is above COMPACT_ABOVE
@@ -143,6 +144,43 @@ def compact_idle(*, state_store=store, cli=None, now=None, context_fn=None, team
     return done
 
 
+def compact_team(team, *, state_store=store, cli=None, now=None, teams_mod=teams):
+    """Compact ONE named team now, whatever its size (the tracker's button). Refuses the
+    orchestrator (its waiter and inbox are running: it compacts itself, from inside), a team that
+    is mid-turn or has an open dispatch, and one already compacting. Returns what it did."""
+    from agent.execution import conversation_dispatch as cd
+    from agent.execution.claude_cli import ClaudeCli
+    now = now or time.time()
+    entry = teams_mod.delivery_teams().get(team)
+    if not entry:
+        return {"action": "refused", "reason": "%r is not a delivery team (the orchestrator compacts itself)" % team}
+    binding = state_store.active_role_session(team)
+    if not binding:
+        return {"action": "refused", "reason": "%s has no session" % team}
+    sid = binding["session_id"]
+    cli = cli or ClaudeCli()
+    row = cli.find_by_sid(cli.agents(), sid)
+    if row is None:
+        return {"action": "refused", "reason": "%s is not running (bash agent/scripts/thebes-up.sh)" % team}
+    if row.get("state") == "working":
+        return {"action": "refused", "reason": "%s is in the middle of a turn" % team}
+    if cd.open_work_for(sid, state_store):
+        return {"action": "refused", "reason": "%s has an open dispatch or is already compacting" % team}
+    for sub in ("running", "last"):
+        with open(_marker(sub, sid), "w") as fh:
+            fh.write(str(now))
+    try:
+        cli.stop(sid[:8])
+        if not cli.wait_stopped(sid, 30, pid=row.get("pid")):
+            raise RuntimeError("session did not stop in 30s")
+        cli.bg_resume(sid, KEEP, binding["stable_home"])
+    except Exception as exc:                                  # noqa: BLE001
+        if os.path.exists(_marker("running", sid)):
+            os.unlink(_marker("running", sid))
+        return {"action": "compact-failed", "team": team, "error": str(exc)[:160]}
+    return {"action": "compact-started", "team": team}
+
+
 def report(state_store=store):
     rows = []
     for tid, entry in sorted(teams.read().items(), key=lambda kv: kv[1]["number"]):
@@ -158,9 +196,14 @@ def report(state_store=store):
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="agent.execution.session_weight", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=("report", "compact"))
+    ap.add_argument("cmd", choices=("report", "compact", "compact-team"))
+    ap.add_argument("team", nargs="?")
     ns = ap.parse_args(argv)
-    print(json.dumps(report() if ns.cmd == "report" else compact_idle(), indent=2))
+    if ns.cmd == "compact-team":
+        out = compact_team(ns.team or "")
+    else:
+        out = report() if ns.cmd == "report" else compact_idle()
+    print(json.dumps(out, indent=2))
     return 0
 
 

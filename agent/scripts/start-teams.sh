@@ -6,6 +6,8 @@
 # Code's permission check does not let a session create background sessions itself.
 set -u
 cd "$(dirname "$0")/../.." || exit 1
+export CLAUDE_AUTOCOMPACT_PCT_OVERRIDE="${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-20}"   # compact sessions near 200k (2026-10-20)
+export CLAUDE_CODE_PLUGIN_DIRS="${CLAUDE_CODE_PLUGIN_DIRS:-$PWD/agent/mods/thebes-context}"   # the thebes-context mod: self-compaction + tracker (2026-10-20)
 HOME_DIR="$(pwd)"
 
 unbound=$(python3 - "$@" <<'EOF'
@@ -22,7 +24,6 @@ EOF
 )
 [ -z "$unbound" ] && { echo "Every requested team already has a session."; exit 0; }
 
-export CLAUDE_AUTOCOMPACT_PCT_OVERRIDE="${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-20}"   # compact sessions near 200k (2026-10-20)
 while read -r tid lane display; do
   name="thebes-team-$tid"
   echo "Starting $display ($name, lane $lane) ..."
