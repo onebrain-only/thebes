@@ -17,7 +17,7 @@ Two kinds of item:
   judge  a verified-by-code dispatch whose only open checks are `judge` checks (an eye must
          settle them). A verdict goes through `verify.judge_verdict`, so a fail sends only
          that check back to the team and the round limit is Thebes's.
-  qa     a Jira ticket in QA-Test / Peer-review. Pass -> Done. Fail -> comment, back to the
+  qa     a Jira ticket in the Review column (QA-Test / Self-review / Peer-review). Pass -> Done. Fail -> comment, back to the
          lane status, and a priority request so the PM/orchestrator re-plans it.
 
 An item is CLAIMED atomically for one Codex thread (O_EXCL file); a claim older than
@@ -40,7 +40,10 @@ from agent.state import store                                          # noqa: E
 CLAIM_SECONDS = 20 * 60
 POLL_SECONDS = 5
 JIRA_POLL_SECONDS = 60
-QA_JQL = 'project = KAN AND status in ("QA-Test", "Peer-review") ORDER BY updated ASC'
+# The Codex reviewer's queue is the Jira Review column, all three of its statuses (CEO 2026-10-21:
+# "the Review column is what I rely on; Codex works on whatever is in it, nothing outside it").
+QA_JQL = ('project = KAN AND status in ("QA-Test", "Self-review", "Peer-review") '
+          'ORDER BY updated ASC')
 LANE_STATUS_ID = "10046"            # Front-end: where a failed qa ticket goes back to
 DONE_STATUS_ID = "10007"
 TEXT_LIMIT = 6000
@@ -262,7 +265,17 @@ def judge_items(state_store=store):
     return out
 
 
-def qa_items(jira=None):
+def _team_working(key, state_store=store):
+    """A team still holds an open dispatch for this ticket (no outcome yet), so a Self-review status
+    on it is the team's own work in progress, not a finished ticket waiting for review."""
+    for rec in state_store.read_all("conversation_dispatch"):
+        if (rec.get("jira_key") == key and not rec.get("outcome")
+                and rec.get("status") not in ("delivery_failed", "withdrawn")):
+            return True
+    return False
+
+
+def qa_items(jira=None, state_store=store):
     if jira is None:
         from agent.execution import jira_sync
         jira = jira_sync._client(None, store)
@@ -273,6 +286,8 @@ def qa_items(jira=None):
                                   limit=20, raw=True):
         issue = jira.normalize_issue(raw)
         key = issue["key"]
+        if (issue.get("status") or "").lower() == "self-review" and _team_working(key, state_store):
+            continue
         cloud = None
         try:
             from agent.execution import cloud_lane
@@ -315,42 +330,6 @@ def _enrich_judges(items, jira=None):
     return out
 
 
-SELF_REVIEW_ID = "10044"
-QA_TEST_ID = "10009"
-
-
-def align_statuses(*, state_store=store, jira=None):
-    """A product ticket waiting for the Codex reviewer must sit in QA-Test, where the reviewer looks
-    (CEO 2026-10-20: Claude still left some in Self-review and Codex never saw them). Moves every
-    such ticket from Self-review to QA-Test and says so on it. Idempotent; never raises."""
-    done = []
-    try:
-        if jira is None:
-            from agent.execution import jira_sync
-            jira = jira_sync._client(None, state_store)
-        if jira is None:
-            return done
-        from agent.execution import jira_sync
-        seen = set()
-        for item in judge_items(state_store):
-            key = item["ticket"]
-            if key in seen or is_done(item["item_id"]):
-                continue
-            seen.add(key)
-            try:
-                if str(jira.get_issue(key).get("status_id")) != SELF_REVIEW_ID:
-                    continue
-                jira_sync._move(key, QA_TEST_ID, jira, state_store)
-                jira.add_comment(key, "Thebes: moved from Self-review to QA-Test. Product work is "
-                                      "reviewed by the Codex reviewer, which looks in QA-Test.")
-                done.append({"action": "moved-to-qa-test", "key": key})
-            except Exception:                              # noqa: BLE001  one ticket never stops the rest
-                continue
-    except Exception:                                      # noqa: BLE001
-        pass
-    return done
-
-
 def candidates(state_store=store, jira=None, with_qa=True):
     items = _enrich_judges(judge_items(state_store), jira)
     if with_qa:
@@ -358,7 +337,7 @@ def candidates(state_store=store, jira=None, with_qa=True):
             judged = {i["ticket"] for i in items}
             # a ticket with a pending judge item is reviewed through it (its dispatch carries the
             # checks); a second `qa` item for the same ticket would close it without them
-            items += [q for q in qa_items(jira) if q["ticket"] not in judged]
+            items += [q for q in qa_items(jira, state_store) if q["ticket"] not in judged]
         except Exception:                                   # noqa: BLE001  Jira down: judges only
             pass
     return sorted((i for i in items if not is_done(i["item_id"])), key=lambda i: i["at"])

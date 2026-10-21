@@ -152,10 +152,11 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
   You do not run, verify or review cloud work; you only read the comments and tell the CEO in one line
   when one is waiting on him (a failed check = a new cloud session for him to start). Integration into
   Alpha is Memphis's, after the ticket's blockers are integrated: say so on the ticket, do not do it.
-- **Review status (CEO 2026-10-20):** a team's finished product work goes to **QA-Test**, never to
-  Self-review: Codex looks in QA-Test. Thebes now does this itself (and moves stragglers from
-  Self-review to QA-Test). If you ever move or create a product ticket for review by hand, use
-  QA-Test.
+- **Review column = Codex's queue (CEO 2026-10-21):** the Codex reviewer works every ticket in the Jira
+  Review column (QA-Test, Self-review, Peer-review) and nothing outside it; a ticket whose team still
+  holds an open dispatch is skipped until the team reports. Thebes no longer moves tickets between
+  Review statuses for this. Never tell the CEO "nothing in Codex's queue" while the Review column has
+  tickets: that is a defect to report.
 - **`review_stalled`** (D-043): product work has waited 30+ minutes with nobody holding it, so the
   review channel is probably out of tokens or closed. Tell the CEO in ONE line **and give him the item's `wake_prompt` verbatim** (he pastes it into the
   Desktop Reviewer conversation: nothing else can wake a Desktop Codex conversation). **Never switch

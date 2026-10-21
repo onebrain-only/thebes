@@ -348,25 +348,29 @@ class ReviewQueueTests(unittest.TestCase):
         rq.set_channel("claude", "go", env={"CLAUDE_CODE_SESSION_ID": ORCH}, state_store=store, notify=False)
         self.assertEqual(rq.nudge(state_store=store, jira=jira, enqueue_fn=fail), [])
 
-    # -- status alignment (CEO 2026-10-20) ----------------------------------------------
-    def test_a_product_ticket_left_in_self_review_is_moved_to_qa_test(self):
-        self.judge_root("KAN-9")
+    # -- the queue is the Review column (CEO 2026-10-21) -------------------------------
+    def _search(self, statuses):
         jira = mock.Mock()
-        jira.get_issue.return_value = {"status_id": "10044", "status": "Self-review"}
-        with mock.patch.object(jira_sync, "_move") as move:
-            out = rq.align_statuses(state_store=store, jira=jira)
-        self.assertEqual(out, [{"action": "moved-to-qa-test", "key": "KAN-9"}])
-        self.assertEqual(move.call_args.args[:2], ("KAN-9", "10009"))
-        self.assertIn("QA-Test", jira.add_comment.call_args.args[1])
+        jira.get_comments.return_value = []
+        raws = [{"key": k, "fields": {"updated": "2026-10-21T10:00:00.000+0000"}} for k in statuses]
+        jira.search_issues.return_value = raws
+        jira.normalize_issue.side_effect = lambda r: {"key": r["key"], "summary": "s",
+                                                      "status": statuses[r["key"]], "description": "d"}
+        return jira
 
-    def test_tickets_already_in_qa_test_or_elsewhere_are_left_alone(self):
-        self.judge_root("KAN-9")
-        jira = mock.Mock()
-        for sid in ("10009", "10046", "10045"):
-            jira.get_issue.return_value = {"status_id": sid}
-            with mock.patch.object(jira_sync, "_move") as move:
-                self.assertEqual(rq.align_statuses(state_store=store, jira=jira), [])
-            move.assert_not_called()
+    def test_the_queue_covers_every_status_of_the_review_column(self):
+        for status in ("QA-Test", "Self-review", "Peer-review"):
+            self.assertIn('"%s"' % status, rq.QA_JQL)
+        jira = self._search({"KAN-1": "QA-Test", "KAN-2": "Self-review", "KAN-3": "Peer-review"})
+        self.assertEqual(sorted(i["ticket"] for i in rq.qa_items(jira, store)), ["KAN-1", "KAN-2", "KAN-3"])
+
+    def test_a_self_review_ticket_a_team_is_still_working_is_not_offered(self):
+        self.judge_root("KAN-9")                       # KAN-9 has a finished dispatch
+        real = store.read_all
+        busy = {"jira_key": "KAN-5", "status": "delivered", "outcome": None}
+        jira = self._search({"KAN-5": "Self-review", "KAN-6": "Self-review"})
+        with mock.patch.object(store, "read_all", side_effect=lambda k: real(k) + [busy]):
+            self.assertEqual([i["ticket"] for i in rq.qa_items(jira, store)], ["KAN-6"])
 
     def test_a_ticket_with_a_judge_item_is_not_also_offered_as_a_qa_item(self):
         """A second item would close it without its checks."""
