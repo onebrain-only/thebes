@@ -10,8 +10,9 @@ and never on a public URL. Thebes does the build (zero tokens); the reviewer onl
   web      `flutter run -d web-server` on the first free port of 8124-8127 (several tickets can
            run side by side); the reviewer opens the printed URL in its internal browser.
   ios      the booted iPhone simulator (or one booted here) for native/startup changes (CEO
-           2026-10-21: iOS, not Android). simctl has no tap, so drive it with
-           `review_queue app <item_id> --tap X Y | --type TEXT | --shot NAME` (screenshot pixels).
+           2026-10-21: iOS, not Android). Driven with Meta's idb, no window needed:
+           `review_queue app <item_id> --shot NAME | --tap X Y | --swipe X1 Y1 X2 Y2 | --type TEXT`
+           (coordinates are pixels of the last screenshot).
   android  only on request (label platform:android); one ticket per device at a time.
 
 The commit is checked out in a detached worktree under agent/state/runtime/review-wt/<ticket>
@@ -147,8 +148,7 @@ def _ios_device(runner=subprocess.run):
     """The booted simulator, else boot an iPhone (preferred models first) and wait for it."""
     from agent.execution import phone_check
     device = phone_check.booted_device("ios", runner)
-    if device:                             # booted headless (by Xcode or a test): show its window,
-        runner(["open", "-a", "Simulator"], capture_output=True, text=True, timeout=60)   # taps need it
+    if device:
         return device
     out = runner(["xcrun", "simctl", "list", "devices", "available", "-j"], capture_output=True,
                  text=True, timeout=60).stdout
@@ -159,55 +159,62 @@ def _ios_device(runner=subprocess.run):
     phones.sort(key=lambda d: IOS_PREFERENCE.index(d["name"]) if d["name"] in IOS_PREFERENCE else 99)
     udid = phones[0]["udid"]
     runner(["xcrun", "simctl", "boot", udid], capture_output=True, text=True, timeout=120)
-    runner(["open", "-a", "Simulator"], capture_output=True, text=True, timeout=60)
     runner(["xcrun", "simctl", "bootstatus", udid, "-b"], capture_output=True, text=True, timeout=600)
     return udid
 
 
-def _screen_frame(runner=subprocess.run):
-    """Origin and size (points) of the device screen inside the Simulator window. Read live:
-    the window moves (drive-the-app skill, Step 2c)."""
-    out = runner(["osascript", "-e", 'tell application "System Events" to tell process "Simulator" '
-                  'to get {position, size} of group 1 of window 1'],
-                 capture_output=True, text=True, timeout=30)
-    if out.returncode != 0:
-        raise RuntimeError("cannot read the Simulator window (allow Accessibility for this app in "
-                           "System Settings > Privacy & Security): %s" % (out.stderr or "").strip()[:200])
-    x, y, w, h = [int(float(v)) for v in out.stdout.replace(" ", "").split(",")]
-    return x, y, w, h
+def _idb():
+    """Meta's idb (CEO installed it 2026-10-22): taps and types on a simulator with no window, so
+    review works while the Mac's screen is locked. The pip client lands in the user's Python bin."""
+    found = shutil.which("idb") or os.path.expanduser("~/Library/Python/3.9/bin/idb")
+    if not os.path.exists(found):
+        raise RuntimeError("idb is not installed (brew install idb-companion; pip3 install fb-idb)")
+    return found
 
 
-def _ios_scale(udid, runner=subprocess.run):
-    """Screenshot pixels per point (3 on current iPhones), measured from a real screenshot."""
-    path = os.path.join(_dir("review-app"), "scale-probe.png")
-    runner(["xcrun", "simctl", "io", udid, "screenshot", path], capture_output=True, timeout=60)
-    width = int(runner(["sips", "-g", "pixelWidth", path], capture_output=True, text=True,
-                       timeout=30).stdout.split()[-1])
-    return width / float(_screen_frame(runner)[2])
+def _ios_rec(ticket):
+    rec = running(ticket) or {}
+    if rec.get("platform") != "ios" or not rec.get("device"):
+        raise RuntimeError("%s is not running on iOS: start it with `review_queue app <item_id>`" % ticket)
+    return rec
+
+
+def _density(udid, runner=subprocess.run):
+    """Screenshot pixels per point (3.0 on current iPhones), from idb's own description."""
+    out = runner([_idb(), "describe", "--udid", udid, "--json"], capture_output=True, text=True, timeout=60)
+    try:
+        return float(json.loads(out.stdout).get("screen_dimensions", {}).get("density") or 3.0)
+    except ValueError:
+        return 3.0
+
+
+def _ui(ticket, args, runner=subprocess.run):
+    rec = _ios_rec(ticket)
+    done = runner([_idb(), "ui"] + args + ["--udid", rec["device"]], capture_output=True, text=True, timeout=60)
+    if done.returncode != 0:
+        raise RuntimeError("idb ui %s failed: %s" % (args[0], (done.stderr or "").strip()[:300]))
+    return rec
 
 
 def ios_tap(ticket, x, y, runner=subprocess.run):
-    """Tap at screenshot pixel (x, y) on the ticket's simulator."""
-    rec = running(ticket) or {}
-    if rec.get("platform") != "ios":
-        raise RuntimeError("%s is not running on iOS" % ticket)
-    ox, oy, _, _ = _screen_frame(runner)
-    scale = rec.get("scale") or _ios_scale(rec["device"], runner)
-    mx, my = int(ox + x / scale), int(oy + y / scale)
-    runner(["osascript", "-e", 'tell application "Simulator" to activate'], capture_output=True, timeout=30)
-    runner(["osascript", "-e", 'tell application "System Events" to click at {%d, %d}' % (mx, my)],
-           capture_output=True, timeout=30)
-    return {"tapped": [x, y], "mac": [mx, my]}
+    """Tap at screenshot pixel (x, y)."""
+    rec = _ios_rec(ticket)
+    d = _density(rec["device"], runner)
+    _ui(ticket, ["tap", str(int(x / d)), str(int(y / d))], runner)
+    return {"tapped_pixels": [x, y], "points": [int(x / d), int(y / d)]}
+
+
+def ios_swipe(ticket, x1, y1, x2, y2, runner=subprocess.run):
+    """Swipe between two screenshot pixels (scroll: swipe up to move the content up)."""
+    rec = _ios_rec(ticket)
+    d = _density(rec["device"], runner)
+    _ui(ticket, ["swipe"] + [str(int(v / d)) for v in (x1, y1, x2, y2)], runner)
+    return {"swiped_pixels": [x1, y1, x2, y2]}
 
 
 def ios_type(ticket, text, runner=subprocess.run):
-    """Type into the focused field. Simulator must be frontmost, or the field focuses but stays empty."""
-    rec = running(ticket) or {}
-    if rec.get("platform") != "ios":
-        raise RuntimeError("%s is not running on iOS" % ticket)
-    runner(["osascript", "-e", 'tell application "Simulator" to activate'], capture_output=True, timeout=30)
-    runner(["osascript", "-e", 'tell application "System Events" to keystroke %s' % json.dumps(text)],
-           capture_output=True, timeout=60)
+    """Type into the focused field (tap the field first)."""
+    _ui(ticket, ["text", text], runner)
     return {"typed": len(text)}
 
 
@@ -227,16 +234,39 @@ def shot(ticket, name, runner=subprocess.run):
     return {"screenshot": path}
 
 
-def _worktree(ticket, sha, branch):
+# A native build in a fresh folder rebuilds Xcode/Gradle from scratch (live 2026-10-22: 27 minutes on
+# iOS). Native platforms therefore keep ONE folder each that is moved to the next ticket's commit, so
+# only what changed is rebuilt; their ignored build caches survive. Web keeps a folder per ticket.
+NATIVE_SLOTS = {"ios": "_ios", "android": "_android"}
+
+
+def _ios_prepare(wt, log_path, runner=subprocess.run):
+    """Resolve the Swift packages BEFORE flutter run. Flutter asks Xcode for build settings under a
+    short timeout; when a new commit makes Xcode re-resolve Firebase & co. first, that times out and
+    flutter says "No Xcode build settings have been found" (live 2026-10-22, KAN-620)."""
+    with open(log_path, "a", encoding="utf-8") as log:
+        for cmd, limit in ((["flutter", "pub", "get"], 600),
+                           (["xcodebuild", "-resolvePackageDependencies", "-workspace",
+                             "ios/Runner.xcworkspace", "-scheme", "Runner"], 1800)):
+            log.write("$ %s\n" % " ".join(cmd)); log.flush()
+            done = runner(cmd, cwd=wt, stdout=log, stderr=subprocess.STDOUT, timeout=limit,
+                          stdin=subprocess.DEVNULL)
+            if done.returncode != 0:
+                raise RuntimeError("iOS preparation failed at `%s` (log %s)" % (" ".join(cmd[:2]), log_path))
+
+
+def _worktree(name, sha, branch):
     """A detached worktree at the reviewed commit (fetched first). Returns its path."""
-    path = os.path.join(_dir("review-wt"), ticket)
+    path = os.path.join(_dir("review-wt"), name)
     repo = os.path.join(ROOT, APP_REPO)
     _git(["fetch", "--quiet", "origin"] + ([branch] if branch else []), timeout=300)
     target = sha or ("origin/%s" % branch if branch else None)
     if not target:
         raise RuntimeError("the item names no commit and no branch: nothing to run")
     if os.path.exists(os.path.join(path, ".git")):
-        done = _git(["checkout", "--quiet", "--detach", target], cwd=path)
+        done = _git(["checkout", "--quiet", "--force", "--detach", target], cwd=path)
+        if done.returncode == 0:
+            _git(["clean", "-fdq"], cwd=path)      # untracked files go; ignored build caches stay
     else:
         if os.path.exists(path):           # a half-removed folder of an earlier run of ours
             _git(["worktree", "prune"], cwd=repo)
@@ -247,7 +277,12 @@ def _worktree(ticket, sha, branch):
     return path
 
 
-def _wait_ready(log_path, pid, markers, seconds=READY_SECONDS):
+FAILED_MARKERS = ("Could not build the application", "Error launching application")
+
+
+def _wait_ready(log_path, proc, markers, seconds=READY_SECONDS):
+    """Ready when a marker appears; failed as soon as flutter exits or prints a build failure.
+    `proc.poll()`, not kill(pid, 0): an exited child stays a zombie and looks alive."""
     deadline = time.time() + seconds
     while time.time() < deadline:
         time.sleep(3)
@@ -257,9 +292,7 @@ def _wait_ready(log_path, pid, markers, seconds=READY_SECONDS):
             text = ""
         if any(m in text for m in markers):
             return True, ""
-        try:
-            os.kill(pid, 0)
-        except OSError:
+        if proc.poll() is not None or any(m in text for m in FAILED_MARKERS):
             return False, text[-1500:]
     return False, "not ready after %ds" % seconds
 
@@ -273,10 +306,16 @@ def start(item, platform=None):
         if cur.get("sha") == item.get("sha") and cur.get("platform") == platform:
             return dict(cur, status="already-running")
         stop(ticket)
-    wt = _worktree(ticket, item.get("sha"), item.get("branch"))
+    if platform in NATIVE_SLOTS:
+        holder = [r for r in list_running() if r.get("platform") == platform and r["ticket"] != ticket]
+        if holder:
+            raise RuntimeError("the %s device is in use by %s: stop it first (`review_queue app %s "
+                               "--stop`)" % (platform, holder[0]["ticket"], holder[0]["ticket"]))
+    wt = _worktree(NATIVE_SLOTS.get(platform, ticket), item.get("sha"), item.get("branch"))
     env_file = os.path.join(ROOT, APP_REPO, ".env")
     defines = ["--dart-define-from-file=%s" % env_file] if os.path.exists(env_file) else []
     log_path = os.path.join(_dir("review-app"), "%s.log" % ticket)
+    open(log_path, "w").close()            # one log per run: an old "ready" line must not count
     rec = {"ticket": ticket, "platform": platform, "sha": item.get("sha"),
            "branch": item.get("branch"), "worktree": wt, "log": log_path, "started_at": time.time()}
     if platform == "web":
@@ -290,9 +329,10 @@ def start(item, platform=None):
         markers = WEB_READY
     elif platform == "ios":
         device = _ios_device()
+        _ios_prepare(wt, log_path)
         cmd = ["flutter", "run", "-d", device] + defines
         rec.update(device=device, how=("review_queue app <item_id> --shot <name> | --tap X Y | "
-                                       "--type TEXT  (X Y = screenshot pixels)"))
+                                       "--swipe X1 Y1 X2 Y2 | --type TEXT  (screenshot pixels)"))
         markers = NATIVE_READY
     elif platform == "android":
         holder = [r for r in list_running() if r.get("platform") == "android" and r["ticket"] != ticket]
@@ -309,13 +349,13 @@ def start(item, platform=None):
         markers = ANDROID_READY
     else:
         raise RuntimeError("platform %r is not one of web, ios, android" % platform)
-    with open(log_path, "w", encoding="utf-8") as log:
+    with open(log_path, "a", encoding="utf-8") as log:
         proc = subprocess.Popen(cmd, cwd=wt, stdout=log, stderr=subprocess.STDOUT,
                                 stdin=subprocess.PIPE, start_new_session=True)
     rec["pid"] = proc.pid
     with open(_state_path(ticket), "w", encoding="utf-8") as fh:
         json.dump(rec, fh)
-    ok, why = _wait_ready(log_path, proc.pid, markers,
+    ok, why = _wait_ready(log_path, proc, markers,
                           {"android": ANDROID_READY_SECONDS, "ios": IOS_READY_SECONDS}.get(platform, READY_SECONDS))
     if not ok:
         stop(ticket)
@@ -335,7 +375,9 @@ def stop(ticket):
             pass
     wt = rec.get("worktree") or os.path.join(store.RUNTIME, "review-wt", ticket)
     removed = False
-    if os.path.exists(wt):
+    if os.path.basename(wt) in NATIVE_SLOTS.values():
+        pass                                       # kept: the next native review builds incrementally
+    elif os.path.exists(wt):
         removed = _git(["worktree", "remove", "--force", wt]).returncode == 0
     try:
         os.unlink(_state_path(ticket))

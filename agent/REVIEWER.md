@@ -104,9 +104,10 @@ startup code changed). Android only when a ticket is labelled `platform:android`
    `python3 -m agent.execution.review_queue app <item_id>` (about 1-2 minutes) prints:
    - web: `url` (http://localhost:81xx) -> open it in your internal browser. Flutter draws on a
      canvas: press Enter (or "Enable accessibility") so the semantics tree appears, then read and tap.
-   - ios: the iPhone simulator opens on the Mac. `simctl` has no tap, so Thebes drives it for you:
+   - ios: an iPhone simulator, no window needed (works with the Mac's screen locked). Drive it with
      `review_queue app <item_id> --shot tc1-en-light` (screenshot into the evidence folder; read it),
-     `--tap X Y` (X Y = pixels in that screenshot), `--type "text"` (into the focused field).
+     `--tap X Y` (X Y = pixels in that screenshot), `--swipe X1 Y1 X2 Y2` (scroll),
+     `--type "text"` (tap the field first).
      Screenshot before you type: a system alert (notifications, location) swallows input silently.
    - android (only `platform:android`): `device` and `screenshot_cmd`; drive with
      `adb -s <device> shell input tap|text|swipe`.

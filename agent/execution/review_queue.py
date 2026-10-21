@@ -883,7 +883,7 @@ def status(state_store=store):
                         for k, v in claims.items() if k and not is_done(k)}}
 
 
-def app(item_id, *, stop=False, listing=False, platform=None, shot=None, tap=None, text=None):
+def app(item_id, *, stop=False, listing=False, platform=None, shot=None, tap=None, swipe=None, text=None):
     """Run (or stop, or drive) the claimed item's commit locally: agent/execution/review_app.py."""
     from agent.execution import review_app
     if listing or not item_id:
@@ -899,10 +899,12 @@ def app(item_id, *, stop=False, listing=False, platform=None, shot=None, tap=Non
         raise Refused("not-your-claim", "run `wait` or `next` first: only the reviewer holding %s "
                                         "runs its app" % item_id)
     try:
-        if shot or tap or text is not None:
+        if shot or tap or swipe or text is not None:
             out = {}
             if tap:
                 out.update(review_app.ios_tap(ticket, tap[0], tap[1]))
+            if swipe:
+                out.update(review_app.ios_swipe(ticket, *swipe))
             if text is not None:
                 out.update(review_app.ios_type(ticket, text))
             if shot:
@@ -948,6 +950,7 @@ def main(argv=None):
     ap_.add_argument("--platform", choices=("web", "ios", "android"), help="override the item's platform")
     ap_.add_argument("--shot", metavar="NAME", help="save a screenshot of the running app as evidence")
     ap_.add_argument("--tap", nargs=2, type=int, metavar=("X", "Y"), help="iOS: tap at screenshot pixels")
+    ap_.add_argument("--swipe", nargs=4, type=int, metavar=("X1", "Y1", "X2", "Y2"), help="iOS: swipe (pixels)")
     ap_.add_argument("--type", dest="text", metavar="TEXT", help="iOS: type into the focused field")
     ro = sub.add_parser("reopen"); ro.add_argument("dispatch_id")
     aq = sub.add_parser("ask", help="the reviewer is stuck: put ONE question to the orchestrator")
@@ -1008,7 +1011,8 @@ def main(argv=None):
             return 0
         if ns.cmd == "app":
             print(json.dumps(app(ns.item_id, stop=ns.stop, listing=ns.list, platform=ns.platform,
-                                 shot=ns.shot, tap=ns.tap, text=ns.text), indent=2, default=str))
+                                 shot=ns.shot, tap=ns.tap, swipe=ns.swipe, text=ns.text),
+                             indent=2, default=str))
             return 0
         if ns.item_id.startswith("qa-"):
             out = submit_qa(ns.item_id, ns.verdict, ns.reason, ns.evidence)
