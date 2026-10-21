@@ -42,9 +42,10 @@ POLL_SECONDS = 5
 JIRA_POLL_SECONDS = 60
 # The Codex reviewer's queue is the Jira Review column, all three of its statuses (CEO 2026-10-21:
 # "the Review column is what I rely on; Codex works on whatever is in it, nothing outside it").
-QA_JQL = ('project = KAN AND status in ("QA-Test", "Self-review", "Peer-review") '
+# The board's Review column also holds the old `In Review` status (board config, 2026-10-21).
+QA_JQL = ('project = KAN AND status in ("QA-Test", "Self-review", "Peer-review", "In Review") '
           'ORDER BY updated ASC')
-LANE_STATUS_ID = "10046"            # Front-end: where a failed qa ticket goes back to
+RETURNED_STATUS_ID = "4"            # Reopened = the board's Returned column (CEO 2026-10-21)
 DONE_STATUS_ID = "10007"
 TEXT_LIMIT = 6000
 
@@ -516,6 +517,14 @@ def submit_judge(item_id, passed, failed, skipped, evidence, *, state_store=stor
     out = verify.judge_verdict(dispatch_id, list(passed) + list(skipped), failed,
                                state_store=state_store, jira=jira, dispatcher=dispatcher,
                                launcher=launcher, reviewer=_thread() or "reviewer", notes=notes)
+    if failed and rec.get("jira_key"):              # the board shows it in Returned until the team takes it
+        try:
+            from agent.execution import jira_sync
+            client = jira_sync._client(jira, state_store)
+            if client is not None:
+                jira_sync._move(rec["jira_key"], RETURNED_STATUS_ID, client, state_store)
+        except Exception:                            # noqa: BLE001  the send-back already happened
+            pass
     finish(item_id, {"pass": sorted(passed), "fail": sorted(failed), "skip": sorted(skipped)})
     return {"status": "recorded", "item_id": item_id, "evidence": ev_path, "result": out}
 
@@ -540,7 +549,7 @@ def submit_qa(item_id, verdict, reason, evidence, *, state_store=store, jira=Non
         jira.add_comment(ticket, "Thebes reviewer (Codex): PASS. %s\n%sEvidence: %s"
                          % ((reason or "").strip()[:500], tested_line(meta), ev_path))
     else:
-        jira_sync._move(ticket, LANE_STATUS_ID, jira, state_store)
+        jira_sync._move(ticket, RETURNED_STATUS_ID, jira, state_store)
         jira.add_comment(ticket, "Thebes reviewer (Codex): FAIL.\n%s\n%sEvidence: %s"
                          % (reason.strip()[:1500], tested_line(meta), ev_path))
         try:                                         # the PM / orchestrator re-plans the rework

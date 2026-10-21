@@ -18,6 +18,7 @@ path and never read, printed or copied.
 """
 import json
 import os
+import shutil
 import signal
 import socket
 import subprocess
@@ -32,7 +33,7 @@ from agent.state import store                                          # noqa: E
 APP_REPO = "Dabbler/dabbler-code"
 WEB_PORTS = range(8124, 8128)
 SDK = os.path.expanduser("~/Library/Android/sdk")
-AVD_PREFERENCE = ("Pixel8_PlayStore_API36", "Pixel8_PlayStore", "thebes_pixel")
+AVD_PREFERENCE = ("thebes_review", "Pixel8_PlayStore_API36", "Pixel8_PlayStore")
 READY_SECONDS = int(os.environ.get("REVIEW_APP_READY_SECONDS", "600"))
 ANDROID_READY_SECONDS = int(os.environ.get("REVIEW_APP_ANDROID_READY_SECONDS", "1200"))  # Gradle
 WEB_READY = ("is being served at", "lib/main.dart is being served")
@@ -120,7 +121,7 @@ def _android_device(runner=subprocess.run):
         proc = subprocess.Popen([os.path.join(SDK, "emulator", "emulator"), "-avd", avd, "-no-audio",
                                  "-no-boot-anim"], stdout=log, stderr=subprocess.STDOUT,
                                 stdin=subprocess.DEVNULL, start_new_session=True)
-    deadline = time.time() + 300
+    deadline = time.time() + 900          # a new AVD's first (cold) boot is slow
     while time.time() < deadline:
         time.sleep(5)
         if proc.poll() is not None:
@@ -148,6 +149,9 @@ def _worktree(ticket, sha, branch):
     if os.path.exists(os.path.join(path, ".git")):
         done = _git(["checkout", "--quiet", "--detach", target], cwd=path)
     else:
+        if os.path.exists(path):           # a half-removed folder of an earlier run of ours
+            _git(["worktree", "prune"], cwd=repo)
+            shutil.rmtree(path, ignore_errors=True)
         done = _git(["worktree", "add", "--detach", path, target], cwd=repo)
     if done.returncode != 0:
         raise RuntimeError("cannot check out %s: %s" % (target, (done.stderr or "").strip()[:300]))
@@ -202,7 +206,7 @@ def start(item, platform=None):
                                "--stop`)" % (holder[0]["ticket"], holder[0]["ticket"]))
         device = _android_device()
         if not device:
-            raise RuntimeError("the Android emulator did not finish booting in 5 minutes")
+            raise RuntimeError("the Android emulator did not finish booting in 15 minutes")
         cmd = ["flutter", "run", "-d", device] + defines
         shots = os.path.join(store.RUNTIME, "review-evidence", ticket)
         rec.update(device=device, screenshot_cmd="adb -s %s exec-out screencap -p > %s/<name>.png"
