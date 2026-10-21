@@ -28,7 +28,7 @@ class ReviewTierTests(unittest.TestCase):
 
     def test_platform_is_web_unless_native_code_changed(self):
         self.assertEqual(rt.platform([SCREEN]), "web")
-        self.assertEqual(rt.platform(["android/app/build.gradle.kts", SCREEN]), "android")
+        self.assertEqual(rt.platform(["ios/Runner/Info.plist", SCREEN]), "ios")
         self.assertEqual(rt.platform([SCREEN], ["platform:android"]), "android")
 
     def test_describe_names_the_screenshots_a_pass_needs(self):

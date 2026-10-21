@@ -158,8 +158,8 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
   Review statuses for this. Never tell the CEO "nothing in Codex's queue" while the Review column has
   tickets: that is a defect to report.
 - **Review is local, on the team's commit (CEO 2026-10-21):** the Codex reviewer tests the exact
-  commit a team handed over on this Mac (`review_queue app`, web in its browser, Android only for
-  native code), before Alpha, never on alpha.dabbler.pro. Depth follows the tier Thebes computes
+  commit a team handed over on this Mac (`review_queue app`, web in its browser, the iOS simulator
+  only for native code), before Alpha, never on alpha.dabbler.pro. Depth follows the tier Thebes computes
   (1 no screen, 2 a screen, 3 a sensitive screen); a PASS on a screen needs screenshots (code gate).
   The CEO's own test on Alpha comes after integration and is not part of review.
 - **`review_stalled`** (D-043): product work has waited 30+ minutes with nobody holding it, so the

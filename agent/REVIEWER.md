@@ -96,16 +96,22 @@ alpha.dabbler.pro or any public URL. Every item carries `branch`, `sha`, `tier` 
 | 2 | a screen changed | the ticket's TCs in EN+Light and AR+Dark, on the item's ONE platform |
 | 3 | a screen in money / sign-in / database work | every TC, both languages and themes, then the 10-minute exploratory pass below |
 
-One codebase, ONE platform: `web` (your internal browser) unless the item says `android` (native
-or startup code changed). iOS only on a CEO order.
+One codebase, ONE platform: `web` (your internal browser) unless the item says `ios` (native or
+startup code changed). Android only when a ticket is labelled `platform:android`.
 
 1. **Evidence first.** Open the team's named evidence. If it settles a check, cite the file.
 2. **Run the app (tier 2-3): Thebes builds it, you only look.**
    `python3 -m agent.execution.review_queue app <item_id>` (about 1-2 minutes) prints:
    - web: `url` (http://localhost:81xx) -> open it in your internal browser. Flutter draws on a
      canvas: press Enter (or "Enable accessibility") so the semantics tree appears, then read and tap.
-   - android: `device` and `screenshot_cmd` -> drive with `adb -s <device> shell input tap|text|swipe`.
-   It prints `evidence_dir`. Save your screenshots there (`.png`), named by TC, e.g. `tc1-en-light.png`.
+   - ios: the iPhone simulator opens on the Mac. `simctl` has no tap, so Thebes drives it for you:
+     `review_queue app <item_id> --shot tc1-en-light` (screenshot into the evidence folder; read it),
+     `--tap X Y` (X Y = pixels in that screenshot), `--type "text"` (into the focused field).
+     Screenshot before you type: a system alert (notifications, location) swallows input silently.
+   - android (only `platform:android`): `device` and `screenshot_cmd`; drive with
+     `adb -s <device> shell input tap|text|swipe`.
+   It prints `evidence_dir`. Save your screenshots there (`.png`), named by TC, e.g. `tc1-en-light.png`
+   (on iOS `--shot` does it for you).
 3. **Run the ticket's TESTING SCENARIOS** for your tier. A TC you could not run is written in your
    evidence as `skipped: <reason>`; skipping never blocks, it is just visible.
 4. **Submit** (below). A tier-2 PASS needs at least 1 screenshot taken during this review, tier 3
@@ -114,7 +120,7 @@ or startup code changed). iOS only on a CEO order.
    removes the folder). `review_queue app --list` shows what is running.
 
 **Exploratory pass (tier 3 only, 10 minutes):** double tap every action, back in the middle of a
-flow, rotate (android), cut the network mid-load, empty and very long content, and read the
+flow, rotate (ios), cut the network mid-load, empty and very long content, and read the
 browser console / `adb logcat` for errors a screen does not show.
 
 3. **Signing in.** Test account: `dabbler.pro@proton.me`. Take the password at the moment you

@@ -9,8 +9,10 @@ and never on a public URL. Thebes does the build (zero tokens); the reviewer onl
 
   web      `flutter run -d web-server` on the first free port of 8124-8127 (several tickets can
            run side by side); the reviewer opens the printed URL in its internal browser.
-  android  the booted emulator (or the first AVD with an installed image, booted here); one
-           ticket per device at a time.
+  ios      the booted iPhone simulator (or one booted here) for native/startup changes (CEO
+           2026-10-21: iOS, not Android). simctl has no tap, so drive it with
+           `review_queue app <item_id> --tap X Y | --type TEXT | --shot NAME` (screenshot pixels).
+  android  only on request (label platform:android); one ticket per device at a time.
 
 The commit is checked out in a detached worktree under agent/state/runtime/review-wt/<ticket>
 (never the shared checkout, which may hold someone's unsaved work). The dev `.env` is passed by
@@ -37,7 +39,10 @@ AVD_PREFERENCE = ("thebes_review", "Pixel8_PlayStore_API36", "Pixel8_PlayStore")
 READY_SECONDS = int(os.environ.get("REVIEW_APP_READY_SECONDS", "600"))
 ANDROID_READY_SECONDS = int(os.environ.get("REVIEW_APP_ANDROID_READY_SECONDS", "1200"))  # Gradle
 WEB_READY = ("is being served at", "lib/main.dart is being served")
-ANDROID_READY = ("Flutter run key commands", "A Dart VM Service on")
+NATIVE_READY = ("Flutter run key commands", "A Dart VM Service on")
+ANDROID_READY = NATIVE_READY
+IOS_PREFERENCE = ("iPhone 17", "iPhone 17 Pro", "iPhone 18 Pro", "iPhone Air")
+IOS_READY_SECONDS = int(os.environ.get("REVIEW_APP_IOS_READY_SECONDS", "1800"))  # first Xcode build
 
 
 def _dir(*parts):
@@ -138,6 +143,90 @@ def _android_device(runner=subprocess.run):
     return None
 
 
+def _ios_device(runner=subprocess.run):
+    """The booted simulator, else boot an iPhone (preferred models first) and wait for it."""
+    from agent.execution import phone_check
+    device = phone_check.booted_device("ios", runner)
+    if device:                             # booted headless (by Xcode or a test): show its window,
+        runner(["open", "-a", "Simulator"], capture_output=True, text=True, timeout=60)   # taps need it
+        return device
+    out = runner(["xcrun", "simctl", "list", "devices", "available", "-j"], capture_output=True,
+                 text=True, timeout=60).stdout
+    phones = [d for devs in (json.loads(out or "{}").get("devices") or {}).values() for d in devs
+              if d.get("name", "").startswith("iPhone")]
+    if not phones:
+        raise RuntimeError("no iPhone simulator is installed")
+    phones.sort(key=lambda d: IOS_PREFERENCE.index(d["name"]) if d["name"] in IOS_PREFERENCE else 99)
+    udid = phones[0]["udid"]
+    runner(["xcrun", "simctl", "boot", udid], capture_output=True, text=True, timeout=120)
+    runner(["open", "-a", "Simulator"], capture_output=True, text=True, timeout=60)
+    runner(["xcrun", "simctl", "bootstatus", udid, "-b"], capture_output=True, text=True, timeout=600)
+    return udid
+
+
+def _screen_frame(runner=subprocess.run):
+    """Origin and size (points) of the device screen inside the Simulator window. Read live:
+    the window moves (drive-the-app skill, Step 2c)."""
+    out = runner(["osascript", "-e", 'tell application "System Events" to tell process "Simulator" '
+                  'to get {position, size} of group 1 of window 1'],
+                 capture_output=True, text=True, timeout=30)
+    if out.returncode != 0:
+        raise RuntimeError("cannot read the Simulator window (allow Accessibility for this app in "
+                           "System Settings > Privacy & Security): %s" % (out.stderr or "").strip()[:200])
+    x, y, w, h = [int(float(v)) for v in out.stdout.replace(" ", "").split(",")]
+    return x, y, w, h
+
+
+def _ios_scale(udid, runner=subprocess.run):
+    """Screenshot pixels per point (3 on current iPhones), measured from a real screenshot."""
+    path = os.path.join(_dir("review-app"), "scale-probe.png")
+    runner(["xcrun", "simctl", "io", udid, "screenshot", path], capture_output=True, timeout=60)
+    width = int(runner(["sips", "-g", "pixelWidth", path], capture_output=True, text=True,
+                       timeout=30).stdout.split()[-1])
+    return width / float(_screen_frame(runner)[2])
+
+
+def ios_tap(ticket, x, y, runner=subprocess.run):
+    """Tap at screenshot pixel (x, y) on the ticket's simulator."""
+    rec = running(ticket) or {}
+    if rec.get("platform") != "ios":
+        raise RuntimeError("%s is not running on iOS" % ticket)
+    ox, oy, _, _ = _screen_frame(runner)
+    scale = rec.get("scale") or _ios_scale(rec["device"], runner)
+    mx, my = int(ox + x / scale), int(oy + y / scale)
+    runner(["osascript", "-e", 'tell application "Simulator" to activate'], capture_output=True, timeout=30)
+    runner(["osascript", "-e", 'tell application "System Events" to click at {%d, %d}' % (mx, my)],
+           capture_output=True, timeout=30)
+    return {"tapped": [x, y], "mac": [mx, my]}
+
+
+def ios_type(ticket, text, runner=subprocess.run):
+    """Type into the focused field. Simulator must be frontmost, or the field focuses but stays empty."""
+    rec = running(ticket) or {}
+    if rec.get("platform") != "ios":
+        raise RuntimeError("%s is not running on iOS" % ticket)
+    runner(["osascript", "-e", 'tell application "Simulator" to activate'], capture_output=True, timeout=30)
+    runner(["osascript", "-e", 'tell application "System Events" to keystroke %s' % json.dumps(text)],
+           capture_output=True, timeout=60)
+    return {"typed": len(text)}
+
+
+def shot(ticket, name, runner=subprocess.run):
+    """Save a screenshot of the running app into the ticket's evidence folder."""
+    rec = running(ticket) or {}
+    path = os.path.join(store.RUNTIME, "review-evidence", ticket,
+                        name if name.lower().endswith(".png") else name + ".png")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if rec.get("platform") == "ios":
+        runner(["xcrun", "simctl", "io", rec["device"], "screenshot", path], capture_output=True, timeout=60)
+    elif rec.get("platform") == "android":
+        with open(path, "wb") as fh:
+            runner(["adb", "-s", rec["device"], "exec-out", "screencap", "-p"], stdout=fh, timeout=60)
+    else:
+        raise RuntimeError("web: take the screenshot from your browser and save it to %s" % path)
+    return {"screenshot": path}
+
+
 def _worktree(ticket, sha, branch):
     """A detached worktree at the reviewed commit (fetched first). Returns its path."""
     path = os.path.join(_dir("review-wt"), ticket)
@@ -199,6 +288,12 @@ def start(item, platform=None):
                "--web-hostname", "127.0.0.1"] + defines
         rec.update(port=port, url="http://localhost:%d" % port)
         markers = WEB_READY
+    elif platform == "ios":
+        device = _ios_device()
+        cmd = ["flutter", "run", "-d", device] + defines
+        rec.update(device=device, how=("review_queue app <item_id> --shot <name> | --tap X Y | "
+                                       "--type TEXT  (X Y = screenshot pixels)"))
+        markers = NATIVE_READY
     elif platform == "android":
         holder = [r for r in list_running() if r.get("platform") == "android" and r["ticket"] != ticket]
         if holder:
@@ -213,7 +308,7 @@ def start(item, platform=None):
                    % (device, shots))
         markers = ANDROID_READY
     else:
-        raise RuntimeError("platform %r is not routine: web or android (iOS only on a CEO order)" % platform)
+        raise RuntimeError("platform %r is not one of web, ios, android" % platform)
     with open(log_path, "w", encoding="utf-8") as log:
         proc = subprocess.Popen(cmd, cwd=wt, stdout=log, stderr=subprocess.STDOUT,
                                 stdin=subprocess.PIPE, start_new_session=True)
@@ -221,7 +316,7 @@ def start(item, platform=None):
     with open(_state_path(ticket), "w", encoding="utf-8") as fh:
         json.dump(rec, fh)
     ok, why = _wait_ready(log_path, proc.pid, markers,
-                          ANDROID_READY_SECONDS if platform == "android" else READY_SECONDS)
+                          {"android": ANDROID_READY_SECONDS, "ios": IOS_READY_SECONDS}.get(platform, READY_SECONDS))
     if not ok:
         stop(ticket)
         raise RuntimeError("the app did not start: %s (log %s)" % (why.strip()[-600:], log_path))

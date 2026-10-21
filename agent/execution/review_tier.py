@@ -1,7 +1,7 @@
 """How deep a review goes, and on which platform (CEO 2026-10-21).
 
 Review happens on the team's branch, locally, before the work reaches Alpha, on ONE platform (one
-codebase): the Codex internal browser on a web build by default, the Android emulator only when the
+codebase): the Codex internal browser on a web build by default, the iOS simulator only when the
 change touches native or startup code. Depth follows risk so review never becomes the bottleneck:
 
     1  light      no screen touched: diff, tests and the team's evidence. No app run.
@@ -41,13 +41,13 @@ def tier(paths, labels=()):
 
 
 def platform(paths, labels=()):
-    """`android` when native/startup code changed (or the ticket says so), else `web`."""
+    """`ios` when native/startup code changed (CEO 2026-10-21: iOS, not Android), `web` otherwise.
+    A label `platform:<web|ios|android>` decides instead."""
     labels = {str(l).lower() for l in labels or ()}
-    if "platform:android" in labels:
-        return "android"
-    if "platform:web" in labels:
-        return "web"
-    return "android" if paths and phone_check.needed(paths, labels) else "web"
+    for name in ("android", "ios", "web"):
+        if "platform:%s" % name in labels:
+            return name
+    return "ios" if paths and phone_check.needed(paths, labels) else "web"
 
 
 def describe(paths, labels=()):
