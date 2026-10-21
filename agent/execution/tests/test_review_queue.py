@@ -31,7 +31,7 @@ class ReviewQueueTests(unittest.TestCase):
         os.environ["CODEX_THREAD_ID"] = "thread-A"
         self.paths = ["supabase/migrations/1.sql", "test/x_test.dart"]       # not a UI change
         self._cp = rq.changed_paths
-        rq.changed_paths = lambda branch, sha, runner=None: self.paths
+        rq.changed_paths = lambda branch, sha, runner=None, key=None: self.paths
         rq._FILES.clear()
 
     def tearDown(self):
@@ -371,6 +371,49 @@ class ReviewQueueTests(unittest.TestCase):
         jira = self._search({"KAN-5": "Self-review", "KAN-6": "Self-review"})
         with mock.patch.object(store, "read_all", side_effect=lambda k: real(k) + [busy]):
             self.assertEqual([i["ticket"] for i in rq.qa_items(jira, store)], ["KAN-6"])
+
+    # -- local review on the team's commit (CEO 2026-10-21) ---------------------------
+    def test_a_qa_item_carries_the_teams_verified_commit_and_its_depth(self):
+        self.judge_root("KAN-9")
+        self.paths = ["lib/features/social/presentation/screens/post.dart"]
+        rq._FILES.clear()
+        jira = self._search({"KAN-9": "QA-Test", "KAN-8": "QA-Test"})
+        items = {i["ticket"]: i for i in rq.qa_items(jira, store)}
+        self.assertEqual((items["KAN-9"]["branch"], items["KAN-9"]["sha"]), ("alpha-luxor", SHA))
+        self.assertEqual((items["KAN-9"]["tier"], items["KAN-9"]["platform"]), (2, "web"))
+        self.assertIsNone(items["KAN-8"]["sha"], "no team record: said, not guessed")
+        self.assertIn("no verified commit", items["KAN-8"]["note"])
+
+    def _claimed_qa(self, tier):
+        item_id = "qa-KAN-9@2026-10-21T10:00:00.000+0000"
+        self.assertTrue(rq.claim(item_id, meta={"ticket": "KAN-9", "tier": tier, "platform": "web",
+                                                "min_screenshots": {1: 0, 2: 1, 3: 2}[tier],
+                                                "branch": "alpha-luxor", "sha": SHA}))
+        return item_id
+
+    def test_a_pass_on_a_screen_needs_a_screenshot_of_the_running_app(self):
+        item_id = self._claimed_qa(2)
+        jira = mock.Mock()
+        with mock.patch.object(jira_sync, "_move"):
+            with self.assertRaises(rq.Refused) as ctx:
+                rq.submit_qa(item_id, "pass", "ok", "steps", state_store=store, jira=jira)
+            self.assertEqual(ctx.exception.code, "evidence-missing")
+            os.makedirs(rq.evidence_dir("KAN-9"), exist_ok=True)
+            open(os.path.join(rq.evidence_dir("KAN-9"), "tc1-en-light.png"), "wb").close()
+            rq.submit_qa(item_id, "pass", "ok", "steps", state_store=store, jira=jira)
+        comment = jira.add_comment.call_args.args[1]
+        self.assertIn("alpha-luxor at %s" % SHA[:12], comment)
+        self.assertIn("app on web", comment)
+
+    def test_a_fail_or_a_light_item_needs_no_screenshot(self):
+        jira = mock.Mock()
+        with mock.patch.object(jira_sync, "_move"):
+            rq.submit_qa(self._claimed_qa(2), "fail", "button missing", "steps", state_store=store, jira=jira)
+        item_id = "qa-KAN-7@x"
+        rq.claim(item_id, meta={"ticket": "KAN-7", "tier": 1, "min_screenshots": 0, "sha": SHA})
+        with mock.patch.object(jira_sync, "_move"):
+            rq.submit_qa(item_id, "pass", "ok", "diff and tests", state_store=store, jira=jira)
+        self.assertIn("diff and tests (no screen)", jira.add_comment.call_args.args[1])
 
     def test_a_ticket_with_a_judge_item_is_not_also_offered_as_a_qa_item(self):
         """A second item would close it without its checks."""

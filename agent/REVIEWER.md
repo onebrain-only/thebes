@@ -10,7 +10,7 @@ to the desk while you work.
 A `qa` item that carries `cloud_branch` and `sha` was built by a Claude cloud session. Thebes already
 cloned that exact commit and ran `flutter analyze` and `flutter test` (they passed, or the ticket would not
 be in QA-Test). Review THAT commit against the ticket's acceptance criteria, from the diff and its tests
-(and the running app if you have a browser): `git -C Dabbler/dabbler-code fetch origin <cloud_branch>` then
+(and, for tier 2-3, the running app: `review_queue app <item_id>`, below): `git -C Dabbler/dabbler-code fetch origin <cloud_branch>` then
 `git -C Dabbler/dabbler-code diff origin/Alpha...<sha>`. Judge what the tests do not prove; do not re-run
 the whole suite. A FAIL goes back to a new cloud session, so write the reason as an instruction.
 
@@ -71,10 +71,12 @@ Never poll in a quick loop.
 
 - `item_id` — pass it back unchanged
 - `kind` — `judge` (checks only an eye can settle, always including check `QA`: the ticket's
-  acceptance criteria hold in the running app) or `qa` (a ticket sitting in QA-Test / Peer-review)
+  acceptance criteria hold in the running app) or `qa` (a ticket in the Jira Review column:
+  QA-Test, Self-review or Peer-review)
 - You only get product work (a code team's branch). Text, reports and answers are judged by
   the orchestrator, not you.
 - `ticket`, `summary`, `branch`, `sha` — what to look at
+- `tier`, `platform`, `min_screenshots` — how deep, where, and what a PASS must carry
 - `checks` — for `judge`: the lines `C2 | judge | <what to confirm> | <evidence the team named>`
 - `evidence` — files and notes the team handed over (screenshots, commands)
 - `ticket_status`, `latest_comments` — where the ticket stands in Jira and the last comments
@@ -82,21 +84,39 @@ Never poll in a quick loop.
   cannot see in the diff. If the ticket is already Done, say so and submit nothing.
 - `description` — the ticket, with its acceptance criteria
 
-## How to look
+## How to look (CEO 2026-10-21: on the team's branch, locally, one platform)
 
-1. **Evidence first.** Open the team's named evidence. If it settles the check, say so and
-   cite the file. Do not repeat work that is already proven.
-2. **The real app when the evidence is not enough** (behaviour, flows, screens that must be
-   tapped): build the exact `sha`, never the shared working folder (it may hold someone's
-   unsaved work):
-   - `git -C Dabbler/dabbler-code fetch origin`, then
-     `git -C Dabbler/dabbler-code worktree add agent/state/runtime/review-wt/<ticket> <sha>`
-   - there: `flutter run -d web-server --web-port 8124 --dart-define-from-file=<canonical>/Dabbler/dabbler-code/.env`
-     (`.env` is the local dev file; never print or copy its contents)
-   - open `http://localhost:8124` in your internal browser. Flutter draws on a canvas: press
-     Enter (or the "Enable accessibility" button) so the semantics tree appears, then read and tap.
-   - when done: stop the server and `git worktree remove` the folder. Leave nothing behind.
-   - A change already merged into Alpha can be seen on the same build of `origin/Alpha`.
+You test the exact commit the team handed over, on this Mac, BEFORE it reaches Alpha. Never on
+alpha.dabbler.pro or any public URL. Every item carries `branch`, `sha`, `tier` and `platform`
+(an item with `sha: null` says why in `note`; review the branch head and say so).
+
+| tier | what it is | what you do |
+|---|---|---|
+| 1 | no screen changed | read the diff of the ticket's commits and their tests; no app |
+| 2 | a screen changed | the ticket's TCs in EN+Light and AR+Dark, on the item's ONE platform |
+| 3 | a screen in money / sign-in / database work | every TC, both languages and themes, then the 10-minute exploratory pass below |
+
+One codebase, ONE platform: `web` (your internal browser) unless the item says `android` (native
+or startup code changed). iOS only on a CEO order.
+
+1. **Evidence first.** Open the team's named evidence. If it settles a check, cite the file.
+2. **Run the app (tier 2-3): Thebes builds it, you only look.**
+   `python3 -m agent.execution.review_queue app <item_id>` (about 1-2 minutes) prints:
+   - web: `url` (http://localhost:81xx) -> open it in your internal browser. Flutter draws on a
+     canvas: press Enter (or "Enable accessibility") so the semantics tree appears, then read and tap.
+   - android: `device` and `screenshot_cmd` -> drive with `adb -s <device> shell input tap|text|swipe`.
+   It prints `evidence_dir`. Save your screenshots there (`.png`), named by TC, e.g. `tc1-en-light.png`.
+3. **Run the ticket's TESTING SCENARIOS** for your tier. A TC you could not run is written in your
+   evidence as `skipped: <reason>`; skipping never blocks, it is just visible.
+4. **Submit** (below). A tier-2 PASS needs at least 1 screenshot taken during this review, tier 3
+   at least 2; Thebes refuses a PASS without them. A FAIL never needs a screenshot, but one helps.
+5. **Stop it:** `python3 -m agent.execution.review_queue app <item_id> --stop` (frees the port and
+   removes the folder). `review_queue app --list` shows what is running.
+
+**Exploratory pass (tier 3 only, 10 minutes):** double tap every action, back in the middle of a
+flow, rotate (android), cut the network mid-load, empty and very long content, and read the
+browser console / `adb logcat` for errors a screen does not show.
+
 3. **Signing in.** Test account: `dabbler.pro@proton.me`. Take the password at the moment you
    type it: `security find-generic-password -s dabbler-test-user -w`. Never echo it, write it
    in a file, a screenshot, a comment or your reply. If the keychain asks, it is the CEO's to allow.
@@ -105,7 +125,7 @@ Never poll in a quick loop.
    ticket's own text says `AUTHORIZED: write test data`. If a check needs a write and it is not
    authorized, give that check `skip` with the reason `needs-write`.
 5. **Both languages and both themes** when the check is about how something looks.
-6. **Budget: 10 minutes per item.** If you cannot finish, submit what you have as `blocked`
+6. **Budget: 10 minutes per item** (tier 3: 20). If you cannot finish, submit what you have as `blocked`
    and say exactly what is missing. Do not guess a verdict.
 
 ## The verdict

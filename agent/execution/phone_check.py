@@ -28,6 +28,8 @@ import time
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 RUNTIME = os.path.join(ROOT, "agent", "state", "runtime", "phone-check")
 PHONE_CHECK_BUDGET_SECONDS = int(os.environ.get("PHONE_CHECK_BUDGET_SECONDS", "180"))
+# The app's id differs per platform (ios/Runner.xcodeproj vs android/app/build.gradle.kts).
+APP_IDS = {"ios": "app.dabbler.pro", "android": "com.dabbler.dabblerapp"}
 TRIGGERS = ("ios/", "android/", "lib/features/app_boot/", "lib/core/services/theme_service.dart",
             "pubspec.yaml")
 
@@ -89,9 +91,10 @@ def record(entry):
         fh.write(json.dumps(entry, sort_keys=True) + "\n")
 
 
-def run(platform, app_dir, out_png, budget=None, runner=subprocess.run, bundle="app.dabbler.pro"):
+def run(platform, app_dir, out_png, budget=None, runner=subprocess.run, bundle=None):
     """Install+launch the debug build on the booted device and take a screenshot, inside the
     budget. Returns {status: ok|skipped|failed, seconds, reason}."""
+    bundle = bundle or APP_IDS[platform]
     budget = budget or PHONE_CHECK_BUDGET_SECONDS
     started = time.time()
     device = booted_device(platform, runner)
@@ -147,7 +150,7 @@ def main(argv=None):
     n.add_argument("--label", action="append", default=[])
     r = sub.add_parser("run"); r.add_argument("platform", choices=("ios", "android"))
     r.add_argument("--app", required=True); r.add_argument("--out", default="phone-check.png")
-    r.add_argument("--bundle", default="app.dabbler.pro", help="app id to launch")
+    r.add_argument("--bundle", default=None, help="app id to launch (default: the platform's)")
     sub.add_parser("log")
     ns = ap.parse_args(argv)
     if ns.cmd == "needed":

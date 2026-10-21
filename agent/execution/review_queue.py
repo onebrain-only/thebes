@@ -170,17 +170,21 @@ def is_done(item_id):
     return os.path.exists(os.path.join(_dir("done"), _safe(item_id)))
 
 
-def claim(item_id, now=None):
-    """Atomically claim for this thread. True if claimed (or this thread already holds it)."""
+def claim(item_id, now=None, meta=None):
+    """Atomically claim for this thread. True if claimed (or this thread already holds it).
+    `meta` (tier, platform, branch, sha) is kept with the claim for the evidence gate."""
     now = now or time.time()
     path = os.path.join(_dir("claims"), _safe(item_id))
-    body = {"item_id": item_id, "thread": _thread(), "at": now}
+    body = {"item_id": item_id, "thread": _thread(), "at": now, "meta": meta or {}}
     for _ in range(2):
         try:
             fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         except FileExistsError:
             cur = _read(path) or {}
             if cur.get("thread") == body["thread"] and now - cur.get("at", 0) < CLAIM_SECONDS:
+                if meta and cur.get("meta") != meta:
+                    with open(path, "w", encoding="utf-8") as fh:
+                        json.dump(dict(cur, meta=meta), fh)
                 return True
             if now - cur.get("at", 0) < CLAIM_SECONDS:
                 return False
@@ -195,14 +199,18 @@ def claim(item_id, now=None):
     return False
 
 
+def claim_record(item_id):
+    return _read(os.path.join(_dir("claims"), _safe(item_id))) or {}
+
+
 def holder(item_id):
-    return (_read(os.path.join(_dir("claims"), _safe(item_id))) or {}).get("thread")
+    return claim_record(item_id).get("thread")
 
 
 def finish(item_id, outcome):
     with open(os.path.join(_dir("done"), _safe(item_id)), "w", encoding="utf-8") as fh:
         json.dump({"item_id": item_id, "outcome": outcome, "at": time.time(),
-                   "thread": _thread()}, fh)
+                   "claimed_at": claim_record(item_id).get("at"), "thread": _thread()}, fh)
 
 
 # ------------------------------------------------------------------- finding work
@@ -210,29 +218,61 @@ def finish(item_id, outcome):
 # roots) flutter, but NO browser (probe 2026-10-17). Work that has to be SEEN in the running app is
 # the Desktop reviewer's: any change under a screen/widget/presentation folder, boot code, native
 # folders, the design system's assets, or an ARB file.
-UI_PATH = re.compile(r"(^|/)(presentation|widgets|screens|app_boot)/|^lib/core/design_system/|"
-                     r"^(ios|android|web|assets)/|\.arb$")
+from agent.execution import review_tier                                # noqa: E402
+UI_PATH = review_tier.UI_PATH
 _FILES = {}
 
 
-def changed_paths(branch, sha, runner=None):
-    """Files this verified commit changes against its base (local refs, no network), or None."""
-    key = (branch, sha)
-    if key not in _FILES:
+def ticket_files(repo, sha, key, runner=None):
+    """Files this ticket's own commits (subject `KAN-n:`) in `sha`'s history change, or None.
+    A team branch carries several tickets, and once integrated the commit is already in Alpha
+    (live 2026-10-21: the diff against Alpha was empty and every ticket looked screen-less)."""
+    import subprocess
+    run = runner or subprocess.run
+    cwd = os.path.join(ROOT, repo)
+    lg = run(["git", "-C", cwd, "log", "--format=%H %s", "-n", "400", sha],
+             capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
+    if lg.returncode != 0:
+        return None
+    mine = [l.split(" ", 1)[0] for l in (lg.stdout or "").splitlines()
+            if l.split(" ", 1)[-1].startswith("%s:" % key)]
+    files = set()
+    for commit in mine:
+        done = run(["git", "-C", cwd, "show", "--name-only", "--format=", commit],
+                   capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
+        if done.returncode != 0:
+            return None
+        files.update(f for f in (done.stdout or "").splitlines() if f.strip())
+    return sorted(files) if mine else None
+
+
+def changed_paths(branch, sha, runner=None, key=None):
+    """Files the ticket changes: its own commits when they can be found, else the commit's diff
+    against its base (local refs, no network), else None."""
+    cache = (branch, sha, key)
+    if cache not in _FILES:
         try:
             from agent.execution import integrate
             t = integrate.target_for(branch or "", sha, runner)
-            _FILES[key] = (integrate.changed_files(t["repo"], t["base"], sha, runner, fetch=False)
-                           if t else None)
+            files = ticket_files(t["repo"], sha, key, runner) if (t and key) else None
+            if not files and t:
+                files = integrate.changed_files(t["repo"], t["base"], sha, runner, fetch=False) or None
+            _FILES[cache] = files
         except Exception:                                  # noqa: BLE001
-            _FILES[key] = None
-    return _FILES[key]
+            _FILES[cache] = None
+    return _FILES[cache]
 
 
-def needs_browser(branch, sha, runner=None):
-    """True when the change must be looked at in the app (or when we cannot tell)."""
-    files = changed_paths(branch, sha, runner)
-    return True if files is None else any(UI_PATH.search(f) for f in files)
+def needs_browser(branch, sha, runner=None, labels=(), key=None):
+    """True when the change must be looked at in the app (tier 2 or 3, or when we cannot tell)."""
+    return review_tier.tier(changed_paths(branch, sha, runner, key) if sha else None, labels) >= 2
+
+
+def depth(branch, sha, labels=(), runner=None, key=None):
+    """tier, platform and the screenshots a PASS needs (agent/execution/review_tier.py)."""
+    out = review_tier.describe(changed_paths(branch, sha, runner, key) if sha else None, labels)
+    out["needs_browser"] = out["tier"] >= 2
+    return out
 
 
 def is_headless_thread():
@@ -258,7 +298,7 @@ def judge_items(state_store=store):
             "checks": [{"id": p["id"], "what": (by_id.get(p["id"]) or {}).get("what") or p.get("what"),
                         "evidence_named": (by_id.get(p["id"]) or {}).get("pass")}
                        for p in pending],
-            "needs_browser": needs_browser(ver.get("branch"), ver.get("sha")),
+            **depth(ver.get("branch"), ver.get("sha"), key=rec["jira_key"]),
             "team_report": _text(rec.get("result_ref")),
             "brief": _text(rec.get("prompt_ref")),
             "at": rec.get("outcome_at") or rec.get("created_at") or ""})
@@ -275,6 +315,21 @@ def _team_working(key, state_store=store):
     return False
 
 
+def team_commit(key, state_store=store):
+    """The team's last verified commit for this ticket: {branch, sha, team} or {} (cloud tickets
+    carry their own). The latest completed dispatch with a verified sha wins."""
+    best = None
+    for rec in state_store.read_all("conversation_dispatch"):
+        ver = rec.get("verification") or {}
+        if rec.get("jira_key") != key or not ver.get("sha"):
+            continue
+        stamp = rec.get("outcome_at") or rec.get("created_at") or ""
+        if best is None or stamp > best[0]:
+            best = (stamp, {"branch": ver.get("branch") or rec.get("branch"), "sha": ver["sha"],
+                            "team": rec.get("target_seat_id")})
+    return best[1] if best else {}
+
+
 def qa_items(jira=None, state_store=store):
     if jira is None:
         from agent.execution import jira_sync
@@ -282,7 +337,7 @@ def qa_items(jira=None, state_store=store):
     if jira is None:
         return []
     out = []
-    for raw in jira.search_issues(QA_JQL, fields=["summary", "status", "description", "updated"],
+    for raw in jira.search_issues(QA_JQL, fields=["summary", "status", "description", "updated", "labels"],
                                   limit=20, raw=True):
         issue = jira.normalize_issue(raw)
         key = issue["key"]
@@ -294,9 +349,16 @@ def qa_items(jira=None, state_store=store):
             cloud = cloud_lane.cloud_info(key)
         except Exception:                                   # noqa: BLE001
             pass
+        labels = (raw.get("fields") or {}).get("labels") or issue.get("labels") or []
+        if cloud:
+            commit = {"branch": cloud.get("cloud_branch"), "sha": cloud.get("sha")}
+        else:
+            commit = team_commit(key, state_store) or {"branch": None, "sha": None,
+                                                       "note": "no verified commit: review the branch head"}
         out.append({"item_id": "qa-%s@%s" % (key, (raw.get("fields") or {}).get("updated")),
-                    "kind": "qa", "ticket": key, "needs_browser": True, "summary": issue.get("summary"),
-                    **(cloud or {}),
+                    "kind": "qa", "ticket": key, "summary": issue.get("summary"),
+                    **commit, **(cloud or {}), "labels": labels,
+                    **depth(commit.get("branch"), commit.get("sha"), labels, key=key),
                     "status": issue.get("status"), "description": (issue.get("description") or "")[:TEXT_LIMIT],
                     "at": (raw.get("fields") or {}).get("updated") or ""})
     return out
@@ -350,7 +412,8 @@ def next_item(state_store=store, jira=None, with_qa=True):
     for item in candidates(state_store, jira, with_qa):
         if headless and item.get("needs_browser"):
             continue                       # it has no browser: that item is the Desktop reviewer's
-        if claim(item["item_id"]):
+        meta = {k: item.get(k) for k in ("ticket", "tier", "platform", "min_screenshots", "branch", "sha")}
+        if claim(item["item_id"], meta=meta):
             return item
     return None
 
@@ -382,6 +445,49 @@ def _owner_check(item_id):
         raise Refused("not-your-claim", "%s is claimed by another reviewer thread" % item_id)
 
 
+SHOT_EXT = (".png", ".jpg", ".jpeg")
+
+
+def evidence_dir(ticket):
+    return os.path.join(store.RUNTIME, "review-evidence", ticket)
+
+
+def screenshots(ticket, since=0):
+    d = evidence_dir(ticket)
+    try:
+        return sorted(os.path.join(d, f) for f in os.listdir(d)
+                      if f.lower().endswith(SHOT_EXT) and os.path.getmtime(os.path.join(d, f)) >= since)
+    except OSError:
+        return []
+
+
+def evidence_gate(item_id, ticket):
+    """A PASS on a tier-2/3 item needs screenshots taken during this review (CEO 2026-10-21: the
+    reviewer looks at the running app of the team's branch, and shows it). Returns the meta."""
+    rec = claim_record(item_id)
+    meta = rec.get("meta") or {}
+    need = int(meta.get("min_screenshots") or 0)
+    since = (rec.get("at") or 0) - CLAIM_SECONDS
+    shots = screenshots(ticket, since)
+    if len(shots) < need:
+        raise Refused("evidence-missing",
+                      "tier %s needs %d screenshot(s) of the running app in %s taken during this "
+                      "review; found %d. Run `review_queue app %s`, test, save screenshots there, "
+                      "then submit again." % (meta.get("tier"), need, evidence_dir(ticket),
+                                              len(shots), item_id))
+    return dict(meta, screenshots=shots)
+
+
+def tested_line(meta):
+    """What was tested, for the Jira comment."""
+    if not meta.get("tier"):
+        return ""
+    return "Tested: %s at %s, tier %s, %s.%s\n" % (
+        meta.get("branch") or "branch head", (meta.get("sha") or "?")[:12], meta.get("tier"),
+        "app on %s" % meta["platform"] if meta.get("platform") else "diff and tests (no screen)",
+        " Screenshots: %d." % len(meta.get("screenshots") or []) if meta.get("screenshots") else "")
+
+
 def _evidence_file(ticket, evidence):
     d = os.path.join(store.RUNTIME, "review-evidence", ticket)
     os.makedirs(d, exist_ok=True)
@@ -401,8 +507,10 @@ def submit_judge(item_id, passed, failed, skipped, evidence, *, state_store=stor
     rec = state_store.read("conversation_dispatch", dispatch_id)
     if rec is None:
         raise Refused("dispatch-not-found", dispatch_id)
+    meta = evidence_gate(item_id, rec.get("jira_key") or "unknown") if passed and not failed else {}
     ev_path = _evidence_file(rec.get("jira_key") or "unknown", evidence)
-    notes = {c: "reviewer: %s (evidence %s)" % (evidence.strip()[:200], ev_path) for c in passed}
+    notes = {c: "reviewer: %s%s (evidence %s)" % (tested_line(meta), evidence.strip()[:200], ev_path)
+             for c in passed}
     for cid, why in skipped.items():
         notes[cid] = "SKIPPED, not verified: %s" % why
     out = verify.judge_verdict(dispatch_id, list(passed) + list(skipped), failed,
@@ -422,18 +530,19 @@ def submit_qa(item_id, verdict, reason, evidence, *, state_store=store, jira=Non
     if not (evidence or "").strip():
         raise Refused("evidence-required", "name what you looked at and the steps you took")
     ticket = item_id[len("qa-"):].split("@")[0]
+    meta = evidence_gate(item_id, ticket) if verdict == "pass" else (claim_record(item_id).get("meta") or {})
     ev_path = _evidence_file(ticket, evidence)
     jira = jira_sync._client(jira, state_store)
     if jira is None:
         raise Refused("jira-unavailable", "cannot record a qa verdict without Jira")
     if verdict == "pass":
         jira_sync._move(ticket, DONE_STATUS_ID, jira, state_store)
-        jira.add_comment(ticket, "Thebes reviewer (Codex): PASS. %s\nEvidence: %s"
-                         % ((reason or "").strip()[:500], ev_path))
+        jira.add_comment(ticket, "Thebes reviewer (Codex): PASS. %s\n%sEvidence: %s"
+                         % ((reason or "").strip()[:500], tested_line(meta), ev_path))
     else:
         jira_sync._move(ticket, LANE_STATUS_ID, jira, state_store)
-        jira.add_comment(ticket, "Thebes reviewer (Codex): FAIL.\n%s\nEvidence: %s"
-                         % (reason.strip()[:1500], ev_path))
+        jira.add_comment(ticket, "Thebes reviewer (Codex): FAIL.\n%s\n%sEvidence: %s"
+                         % (reason.strip()[:1500], tested_line(meta), ev_path))
         try:                                         # the PM / orchestrator re-plans the rework
             state_store.create("priority_request", {
                 "reasons": [{"kind": "qa-failed", "key": ticket, "reason": reason.strip()[:300]}],
@@ -760,8 +869,43 @@ def status(state_store=store):
         c = _read(os.path.join(_dir("claims"), name)) or {}
         claims[c.get("item_id")] = c
     return {"channel": get_channel(), "waiting_judge_items": [i["item_id"] for i in items],
+            "review_time": _review_times(),
             "claimed": {k: {"thread": v.get("thread"), "age_s": int(time.time() - v.get("at", 0))}
                         for k, v in claims.items() if k and not is_done(k)}}
+
+
+def app(item_id, *, stop=False, listing=False, platform=None):
+    """Run (or stop) the claimed item's commit locally: agent/execution/review_app.py."""
+    from agent.execution import review_app
+    if listing or not item_id:
+        return review_app.list_running()
+    meta = claim_record(item_id).get("meta") or {}
+    ticket = meta.get("ticket") or (item_id[len("qa-"):].split("@")[0] if item_id.startswith("qa-")
+                                    else item_id if item_id.upper().startswith("KAN-") else None)
+    if stop:
+        if not ticket:
+            raise Refused("unknown-item", "name a claimed item_id or a ticket key")
+        return review_app.stop(ticket)
+    if holder(item_id) != _thread():
+        raise Refused("not-your-claim", "run `wait` or `next` first: only the reviewer holding %s "
+                                        "runs its app" % item_id)
+    try:
+        return review_app.start(meta, platform=platform)
+    except RuntimeError as exc:
+        raise Refused("app-not-started", str(exc))
+
+
+def _review_times(limit=20):
+    """Claim-to-verdict seconds of the latest verdicts: is review becoming the bottleneck?"""
+    done = []
+    for name in os.listdir(_dir("done")):
+        rec = _read(os.path.join(_dir("done"), name)) or {}
+        if rec.get("claimed_at") and rec.get("at") and "skipped" not in (rec.get("outcome") or {}):
+            done.append((rec["at"], rec["at"] - rec["claimed_at"]))
+    last = [d for _, d in sorted(done)[-limit:]]
+    return {"verdicts_timed": len(last),
+            "avg_minutes": round(sum(last) / len(last) / 60, 1) if last else None,
+            "max_minutes": round(max(last) / 60, 1) if last else None}
 
 
 def _pairs(values):
@@ -779,6 +923,11 @@ def main(argv=None):
     w = sub.add_parser("wait"); w.add_argument("--timeout", type=int, default=300)
     sub.add_parser("next")
     sub.add_parser("status")
+    ap_ = sub.add_parser("app", help="build and run the item's commit locally for review (web or android)")
+    ap_.add_argument("item_id", nargs="?")
+    ap_.add_argument("--stop", action="store_true", help="stop it and remove its folder")
+    ap_.add_argument("--list", action="store_true", help="what is running")
+    ap_.add_argument("--platform", choices=("web", "android"), help="override the item's platform")
     ro = sub.add_parser("reopen"); ro.add_argument("dispatch_id")
     aq = sub.add_parser("ask", help="the reviewer is stuck: put ONE question to the orchestrator")
     aq.add_argument("item_id"); aq.add_argument("--question", required=True)
@@ -835,6 +984,10 @@ def main(argv=None):
             return 0
         if ns.cmd == "reopen":
             print(json.dumps(reopen(ns.dispatch_id), indent=2))
+            return 0
+        if ns.cmd == "app":
+            print(json.dumps(app(ns.item_id, stop=ns.stop, listing=ns.list, platform=ns.platform),
+                             indent=2, default=str))
             return 0
         if ns.item_id.startswith("qa-"):
             out = submit_qa(ns.item_id, ns.verdict, ns.reason, ns.evidence)
