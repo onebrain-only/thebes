@@ -126,9 +126,21 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
 - **`verification`**: a team's `completed` claim was checked (D-041). `verdict: pass` →
   the ticket is closed (a PEER/QA-route ticket keeps its review status with the verified
   evidence); tell the CEO in one line: ticket, what was verified, done. `verdict:
-  exhausted` → the checks still fail after the one allowed fix; the ticket stays in review
-  with the reason on it. Decide the next step (a different approach, a different team, or a
-  CEO question); never just re-dispatch the same work.
+  exhausted` → the checks still fail after the allowed fixes; the ticket stays in review
+  with the reason on it. **Thebes already accepts it by code** when the only failing check is
+  the Codex `QA` check and its reason is a coverage limit (a locale/theme/device the reviewer
+  could not execute, nothing observed wrong): the ticket is Done with the unverified part written
+  on it, and you get no alert. If you DO get the alert, a defect was seen or a second check
+  fails: **you decide** (D-035), not the CEO. Defect → send it back to the team with the reviewer's
+  reason (the board's Returned column) or to another team. Never ask the CEO to say "accepted",
+  never wait for his "موافق": that is the blind approval he asked us to remove. Never just
+  re-dispatch the same work.
+- **A refusal is not a CEO matter (CEO 2026-10-22).** When the permission system refuses a seat's
+  Jira edit, do not report it to the CEO and do not ask him to change anything. Say in ONE line
+  what you tried instead: the Thebes tools (`intake edit-line`, `ticket_ruling`, `ticket_ruling`
+  for a ruling), or a Thebes fix in code (a brief the linter refuses is a linter bug to report to
+  System Maintenance, not a ticket to rewrite by hand). Only money, secrets, `main`, and sending
+  outside the company reach the CEO.
 - **`judge`** (only for text, report, plan, spec and answer deliverables: ask or ops lane, no
   branch): the mechanical checks passed; only the `judge` checks are left. Run ONE reviewer
   over exactly the listed checks and the evidence the team named: one pass, a PASS/FAIL line

@@ -105,6 +105,7 @@ def lint(text, team_id=None):
     if not checks:
         problems.append("CHECKS: needs at least one line `C1 | run|judge | <what> | <pass>` — "
                         "the agreed scenario for 'done'")
+    checks = _normalise_run_checks(checks)
     seen = set()
     for c in checks:
         if c["id"] in seen:
@@ -128,6 +129,37 @@ def lint(text, team_id=None):
         checks.append({"id": "C%d" % n, "kind": "run",
                        "what": "flutter test test/l10n_parity_test.dart", "pass": "exit 0"})
     return sections, checks
+
+
+COMPOUND_RE = re.compile(r"\s+(?:&&|and|;)\s+(?=(?:flutter|dart)\s)")
+NOT_ZERO_RE = re.compile(r"non-?zero|not\s+0|fail", re.I)
+
+
+def _normalise_run_checks(checks):
+    """A brief written by a person or a PO says a run check the way people do (live 2026-10-22,
+    KAN-622: `flutter analyze ... and flutter test ... | both exit 0, logs attached` was refused and
+    the ticket sat unclaimed). Thebes reads that intent instead of bouncing it: a `run` check whose
+    pass text says exit 0 passes on `exit 0`, and a command joined with `and` / `&&` / `;` becomes
+    one `run` check per command (the first keeps the id, the others take the next free ids)."""
+    out, used = [], {c["id"] for c in checks}
+    for c in checks:
+        if c["kind"] != "run":
+            out.append(c)
+            continue
+        c = dict(c)
+        text = c["pass"].strip().lower()
+        if "exit 0" in text and not NOT_ZERO_RE.search(text.replace("exit 0", "")):
+            c["pass"] = "exit 0"
+        parts = [p.strip() for p in COMPOUND_RE.split(c["what"]) if p.strip()]
+        if len(parts) > 1:
+            out.append(dict(c, what=parts[0]))
+            for part in parts[1:]:
+                n = next(i for i in range(1, 100) if "C%d" % i not in used)
+                used.add("C%d" % n)
+                out.append(dict(c, id="C%d" % n, what=part))
+        else:
+            out.append(c)
+    return out
 
 
 def main(argv=None):

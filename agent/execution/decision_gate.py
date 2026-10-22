@@ -32,6 +32,7 @@ import argparse
 import hmac
 import json
 import os
+import re
 import secrets
 import sys
 import urllib.error
@@ -247,6 +248,82 @@ def approval_verdict(text, *, cfg=None, env=None):
     if v["action"] == "not_routine" or v["confidence"] < threshold:
         return dict(v, verdict="not_routine", reason="not-routine-or-unsure")
     return dict(v, verdict="approved", reason="routine:%s" % v["action"])
+
+
+# ------------------------------------------------------- exhausted reviews
+# CEO 2026-10-22 ("this kind of message should go and get approved directly"): a review that is
+# still failing after MAX_CYCLES because the reviewer could not EXECUTE part of the scope (a
+# locale or theme it cannot switch without writing live data, a device it does not have) is not a
+# product defect, and asking the CEO to say "accepted" is exactly the blind approval D-035 removes.
+# Thebes asks ONE typed Choice and decides; a defect still goes back to the team.
+EXHAUSTION_CHOICES = {
+    "coverage_limit": "the reviewer could not run or see part of the scope (an environment, device, "
+                      "locale, theme or data limit) and did not observe anything wrong",
+    "product_defect": "the reviewer observed behaviour that is wrong, missing or failing an "
+                      "acceptance criterion",
+}
+LIMIT_RE = re.compile(r"not run|could not|cannot|can't|unable to|without writing|no device|"
+                      r"not available|needs a real device", re.I)
+DEFECT_RE = re.compile(r"crash|wrong|incorrect|broken|regress|raw exception|does not (?:show|work|"
+                       r"keep|open|appear)|fails? to|still (?:shows|empty|blank)|missing button|"
+                       r"error is shown|no longer", re.I)
+
+
+class FakeExhaustionGate:
+    """Deterministic and conservative: only an explicit limit with no defect wording is a limit."""
+    gate_id = "fake"
+
+    def __init__(self, cfg):
+        pass
+
+    def classify(self, text):
+        limit = bool(LIMIT_RE.search(text)) and not DEFECT_RE.search(text)
+        return {"choice": "coverage_limit" if limit else "product_defect", "confidence": 0.8,
+                "gate": self.gate_id}
+
+
+class JevExhaustionGate(JevGate):
+    def classify(self, text):
+        key = read_key(self.provider, self.env)
+        if not key:
+            raise Refused("decision-gate-unavailable", "no API key")
+        body = json.dumps({
+            "model": self.provider["model"], "state": {"reviewer_failure_reason": text},
+            "questions": {"cause": {
+                "type": "choice",
+                "instructions": "A reviewer failed a ticket's last check. Is the failure a limit of "
+                                "what the reviewer could execute, or a defect it observed in the "
+                                "product? If anything wrong was observed choose product_defect.",
+                "criteria": EXHAUSTION_CHOICES}}}).encode("utf-8")
+        req = urllib.request.Request(self.provider["url"], data=body, method="POST", headers={
+            "Content-Type": "application/json", "Authorization": "Bearer %s" % key})
+        try:
+            with self.opener(req, timeout=30) as resp:
+                answer = json.loads(resp.read().decode("utf-8"))
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            raise Refused("decision-gate-unavailable", "jev: %s" % exc)
+        a = (answer.get("answers") or {}).get("cause") or {}
+        if a.get("choice") not in EXHAUSTION_CHOICES or not isinstance(a.get("confidence"), (int, float)):
+            raise Refused("decision-gate-malformed", json.dumps(a)[:300])
+        return {"choice": a["choice"], "confidence": float(a["confidence"]), "gate": "jev"}
+
+
+def exhaustion_verdict(reason, *, cfg=None, env=None):
+    """accept (a limit, confident, and no defect wording) | return (anything else). A wording check
+    in code backs the model: a reason that names a defect is never accepted, whatever it says."""
+    cfg = cfg or config()
+    if DEFECT_RE.search(reason or ""):
+        return {"verdict": "return", "reason": "defect-wording"}
+    try:
+        gate = JevExhaustionGate(cfg, env=env) if cfg.get("gate") == "jev" else FakeExhaustionGate(cfg)
+        v = gate.classify(reason)
+    except Refused as exc:
+        v = FakeExhaustionGate(cfg).classify(reason)          # the gate is down: the strict fallback
+        v["gate"] = "fake-fallback:%s" % exc.code
+    threshold = float((cfg.get("approval") or {}).get("threshold", 0.7))
+    if v["choice"] == "coverage_limit" and v["confidence"] >= threshold:
+        return dict(v, verdict="accept", reason="coverage-limit")
+    return dict(v, verdict="return", reason="defect-or-unsure")
 
 
 # ---------------------------------------------------------------- owners

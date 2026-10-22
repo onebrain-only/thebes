@@ -261,7 +261,10 @@ def _settle(rec, root, results, cycle, report, *, state_store, jira=None, dispat
                         state_store=state_store)
     elif final == "exhausted":
         out["jira"] = jira_sync.on_exhausted(root, ver, state_store=state_store, jira=jira)
-        from agent.execution import watchdog
+        from agent.execution import exhaustion, watchdog
+        out["auto_accept"] = exhaustion.decide(root, results, state_store=state_store, jira=jira)
+        if out["auto_accept"].get("accepted"):
+            return out                       # decided by code: nothing is asked of the CEO
         failing = ", ".join(i for i, r in results.items() if r["status"] == "fail")
         root = state_store.read("conversation_dispatch", root["dispatch_id"])  # jira note moved it
         watchdog._alert(root, "review-exhausted",
