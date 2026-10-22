@@ -364,10 +364,12 @@ def retry_send_backs(*, state_store=store, dispatcher=None, launcher=None):
 
 # --------------------------------------------------------------- the judge
 def judge_verdict(dispatch_id, passed, failed, *, env=None, state_store=store, jira=None,
-                  dispatcher=None, launcher=None, reviewer=None, notes=None):
+                  dispatcher=None, launcher=None, reviewer=None, notes=None, environment=None):
     """ONE reviewer pass over the pending `judge` checks. The orchestrator records it, or the
     Codex reviewer (D-043) through `review_queue submit`, which proves its own identity and
-    passes `reviewer=<thread id>`. `notes` {check: text} lands in the check's detail."""
+    passes `reviewer=<thread id>`. `notes` {check: text} lands in the check's detail.
+    `environment` {check: why} is a check the REVIEW ENVIRONMENT could not run (blank canvas, no
+    simulator, no clipboard): status `error`, so no fix cycle is spent and nothing goes to the team."""
     env = os.environ if env is None else env
     from agent.state import teams
     if not reviewer:
@@ -385,7 +387,8 @@ def judge_verdict(dispatch_id, passed, failed, *, env=None, state_store=store, j
                       % (root.get("jira_key") or dispatch_id))
     ver = dict(root.get("verification") or {})
     results = dict(ver.get("results") or {})
-    for cid in list(passed) + list(failed):
+    environment = environment or {}
+    for cid in list(passed) + list(failed) + list(environment):
         if (results.get(cid) or {}).get("status") != "pending-judge":
             raise Refused("check-not-pending", "%s is not waiting for a reviewer" % cid)
     for cid in passed:
@@ -394,6 +397,9 @@ def judge_verdict(dispatch_id, passed, failed, *, env=None, state_store=store, j
     for cid, why in failed.items():
         results[cid] = dict(results[cid], status="fail", by="reviewer" if reviewer else "judge",
                             detail=why[:400], tail="")
+    for cid, why in environment.items():
+        results[cid] = dict(results[cid], status="error", by="reviewer" if reviewer else "judge",
+                            detail=("ENVIRONMENT, not the team's defect: %s" % why)[:400], tail="")
     if any((results.get(c["id"]) or {}).get("status") == "pending-judge" for c in root["checks"]):
         raise Refused("checks-still-pending", "give a verdict for every pending judge check")
     return _settle(root, root, results, ver.get("cycle") or 1, {}, state_store=state_store,

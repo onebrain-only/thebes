@@ -292,10 +292,14 @@ def judge_items(state_store=store):
             continue
         ver = rec.get("verification") or {}
         by_id = {c["id"]: c for c in rec.get("checks") or []}
+        commit = with_commit({"branch": ver.get("branch") or rec.get("branch"), "sha": ver.get("sha")},
+                             rec["jira_key"], state_store)
+        ver = dict(ver, branch=commit["branch"], sha=commit["sha"])
         out.append({
             "item_id": "judge-%s-c%s" % (rec["dispatch_id"], ver.get("cycle") or 1),
             "kind": "judge", "dispatch_id": rec["dispatch_id"], "ticket": rec["jira_key"],
             "team": rec.get("target_seat_id"), "branch": ver.get("branch"), "sha": ver.get("sha"),
+            "commit_resolved": commit["commit_resolved"],
             "checks": [{"id": p["id"], "what": (by_id.get(p["id"]) or {}).get("what") or p.get("what"),
                         "evidence_named": (by_id.get(p["id"]) or {}).get("pass")}
                        for p in pending],
@@ -331,6 +335,56 @@ def team_commit(key, state_store=store):
     return best[1] if best else {}
 
 
+APP_REPO = "Dabbler/dabbler-code"
+HEAD_TTL = 60
+_HEADS = {}
+
+
+def team_branch(key, state_store=store):
+    """The branch this ticket's dispatches name, newest first, else the team's own `alpha-<seat>`
+    (live 2026-10-22: KAN-622's newest dispatch carried no branch and no verified sha)."""
+    recs = sorted((r for r in state_store.read_all("conversation_dispatch") if r.get("jira_key") == key),
+                  key=lambda r: r.get("outcome_at") or r.get("created_at") or "", reverse=True)
+    for rec in recs:
+        named = rec.get("branch") or (rec.get("verification") or {}).get("branch")
+        if named:
+            return named
+    return "alpha-%s" % recs[0]["target_seat_id"] if recs and recs[0].get("target_seat_id") else None
+
+
+def branch_head(branch, runner=None, clock=time.time):
+    """origin's sha for the branch (case-insensitive), or None. Cached for HEAD_TTL: the queue polls
+    every few seconds and this asks the network."""
+    hit = _HEADS.get(branch)
+    if hit and clock() - hit[0] < HEAD_TTL:
+        return hit[1]
+    try:
+        from agent.execution import integrate
+        base = integrate.base_for(branch)
+        sha = integrate.remote_head(base["repo"] if base else APP_REPO, branch, runner)
+    except Exception:                                      # noqa: BLE001  no network: unresolved
+        sha = None
+    _HEADS[branch] = (clock(), sha)
+    return sha
+
+
+def with_commit(commit, key, state_store=store, runner=None):
+    """`commit` ({branch, sha, ...}) with BOTH filled in when they can be: the branch from the ticket's
+    dispatches, the sha from the branch head on origin. A sha taken from the head is marked
+    `sha_from: branch-head` (not a team-verified commit). `commit_resolved` says whether both exist."""
+    branch, sha = commit.get("branch"), commit.get("sha")
+    out = dict(commit)
+    if not branch:
+        branch = team_branch(key, state_store)
+    if branch and not sha:
+        sha = branch_head(branch, runner)
+        if sha:
+            out["sha_from"] = "branch-head"
+            out.pop("note", None)
+    out.update(branch=branch, sha=sha, commit_resolved=bool(branch and sha))
+    return out
+
+
 def qa_items(jira=None, state_store=store):
     if jira is None:
         from agent.execution import jira_sync
@@ -356,6 +410,7 @@ def qa_items(jira=None, state_store=store):
         else:
             commit = team_commit(key, state_store) or {"branch": None, "sha": None,
                                                        "note": "no verified commit: review the branch head"}
+        commit = with_commit(commit, key, state_store)
         out.append({"item_id": "qa-%s@%s" % (key, (raw.get("fields") or {}).get("updated")),
                     "kind": "qa", "ticket": key, "summary": issue.get("summary"),
                     **commit, **(cloud or {}), "labels": labels,
@@ -403,7 +458,10 @@ def candidates(state_store=store, jira=None, with_qa=True):
             items += [q for q in qa_items(jira, state_store) if q["ticket"] not in judged]
         except Exception:                                   # noqa: BLE001  Jira down: judges only
             pass
-    return sorted((i for i in items if not is_done(i["item_id"])), key=lambda i: i["at"])
+    # Every offered item names its branch AND sha (KAN-622 once had neither); one that cannot be
+    # resolved is withheld and shown by status() as `no_commit`, never handed out to guess.
+    return sorted((i for i in items if not is_done(i["item_id"]) and i.get("commit_resolved", True)
+                   and i.get("branch") and i.get("sha")), key=lambda i: i["at"])
 
 
 def next_item(state_store=store, jira=None, with_qa=True):
@@ -479,6 +537,23 @@ def evidence_gate(item_id, ticket):
     return dict(meta, screenshots=shots)
 
 
+def render_gate(item_id, ticket):
+    """Fail closed (live 2026-10-22: six tickets judged on a blank canvas). No PASS or FAIL while the
+    last web start of this commit did not draw (`flt-semantics-placeholder`), and a screen item on
+    web needs a start that did. The reviewer reports "build not ready" instead."""
+    from agent.execution import review_app
+    meta = claim_record(item_id).get("meta") or {}
+    rec = review_app.render_record(ticket)
+    same = not (rec and meta.get("sha") and rec.get("sha")) or rec["sha"] == meta["sha"]
+    if rec and same and not rec.get("rendered"):
+        raise Refused("build-not-ready", "%s: %s. Report the build as not ready; do not record PASS or "
+                      "FAIL on it." % (ticket, rec.get("reason") or "the app never drew"))
+    if meta.get("platform") == "web" and int(meta.get("min_screenshots") or 0) > 0 \
+            and not (rec and same and rec.get("rendered")):
+        raise Refused("build-not-ready", "%s is a screen change on web: run `review_queue app %s` and "
+                      "wait until the app has drawn before any verdict." % (ticket, item_id))
+
+
 def tested_line(meta):
     """What was tested, for the Jira comment."""
     if not meta.get("tier"):
@@ -499,7 +574,7 @@ def _evidence_file(ticket, evidence):
 
 
 def submit_judge(item_id, passed, failed, skipped, evidence, *, state_store=store, jira=None,
-                 dispatcher=None, launcher=None):
+                 dispatcher=None, launcher=None, environment=None):
     from agent.execution import verify
     _owner_check(item_id)
     if not (evidence or "").strip():
@@ -508,6 +583,8 @@ def submit_judge(item_id, passed, failed, skipped, evidence, *, state_store=stor
     rec = state_store.read("conversation_dispatch", dispatch_id)
     if rec is None:
         raise Refused("dispatch-not-found", dispatch_id)
+    if passed or failed:
+        render_gate(item_id, rec.get("jira_key") or "unknown")
     meta = evidence_gate(item_id, rec.get("jira_key") or "unknown") if passed and not failed else {}
     ev_path = _evidence_file(rec.get("jira_key") or "unknown", evidence)
     notes = {c: "reviewer: %s%s (evidence %s)" % (tested_line(meta), evidence.strip()[:200], ev_path)
@@ -516,7 +593,8 @@ def submit_judge(item_id, passed, failed, skipped, evidence, *, state_store=stor
         notes[cid] = "SKIPPED, not verified: %s" % why
     out = verify.judge_verdict(dispatch_id, list(passed) + list(skipped), failed,
                                state_store=state_store, jira=jira, dispatcher=dispatcher,
-                               launcher=launcher, reviewer=_thread() or "reviewer", notes=notes)
+                               launcher=launcher, reviewer=_thread() or "reviewer", notes=notes,
+                               environment=environment)
     if failed and rec.get("jira_key"):              # the board shows it in Returned until the team takes it
         try:
             from agent.execution import jira_sync
@@ -539,6 +617,7 @@ def submit_qa(item_id, verdict, reason, evidence, *, state_store=store, jira=Non
     if not (evidence or "").strip():
         raise Refused("evidence-required", "name what you looked at and the steps you took")
     ticket = item_id[len("qa-"):].split("@")[0]
+    render_gate(item_id, ticket)
     meta = evidence_gate(item_id, ticket) if verdict == "pass" else (claim_record(item_id).get("meta") or {})
     ev_path = _evidence_file(ticket, evidence)
     jira = jira_sync._client(jira, state_store)
@@ -569,7 +648,7 @@ def reopen(dispatch_id, *, state_store=store):
     rec = state_store.read("conversation_dispatch", dispatch_id)
     ver = dict((rec or {}).get("verification") or {})
     skipped = [i for i, r in (ver.get("results") or {}).items()
-               if str(r.get("detail") or "").startswith("SKIPPED")]
+               if str(r.get("detail") or "").startswith(("SKIPPED", "ENVIRONMENT"))]
     if not rec or not skipped:
         raise Refused("nothing-to-reopen", "no skipped check on %s" % dispatch_id)
     results = dict(ver["results"])
@@ -878,6 +957,7 @@ def status(state_store=store):
         c = _read(os.path.join(_dir("claims"), name)) or {}
         claims[c.get("item_id")] = c
     return {"channel": get_channel(), "waiting_judge_items": [i["item_id"] for i in items],
+            "no_commit": sorted(i["item_id"] for i in judge_items(state_store) if not i.get("commit_resolved")),
             "review_time": _review_times(),
             "claimed": {k: {"thread": v.get("thread"), "age_s": int(time.time() - v.get("at", 0))}
                         for k, v in claims.items() if k and not is_done(k)}}
@@ -901,7 +981,8 @@ def app(item_id, *, stop=False, listing=False):
     try:
         return review_app.start(meta)
     except RuntimeError as exc:
-        raise Refused("app-not-started", str(exc))
+        raise Refused("build-not-ready" if str(exc).startswith("build not ready") else "app-not-started",
+                      str(exc))
 
 
 def _review_times(limit=20):
@@ -954,6 +1035,9 @@ def main(argv=None):
     s.add_argument("--pass", dest="passed", action="append", default=[])
     s.add_argument("--fail", dest="failed", action="append", default=[])
     s.add_argument("--skip", dest="skipped", action="append", default=[])
+    s.add_argument("--env", dest="env", action="append", default=[],
+                   help="C<n>:why the REVIEW ENVIRONMENT could not run it (blank canvas, no simulator, "
+                        "no clipboard): no verdict, no fix cycle spent")
     s.add_argument("--verdict"); s.add_argument("--reason", default="")
     s.add_argument("--evidence", default="")
     ns = ap.parse_args(argv)
@@ -1000,7 +1084,7 @@ def main(argv=None):
             out = submit_qa(ns.item_id, ns.verdict, ns.reason, ns.evidence)
         else:
             out = submit_judge(ns.item_id, [p.strip() for p in ns.passed], _pairs(ns.failed),
-                               _pairs(ns.skipped), ns.evidence)
+                               _pairs(ns.skipped), ns.evidence, environment=_pairs(ns.env))
     except (Refused, __import__("agent.execution.verify", fromlist=["Refused"]).Refused) as exc:
         print(json.dumps({"status": "refused", "error": str(exc)}, indent=2))
         return 2
