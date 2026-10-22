@@ -38,7 +38,12 @@ from agent.state import store                                          # noqa: E
 APP_REPO = "Dabbler/dabbler-code"
 # The Alpha messaging Worker's public base URL (non-secret; docs/messaging/live-worker-kan566.md). Without
 # these two defines the Messages tab gets the unavailable repository and never calls msg_my_conversations.
-MESSAGING_API_BASE_URL = "https://dabbler-messaging-staging.dabbler-sport.workers.dev"
+MESSAGING_WORKER_URL = "https://dabbler-messaging-staging.dabbler-sport.workers.dev"
+# The build is given this same-origin path, not the Worker URL: the Worker's CORS list is exact-match
+# (https://{canary,alpha,app}.dabbler.pro) and answers a preflight from http://localhost:812x with a 404 and no
+# allow-origin header, so the browser blocked every call and the chat drew its offline state (KAN-607). The
+# static server forwards this prefix to the Worker, so the browser never makes a cross-origin call.
+MESSAGING_API_BASE_URL = "/__worker"
 MESSAGING_ACCESS_MODE = "all"
 WEB_PORTS = range(8124, 8128)
 # The old web marker ("is being served at") printed before the app compiled, so a blank canvas looked
@@ -123,16 +128,31 @@ def _sha_dir(sha):
     return os.path.join(_dir("review-build"), sha)
 
 
-def cached_build(sha):
+def _defines_key(defines):
+    """What the build was given, minus the .env path (its content is never read here)."""
+    return "\n".join(d for d in defines if not d.startswith("--dart-define-from-file="))
+
+
+def cached_build(sha, defines=None):
     """The finished release build of this commit, or None. `.complete` is written last, so a build
-    that died half way is never served."""
-    path = os.path.join(_sha_dir(sha), "web")
-    return path if os.path.exists(os.path.join(_sha_dir(sha), ".complete")) else None
+    that died half way is never served. With `defines`, a build made with other messaging defines is not
+    a hit (an old build points at the Worker directly and cannot reach it from localhost)."""
+    done = os.path.join(_sha_dir(sha), ".complete")
+    if not os.path.exists(done):
+        return None
+    if defines is not None:
+        try:
+            with open(done, encoding="utf-8") as fh:
+                if fh.read() != _defines_key(defines):
+                    return None
+        except OSError:
+            return None
+    return os.path.join(_sha_dir(sha), "web")
 
 
 def build_web(wt, sha, defines, log_path, runner=subprocess.run):
     """`flutter build web --release` once per sha. Returns (served_dir, cached)."""
-    hit = cached_build(sha)
+    hit = cached_build(sha, defines)
     if hit:
         return hit, True
     with open(log_path, "a", encoding="utf-8") as log:
@@ -147,7 +167,8 @@ def build_web(wt, sha, defines, log_path, runner=subprocess.run):
     shutil.rmtree(final, ignore_errors=True)
     os.makedirs(final)
     shutil.copytree(built, os.path.join(final, "web"))
-    open(os.path.join(final, ".complete"), "w").close()
+    with open(os.path.join(final, ".complete"), "w", encoding="utf-8") as fh:
+        fh.write(_defines_key(defines))
     return os.path.join(final, "web"), False
 
 
@@ -243,6 +264,47 @@ def serve_main(directory, port):
     import http.server
 
     class Handler(http.server.SimpleHTTPRequestHandler):
+        def _forward(self):
+            """/__worker/<rest> -> the messaging Worker, same origin for the browser."""
+            import urllib.error
+            import urllib.request
+            length = int(self.headers.get("Content-Length") or 0)
+            body = self.rfile.read(length) if length else None
+            req = urllib.request.Request(MESSAGING_WORKER_URL + self.path[len(MESSAGING_API_BASE_URL):],
+                                         data=body, method=self.command)
+            for name in ("Authorization", "Content-Type", "Idempotency-Key", "Accept"):
+                if self.headers.get(name):
+                    req.add_header(name, self.headers[name])
+            # Cloudflare answers the default Python-urllib agent with error 1010; use the browser's own.
+            req.add_header("User-Agent", self.headers.get("User-Agent") or "Mozilla/5.0 (thebes-review)")
+            try:
+                resp = urllib.request.urlopen(req, timeout=30)
+            except urllib.error.HTTPError as exc:
+                resp = exc
+            except OSError:
+                self.send_error(502, "the messaging Worker is unreachable")
+                return
+            data = resp.read()
+            self.send_response(resp.status if hasattr(resp, "status") else resp.code)
+            for name in ("Content-Type", "Retry-After"):
+                if resp.headers.get(name):
+                    self.send_header(name, resp.headers[name])
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def _proxied(self):
+            return self.path == MESSAGING_API_BASE_URL or self.path.startswith(MESSAGING_API_BASE_URL + "/")
+
+        do_POST = do_PUT = do_DELETE = do_PATCH = lambda self: self._forward() if self._proxied() \
+            else self.send_error(405)
+
+        def do_GET(self):
+            self._forward() if self._proxied() else super().do_GET()
+
+        def do_HEAD(self):
+            self._forward() if self._proxied() else super().do_HEAD()
+
         def send_head(self):
             if not os.path.exists(self.translate_path(self.path.split("?", 1)[0])):
                 self.path = "/index.html"

@@ -112,10 +112,62 @@ class ReviewAppTests(unittest.TestCase):
         defines = ra.app_defines(env)
         self.assertEqual(defines, [
             "--dart-define-from-file=%s" % env,
-            "--dart-define=MESSAGING_API_BASE_URL=https://dabbler-messaging-staging.dabbler-sport.workers.dev",
+            "--dart-define=MESSAGING_API_BASE_URL=/__worker",
             "--dart-define=MESSAGING_ACCESS_MODE=all"])
         self.assertEqual(ra.app_defines(os.path.join(self.tmp, "none"))[0:1],
                          ["--dart-define=MESSAGING_API_BASE_URL=%s" % ra.MESSAGING_API_BASE_URL])
+
+    def test_the_build_points_at_the_same_origin_path_not_the_cross_origin_worker(self):
+        """The Worker's CORS list has no localhost; a direct URL made the chat draw its offline state."""
+        self.assertTrue(ra.MESSAGING_API_BASE_URL.startswith("/"))
+        self.assertNotIn("workers.dev", " ".join(ra.app_defines(os.path.join(self.tmp, "none"))))
+
+    def test_a_build_made_with_other_messaging_defines_is_not_a_cache_hit(self):
+        log = os.path.join(self.tmp, "log")
+        ra.build_web(self.wt, SHA, ["--dart-define=MESSAGING_API_BASE_URL=https://old"], log, runner=self.flutter())
+        new = ["--dart-define=MESSAGING_API_BASE_URL=/__worker"]
+        self.assertIsNone(ra.cached_build(SHA, new))
+        _, cached = ra.build_web(self.wt, SHA, new, log, runner=self.flutter())
+        self.assertFalse(cached)
+        self.assertEqual(len(self.builds), 2)
+        self.assertTrue(ra.cached_build(SHA, new))
+
+    def test_the_static_server_forwards_the_worker_prefix_and_serves_the_app_otherwise(self):
+        import http.server
+        import threading
+        import urllib.error
+        import urllib.request
+        seen = {}
+
+        class Upstream(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                seen["path"], seen["auth"] = self.path, self.headers.get("Authorization")
+                seen["agent_ok"] = "urllib" not in (self.headers.get("User-Agent") or "")
+                body = b'{"ok":true}'
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *a):
+                pass
+
+        up = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Upstream)
+        threading.Thread(target=up.serve_forever, daemon=True).start()
+        web = os.path.join(self.tmp, "served")
+        os.makedirs(web)
+        open(os.path.join(web, "index.html"), "w").write("<html>app</html>")
+        port = 8129 if ra._port_free(8129) else 8130
+        with mock.patch.object(ra, "MESSAGING_WORKER_URL", "http://127.0.0.1:%d" % up.server_address[1]):
+            threading.Thread(target=ra.serve_main, args=(web, port), daemon=True).start()
+            self.assertTrue(ra._wait_port(port, 5))
+            req = urllib.request.Request("http://127.0.0.1:%d/__worker/v1/conversations?x=1" % port,
+                                         headers={"Authorization": "Bearer t", "User-Agent": "Mozilla/5.0 Chrome/130"})
+            self.assertEqual(urllib.request.urlopen(req, timeout=5).read(), b'{"ok":true}')
+            self.assertEqual(seen, {"path": "/v1/conversations?x=1", "auth": "Bearer t", "agent_ok": True})
+            self.assertIn(b"app", urllib.request.urlopen("http://127.0.0.1:%d/some/route" % port, timeout=5).read())
+        up.shutdown()
 
     def test_a_wrong_browser_path_is_not_replaced_and_fails_closed(self):
         with mock.patch.dict(os.environ, {"THEBES_REVIEW_BROWSER": "/no/such/browser"}):
