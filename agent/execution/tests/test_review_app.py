@@ -142,6 +142,7 @@ class ReviewAppTests(unittest.TestCase):
         class Upstream(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
                 seen["path"], seen["auth"] = self.path, self.headers.get("Authorization")
+                seen["agent_ok"] = "urllib" not in (self.headers.get("User-Agent") or "")
                 body = b'{"ok":true}'
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -162,9 +163,9 @@ class ReviewAppTests(unittest.TestCase):
             threading.Thread(target=ra.serve_main, args=(web, port), daemon=True).start()
             self.assertTrue(ra._wait_port(port, 5))
             req = urllib.request.Request("http://127.0.0.1:%d/__worker/v1/conversations?x=1" % port,
-                                         headers={"Authorization": "Bearer t"})
+                                         headers={"Authorization": "Bearer t", "User-Agent": "Mozilla/5.0 Chrome/130"})
             self.assertEqual(urllib.request.urlopen(req, timeout=5).read(), b'{"ok":true}')
-            self.assertEqual(seen, {"path": "/v1/conversations?x=1", "auth": "Bearer t"})
+            self.assertEqual(seen, {"path": "/v1/conversations?x=1", "auth": "Bearer t", "agent_ok": True})
             self.assertIn(b"app", urllib.request.urlopen("http://127.0.0.1:%d/some/route" % port, timeout=5).read())
         up.shutdown()
 

@@ -275,6 +275,8 @@ def serve_main(directory, port):
             for name in ("Authorization", "Content-Type", "Idempotency-Key", "Accept"):
                 if self.headers.get(name):
                     req.add_header(name, self.headers[name])
+            # Cloudflare answers the default Python-urllib agent with error 1010; use the browser's own.
+            req.add_header("User-Agent", self.headers.get("User-Agent") or "Mozilla/5.0 (thebes-review)")
             try:
                 resp = urllib.request.urlopen(req, timeout=30)
             except urllib.error.HTTPError as exc:
