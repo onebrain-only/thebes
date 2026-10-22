@@ -26,14 +26,11 @@ class ReviewTierTests(unittest.TestCase):
         self.assertEqual(rt.tier([SCREEN], ["tier:1"]), 1)
         self.assertEqual(rt.tier(["test/a_test.dart"], ["tier:3"]), 3)
 
-    def test_platform_is_web_unless_native_code_changed(self):
-        self.assertEqual(rt.platform([SCREEN]), "web")
-        self.assertEqual(rt.platform(["ios/Runner/Info.plist", SCREEN]), "ios")
-        self.assertEqual(rt.platform([SCREEN], ["platform:android"]), "android")
-
     def test_describe_names_the_screenshots_a_pass_needs(self):
         self.assertEqual(rt.describe(["test/a_test.dart"]), {"tier": 1, "platform": None, "min_screenshots": 0})
         self.assertEqual(rt.describe([SCREEN])["min_screenshots"], 1)
+        self.assertEqual(rt.describe([SCREEN])["platform"], "web")
+        self.assertEqual(rt.describe(["ios/Runner/Info.plist"])["platform"], "web")
 
 
 if __name__ == "__main__":

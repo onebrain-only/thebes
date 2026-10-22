@@ -137,8 +137,7 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
   re-dispatch the same work.
 - **A refusal is not a CEO matter (CEO 2026-10-22).** When the permission system refuses a seat's
   Jira edit, do not report it to the CEO and do not ask him to change anything. Say in ONE line
-  what you tried instead: the Thebes tools (`intake edit-line`, `ticket_ruling`, `ticket_ruling`
-  for a ruling), or a Thebes fix in code (a brief the linter refuses is a linter bug to report to
+  what you tried instead: the Thebes tools (`intake edit-line`, or `ticket_ruling` for a ruling), or a Thebes fix in code (a brief the linter refuses is a linter bug to report to
   System Maintenance, not a ticket to rewrite by hand). Only money, secrets, `main`, and sending
   outside the company reach the CEO.
 - **`judge`** (only for text, report, plan, spec and answer deliverables: ask or ops lane, no
@@ -170,8 +169,7 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
   Review statuses for this. Never tell the CEO "nothing in Codex's queue" while the Review column has
   tickets: that is a defect to report.
 - **Review is local, on the team's commit (CEO 2026-10-21):** the Codex reviewer tests the exact
-  commit a team handed over on this Mac (`review_queue app`, web in its browser, the iOS simulator
-  only for native code), before Alpha, never on alpha.dabbler.pro. Depth follows the tier Thebes computes
+  commit a team handed over on this Mac (`review_queue app`, a web build in its browser; no simulators), before Alpha, never on alpha.dabbler.pro. Depth follows the tier Thebes computes
   (1 no screen, 2 a screen, 3 a sensitive screen); a PASS on a screen needs screenshots (code gate).
   The CEO's own test on Alpha comes after integration and is not part of review.
 - **`review_stalled`** (D-043): product work has waited 30+ minutes with nobody holding it, so the

@@ -883,8 +883,8 @@ def status(state_store=store):
                         for k, v in claims.items() if k and not is_done(k)}}
 
 
-def app(item_id, *, stop=False, listing=False, platform=None, shot=None, tap=None, swipe=None, text=None):
-    """Run (or stop, or drive) the claimed item's commit locally: agent/execution/review_app.py."""
+def app(item_id, *, stop=False, listing=False):
+    """Run (or stop) the claimed item's commit on the web: agent/execution/review_app.py."""
     from agent.execution import review_app
     if listing or not item_id:
         return review_app.list_running()
@@ -899,18 +899,7 @@ def app(item_id, *, stop=False, listing=False, platform=None, shot=None, tap=Non
         raise Refused("not-your-claim", "run `wait` or `next` first: only the reviewer holding %s "
                                         "runs its app" % item_id)
     try:
-        if shot or tap or swipe or text is not None:
-            out = {}
-            if tap:
-                out.update(review_app.ios_tap(ticket, tap[0], tap[1]))
-            if swipe:
-                out.update(review_app.ios_swipe(ticket, *swipe))
-            if text is not None:
-                out.update(review_app.ios_type(ticket, text))
-            if shot:
-                out.update(review_app.shot(ticket, shot))
-            return out
-        return review_app.start(meta, platform=platform)
+        return review_app.start(meta)
     except RuntimeError as exc:
         raise Refused("app-not-started", str(exc))
 
@@ -943,15 +932,10 @@ def main(argv=None):
     w = sub.add_parser("wait"); w.add_argument("--timeout", type=int, default=300)
     sub.add_parser("next")
     sub.add_parser("status")
-    ap_ = sub.add_parser("app", help="build and run the item's commit locally for review (web or android)")
+    ap_ = sub.add_parser("app", help="build and run the item's commit on the web for review")
     ap_.add_argument("item_id", nargs="?")
     ap_.add_argument("--stop", action="store_true", help="stop it and remove its folder")
     ap_.add_argument("--list", action="store_true", help="what is running")
-    ap_.add_argument("--platform", choices=("web", "ios", "android"), help="override the item's platform")
-    ap_.add_argument("--shot", metavar="NAME", help="save a screenshot of the running app as evidence")
-    ap_.add_argument("--tap", nargs=2, type=int, metavar=("X", "Y"), help="iOS: tap at screenshot pixels")
-    ap_.add_argument("--swipe", nargs=4, type=int, metavar=("X1", "Y1", "X2", "Y2"), help="iOS: swipe (pixels)")
-    ap_.add_argument("--type", dest="text", metavar="TEXT", help="iOS: type into the focused field")
     ro = sub.add_parser("reopen"); ro.add_argument("dispatch_id")
     aq = sub.add_parser("ask", help="the reviewer is stuck: put ONE question to the orchestrator")
     aq.add_argument("item_id"); aq.add_argument("--question", required=True)
@@ -1010,9 +994,7 @@ def main(argv=None):
             print(json.dumps(reopen(ns.dispatch_id), indent=2))
             return 0
         if ns.cmd == "app":
-            print(json.dumps(app(ns.item_id, stop=ns.stop, listing=ns.list, platform=ns.platform,
-                                 shot=ns.shot, tap=ns.tap, swipe=ns.swipe, text=ns.text),
-                             indent=2, default=str))
+            print(json.dumps(app(ns.item_id, stop=ns.stop, listing=ns.list), indent=2, default=str))
             return 0
         if ns.item_id.startswith("qa-"):
             out = submit_qa(ns.item_id, ns.verdict, ns.reason, ns.evidence)

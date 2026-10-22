@@ -96,23 +96,18 @@ alpha.dabbler.pro or any public URL. Every item carries `branch`, `sha`, `tier` 
 | 2 | a screen changed | the ticket's TCs in EN+Light and AR+Dark, on the item's ONE platform |
 | 3 | a screen in money / sign-in / database work | every TC, both languages and themes, then the 10-minute exploratory pass below |
 
-One codebase, ONE platform: `web` (your internal browser) unless the item says `ios` (native or
-startup code changed). Android only when a ticket is labelled `platform:android`.
+One codebase, ONE platform: the **web** build in your internal browser. No simulators, no
+emulators (CEO 2026-10-22). A change that only a phone shows (native code, permissions, push) is
+checked on the web as far as it can be, and the rest is a `skipped: needs a device` line in your
+evidence; Thebes treats that as a coverage limit, not a defect.
 
 1. **Evidence first.** Open the team's named evidence. If it settles a check, cite the file.
 2. **Run the app (tier 2-3): Thebes builds it, you only look.**
-   `python3 -m agent.execution.review_queue app <item_id>` (about 1-2 minutes) prints:
-   - web: `url` (http://localhost:81xx) -> open it in your internal browser. Flutter draws on a
-     canvas: press Enter (or "Enable accessibility") so the semantics tree appears, then read and tap.
-   - ios: an iPhone simulator, no window needed (works with the Mac's screen locked). Drive it with
-     `review_queue app <item_id> --shot tc1-en-light` (screenshot into the evidence folder; read it),
-     `--tap X Y` (X Y = pixels in that screenshot), `--swipe X1 Y1 X2 Y2` (scroll),
-     `--type "text"` (tap the field first).
-     Screenshot before you type: a system alert (notifications, location) swallows input silently.
-   - android (only `platform:android`): `device` and `screenshot_cmd`; drive with
-     `adb -s <device> shell input tap|text|swipe`.
-   It prints `evidence_dir`. Save your screenshots there (`.png`), named by TC, e.g. `tc1-en-light.png`
-   (on iOS `--shot` does it for you).
+   `python3 -m agent.execution.review_queue app <item_id>` (about 1-2 minutes) prints a `url`
+   (http://localhost:81xx) and the `evidence_dir`. Open the URL in your internal browser. Flutter
+   draws on a canvas: press Enter (or "Enable accessibility") so the semantics tree appears, then
+   read and tap. Save your screenshots (`.png`) in `evidence_dir`, named by TC, e.g.
+   `tc1-en-light.png`.
 3. **Run the ticket's TESTING SCENARIOS** for your tier. A TC you could not run is written in your
    evidence as `skipped: <reason>`; skipping never blocks, it is just visible.
 4. **Submit** (below). A tier-2 PASS needs at least 1 screenshot taken during this review, tier 3
@@ -121,8 +116,8 @@ startup code changed). Android only when a ticket is labelled `platform:android`
    removes the folder). `review_queue app --list` shows what is running.
 
 **Exploratory pass (tier 3 only, 10 minutes):** double tap every action, back in the middle of a
-flow, rotate (ios), cut the network mid-load, empty and very long content, and read the
-browser console / `adb logcat` for errors a screen does not show.
+flow, cut the network mid-load, empty and very long content, and read the
+browser console for errors a screen does not show.
 
 3. **Signing in.** Test account: `dabbler.pro@proton.me`. Take the password at the moment you
    type it: `security find-generic-password -s dabbler-test-user -w`. Never echo it, write it
