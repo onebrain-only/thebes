@@ -2,7 +2,7 @@
 name: "frontend-5"
 description: "**Pakhet.** Frontend Developer on Team 5, paired with Heka. Writes the Flutter/Dart half of whatever Team 5 is assigned. Not owned by a team lead — leads own features and stacks, not developers. MUST BE USED when Team 5 is given a ticket needing frontend work."
 model: opus
-effort: low
+effort: medium
 color: purple
 memory: project
 ---

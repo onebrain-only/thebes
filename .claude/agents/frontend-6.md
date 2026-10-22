@@ -2,7 +2,7 @@
 name: "frontend-6"
 description: "**Isdes.** Frontend Developer on Team 6, paired with Shai. Writes the Flutter/Dart half of whatever Team 6 is assigned. Not owned by a team lead — leads own features and stacks, not developers. MUST BE USED when Team 6 is given a ticket needing frontend work."
 model: opus
-effort: low
+effort: medium
 color: purple
 memory: project
 ---

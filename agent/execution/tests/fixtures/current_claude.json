@@ -9,42 +9,42 @@
     "backend-1": {
       "role": "backend",
       "model": "opus",
-      "effort": "low"
+      "effort": "medium"
     },
     "backend-2": {
       "role": "backend",
       "model": "opus",
-      "effort": "low"
+      "effort": "medium"
     },
     "backend-3": {
       "role": "backend",
       "model": "opus",
-      "effort": "low"
+      "effort": "medium"
     },
     "backend-4": {
       "role": "backend",
       "model": "opus",
-      "effort": "low"
+      "effort": "medium"
     },
     "backend-5": {
       "role": "backend",
       "model": "opus",
-      "effort": "low"
+      "effort": "medium"
     },
     "backend-6": {
       "role": "backend",
       "model": "opus",
-      "effort": "low"
+      "effort": "medium"
     },
     "backend-7": {
       "role": "backend",
       "model": "opus",
-      "effort": "low"
+      "effort": "medium"
     },
     "backend-8": {
       "role": "backend",
       "model": "opus",
-      "effort": "low"
+      "effort": "medium"
     },
     "content-manager": {
       "role": "content",
@@ -79,42 +79,42 @@
     "frontend-1": {
       "role": "frontend",
       "model": "opus",
-      "effort": "low"
+      "effort": "medium"
     },
     "frontend-2": {
       "role": "frontend",
       "model": "opus",
-      "effort": "low"
+      "effort": "medium"
     },
     "frontend-3": {
       "role": "frontend",
       "model": "opus",
-      "effort": "low"
+      "effort": "medium"
     },
     "frontend-4": {
       "role": "frontend",
       "model": "opus",
-      "effort": "low"
+      "effort": "medium"
     },
     "frontend-5": {
       "role": "frontend",
       "model": "opus",
-      "effort": "low"
+      "effort": "medium"
     },
     "frontend-6": {
       "role": "frontend",
       "model": "opus",
-      "effort": "low"
+      "effort": "medium"
     },
     "frontend-7": {
       "role": "frontend",
       "model": "opus",
-      "effort": "low"
+      "effort": "medium"
     },
     "frontend-8": {
       "role": "frontend",
       "model": "opus",
-      "effort": "low"
+      "effort": "medium"
     },
     "pm": {
       "role": "pm",

@@ -34,7 +34,7 @@ while read -r tid lane display; do
   else
     role="a Thebes code team, an execution island that runs seats as subagents; you push only your own branch, never merge into Alpha, Canary or main, and never write to the database"
   fi
-  claude --bg --name "$name" "You are Thebes team $display, $role. Read CLAUDE.md and agent/skills/route-to-seat/SKILL.md. Do nothing now. Reply with one line: $(echo "$display" | tr a-z A-Z) READY, then go idle. Later a THEBES_CONVERSATION_DISPATCH envelope will arrive as a user turn; follow its team, lane and report instructions exactly." >/dev/null
+  claude --bg --name "$name" --model claude-sonnet-5-5 --effort medium "You are Thebes team $display, $role. Read CLAUDE.md and agent/skills/route-to-seat/SKILL.md. Do nothing now. Reply with one line: $(echo "$display" | tr a-z A-Z) READY, then go idle. Later a THEBES_CONVERSATION_DISPATCH envelope will arrive as a user turn; follow its team, lane and report instructions exactly." >/dev/null
   sid=""
   for _ in $(seq 1 30); do
     sid=$(claude agents --json 2>/dev/null | python3 -c "
