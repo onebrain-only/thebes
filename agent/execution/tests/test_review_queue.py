@@ -11,7 +11,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.a
 sys.path.insert(0, ROOT)
 
 from agent.state import store, validate                               # noqa: E402
-from agent.execution import review_queue as rq, verify, jira_sync    # noqa: E402
+from agent.execution import review_queue as rq, review_app, verify, jira_sync    # noqa: E402
 
 ORCH = "0eeeeeee-9999-7000-8000-00000000000e"
 LUXOR = "0bbbbbbb-9999-7000-8000-00000000000b"
@@ -33,8 +33,12 @@ class ReviewQueueTests(unittest.TestCase):
         self._cp = rq.changed_paths
         rq.changed_paths = lambda branch, sha, runner=None, key=None: self.paths
         rq._FILES.clear()
+        self.heads = {}
+        self._bh = rq.branch_head
+        rq.branch_head = lambda branch, runner=None, clock=None: self.heads.get(branch)   # no network
 
     def tearDown(self):
+        rq.branch_head = self._bh
         rq.changed_paths = self._cp
         os.environ.pop("CODEX_THREAD_ID", None)
         store.RUNTIME, store.LOCKS, validate.RUNTIME = self.old
@@ -106,6 +110,23 @@ class ReviewQueueTests(unittest.TestCase):
         self.assertIn("SKIPPED", res["C3"]["detail"])
         self.assertIsNone(rq.next_item(with_qa=False), "a settled item is never offered again")
         self.assertTrue(rq.is_done(item["item_id"]))
+
+    def test_an_environment_failure_spends_no_fix_cycle_and_goes_nowhere(self):
+        """Blank canvas, no sim, no clipboard: the review environment failed, not the team."""
+        from agent.execution import watchdog
+        did = self.judge_root()
+        item = rq.next_item(with_qa=False)
+        dispatcher = mock.Mock()
+        with mock.patch.object(watchdog, "_alert") as alert:
+            rq.submit_judge(item["item_id"], ["C2"], {}, {}, "opened Home, screenshot x.png",
+                            state_store=store, jira=mock.Mock(), dispatcher=dispatcher,
+                            launcher=mock.Mock(), environment={"C3": "no clipboard on the simulator"})
+        ver = store.read("conversation_dispatch", did)["verification"]
+        self.assertEqual((ver["verdict"], ver["cycle"]), ("error", 1), "no cycle is charged")
+        self.assertEqual(ver["results"]["C3"]["status"], "error")
+        self.assertTrue(ver["results"]["C3"]["detail"].startswith("ENVIRONMENT"))
+        dispatcher.assert_not_called()                     # nothing goes back to the team
+        alert.assert_called_once()
 
     def test_an_item_whose_ticket_is_already_done_is_dropped(self):
         """Live 2026-10-13: a stale KAN-438 item the PO had closed was reviewed and failed."""
@@ -382,6 +403,7 @@ class ReviewQueueTests(unittest.TestCase):
         self.assertEqual((items["KAN-9"]["branch"], items["KAN-9"]["sha"]), ("alpha-luxor", SHA))
         self.assertEqual((items["KAN-9"]["tier"], items["KAN-9"]["platform"]), (2, "web"))
         self.assertIsNone(items["KAN-8"]["sha"], "no team record: said, not guessed")
+        self.assertFalse(items["KAN-8"]["commit_resolved"])
         self.assertIn("no verified commit", items["KAN-8"]["note"])
 
     def _claimed_qa(self, tier):
@@ -394,6 +416,7 @@ class ReviewQueueTests(unittest.TestCase):
     def test_a_pass_on_a_screen_needs_a_screenshot_of_the_running_app(self):
         item_id = self._claimed_qa(2)
         jira = mock.Mock()
+        review_app._record_render("KAN-9", SHA, True)
         with mock.patch.object(jira_sync, "_move"):
             with self.assertRaises(rq.Refused) as ctx:
                 rq.submit_qa(item_id, "pass", "ok", "steps", state_store=store, jira=jira)
@@ -407,6 +430,7 @@ class ReviewQueueTests(unittest.TestCase):
 
     def test_a_fail_or_a_light_item_needs_no_screenshot(self):
         jira = mock.Mock()
+        review_app._record_render("KAN-9", SHA, True)
         with mock.patch.object(jira_sync, "_move"):
             rq.submit_qa(self._claimed_qa(2), "fail", "button missing", "steps", state_store=store, jira=jira)
         item_id = "qa-KAN-7@x"
@@ -425,7 +449,80 @@ class ReviewQueueTests(unittest.TestCase):
         jira.search_issues.return_value = [raw, dict(raw, key="KAN-77")]
         jira.normalize_issue.side_effect = lambda r: {"key": r["key"], "summary": "s", "status": "QA-Test", "description": "d"}
         kinds = sorted((c["kind"], c["ticket"]) for c in rq.candidates(jira=jira))
-        self.assertEqual(kinds, [("judge", "KAN-9"), ("qa", "KAN-77")])
+        self.assertEqual(kinds, [("judge", "KAN-9")], "KAN-77 has no branch and no sha: withheld")
+
+    # ------------------------------------------------ every item carries branch and sha (KAN-622)
+    def _no_sha(self, did, **changes):
+        rec = store.read("conversation_dispatch", did)
+        store.update("conversation_dispatch", did, rec["revision"],
+                     dict(changes, verification={"verdict": "needs_judge", "cycle": 1, "results": {}}))
+
+    def test_a_qa_item_without_a_verified_sha_gets_the_branch_head_and_says_so(self):
+        """KAN-622: its newest dispatch had branch null and no sha, an older one named the branch."""
+        did = self.judge_root("KAN-622")
+        self._no_sha(did)
+        self.heads["alpha-luxor"] = "b" * 40
+        items = {i["ticket"]: i for i in rq.qa_items(self._search({"KAN-622": "Self-review"}), store)}
+        item = items["KAN-622"]
+        self.assertEqual((item["branch"], item["sha"]), ("alpha-luxor", "b" * 40))
+        self.assertEqual(item["sha_from"], "branch-head")
+        self.assertTrue(item["commit_resolved"])
+
+    def test_the_branch_falls_back_to_the_teams_own_when_no_dispatch_names_one(self):
+        did = self.judge_root("KAN-5")
+        self._no_sha(did, branch=None)
+        self.assertEqual(rq.team_branch("KAN-5"), "alpha-luxor")
+        self.heads["alpha-luxor"] = "c" * 40
+        self.assertEqual(rq.with_commit({"branch": None, "sha": None}, "KAN-5")["sha"], "c" * 40)
+
+    def test_an_item_with_no_resolvable_commit_is_never_offered(self):
+        self.judge_root("KAN-9")
+        jira = mock.Mock()
+        jira.get_issue.return_value = {"status": "QA-Test"}
+        jira.get_comments.return_value = []
+        raw = {"key": "KAN-31", "fields": {"updated": "2026-10-20T10:00:00.000+0000"}}
+        jira.search_issues.return_value = [raw]
+        jira.normalize_issue.side_effect = lambda r: {"key": r["key"], "summary": "s", "status": "QA-Test", "description": "d"}
+        offered = rq.candidates(jira=jira)
+        self.assertTrue(offered and all(c["branch"] and c["sha"] for c in offered))
+        self.assertNotIn("KAN-31", {c["ticket"] for c in offered})
+
+    # ------------------------------------------------ fail closed on a blank canvas
+    def test_no_verdict_can_be_recorded_on_a_build_that_never_drew(self):
+        jira = mock.Mock()
+        review_app._record_render("KAN-9", SHA, False, "build not ready: no flt-semantics-placeholder")
+        os.makedirs(rq.evidence_dir("KAN-9"), exist_ok=True)
+        open(os.path.join(rq.evidence_dir("KAN-9"), "tc1.png"), "wb").close()
+        with mock.patch.object(jira_sync, "_move") as move:
+            for verdict in ("pass", "fail"):
+                with self.assertRaises(rq.Refused) as ctx:
+                    rq.submit_qa(self._claimed_qa(2), verdict, "reason", "steps", state_store=store, jira=jira)
+                self.assertEqual(ctx.exception.code, "build-not-ready")
+            move.assert_not_called()
+        jira.add_comment.assert_not_called()
+
+    def test_a_screen_item_on_web_needs_a_start_that_drew_for_this_sha(self):
+        jira = mock.Mock()
+        with mock.patch.object(jira_sync, "_move"):
+            with self.assertRaises(rq.Refused) as ctx:                       # never started
+                rq.submit_qa(self._claimed_qa(2), "fail", "r", "steps", state_store=store, jira=jira)
+            self.assertEqual(ctx.exception.code, "build-not-ready")
+            review_app._record_render("KAN-9", "d" * 40, True)               # an older commit drew
+            with self.assertRaises(rq.Refused):
+                rq.submit_qa(self._claimed_qa(2), "fail", "r", "steps", state_store=store, jira=jira)
+            review_app._record_render("KAN-9", SHA, True)
+            rq.submit_qa(self._claimed_qa(2), "fail", "r", "steps", state_store=store, jira=jira)
+
+    def test_a_judge_item_cannot_pass_or_fail_on_a_blank_canvas_but_can_skip(self):
+        did = self.judge_root("KAN-9")
+        item_id = "judge-%s-c1" % did
+        self.assertTrue(rq.claim(item_id))
+        review_app._record_render("KAN-9", SHA, False, "build not ready")
+        with self.assertRaises(rq.Refused) as ctx:
+            rq.submit_judge(item_id, ["C2"], {}, {}, "looked", state_store=store)
+        self.assertEqual(ctx.exception.code, "build-not-ready")
+        with self.assertRaises(rq.Refused):
+            rq.submit_judge(item_id, [], {"C2": "blank"}, {}, "looked", state_store=store)
 
     def test_a_stalled_review_gets_one_mac_notification_with_the_wake_prompt(self):
         self.judge_root("KAN-9")
