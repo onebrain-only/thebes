@@ -2,7 +2,7 @@
 name: "backend-1"
 description: "**Shu.** Backend Developer on Team 1, paired with Nephthys. Writes the database and server half of whatever Team 1 is assigned. Not owned by a team lead — leads own features and stacks, not developers. MUST BE USED when Team 1 is given a ticket needing backend work."
 model: opus
-effort: low
+effort: medium
 color: blue
 memory: project
 ---

@@ -2,7 +2,7 @@
 name: "frontend-1"
 description: "**Nephthys.** Frontend Developer on Team 1, paired with Shu. Writes the Flutter/Dart half of whatever Team 1 is assigned. Not owned by a team lead — leads own features and stacks, not developers. MUST BE USED when Team 1 is given a ticket needing frontend work."
 model: opus
-effort: low
+effort: medium
 color: purple
 memory: project
 ---

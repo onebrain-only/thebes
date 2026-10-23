@@ -168,7 +168,7 @@ class ClaudeWakeCharacterizationTests(unittest.TestCase):
     def test_binding_model_and_effort_override_no_current_defaults(self):
         wake = prepare_claude_wake(request())
         self.assertEqual("opus", wake.model)
-        self.assertEqual("low", wake.effort)
+        self.assertEqual("medium", wake.effort)
         self.assertEqual(ModelIntent.COST_EFFICIENT, request().model_intent)
         self.assertEqual(ReasoningEffort.HIGH, request().reasoning_effort)
 
