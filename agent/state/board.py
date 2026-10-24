@@ -38,7 +38,7 @@ CANONICAL_STATES = (READY, DEVELOPMENT, REVIEW, DONE)
 
 # Board columns, left to right as configured.
 COLUMNS = ("Backlog", "Ready", "Operations", "Frontend Development",
-           "Backend Development", "Needs-input", "Review", "Returned", "Done")
+           "Backend Development", "Needs-input", "Review", "Done")
 
 # status id -> (name, column, canonical, transition id)
 # `column` is None for a legacy status that is no longer a board target.
@@ -56,11 +56,13 @@ STATUSES = {
     "10007": ("Done",        "Done",                 DONE,        "41"),
     # ---- CEO 2026-10-21: two new columns, each holding an old status ----
     "1":     ("Open",        "Needs-input",          DEVELOPMENT, "13"),   # waits on the CEO
-    "4":     ("Reopened",    "Returned",             DEVELOPMENT, "14"),   # review failed: back to the team
     # ---- legacy: historical only, never a target for new work ----
     "10005": ("In Progress", None,                   DEVELOPMENT, "21"),
     "10010": ("Development", None,                   DEVELOPMENT, "4"),
     "10006": ("In Review",   None,                   REVIEW,      "31"),
+    # CEO 2026-10-24: the Returned column was removed. Failed work goes back to its own column
+    # with the `returned` label; Reopened stays mapped only because history names it.
+    "4":     ("Reopened",    None,                   DEVELOPMENT, "14"),
 }
 
 LEGACY_STATUS_IDS = tuple(sid for sid, v in STATUSES.items() if v[1] is None)

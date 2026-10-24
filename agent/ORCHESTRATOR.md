@@ -132,9 +132,18 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
   could not execute, nothing observed wrong): the ticket is Done with the unverified part written
   on it, and you get no alert. If you DO get the alert, a defect was seen or a second check
   fails: **you decide** (D-035), not the CEO. Defect → send it back to the team with the reviewer's
-  reason (the board's Returned column) or to another team. Never ask the CEO to say "accepted",
+  reason (back to its own column with the `returned` label) or to another team. Never ask the CEO to say "accepted",
   never wait for his "موافق": that is the blind approval he asked us to remove. Never just
   re-dispatch the same work.
+- **Where a ticket may move (CEO 2026-10-24).** There is no Returned column. A review FAIL
+  puts the ticket back in its own working column (Front-end or Back-end, or its Operations lane)
+  with the `returned` label, and a PASS moves it to Done and removes the label; the Codex
+  reviewer does both in code (`review_queue.send_back` / `close_passed`). Review is for CODED
+  work only. A ticket that sits in Operations (Design, Content, Operations) never jumps to
+  Review: if it is Operations-only it goes to Done; if it leads to code (a design to build) it
+  goes to Front-end and/or Back-end first, is built, and only then reaches Review. Check the
+  target before any transition out of Operations; QA-Test, Self-review and Peer-review are
+  never a target from there.
 - **A refusal is not a CEO matter (CEO 2026-10-22).** When the permission system refuses a seat's
   Jira edit, do not report it to the CEO and do not ask him to change anything. Say in ONE line
   what you tried instead: the Thebes tools (`intake edit-line`, or `ticket_ruling` for a ruling), or a Thebes fix in code (a brief the linter refuses is a linter bug to report to

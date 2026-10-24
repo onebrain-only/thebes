@@ -45,7 +45,9 @@ JIRA_POLL_SECONDS = 60
 # The board's Review column also holds the old `In Review` status (board config, 2026-10-21).
 QA_JQL = ('project = KAN AND status in ("QA-Test", "Self-review", "Peer-review", "In Review") '
           'ORDER BY updated ASC')
-RETURNED_STATUS_ID = "4"            # Reopened = the board's Returned column (CEO 2026-10-21)
+# CEO 2026-10-24: the Returned column is gone. A failed review sends the ticket back to the
+# column it belongs in (Front-end / Back-end, or its Operations lane) with this label.
+RETURNED_LABEL = "returned"
 DONE_STATUS_ID = "10007"
 TEXT_LIMIT = 6000
 
@@ -595,16 +597,66 @@ def submit_judge(item_id, passed, failed, skipped, evidence, *, state_store=stor
                                state_store=state_store, jira=jira, dispatcher=dispatcher,
                                launcher=launcher, reviewer=_thread() or "reviewer", notes=notes,
                                environment=environment)
-    if failed and rec.get("jira_key"):              # the board shows it in Returned until the team takes it
+    if failed and rec.get("jira_key"):              # the ticket goes back to its own column, tagged returned
         try:
             from agent.execution import jira_sync
             client = jira_sync._client(jira, state_store)
             if client is not None:
-                jira_sync._move(rec["jira_key"], RETURNED_STATUS_ID, client, state_store)
+                send_back(rec["jira_key"], client, state_store)
         except Exception:                            # noqa: BLE001  the send-back already happened
+            pass
+    elif passed and rec.get("jira_key"):             # the tag comes off once it passes
+        try:
+            from agent.execution import jira_sync
+            client = jira_sync._client(jira, state_store)
+            if client is not None:
+                _set_returned(rec["jira_key"], client, False)
+        except Exception:                            # noqa: BLE001
             pass
     finish(item_id, {"pass": sorted(passed), "fail": sorted(failed), "skip": sorted(skipped)})
     return {"status": "recorded", "item_id": item_id, "evidence": ev_path, "result": out}
+
+
+def _working_status(ticket, state_store):
+    """The status a returned ticket goes back to: its own lane, never Review or Done."""
+    import board
+    task = state_store.read("task", ticket) or {}
+    cap = task.get("required_capability") or \
+        (task.get("execution_profile") or {}).get("required_capability")
+    if not cap:
+        for rec in sorted(state_store.read_all("conversation_dispatch"),
+                          key=lambda r: r.get("created_at") or "", reverse=True):
+            if rec.get("jira_key") == ticket and rec.get("jira_capability"):
+                cap = rec["jira_capability"]
+                break
+    sid = board.execution_status_for(cap) if cap and cap not in board.NO_EXECUTION_CAPABILITIES else None
+    return sid or board.CAPABILITY_TO_STATUS_ID["frontend"]
+
+
+def _set_returned(ticket, jira, on):
+    """Best effort: the tag is a signal, the move is the fact."""
+    try:
+        labels = list(jira.get_issue(ticket).get("labels") or [])
+    except Exception:                                # noqa: BLE001
+        return
+    if on and RETURNED_LABEL not in labels:
+        jira.update_issue(ticket, {"labels": labels + [RETURNED_LABEL]})
+    elif not on and RETURNED_LABEL in labels:
+        jira.update_issue(ticket, {"labels": [l for l in labels if l != RETURNED_LABEL]})
+
+
+def send_back(ticket, jira, state_store):
+    """Failed review: back to the ticket's own column, tagged `returned`."""
+    from agent.execution import jira_sync
+    jira_sync._move(ticket, _working_status(ticket, state_store), jira, state_store)
+    _set_returned(ticket, jira, True)
+
+
+def close_passed(ticket, jira, state_store):
+    """Passed review: Done, and the `returned` tag comes off."""
+    from agent.execution import jira_sync
+    jira_sync._move(ticket, DONE_STATUS_ID, jira, state_store)
+    _set_returned(ticket, jira, False)
 
 
 def submit_qa(item_id, verdict, reason, evidence, *, state_store=store, jira=None):
@@ -624,11 +676,11 @@ def submit_qa(item_id, verdict, reason, evidence, *, state_store=store, jira=Non
     if jira is None:
         raise Refused("jira-unavailable", "cannot record a qa verdict without Jira")
     if verdict == "pass":
-        jira_sync._move(ticket, DONE_STATUS_ID, jira, state_store)
+        close_passed(ticket, jira, state_store)
         jira.add_comment(ticket, "Thebes reviewer (Codex): PASS. %s\n%sEvidence: %s"
                          % ((reason or "").strip()[:500], tested_line(meta), ev_path))
     else:
-        jira_sync._move(ticket, RETURNED_STATUS_ID, jira, state_store)
+        send_back(ticket, jira, state_store)
         jira.add_comment(ticket, "Thebes reviewer (Codex): FAIL.\n%s\n%sEvidence: %s"
                          % (reason.strip()[:1500], tested_line(meta), ev_path))
         try:                                         # the PM / orchestrator re-plans the rework

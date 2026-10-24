@@ -546,3 +546,40 @@ class ReviewQueueTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SendBackTests(unittest.TestCase):
+    def test_a_failed_review_returns_to_its_own_lane_tagged_returned(self):
+        calls = []
+
+        class J:
+            def get_issue(self, k):
+                return {"status_id": "10009", "labels": ["x"]}
+
+            def get_transitions(self, k):
+                return [{"to_status_id": "10043", "id": "5"}]
+
+            def transition_issue(self, k, t):
+                calls.append(("move", t))
+
+            def update_issue(self, k, f):
+                calls.append(("labels", f["labels"]))
+
+        class S:
+            @staticmethod
+            def read(kind, rid):
+                return {"required_capability": "backend", "revision": 1}
+
+            @staticmethod
+            def read_all(kind):
+                return []
+
+            @staticmethod
+            def observe_lifecycle(*a):
+                return None
+
+            StateError = Exception
+
+        rq.send_back("KAN-1", J(), S)
+        self.assertIn(("move", "5"), calls)
+        self.assertIn(("labels", ["x", "returned"]), calls)

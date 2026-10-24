@@ -89,6 +89,15 @@ def execution_target(record, state_store):
     return board.execution_status_for(cap), cap
 
 
+OPERATIONS_STATUS_IDS = ("10047", "10048", "10049")      # Design, Content, Operations
+
+
+def _operations_only(record, state_store):
+    """True when the ticket's lane is Operations and it was not sent on to code."""
+    target, _ = execution_target(record, state_store)
+    return target in OPERATIONS_STATUS_IDS
+
+
 def review_target(record, state_store):
     import board
     task = _task(record["jira_key"], state_store) or {}
@@ -214,10 +223,16 @@ def on_finish(record, result_text, *, state_store=store, jira=None, escalated=Fa
         summary = summary[:SUMMARY_CHARS] + " …"
     try:
         if outcome == "completed":
-            target, route = review_target(record, state_store)
-            moved = _move(record["jira_key"], target, jira, state_store)
-            head = "Thebes: team %s reported completed; ticket moved to review (%s)." % (
-                team, route)
+            if _operations_only(record, state_store):
+                # CEO 2026-10-24: Review is for coded work. Operations-only work goes to Done.
+                moved = _move(record["jira_key"], DONE_STATUS_ID, jira, state_store)
+                head = ("Thebes: team %s reported completed; Operations-only work (no code), "
+                        "ticket moved to Done." % team)
+            else:
+                target, route = review_target(record, state_store)
+                moved = _move(record["jira_key"], target, jira, state_store)
+                head = "Thebes: team %s reported completed; ticket moved to review (%s)." % (
+                    team, route)
         else:
             moved = {"moved": False}
             head = ("Thebes: team %s stopped — %s%s. The ticket was not moved."
