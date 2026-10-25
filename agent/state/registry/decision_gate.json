@@ -5,10 +5,10 @@
   "gate": "jev",
   "threshold": 0.7,
   "approval": {
-    "note": "D-033. `ceo_only` patterns are matched in plain code BEFORE any model is asked; a hit always escalates to the CEO. `routine` names the actions Jev may approve alone (one typed Choice over these plus `not_routine`); a confident routine match resumes the worker at once with an approval. Patterns are lowercase substrings.",
+    "note": "D-033 (amended CEO 2026-10-25: a technical permission is never his - only money, main and sending outside the company reach him; everything else a deny-list hit matches is decided by the orchestrator through the gate). `ceo_only` patterns are matched in plain code BEFORE any model is asked; a hit always escalates to the CEO. `routine` names the actions Jev may approve alone (one typed Choice over these plus `not_routine`); a confident routine match resumes the worker at once with an approval. Patterns are lowercase substrings.",
     "threshold": 0.7,
-    "orchestrator_decides": ["destructive_git", "governance_files", "other_repository", "push_canary"],
-    "orchestrator_decides_with_recorded_approval": ["production"],
+    "orchestrator_decides": ["destructive_git", "governance_files", "other_repository", "push_canary", "production", "secrets_and_credentials"],
+    "orchestrator_decides_with_recorded_approval": [],
     "recorded_refs": ["supabase-messaging-approval", "messaging-launch", "cloudflare-messaging-approval"],
     "ceo_only": {
       "merge_or_push_main":      ["to main", "into main", "onto main", "push main", "origin main", "main branch"],
@@ -16,7 +16,8 @@
       "push_canary":             ["push to canary", "push canary", "deploy to canary", "origin canary"],
       "production":              ["production", "apply_migration", "apply the migration", "run the migration", "prod database", "live database"],
       "governance_files":        ["role file", "decisions.md", "contract.md", "manifesto.md", "authority.json"],
-      "money_or_secrets":        ["spend", "pay for", "budget", "api key", "credential", "settings.json", "re:\\bsecrets?\\b", "re:\\b(api|access|auth|bearer|jwt|service|refresh|personal access|private) tokens?\\b"],
+      "money":                   ["spend", "pay for", "budget"],
+      "secrets_and_credentials": ["api key", "credential", "settings.json", "re:\\bsecrets?\\b", "re:\\b(api|access|auth|bearer|jwt|service|refresh|personal access|private) tokens?\\b"],
       "external_send":           ["send an email", "send email", "slack", "notify the user", "re:\\bpublish(ed|ing)?\\b.{0,30}\\b(to|on)\\b.{0,25}\\b(app store|play store|testflight|npm|pub\\.dev|production|the public)", "re:\\bpost to (slack|twitter|linkedin|instagram|social)"],
       "other_repository":        ["another repo", "other repository", "different repo"]
     },

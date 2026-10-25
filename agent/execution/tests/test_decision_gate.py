@@ -238,7 +238,7 @@ class DecisionGateTests(unittest.TestCase):
         out = self.submit(did, cap, "blocked", "We need budget approval to pay for the vendor.",
                           router=self.router)
         self.assertEqual(out["origin_reply"]["escalated"]["reason"],
-                         "ceo-only:money_or_secrets", "the D-033 deny-list fires before any gate")
+                         "ceo-only:money", "the D-033 deny-list fires before any gate")
         self.assertEqual(self.launched, [THREAD], "the question reached the Codex thread")
         ev = store.read("codex_turn_event", out["origin_reply"]["event_id"])
         with open(ev["text_ref"], encoding="utf-8") as fh:

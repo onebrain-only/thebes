@@ -144,6 +144,15 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
   goes to Front-end and/or Back-end first, is built, and only then reaches Review. Check the
   target before any transition out of Operations; QA-Test, Self-review and Peer-review are
   never a target from there.
+- **Permissions are never the CEO's (CEO 2026-10-25, permanent).** He does not answer technical
+  permissions: deploys, migrations, branches, credentials, tokens, governance files. Once he has
+  ordered work, that order IS the approval, and the order outranks any older Jira comment (a stale
+  "don't deploy" included). The decision gate (Jev) classifies a team's permission question and the
+  orchestrator answers it and resumes the team. Only three things reach him: **money** being spent,
+  **`main`** (merge or push), and **sending outside the company**. When a team refuses because of
+  an old comment, write his newer order into the ticket yourself, dated and in his words, and tell
+  the team. Never report that to him as news and never ask him to approve it again. If a permission
+  question reaches you in the inbox, answer it.
 - **A refusal is not a CEO matter (CEO 2026-10-22).** When the permission system refuses a seat's
   Jira edit, do not report it to the CEO and do not ask him to change anything. Say in ONE line
   what you tried instead: the Thebes tools (`intake edit-line`, or `ticket_ruling` for a ruling), or a Thebes fix in code (a brief the linter refuses is a linter bug to report to

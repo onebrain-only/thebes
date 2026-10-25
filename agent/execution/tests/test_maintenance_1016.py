@@ -116,21 +116,16 @@ class GateAuthorityTests(Base):
 
     def test_destructive_git_and_governance_words_go_to_the_orchestrator_not_the_ceo(self):
         for reason in ("ceo-only:destructive_git", "ceo-only:governance_files", "ceo-only:other_repository",
-                       "ceo-only:push_canary"):
+                       "ceo-only:push_canary", "ceo-only:production", "ceo-only:secrets_and_credentials"):
             self.assertTrue(dg.decides_inside({"verdict": "ceo", "reason": reason}, store, self.cfg()), reason)
 
-    def test_money_secrets_main_and_sending_outside_stay_the_ceos(self):
-        for reason in ("ceo-only:money_or_secrets", "ceo-only:merge_or_push_main", "ceo-only:external_send"):
+    def test_money_main_and_sending_outside_stay_the_ceos(self):
+        for reason in ("ceo-only:money", "ceo-only:merge_or_push_main", "ceo-only:external_send"):
             self.assertFalse(dg.decides_inside({"verdict": "ceo", "reason": reason}, store, self.cfg()), reason)
 
-    def test_production_goes_to_the_orchestrator_only_once_the_ceo_recorded_an_approval(self):
+    def test_production_is_the_orchestrators_without_asking_the_ceo(self):
         a = {"verdict": "ceo", "reason": "ceo-only:production"}
-        self.assertFalse(dg.decides_inside(a, store, self.cfg()), "nothing recorded: the CEO")
-        from agent.execution import pm_ledger
-        pm_ledger.add("orchestrator", "supabase-messaging-approval", "I think so", state_store=store)
-        self.assertFalse(dg.decides_inside(a, store, self.cfg()), "only the CEO's own line counts")
-        pm_ledger.add("ceo", "supabase-messaging-approval", "approved: test data, no DROP", state_store=store)
-        self.assertTrue(dg.decides_inside(a, store, self.cfg()))
+        self.assertTrue(dg.decides_inside(a, store, self.cfg()), "CEO 2026-10-25: never a technical permission")
 
     def test_route_sends_an_in_scope_production_question_to_the_orchestrator_inbox(self):
         from agent.execution import pm_ledger
