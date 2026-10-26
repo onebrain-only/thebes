@@ -127,6 +127,86 @@ class SqlHookTests(unittest.TestCase):
         self.assertEqual(self.kind(sql.replace("select 1", "select 2")), "ask", "edited: un-released")
         self.assertEqual(self.kind("drop function f();"), "deny")
 
+    # -- the one DROP exception: CEO 2026-10-26, KAN-644 -------------------------------------
+    SWAP = ("alter table public.profiles drop constraint if exists profiles_persona_type_check;\n"
+            "alter table public.profiles add constraint profiles_persona_type_check "
+            "check (persona_type = any (array['player','contributor']));")
+
+    def release(self, sql, marker=sql_hook.DROP_EXCEPTION):
+        entry = {"file": "m.sql", "sha256": sql_hook.sha(sql)}
+        if marker:
+            entry["drop_exception"] = marker
+        with open(self.reg, "w") as fh:
+            json.dump({"project_id": OK, "released_migrations": [entry]}, fh)
+
+    def test_a_released_migration_may_drop_exactly_the_persona_type_check(self):
+        self.release(self.SWAP)
+        self.assertEqual(self.kind(self.SWAP), "allow")
+        self.assertEqual(self.kind("  " + self.SWAP.replace(" ", "  ") + "\n"), "allow", "whitespace only")
+
+    def test_the_exception_needs_the_release_and_the_marker_and_the_ops_team(self):
+        self.assertEqual(self.kind(self.SWAP), "deny", "unreleased")
+        self.release(self.SWAP, marker=None)
+        self.assertEqual(self.kind(self.SWAP), "deny", "released without the exception marker")
+        self.release(self.SWAP, marker="some_other_constraint")
+        self.assertEqual(self.kind(self.SWAP), "deny", "marker names another constraint")
+        self.release(self.SWAP)
+        self.assertEqual(self.kind(self.SWAP, sid=KARNAK), "deny", "code teams never")
+        self.assertEqual(self.kind(self.SWAP, project=OTHER), "deny", "other project")
+        self.assertEqual(self.kind(self.SWAP.replace("player", "player2")), "deny", "edited: un-released")
+
+    def test_every_other_drop_stays_denied_in_a_released_exception_migration(self):
+        ok = "alter table public.profiles drop constraint if exists profiles_persona_type_check;\n"
+        for body in ("alter table public.profiles drop constraint if exists profiles_other_check;",
+                     "alter table public.profiles drop constraint profiles_persona_type_check;",
+                     "alter table public.profiles drop constraint if exists profiles_persona_type_check cascade;",
+                     "alter table public.profiles drop constraint if exists profiles_persona_type_check, "
+                     "drop column onboard;",
+                     "alter table public.profiles drop column onboard;",
+                     "alter table public.player drop constraint if exists profiles_persona_type_check;",
+                     "alter table profiles drop constraint if exists profiles_persona_type_check;",
+                     "alter table public.profiles drop constraint if exists \"profiles_persona_type_check\";",
+                     "drop trigger if exists trg_player_profile_persona_guard on public.player;",
+                     "drop function public.trgfn_limit_active_profiles();",
+                     "drop table public.profiles;",
+                     "drop schema public cascade;",
+                     "drop index if exists idx_one_active_profile_per_user;",
+                     "truncate public.profiles;",
+                     "do $$ begin alter table public.profiles drop constraint if exists "
+                     "profiles_persona_type_check; end $$;"):
+            sql = ok + body
+            self.release(sql)
+            self.assertEqual(self.kind(sql), "deny", body)
+        only_hidden = "do $$ begin execute 'alter table public.profiles drop constraint if exists " \
+                      "profiles_persona_type_check'; end $$;"
+        self.release(only_hidden)
+        self.assertEqual(self.kind(only_hidden), "deny", "inside dynamic SQL")
+        for body in ("drop table public.profiles;", "truncate public.profiles;"):
+            self.release(body)
+            self.assertEqual(self.kind(body), "deny", "no allowed statement at all: " + body)
+
+    def test_release_cli_refuses_the_exception_unless_asked_and_pins_the_marker(self):
+        import contextlib
+        import io
+        path = os.path.join(self.tmp, "m.sql")
+        with open(path, "w") as fh:
+            fh.write(self.SWAP)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(sql_hook.release_cli([path]), 2)
+        self.assertIn("refused", out.getvalue())
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(sql_hook.release_cli([path, "--allow-persona-check-drop"]), 0)
+        entry = json.loads(out.getvalue())
+        self.assertEqual(entry["drop_exception"], "profiles_persona_type_check")
+        self.assertEqual(entry["sha256"], sql_hook.sha(self.SWAP))
+        with open(path, "w") as fh:
+            fh.write(self.SWAP + "\ndrop table public.profiles;")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(sql_hook.release_cli([path, "--allow-persona-check-drop"]), 2)
+
     # -- integrated migrations: a technical approval is not the CEO's (2026-10-14) ----------
     MIG = ("-- KAN-522\nbegin;\ncreate or replace function public.f() returns int language sql as "
            "$$ select 1; $$;\nrevoke all on function public.f() from public;\n"
