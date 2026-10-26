@@ -25,6 +25,11 @@ Every decision is logged to agent/state/runtime/sql-hook.log: time, team, projec
 reason, the first 80 characters of the query with every string literal and long token masked.
 
     python3 agent/scripts/sql_hook.py release <migration.sql> [--write]   # maintenance only
+    ... release <migration.sql> --allow-persona-check-drop [--write]      # CEO 2026-10-26, KAN-644
+
+The one DROP exception: a released migration released WITH --allow-persona-check-drop may contain
+exactly `ALTER TABLE public.profiles DROP CONSTRAINT IF EXISTS profiles_persona_type_check;` as a
+top-level statement. Every other DROP, TRUNCATE, and any unreleased SQL stay denied.
 
 Exit code is always 0; the decision is the JSON on stdout (none = ask).
 """
@@ -159,6 +164,26 @@ BEGIN = re.compile(r"^(begin|start\s+transaction)(\s+(work|transaction))?"
 ROLLBACK = re.compile(r"^(rollback|abort)(\s+(work|transaction))?$")
 ENDS_TX = re.compile(r"^(commit|end|abort|prepare\s+transaction|begin|start\s+transaction|"
                      r"rollback(?!\s+to\b))")
+
+
+# CEO 2026-10-26 ("DROP KAN-644"): ONE narrow exception to the DROP rule. A RELEASED migration whose
+# registry entry carries DROP_EXCEPTION may contain exactly this statement and no other DROP. No
+# wildcard: one constraint, on public.profiles, with IF EXISTS, and nothing else in the statement.
+DROP_EXCEPTION = "profiles_persona_type_check"
+ALLOWED_STMT = (r"\balter\s+table\s+public\s*\.\s*profiles\s+drop\s+constraint\s+if\s+exists\s+"
+                + DROP_EXCEPTION + r"\s*")
+ALLOWED_DROP = re.compile(ALLOWED_STMT + r"(?=;|$)", re.I)
+
+
+def without_allowed_drop(top, scan, lit):
+    """(scan, lit) with the one allowed DROP statement removed, or the views unchanged when the
+    statement is not exactly that: every occurrence must stand alone as a top-level statement
+    (none hidden in a dollar-quoted body, none sharing its ALTER TABLE with another action)."""
+    stmts = [s.strip().lower() for s in top.split(";")]
+    alone = sum(1 for s in stmts if re.fullmatch(ALLOWED_STMT, s))
+    if not alone or alone != len(ALLOWED_DROP.findall(scan.lower())):
+        return scan, lit
+    return ALLOWED_DROP.sub(" ", scan), ALLOWED_DROP.sub(" ", lit)
 
 
 def deny_reason(scan, lit):
@@ -302,9 +327,11 @@ def in_integrated_migration(query, migrations=None):
     return None
 
 
-def released(query, reg):
+def released(query, reg, drop_exception=False):
     digest = sha(query)
-    return any(e.get("sha256") == digest for e in reg.get("released_migrations") or [])
+    return any(e.get("sha256") == digest
+               and (not drop_exception or e.get("drop_exception") == DROP_EXCEPTION)
+               for e in reg.get("released_migrations") or [])
 
 
 # ------------------------------------------------------------------------------- the hook
@@ -356,7 +383,10 @@ def decide(payload, state_store=None, teams_mod=None, allow_path=None):
         top, scan, lit = lex(query)
     except LexError as exc:
         return done(None, "unparseable: %s" % exc, None)
-    why = deny_reason(scan, lit)
+    dscan, dlit = scan, lit
+    if lane == "ops" and released(query, reg, drop_exception=True):
+        dscan, dlit = without_allowed_drop(top, scan, lit)
+    why = deny_reason(dscan, dlit)
     if why:
         return done("deny", "deny:" + why,
                     "Refused by the SQL hook (%s): outside the CEO's Messaging approval "
@@ -406,11 +436,14 @@ def release_cli(argv):
     except LexError as exc:
         print("refused: cannot parse %s (%s)" % (path, exc))
         return 2
+    entry = {"file": os.path.relpath(os.path.abspath(path), ROOT), "sha256": sha(text)}
+    if "--allow-persona-check-drop" in argv:
+        scan, lit = without_allowed_drop(top, scan, lit)
+        entry["drop_exception"] = DROP_EXCEPTION
     why = deny_reason(scan, lit)
     if why:
         print("refused: the hook would deny this migration anyway (%s)" % why)
         return 2
-    entry = {"file": os.path.relpath(os.path.abspath(path), ROOT), "sha256": sha(text)}
     if "--write" in argv:
         reg = registry()
         reg.setdefault("project_id", DEFAULT_PROJECT)

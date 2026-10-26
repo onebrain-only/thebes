@@ -1,6 +1,12 @@
 {
-  "note": "Maintenance-only. The SQL hook (agent/scripts/sql_hook.py) auto-allows, for the ops team only, read-only SQL and BEGIN..ROLLBACK probes on this one project, and the migrations listed here. A migration is pinned by the sha256 of its whitespace-normalised text: editing the file un-releases it. Add one with: python3 agent/scripts/sql_hook.py release <file.sql> --write",
-  "approval_ref": "supabase-messaging-approval (PM ledger, CEO 2026-10-13)",
+  "note": "Maintenance-only. The SQL hook (agent/scripts/sql_hook.py) auto-allows, for the ops team only, read-only SQL and BEGIN..ROLLBACK probes on this one project, and the migrations listed here. A migration is pinned by the sha256 of its whitespace-normalised text: editing the file un-releases it. Add one with: python3 agent/scripts/sql_hook.py release <file.sql> --write. ONE DROP exception (CEO 2026-10-26, KAN-644): an entry released with --allow-persona-check-drop carries \"drop_exception\": \"profiles_persona_type_check\", and that migration may then contain exactly `ALTER TABLE public.profiles DROP CONSTRAINT IF EXISTS profiles_persona_type_check` as a top-level statement. Any other DROP, TRUNCATE, or unreleased SQL stays denied.",
+  "approval_ref": "supabase-messaging-approval (PM ledger, CEO 2026-10-13); drop exception: CEO 2026-10-26 'DROP KAN-644'",
   "project_id": "wtncuzcskpigqpmnxwws",
-  "released_migrations": []
+  "released_migrations": [
+    {
+      "file": "../../../1ee27200/worktrees/kan644/supabase/migrations/20261026100000_kan644_personas_s1_schema_guards.sql",
+      "sha256": "96222335936b0e023b6753597acce266fb99871d5a214132eafec212d94da5eb",
+      "drop_exception": "profiles_persona_type_check"
+    }
+  ]
 }
