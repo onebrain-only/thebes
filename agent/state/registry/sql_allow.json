@@ -23,6 +23,10 @@
     {
       "file": "Dabbler/worktrees/kan644fix-memphis/supabase/migrations/20261027120000_kan644_fix_contributor_sports_check_branches.sql",
       "sha256": "d3b6573d864e013d380f0894c1c359ae9af6f0cad1b8000208ae1e483e64e27d"
+    },
+    {
+      "file": "Dabbler/worktrees/integrate-memphis/supabase/migrations/20261027140000_kan679_revoke_choose_actor_anon.sql",
+      "sha256": "574ded1f72f40c79a7a3fac457d8eda4a0c2be9ab263500eaf57136f8cb03cad"
     }
   ]
 }
