@@ -27,6 +27,10 @@
     {
       "file": "Dabbler/worktrees/integrate-memphis/supabase/migrations/20261027140000_kan679_revoke_choose_actor_anon.sql",
       "sha256": "574ded1f72f40c79a7a3fac457d8eda4a0c2be9ab263500eaf57136f8cb03cad"
+    },
+    {
+      "file": "Dabbler/worktrees/kan678-memphis/supabase/migrations/20261027150000_kan678_rpc_challenge_create_sport.sql",
+      "sha256": "972cca72c03531b2e1451a77852afb8ee8e049a1c7a0e6112cd5369f26405cbc"
     }
   ]
 }
