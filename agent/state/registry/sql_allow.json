@@ -19,6 +19,10 @@
     {
       "file": "../../.claude/jobs/7f6ff1a6/wt/integrate-alpha/supabase/migrations/20261027110000_kan674_organiser_predicate_persona_type.sql",
       "sha256": "071b6f58565d314ca514bc3a0ef33d5f01ad496d369963ba8db294061c1d5e40"
+    },
+    {
+      "file": "Dabbler/worktrees/kan644fix-memphis/supabase/migrations/20261027120000_kan644_fix_contributor_sports_check_branches.sql",
+      "sha256": "d3b6573d864e013d380f0894c1c359ae9af6f0cad1b8000208ae1e483e64e27d"
     }
   ]
 }
