@@ -7,6 +7,10 @@
       "file": "../../../1ee27200/worktrees/kan644/supabase/migrations/20261026100000_kan644_personas_s1_schema_guards.sql",
       "sha256": "96222335936b0e023b6753597acce266fb99871d5a214132eafec212d94da5eb",
       "drop_exception": "profiles_persona_type_check"
+    },
+    {
+      "file": "../../.claude/jobs/7f6ff1a6/wt/integrate-alpha/supabase/migrations/20261026120000_kan646_personas_s3_capabilities.sql",
+      "sha256": "5460689c4c9bf380ab0d5294de151a3d42c23e4161c02515fd7584a27bfd1bab"
     }
   ]
 }
