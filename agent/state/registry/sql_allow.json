@@ -15,6 +15,10 @@
     {
       "file": "../../.claude/jobs/7f6ff1a6/wt/integrate-alpha/supabase/migrations/20261027100000_kan673_rpc_create_sport_profile_owner_check.sql",
       "sha256": "37b3149251052c228fc4542f952f83dfb689168a664a5f81a48c97af5352f1fd"
+    },
+    {
+      "file": "../../.claude/jobs/7f6ff1a6/wt/integrate-alpha/supabase/migrations/20261027110000_kan674_organiser_predicate_persona_type.sql",
+      "sha256": "071b6f58565d314ca514bc3a0ef33d5f01ad496d369963ba8db294061c1d5e40"
     }
   ]
 }
