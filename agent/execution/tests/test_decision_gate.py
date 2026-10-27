@@ -233,7 +233,7 @@ class DecisionGateTests(unittest.TestCase):
         self.assertEqual(store.read("decision_request", req["decision_request_id"])["status"],
                          "answered")
 
-    def test_escalation_returns_to_codex_marked_and_a_delivery_failure_escalates(self):
+    def test_escalation_returns_to_codex_marked_and_a_delivery_failure_waits_for_the_orchestrator(self):
         did, cap = self.settled("blocked", "")
         out = self.submit(did, cap, "blocked", "We need budget approval to pay for the vendor.",
                           router=self.router)
@@ -242,7 +242,7 @@ class DecisionGateTests(unittest.TestCase):
         self.assertEqual(self.launched, [THREAD], "the question reached the Codex thread")
         ev = store.read("codex_turn_event", out["origin_reply"]["event_id"])
         with open(ev["text_ref"], encoding="utf-8") as fh:
-            self.assertIn("ESCALATED TO THE CEO", fh.read())
+            self.assertIn("Only spending money, merging into main", fh.read())
 
         def broken(req, message, state_store):
             raise OSError("daemon down")
@@ -251,10 +251,62 @@ class DecisionGateTests(unittest.TestCase):
                                                       deliver=broken, resume=self.resume)
         out = self.submit(did2, cap2, "decision_required", "Which acceptance criteria apply?",
                           router=router)
-        self.assertEqual(out["origin_reply"]["escalated"]["reason"], "owner-delivery-failed")
+        # Constitution 2026-10-27: a delivery failure is Thebes's problem, never the CEO's — the
+        # request waits in the orchestrator's inbox.
+        self.assertEqual(out["decision"]["route"], "owner")
         reqs = [r for r in store.read_all("decision_request") if r["origin_dispatch_id"] == did2]
-        self.assertEqual((reqs[0]["status"], reqs[0]["escalation_reason"]),
-                         ("escalated", "owner-delivery-failed"))
+        self.assertEqual((reqs[0]["status"], reqs[0]["escalation_reason"], reqs[0]["delivery"],
+                          reqs[0]["via"]), ("open", "owner-delivery-failed", "inbox", "orchestrator"))
+        self.assertEqual(self.clean(), [])
+
+    # -- autonomy constitution 2026-10-27 --------------------------------------------
+    def test_only_a_request_for_a_ceo_act_escalates_never_a_mention(self):
+        from agent.state import autonomy
+        for q in ["Nothing to main; Alpha only. May I continue?",
+                  "This spends no money. Can I proceed with the refactor?",
+                  "Should I keep the code easy to maintain?",
+                  "Pushed to Alpha, not to main. Approve the next step?",
+                  "May I DROP the temp table on the scratch schema?",
+                  "Can I update the user's row to fix the avatar?"]:
+            self.assertIsNone(autonomy.ceo_hit(q), q)
+        self.assertEqual(autonomy.ceo_hit("Can I merge PR #12 into main?"), "merge_or_push_main")
+        self.assertEqual(autonomy.ceo_hit("Need approval to upgrade the plan to Pro."), "money")
+        self.assertEqual(autonomy.ceo_hit("May I send an email to users about the launch?"),
+                         "external_send")
+
+    def test_a_gate_or_unbound_orchestrator_never_reaches_the_ceo(self):
+        did, cap = self.settled("decision_required", "")
+        cfg = dict(dg.config(), gate="no-such-gate")
+        router = lambda record, state_store: dg.route(record, state_store=state_store, cfg=cfg,
+                                                      deliver=self.deliver, resume=self.resume)
+        out = self.submit(did, cap, "decision_required", "Which schema shape do we use?",
+                          router=router)
+        self.assertEqual(out["decision"]["route"], "owner")
+        self.assertEqual(self.launched, [], "nothing reached the Codex thread")
+        req = [r for r in store.read_all("decision_request") if r["origin_dispatch_id"] == did][0]
+        self.assertEqual((req["via"], req["status"]), ("orchestrator", "open"))
+        self.assertTrue(req["escalation_reason"].startswith("held-for-orchestrator:"))
+
+    def test_the_same_block_three_times_stops_the_loop_and_never_escalates(self):
+        q = "Blocked: the migration needs the column (attempt 61). Same answer as before?"
+        routes, ids = [], []
+        for i in range(3):
+            did, cap = self.settled("blocked", "")
+            cfg = dict(dg.config(), threshold=0.0)
+            router = lambda record, state_store: dg.route(
+                dict(record, jira_key="KAN-645"), state_store=state_store, cfg=cfg,
+                deliver=self.deliver, resume=self.resume, jira=False)
+            out = self.submit(did, cap, "blocked", q.replace("61", str(61 + i)), router=router)
+            routes.append(out["decision"]["route"])
+            ids.append(out["decision"]["decision_request_id"])
+        self.assertIn(routes[0], ("approved", "task-owner"), "the first report auto-resumes")
+        self.assertEqual(routes[1:], ["owner", "stuck"])
+        self.assertEqual(len(self.resumed), 1, "only the first report was auto-resumed")
+        self.assertEqual(self.launched, [], "the CEO never heard about the loop")
+        reqs = [store.read("decision_request", rid) for rid in ids]
+        self.assertEqual(reqs[1]["via"], "orchestrator")
+        self.assertTrue(reqs[1]["escalation_reason"].startswith("repeat:2"))
+        self.assertEqual(reqs[2]["status"], "stuck")
         self.assertEqual(self.clean(), [])
 
     def test_a_decision_delivery_record_validates(self):

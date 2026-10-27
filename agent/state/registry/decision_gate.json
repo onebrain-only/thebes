@@ -5,37 +5,81 @@
   "gate": "jev",
   "threshold": 0.7,
   "approval": {
-    "note": "D-033 (amended CEO 2026-10-25: a technical permission is never his - only money, main and sending outside the company reach him; everything else a deny-list hit matches is decided by the orchestrator through the gate). `ceo_only` patterns are matched in plain code BEFORE any model is asked; a hit always escalates to the CEO. `routine` names the actions Jev may approve alone (one typed Choice over these plus `not_routine`); a confident routine match resumes the worker at once with an approval. Patterns are lowercase substrings.",
+    "note": "D-033 as amended by the autonomy constitution (CEO 2026-10-27, agent/state/registry/autonomy.json). The three CEO categories (money, merge_or_push_main, external_send) are matched by agent/state/autonomy.py: a sentence must ASK for the act and must not negate it. `ceo_only` below now lists ONLY keyword categories that are the ORCHESTRATOR's to decide (orchestrator_decides); they never reach the CEO. `routine` names the actions Jev may approve alone.",
     "threshold": 0.7,
-    "orchestrator_decides": ["destructive_git", "governance_files", "other_repository", "push_canary", "production", "secrets_and_credentials"],
+    "orchestrator_decides": [
+      "destructive_git",
+      "governance_files",
+      "other_repository",
+      "push_canary",
+      "production",
+      "secrets_and_credentials"
+    ],
     "orchestrator_decides_with_recorded_approval": [],
-    "recorded_refs": ["supabase-messaging-approval", "messaging-launch", "cloudflare-messaging-approval"],
+    "recorded_refs": [
+      "supabase-messaging-approval",
+      "messaging-launch",
+      "cloudflare-messaging-approval"
+    ],
     "ceo_only": {
-      "merge_or_push_main":      ["to main", "into main", "onto main", "push main", "origin main", "main branch"],
-      "destructive_git":         ["--force", "force push", "force-push", "reset --hard", "branch -d", "re:\\b(delete|remove|drop)\\b.{0,40}\\bbranch", "re:\\bbranch\\b.{0,40}\\b(delete|remove|drop)"],
-      "push_canary":             ["push to canary", "push canary", "deploy to canary", "origin canary"],
-      "production":              ["production", "apply_migration", "apply the migration", "run the migration", "prod database", "live database"],
-      "governance_files":        ["role file", "decisions.md", "contract.md", "manifesto.md", "authority.json"],
-      "money":                   ["spend", "pay for", "budget"],
-      "secrets_and_credentials": ["api key", "credential", "settings.json", "re:\\bsecrets?\\b", "re:\\b(api|access|auth|bearer|jwt|service|refresh|personal access|private) tokens?\\b"],
-      "external_send":           ["send an email", "send email", "slack", "notify the user", "re:\\bpublish(ed|ing)?\\b.{0,30}\\b(to|on)\\b.{0,25}\\b(app store|play store|testflight|npm|pub\\.dev|production|the public)", "re:\\bpost to (slack|twitter|linkedin|instagram|social)"],
-      "other_repository":        ["another repo", "other repository", "different repo"]
+      "destructive_git": [
+        "--force",
+        "force push",
+        "force-push",
+        "reset --hard",
+        "branch -d",
+        "re:\\b(delete|remove|drop)\\b.{0,40}\\bbranch",
+        "re:\\bbranch\\b.{0,40}\\b(delete|remove|drop)"
+      ],
+      "push_canary": [
+        "push to canary",
+        "push canary",
+        "deploy to canary",
+        "origin canary"
+      ],
+      "production": [
+        "production",
+        "apply_migration",
+        "apply the migration",
+        "run the migration",
+        "prod database",
+        "live database"
+      ],
+      "governance_files": [
+        "role file",
+        "decisions.md",
+        "contract.md",
+        "manifesto.md",
+        "authority.json"
+      ],
+      "secrets_and_credentials": [
+        "api key",
+        "credential",
+        "settings.json",
+        "re:\\bsecrets?\\b",
+        "re:\\b(api|access|auth|bearer|jwt|service|refresh|personal access|private) tokens?\\b"
+      ],
+      "other_repository": [
+        "another repo",
+        "other repository",
+        "different repo"
+      ]
     },
     "routine": {
-      "branch_or_commit":        "create or switch a working branch, or commit on the current working branch",
-      "run_checks":              "run tests, lint, format or analyze",
-      "code_generation":         "run build_runner / code generation",
-      "install_locked_package":  "install a package that is already in the lock file",
-      "read_only_query":         "a read-only query of the database, Jira or git history",
-      "jira_comment":            "post a findings comment on a Jira ticket",
-      "file_followup_backlog":   "file a follow-up ticket in Backlog",
-      "own_execution_status":    "move its own ticket into its own execution status",
-      "open_pull_request":       "open a pull request (not merge it)",
-      "retry_once":              "retry a failed test or a failed delivery once",
-      "resume_worker":           "resume the same worker with an answer",
-      "option_within_criteria":  "choose between options the acceptance criteria already allow",
-      "release_worktree":        "release a finished worktree or clean its own temp files",
-      "not_routine":             "none of the above: a question, a judgement, or an action not listed"
+      "branch_or_commit": "create or switch a working branch, or commit on the current working branch",
+      "run_checks": "run tests, lint, format or analyze",
+      "code_generation": "run build_runner / code generation",
+      "install_locked_package": "install a package that is already in the lock file",
+      "read_only_query": "a read-only query of the database, Jira or git history",
+      "jira_comment": "post a findings comment on a Jira ticket",
+      "file_followup_backlog": "file a follow-up ticket in Backlog",
+      "own_execution_status": "move its own ticket into its own execution status",
+      "open_pull_request": "open a pull request (not merge it)",
+      "retry_once": "retry a failed test or a failed delivery once",
+      "resume_worker": "resume the same worker with an answer",
+      "option_within_criteria": "choose between options the acceptance criteria already allow",
+      "release_worktree": "release a finished worktree or clean its own temp files",
+      "not_routine": "none of the above: a question, a judgement, or an action not listed"
     }
   },
   "jev_provider": {
@@ -46,17 +90,98 @@
     "key_env": "OPENROUTER_API_KEY"
   },
   "fake_keywords": {
-    "product_scope":          ["scope", "feature", "should we build", "in scope", "out of scope", "product decision", "mvp"],
-    "roadmap_priority":       ["priority", "prioriti", "which first", "backlog order", "roadmap"],
-    "work_acceptance":        ["acceptance criteria", "acceptance criterion", "definition of done", "is this done", "accept this"],
-    "technical_architecture": ["architecture", "schema", "stack", "which package", "dependency", "pattern", "design the table", "data model", "api shape"],
-    "security_exception":     ["security", "rls", "permission", "secret", "credential", "auth bypass"],
-    "release_operation":      ["release", "deploy", "push to main", "canary", "merge to main", "ship"],
-    "production_operation":   ["production", "apply_migration", "apply the migration", "prod database"],
-    "experience_direction":   ["design system", "ux", "color", "colour", "layout", "experience", "look and feel", "spacing"],
-    "quality_gate":           ["test strategy", "qa route", "which tests", "test coverage"],
-    "content_direction":      ["copy", "wording", "arabic", "translation", "string", "label text"],
-    "company_investment":     ["budget", "invest", "subscription cost", "pay for", "pricing plan"],
-    "legal_external_commitment": ["legal", "contract", "terms of service", "vendor agreement"]
+    "product_scope": [
+      "scope",
+      "feature",
+      "should we build",
+      "in scope",
+      "out of scope",
+      "product decision",
+      "mvp"
+    ],
+    "roadmap_priority": [
+      "priority",
+      "prioriti",
+      "which first",
+      "backlog order",
+      "roadmap"
+    ],
+    "work_acceptance": [
+      "acceptance criteria",
+      "acceptance criterion",
+      "definition of done",
+      "is this done",
+      "accept this"
+    ],
+    "technical_architecture": [
+      "architecture",
+      "schema",
+      "stack",
+      "which package",
+      "dependency",
+      "pattern",
+      "design the table",
+      "data model",
+      "api shape"
+    ],
+    "security_exception": [
+      "security",
+      "rls",
+      "permission",
+      "secret",
+      "credential",
+      "auth bypass"
+    ],
+    "release_operation": [
+      "release",
+      "deploy",
+      "push to main",
+      "canary",
+      "merge to main",
+      "ship"
+    ],
+    "production_operation": [
+      "production",
+      "apply_migration",
+      "apply the migration",
+      "prod database"
+    ],
+    "experience_direction": [
+      "design system",
+      "ux",
+      "color",
+      "colour",
+      "layout",
+      "experience",
+      "look and feel",
+      "spacing"
+    ],
+    "quality_gate": [
+      "test strategy",
+      "qa route",
+      "which tests",
+      "test coverage"
+    ],
+    "content_direction": [
+      "copy",
+      "wording",
+      "arabic",
+      "translation",
+      "string",
+      "label text"
+    ],
+    "company_investment": [
+      "budget",
+      "invest",
+      "subscription cost",
+      "pay for",
+      "pricing plan"
+    ],
+    "legal_external_commitment": [
+      "legal",
+      "contract",
+      "terms of service",
+      "vendor agreement"
+    ]
   }
 }

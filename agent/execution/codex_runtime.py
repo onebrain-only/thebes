@@ -246,10 +246,11 @@ def bootstrap_prompt(thread_id, state_store=store, runtime_id=RUNTIME_ID, inline
         "D-035: the CEO has delegated every decision to the orchestrator. If a report says "
         "something 'needs the CEO's decision' or lists items 'awaiting the CEO', do not put "
         "it to the CEO — send it to the orchestrator as a question and relay its decision. "
-        "The only things the CEO still decides are the hard stops Thebes enforces itself: "
-        "merging or pushing main, production data, money and secrets, sending outside.",
-    ] if orch else ["The ORCHESTRATOR is not bound yet: answer-type questions must wait or go "
-                    "to the CEO."])
+        "The only things the CEO still decides (autonomy constitution, 2026-10-27): "
+        "spending money, merging into main, sending outside the company. Database work, "
+        "production data, deploys and permissions are Thebes's, never his.",
+    ] if orch else ["The ORCHESTRATOR is not bound yet: answer-type questions wait for it; "
+                    "they never go to the CEO."])
     bound_teams = [t for t in team_bindings(state_store) if t["session_id"]]
     team_lines = "\n".join("- team %d %s (%s): %s%s" % (
         t["number"], t["display_name"], t["team_id"], t["session_id"],

@@ -169,8 +169,15 @@ def gate_for(cfg=None, env=None):
 # ---------------------------------------------------------------- approvals (D-033)
 def ceo_only_hit(text, cfg=None):
     """The deny-list, matched in plain code before any model is asked.
-    Returns the category name, or None."""
-    import re
+    Returns the category name, or None.
+
+    The three CEO categories come from the autonomy constitution (CEO 2026-10-27): the
+    sentence must ASK for the act and not negate it ("nothing to main" is not a request).
+    The keyword categories left in decision_gate.json are the orchestrator's to decide."""
+    from agent.state import autonomy
+    cat = autonomy.ceo_hit(text)
+    if cat:
+        return cat
     cfg = cfg or config()
     low = (text or "").lower()
     for category, patterns in ((cfg.get("approval") or {}).get("ceo_only") or {}).items():
@@ -408,11 +415,12 @@ def request_envelope(req, capability, question):
          "qa, devops, analyst, content-manager — reserve it (cd %s && python3 -m "
          "agent.execution.team_pool reserve <seat> --dispatch %s), run it as a subagent, and "
          "answer." % (req.get("escalation_reason") or "unsure", ROOT, req["decision_request_id"])),
-        "delegation (D-035): the CEO has delegated EVERY decision to you. Never answer 'this "
-        "needs the CEO', 'ask the CEO', or 'awaiting CEO decision'. Decide within the roles and "
-        "say who decided. The ONLY exceptions are the hard stops Thebes already enforces before "
-        "reaching you: merging or pushing main, production data, spending money or touching "
-        "secrets, sending anything outside the company.",
+        "delegation (autonomy constitution, CEO 2026-10-27): the CEO is out of the product "
+        "cycle and has delegated EVERY decision to you. Never answer 'this needs the CEO', "
+        "'ask the CEO', or 'awaiting CEO decision'. Decide within the roles and say who "
+        "decided. Production data, migrations, DROPs, deploys and secrets are Memphis's or "
+        "yours, never his. The ONLY three things that reach him are enforced by Thebes before "
+        "you see a question: spending money, merging into main, sending outside the company.",
     ] if req.get("via") == "orchestrator" else []) + [
         "what_to_do: decide this question within the Role's authority (agent/roles/%s.md). Give "
         "the decision, the reason, and what the asker should do next. If it is genuinely not "
@@ -463,7 +471,8 @@ def recorded_approval(state_store=store, cfg=None):
 
 def decides_inside(approval, state_store=store, cfg=None):
     """CEO 2026-10-14: a prompt that reaches the CEO is approved without being read, so it is not a
-    safety check; only money, secrets, main and sending outside the company are his. A deny-list
+    safety check; only money, merging into main and sending outside the company are his
+    (autonomy constitution, 2026-10-27). A deny-list
     hit in any other category is the ORCHESTRATOR's to decide (and `production` too once a CEO
     approval is recorded). Returns True for those categories."""
     cfg = cfg or config()
@@ -475,16 +484,112 @@ def decides_inside(approval, state_store=store, cfg=None):
         recorded_approval(state_store, cfg)
 
 
-def route(record, *, state_store=store, env=None, cfg=None, deliver=None, resume=None):
+def _to_orchestrator(state_store, base, reason):
+    """Route to the orchestrator's inbox. With no orchestrator session bound the request still
+    waits there (owner_session_id None) and the next orchestrator session collects it — it never
+    falls through to the CEO."""
+    from agent.state import teams
+    orch = state_store.active_role_session(teams.ORCHESTRATOR_ID)
+    bound = orch is not None and orch.get("provider") == "claude"
+    return dict(base, route="owner", via="orchestrator", owner_seat=None,
+                owner_session_id=orch["session_id"] if bound else None,
+                owner_stable_home=orch.get("stable_home") if bound else None,
+                decision_class=base.get("decision_class") or "technical_architecture",
+                accountable_role=base.get("accountable_role") or "cto", reason=reason)
+
+
+def question_hash(text):
+    """The same block reported again: digits ("61st identical answer") and whitespace are
+    not what makes two reports different."""
+    import hashlib
+    t = re.sub(r"\d+", "#", (text or "").lower())
+    t = re.sub(r"\s+", " ", t).strip()[:4000]
+    return hashlib.sha256(t.encode("utf-8")).hexdigest()[:16]
+
+
+def _epoch(ts):
+    from datetime import datetime
+    try:
+        return datetime.fromisoformat(str(ts).replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return 0.0
+
+
+def repeat_count(repeat_key, qhash, *, state_store=store, now=None):
+    """(same, burst) for one ticket: earlier requests with this question hash inside the window,
+    and all requests inside the burst window. Requests before the ticket's last `stuck` do not
+    count — a new brief after a stop starts clean."""
+    import time
+    from agent.state import autonomy
+    g = autonomy.repeat_guard()
+    now = now or time.time()
+    mine = [r for r in state_store.read_all("decision_request") if r.get("repeat_key") == repeat_key]
+    last_stuck = max([_epoch(r.get("created_at")) for r in mine if r.get("route") == "stuck"] or [0])
+    same = burst = 0
+    for r in mine:
+        t = _epoch(r.get("created_at"))
+        if t <= last_stuck or r.get("route") == "stuck":
+            continue
+        if r.get("question_hash") == qhash and now - t <= g["window_hours"] * 3600:
+            same += 1
+        if now - t <= g["burst_hours"] * 3600:
+            burst += 1
+    return same, burst
+
+
+def _mark_stuck(ticket, why, *, state_store=store, jira=None):
+    """Best effort: label the ticket `stuck` and say why. Never raises. `jira=False` skips it."""
+    if not ticket or jira is False:
+        return None
+    try:
+        from agent.execution import jira_sync
+        from agent.state import autonomy
+        label = autonomy.repeat_guard()["label"]
+        jira = jira_sync._client(jira, state_store)
+        if jira is None:
+            return None
+        labels = list(jira.get_issue(ticket).get("labels") or [])
+        if label not in labels:
+            jira.update_issue(ticket, {"labels": labels + [label]})
+        jira.add_comment(ticket, "Thebes: stopped a loop on this ticket. %s The team will not be "
+                                 "resumed with the same answer again; the orchestrator re-briefs "
+                                 "it (remove the `%s` label when the new brief is in)." % (why, label))
+        return {"status": "ok"}
+    except Exception as exc:                                  # noqa: BLE001
+        return {"status": "failed", "error": str(exc)[:200]}
+
+
+def route(record, *, state_store=store, env=None, cfg=None, deliver=None, resume=None, jira=None):
     """Called once a dispatch settled with a decision outcome. Returns a dict
-    with `route` in {owner, task-owner, escalate} and what was done."""
+    with `route` in {owner, task-owner, approved, escalate, stuck} and what was done."""
     with open(record["result_ref"], encoding="utf-8") as fh:
         question = fh.read()
+    from agent.state import autonomy
+    guard = autonomy.repeat_guard()
+    qhash = question_hash(question)
+    repeat_key = record.get("jira_key") or record.get("root_dispatch_id") or record["dispatch_id"]
+    same, burst = repeat_count(repeat_key, qhash, state_store=state_store)
     # D-033 first: a routine permission is approved by policy and the worker
     # resumes at once — no owner, no CEO, no Claude session woken. The deny-list
     # inside approval_verdict runs before any model and wins over any score.
     approval = approval_verdict(question, cfg=cfg, env=env)
-    if approval["verdict"] == "ceo" and decides_inside(approval, state_store, cfg):
+    if same + 1 >= guard["stuck_at"] or burst + 1 > guard["burst_max"]:
+        # The loop breaker (KAN-645, 140 dispatches in a night): the same answer did not help
+        # twice, so a third resume would not either. Stop, label, tell the orchestrator. Never
+        # the CEO — not even when the question is one of his categories, it is a loop first.
+        why = ("The team reported the same block %d times." % (same + 1) if same + 1 >= guard["stuck_at"]
+               else "%d decision requests in %d hours." % (burst + 1, guard["burst_hours"]))
+        resolved = {"route": "stuck", "reason": "repeat:%s" % why, "gate": "repeat-guard",
+                    "decision_class": None, "accountable_role": "orchestrator", "confidence": None}
+    elif same + 1 >= guard["orchestrator_at"] and approval["verdict"] != "ceo":
+        # Second identical report: "it is yours to decide" did not unblock it. The orchestrator
+        # decides differently (a ruling, a re-brief), instead of the same automatic answer.
+        resolved = _to_orchestrator(state_store, {
+            "gate": "repeat-guard", "decision_class": "technical_architecture",
+            "accountable_role": "cto", "confidence": None},
+            "repeat:%d identical reports; the automatic answer did not unblock it — decide "
+            "differently (a ruling or a new brief), not 'it is yours'" % (same + 1))
+    elif approval["verdict"] == "ceo" and decides_inside(approval, state_store, cfg):
         resolved = classify_and_resolve(question, cfg=cfg, env=env, state_store=state_store)
         if resolved["route"] == "escalate":              # no gate answer: still the orchestrator's
             from agent.state import teams
@@ -505,6 +610,13 @@ def route(record, *, state_store=store, env=None, cfg=None, deliver=None, resume
                     "confidence": approval["confidence"], "action": approval["action"]}
     else:
         resolved = classify_and_resolve(question, cfg=cfg, env=env, state_store=state_store)
+    ceo_reasons = {"ceo-only:%s" % c for c in autonomy.load()["ceo_only"]["categories"]}
+    if resolved["route"] == "escalate" and resolved.get("reason") not in ceo_reasons:
+        # Constitution: only the three CEO categories may escalate. A gate that is down, an
+        # unsure classification or an unbound orchestrator is Thebes's problem — the request
+        # waits in the orchestrator's inbox instead of reaching the CEO.
+        resolved = _to_orchestrator(state_store, resolved, "held-for-orchestrator:%s"
+                                    % resolved.get("reason"))
     rid = state_store.new_id("decision_request")
     question_ref = _ref(state_store, "decision-questions", rid)
     with open(question_ref, "w", encoding="utf-8") as fh:
@@ -523,8 +635,14 @@ def route(record, *, state_store=store, env=None, cfg=None, deliver=None, resume
         "owner_stable_home": resolved.get("owner_stable_home"), "via": resolved.get("via"),
         "approved_action": resolved.get("action"),
         "capability_sha256": state_store.capability_sha256(capability),
+        "repeat_key": repeat_key, "question_hash": qhash,
         "status": "open", "answer_ref": None, "answered_by_session_id": None,
         "continuation_dispatch_id": None, "error": None}, rid=rid)
+    if resolved["route"] == "stuck":
+        cur = state_store.update("decision_request", rid, req["revision"], {"status": "stuck"})
+        return dict(resolved, decision_request_id=rid, request=cur,
+                    jira=_mark_stuck(record.get("jira_key"), resolved["reason"][len("repeat:"):],
+                                     state_store=state_store, jira=jira))
     if resolved["route"] == "escalate":
         return dict(resolved, decision_request_id=rid, request=state_store.update(
             "decision_request", rid, req["revision"], {"status": "escalated"}))
@@ -543,12 +661,15 @@ def route(record, *, state_store=store, env=None, cfg=None, deliver=None, resume
                          else _deliver_to_owner)
     try:
         sent = sender(req, request_envelope(req, capability, question), state_store=state_store)
-    except Exception as exc:                        # fail closed: escalate, never lose it
-        state_store.update("decision_request", rid, req["revision"],
-                           {"status": "escalated", "escalation_reason": "owner-delivery-failed",
-                            "error": str(exc)[:300]})
-        return dict(resolved, route="escalate", reason="owner-delivery-failed",
-                    decision_request_id=rid)
+    except Exception as exc:                        # fail closed: the orchestrator's inbox, never lost
+        cur = state_store.read("decision_request", rid)
+        state_store.update("decision_request", rid, cur["revision"], {
+            "via": "orchestrator", "owner_seat": None,
+            "owner_session_id": _to_orchestrator(state_store, {}, "")["owner_session_id"],
+            "escalation_reason": "owner-delivery-failed", "error": str(exc)[:300]})
+        sent = _deliver_to_inbox(req, None, state_store=state_store)
+        return dict(resolved, route="owner", via="orchestrator", reason="owner-delivery-failed",
+                    decision_request_id=rid, delivery=sent)
     return dict(resolved, decision_request_id=rid, delivery=sent)
 
 

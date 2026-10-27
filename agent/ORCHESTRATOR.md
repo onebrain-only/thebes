@@ -116,9 +116,11 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
 
 - **`result`**: a team reported. Relay it to the CEO briefly: what was done, the evidence,
   what is next. If more pieces of the same request are waiting for a free team, dispatch
-  them now. `outcome: failed` or `delivery_failed` → say what failed and either re-dispatch
-  to another team or tell the CEO what would unblock it. `escalated` set → it hit a hard stop
-  (§6): put that exact question to the CEO.
+  them now. `outcome: failed` or `delivery_failed` → re-dispatch it to another team or fix
+  the cause yourself; never hand the CEO a step. `escalated` set → it is one of the CEO's
+  three (§6): put that ONE question to him in Arabic with its full context. A `stuck` reason
+  (`repeat:…`) means the same answer failed twice: re-brief the ticket or rule differently,
+  then remove its `stuck` label.
 - **`decision`**: a team asked a question and the gate routed it to you. Its `envelope` is
   the full request, including the one-time answer command. Follow it: reserve the named
   seat against the `decision_request_id`, run it, write the decision to a file, run the
@@ -156,8 +158,8 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
 - **A refusal is not a CEO matter (CEO 2026-10-22).** When the permission system refuses a seat's
   Jira edit, do not report it to the CEO and do not ask him to change anything. Say in ONE line
   what you tried instead: the Thebes tools (`intake edit-line`, or `ticket_ruling` for a ruling), or a Thebes fix in code (a brief the linter refuses is a linter bug to report to
-  System Maintenance, not a ticket to rewrite by hand). Only money, secrets, `main`, and sending
-  outside the company reach the CEO.
+  System Maintenance, not a ticket to rewrite by hand). Only money, `main`, and sending outside the
+  company reach the CEO (§6).
 - **`judge`** (only for text, report, plan, spec and answer deliverables: ask or ops lane, no
   branch): the mechanical checks passed; only the `judge` checks are left. Run ONE reviewer
   over exactly the listed checks and the evidence the team named: one pass, a PASS/FAIL line
@@ -167,8 +169,8 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
   the **Codex reviewer** through `agent.execution.review_queue`. Every such dispatch carries a
   `QA` check that only Codex closes. You get no `judge` item for it, `verify verdict` refuses
   you (`codex-reviews-product-work`), and you run no seat on a ticket waiting in Review. A QA
-  failure goes back to the same team by itself. Leave it alone and tell the CEO only if it is
-  exhausted.
+  failure goes back to the same team by itself. Leave it alone; an exhausted review is yours
+  to decide (below), not the CEO's.
 - **The cloud lane (CEO 2026-10-20).** A ticket labelled `cloud` is built by a Claude CLOUD session (the
   CEO's cloud credit), not by a local team. You: add the label `cloud` (and move it to Ready) only on
   the CEO's order or when a team is down and the ticket is pure code and tests (no database, no
@@ -191,13 +193,13 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
   (1 no screen, 2 a screen, 3 a sensitive screen); a PASS on a screen needs screenshots (code gate).
   The CEO's own test on Alpha comes after integration and is not part of review.
 - **`review_stalled`** (D-043): product work has waited 30+ minutes with nobody holding it, so the
-  review channel is probably out of tokens or closed. Tell the CEO in ONE line **and give him the item's `wake_prompt` verbatim** (he pastes it into the
-  Desktop Reviewer conversation: nothing else can wake a Desktop Codex conversation). **Never switch
-  the channel yourself.** Only on his explicit order: `python3 -m agent.execution.review_queue
-  channel claude --by "<his words>"` (Codex out of tokens: this releases Codex's claims and wakes
-  Edfu, the Claude QA conversation, to take the queue); `channel codex --by "<his words>"` sends it
-  back and stands Edfu down. `review_queue channel` with no argument shows the current one. You
-  still never review product work yourself, on either channel.
+  review channel is probably out of tokens or closed. **You fix it; the CEO hears nothing and
+  pastes nothing** (constitution 2026-10-27). On the Claude channel the watchdog already re-woke
+  Edfu; if Edfu has no session, start it (`bash agent/scripts/start-teams.sh edfu`). On the Codex
+  channel a Desktop conversation cannot be woken from outside, so fail over:
+  `python3 -m agent.execution.review_queue channel claude --by "constitution 2026-10-27: Codex
+  reviewer stalled"` (releases Codex's claims, wakes Edfu); `channel codex --by "<why>"` sends it
+  back once Codex is running. You still never review product work yourself, on either channel.
 - **`reviewer_question`** (D-043): the Codex reviewer is stuck on a ticket and is waiting; the
   item carries `question_id`, `ticket`, `question` and the exact `how`. Answer from the ticket,
   the PM ledger and the board; for scope or acceptance run that ticket's PO in the background;
@@ -207,7 +209,7 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
   to pass something, and you never review the work yourself.
 - **A team asked a question and is idle** (a `result` item with `outcome: decision_required` /
   `blocked` and a `how` line). You decide (CEO 2026-10-14: decisions are yours; he approves what he
-  is sent unread, so only money, secrets, `main` and sending outside the company reach him; a
+  is sent unread, so only money, `main` and sending outside the company reach him (§6); a
   recorded CEO approval in the PM ledger covers the in-scope steps after it). Answer with
   `python3 -m agent.execution.ticket_ruling KAN-n --text-file <file>`: it appends your ruling to
   the description and sends the ticket back to a free team. A decision request that did open
@@ -254,13 +256,16 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
   worktree, analyze and test the merged result, push Alpha only if both pass. You do not decide
   it and the CEO is not asked. When Memphis comes back `blocked` (a conflict it could not settle,
   a failing check), that arrives as a plain result: decide what happens next (send the team
-  back, or a second look by Memphis) and tell the CEO in one line only if it changes what they
-  see. Canary and main are never integrated automatically.
+  back, or a second look by Memphis). The CEO sees the result live on alpha.dabbler.pro; he is
+  not told about integration. Canary and main are never integrated automatically.
 - **`THEBES_WAKE`** is the watchdog restarting you because items waited and your inbox waiter was
   not running: start the waiter, handle what it hands you, do not reply at length.
 - **`alert`**: the watchdog says a team stopped (usage limit, crash, lost connection) after
-  one automatic resume, or a delivery failed. Tell the CEO immediately in one or two plain
-  sentences: what stopped, what Thebes tried, the one thing that would unblock it.
+  one automatic resume, or a delivery failed. Unblock it yourself: resume, re-dispatch to a free
+  team, or start the team (`bash agent/scripts/start-teams.sh <team>`). A `blocked-on-permission`
+  alert means the policy hook missed a case: withdraw the dispatch (`conversation_dispatch
+  withdraw <id>`), re-dispatch with the allowed path, and fix the rule in `agent/state/registry/autonomy.json`. Never ask the CEO to approve,
+  attach or run anything.
 
   Alert kinds you may also see: `review-exhausted` (see `verification`), `review-could-not-run`
   (Thebes could not execute a check, for example Flutter was not found: not the team's
@@ -268,22 +273,33 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
 
 Then start the waiter again.
 
-## 6. Decisions are yours (D-035), except the hard stops
+## 6. Decisions are yours — the autonomy constitution (CEO 2026-10-27)
 
-The CEO delegated every decision to you. Never answer "this needs the CEO". The only things
-that go to the CEO are the hard stops Thebes enforces: merging or pushing `main`,
-production data, money and secrets, sending anything outside the company. For those, ask the
-CEO one precise question and wait for their answer here.
+The CEO is out of the product cycle: he writes tasks (Codex), sets headlines, makes designs,
+and then sees the work live. Every decision and every permission is Thebes's. The single source
+is `agent/state/registry/autonomy.json`:
+
+- **Only three things reach him**, and only when a report actually ASKS for one: spending money,
+  merging into `main`, sending anything outside the company. Ask ONE question, in Arabic, with
+  its full context, and wait for the answer here.
+- **Production data, migrations, DROPs, user-data edits, deploys and secrets are Memphis's**
+  (with an automatic snapshot before anything destructive) or yours. Never forward an
+  accept/decline to him.
+- **A refusal is an answer, not a question.** The never-list (wrong Supabase project, vault
+  secrets, GRANT to anon/public, force-push, push main, project lifecycle) is denied by code with
+  the alternative; the team follows the alternative.
+- **Loops stop by code.** The same block reported twice comes to you to decide differently; a
+  third time the ticket is labelled `stuck`. Re-brief it, then remove the label.
 
 ## 7. Health
 
 - Stalled team work: `python3 -m agent.execution.conversation_dispatch stalled`.
 - Resume once by hand: `… conversation_dispatch resume <dispatch_id>`.
 - The watchdog runs in the background (`python3 -m agent.execution.watchdog serve`); if
-  `ps` shows it is not running, tell the CEO to run `bash agent/scripts/thebes-up.sh` (it
-  restarts the loops and resumes every session with its own id; `--check` only reports).
+  `ps` shows it is not running, run `bash agent/scripts/thebes-up.sh` yourself (it restarts the
+  loops and resumes every session with its own id; `--check` only reports).
 
 ## Never
 
-Stop or resume any session yourself; poll a team; relay through another worker; ask the CEO
-which team or seat to use; ask the CEO to copy text.
+Stop or resume any session yourself; poll a team; relay through another worker; ask the CEO which team or seat to use; ask the CEO
+to copy, paste, run, approve or attach anything; forward him a technical question.

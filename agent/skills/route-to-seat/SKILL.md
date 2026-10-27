@@ -196,8 +196,8 @@ CAPABILITY:       backend
 CURRENT EXECUTOR: NONE EVIDENCED
 DISPATCHABLE NOW: NO
 REASON:           no authoritative evidence selects a concrete backend seat; availability is
-                  not knowable. Ask the CEO which seat takes it, or report the work as
-                  defined with no evidenced executor.
+                  not knowable. The orchestrator picks the team from teams.json lanes, or
+                  reports the work as defined with no evidenced executor.
 ```
 
 **`NONE EVIDENCED` is a correct, complete answer.** Work that stays unassigned is the honest
@@ -224,7 +224,8 @@ not dispatchable. `agent/scripts/build-agents.sh --check` is what proves the pai
 generic agent with no error raised** — it will answer plausibly and own nothing, and you will
 not be told. A name you did not verify is a silent failure, not a typo.
 
-**If you cannot tell who owns it, ask the CEO. Do not guess.**
+**If you cannot tell who owns it, the orchestrator decides from `teams.json` lanes — never ask
+the CEO (autonomy constitution, 2026-10-27). Do not guess.**
 
 ## 3. Read the seat's status before you write
 

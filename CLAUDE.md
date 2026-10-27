@@ -433,6 +433,7 @@ git -C Dabbler/dabbler-docs checkout ea8515d05431e59055742737990cd552465315f2
 
 - **`main`** is the Cloudflare Pages production branch and deploys straight to https://app.dabbler.pro. Pushing to main ships to real users immediately. **Never push directly to main** — always open a PR from `Canary`.
 - **`Canary`** (capital C) is the default working branch and deploys to https://canary.dabbler.pro.
+- **`Alpha`** is where team work is integrated (by Memphis) and deploys to https://alpha.dabbler.pro — that is where the CEO sees work live (`agent/DECISIONS.md` D-043). Teams work on their own branches; `Canary` and `main` stay governed below.
 - Flow: commit → push to `Canary` → wait for the Cloudflare build → verify on canary.dabbler.pro → only then open a PR into `main`. A successful push is not a successful deploy — verify the deployment itself.
 
 **STANDING FREEZE, PO ruling 2026-09-01 — do not merge any PR into `main`, ever, without the

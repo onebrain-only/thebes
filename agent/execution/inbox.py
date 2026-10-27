@@ -92,6 +92,9 @@ def oldest_waiting(session_id, *, state_store=store, now=None):
             if now - asked > best[0]:
                 best = (now - asked, "reviewer_question %s" % item["question_id"])
             continue
+        elif kind == "not_live":
+            continue                       # flagged by the dispatcher sweep; not a stalled listener
+
         else:
             stamp = stamps.get(item.get("dispatch_id"))
         age = _age(stamp, now) if stamp else 0
@@ -173,14 +176,14 @@ def pending(session_id, *, state_store=store, now=None):
         if rec.get("status") in ("decision_required", "blocked", "clarification_required"):
             if req is None and _age(rec.get("outcome_at"), now) < ROUTING_GRACE_SECONDS:
                 continue                       # the gate is still routing it
-            if req is not None and req.get("status") != "escalated":
+            if req is not None and req.get("status") not in ("escalated", "stuck"):
                 continue                       # decided inside Thebes; the continuation reports
         asked = rec.get("status") in ("decision_required", "blocked", "clarification_required")
         out.append({"kind": "result", "dispatch_id": rec["dispatch_id"],
                     "ticket": rec.get("jira_key"),
                     "how": (("The team asked a question and is idle. YOU answer it (CEO 2026-10-14: "
-                             "decisions are the orchestrator's; only money, secrets, main and "
-                             "sending outside the company are the CEO's). Answer with: "
+                             "decisions are the orchestrator's; only money, main and sending "
+                             "outside the company are the CEO's — constitution 2026-10-27). Answer with: "
                              "python3 -m agent.execution.ticket_ruling %s --text-file <file> "
                              "(it adds your ruling to the ticket and sends it back to a team)."
                              % rec.get("jira_key")) if asked and rec.get("jira_key") else None),
@@ -209,17 +212,29 @@ def pending(session_id, *, state_store=store, now=None):
                         "items": [i["item_id"] for i in late], "channel": review_queue.get_channel(),
                         "waited_min": max(i["age_min"] for i in late),
                         "wake_prompt": review_queue.wake_prompt([i["ticket"] for i in late]),
-                        "how": ("Review of %s has waited %d+ minutes and nobody holds it: the %s "
-                                "reviewer is probably not running (a Desktop Codex conversation "
-                                "cannot be woken from outside). Tell the CEO in ONE line and give "
-                                "him this exact text to paste into the Reviewer conversation: "
-                                "\"%s\". Do NOT switch the channel yourself: only on his explicit "
-                                "order, run python3 -m agent.execution.review_queue channel "
-                                "claude --by \"<his words>\" (back: channel codex). Say nothing "
-                                "else." % (", ".join(i["ticket"] for i in late),
-                                           max(i["age_min"] for i in late),
-                                           review_queue.get_channel(),
-                                           review_queue.wake_prompt([i["ticket"] for i in late])))})
+                        "how": ("Review of %s has waited %d+ minutes and nobody holds it (channel %s). "
+                                "YOU fix it; never the CEO (constitution 2026-10-27). Claude "
+                                "channel: the watchdog already re-woke Edfu — if Edfu has no "
+                                "session, start it (bash agent/scripts/start-teams.sh edfu). Codex "
+                                "channel: a Desktop conversation cannot be woken from outside, so "
+                                "switch review to Claude: python3 -m agent.execution.review_queue "
+                                "channel claude --by \"constitution 2026-10-27: CEO out of the "
+                                "cycle; Codex reviewer stalled\". Say nothing to the CEO."
+                                % (", ".join(i["ticket"] for i in late),
+                                   max(i["age_min"] for i in late),
+                                   review_queue.get_channel()))})
+        for r in review_queue.not_live_for_inbox():
+            out.append({"kind": "not_live", "ticket": r["ticket"], "sha": r.get("sha"),
+                        "branch": r.get("branch"), "on_alpha": bool(r.get("on_alpha_at")),
+                        "how": (("%s passed review and its commit %s is on Alpha, but "
+                                 "alpha.dabbler.pro has not served it for 15+ minutes. Dispatch ONE "
+                                 "ops item to Memphis: check the Cloudflare Pages build for Alpha "
+                                 "and redeploy it. Never the CEO (D-043).")
+                                if r.get("on_alpha_at") else
+                                ("%s passed review 24+ hours ago and %s is still not on Alpha. "
+                                 "Check `python3 -m agent.execution.integrate` state for it and "
+                                 "have Memphis integrate the branch. Never the CEO (D-043)."))
+                               % (r["ticket"], (r.get("sha") or "?")[:12])})
         for q in review_queue.questions_for_inbox():
             out.append({"kind": "reviewer_question", "question_id": q["qid"], "ticket": q["ticket"],
                         "question": q["question"],
@@ -235,8 +250,10 @@ def pending(session_id, *, state_store=store, now=None):
         pass
     for req in requests:
         if (req.get("status") == "open" and req.get("delivery") == "inbox"
-                and req.get("owner_session_id") == session_id
+                and req.get("owner_session_id") in (session_id, None)
                 and not req.get("inbox_collected_at")):
+            # None: held while no orchestrator was bound (constitution 2026-10-27) — the next
+            # orchestrator session takes it instead of the request reaching the CEO.
             out.append({"kind": "decision", "decision_request_id": req["decision_request_id"],
                         "asked_by": req.get("asker_seat_id"),
                         "decision_class": req.get("decision_class"),
@@ -273,6 +290,11 @@ def collect(session_id, *, state_store=store, now=None):
             if item["kind"] == "reviewer_question":
                 from agent.execution import review_queue
                 review_queue.mark_collected(item["question_id"])
+                taken.append(item)
+                continue
+            if item["kind"] == "not_live":
+                from agent.execution import review_queue
+                review_queue.mark_not_live_collected(item["ticket"])
                 taken.append(item)
                 continue
             if item["kind"] == "priority":

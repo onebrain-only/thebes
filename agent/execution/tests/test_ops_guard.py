@@ -130,9 +130,39 @@ class OpsGuardTests(unittest.TestCase):
         self.assertIsNone(self.decide(MEMPHIS, "Bash", command="git push origin Alpha"))
         self.assertIsNotNone(self.decide(MEMPHIS, "Bash", command="git push --force origin Alpha"))
 
-    def test_project_destroying_tools_stay_with_the_ceo_even_for_ops(self):
-        for tool in ("pause_project", "delete_branch", "restore_project"):
-            self.assertIn("CEO", self.decide(MEMPHIS, SB + tool))
+    def test_project_lifecycle_is_refused_for_everyone_and_money_names_the_ceo(self):
+        for tool in ("pause_project", "restore_project", "create_project"):
+            why = self.decide(MEMPHIS, SB + tool)
+            self.assertIn("never take it to the CEO", why, tool)
+        self.assertIn("needs-ceo: money", self.decide(MEMPHIS, SB + "confirm_cost"))
+
+    def test_the_wrong_project_is_refused_for_every_supabase_tool(self):
+        for tool in ("list_tables", "deploy_edge_function", "execute_sql"):
+            self.assertIn("wtncuzcskpigqpmnxwws", self.decide(MEMPHIS, SB + tool, project_id="other"))
+
+    def allow(self, sid, tool, **tool_input):
+        payload = {"session_id": sid, "tool_name": tool, "tool_input": tool_input}
+        if ops_guard.decide(payload, state_store=store):
+            return None
+        return ops_guard.allow_reason(payload, state_store=store)
+
+    def test_ops_writes_are_answered_with_an_allow_not_a_prompt(self):
+        for tool in ("deploy_edge_function", "delete_branch", "reset_branch", "create_branch",
+                     "create_edge_function_secret"):
+            self.assertIsNotNone(self.allow(MEMPHIS, SB + tool, project_id=ops_guard.PROJECT), tool)
+            self.assertIsNone(self.allow(KARNAK, SB + tool, project_id=ops_guard.PROJECT), tool)
+        self.assertIsNone(self.allow(MEMPHIS, SB + "execute_sql"), "the SQL hook judges each query")
+        for sid in (KARNAK, ORCH, STRANGER):
+            self.assertIsNotNone(self.allow(sid, SB + "list_tables", project_id=ops_guard.PROJECT))
+
+    def test_a_plain_permitted_push_is_allowed_and_anything_else_is_left_alone(self):
+        self.assertIsNotNone(self.allow(MEMPHIS, "Bash", command="git -C Dabbler/dabbler-code push origin integrate-alpha:Alpha"))
+        self.assertIsNotNone(self.allow(KARNAK, "Bash", command="cd x && git push origin alpha-karnak"))
+        self.assertIsNone(self.allow(KARNAK, "Bash", command="git push origin main"), "refused")
+        self.assertIsNone(self.allow(MEMPHIS, "Bash", command="git push origin Canary"), "refused")
+        self.assertIsNone(self.allow(KARNAK, "Bash", command="rm -rf x; git push origin alpha-karnak"))
+        self.assertIsNone(self.allow(KARNAK, "Bash", command="git push origin alpha-karnak $(evil)"))
+        self.assertIsNone(self.allow(ORCH, "Bash", command="git push origin alpha-karnak"), "not a team")
 
     def test_code_teams_push_only_their_own_branch(self):
         """CEO 2026-10-09: a team pushes its branch normally; it never pushes a base branch,

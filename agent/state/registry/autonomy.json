@@ -1,0 +1,157 @@
+{
+  "record_type": "autonomy_constitution",
+  "schema_version": 1,
+  "decided": "CEO 2026-10-27: the CEO is out of the product cycle. His work ends at tasks (via Codex), headlines and designs; then he sees the result live. A technical permission is never his. Supersedes every earlier hard-stop list (D-033 categories, D-035 hard stops, D-042 CEO-only Supabase tools) where they disagree.",
+  "ceo_only": {
+    "note": "The ONLY three things that may reach the CEO. A keyword alone never escalates: the sentence must ASK for the act (request cue) and must not negate it. Anything else is the orchestrator's.",
+    "categories": {
+      "money": {
+        "patterns": [
+          "re:\\bspend(ing)?\\b",
+          "re:\\bpay(ing)? for\\b",
+          "re:\\bbudget\\b",
+          "re:\\bpaid (plan|tier|add-?on)\\b",
+          "re:\\bupgrade (the )?(plan|tier)\\b",
+          "re:\\bconfirm_cost\\b",
+          "re:\\bbilling\\b"
+        ],
+        "meaning": "spending money or committing to a paid plan"
+      },
+      "external_send": {
+        "patterns": [
+          "re:\\bsend (an? )?(e-?mail|newsletter|sms|push notification)s? to (users|customers|the public|everyone)\\b",
+          "re:\\bpublish\\w*\\b.{0,30}\\b(to|on)\\b.{0,25}\\b(app store|play store|testflight|the public)\\b",
+          "re:\\bsubmit\\w*\\b.{0,30}\\b(app store|play store|app review)\\b",
+          "re:\\bpost to (twitter|x|linkedin|instagram|facebook|social)\\b"
+        ],
+        "meaning": "sending or publishing anything outside the company"
+      },
+      "merge_or_push_main": {
+        "patterns": [
+          "re:\\b(merge|push)\\w*\\b.{0,40}\\b(into|to|onto)\\s+`?main`?\\b(?!tain)",
+          "re:\\borigin[ /]main\\b",
+          "re:\\bmain branch\\b"
+        ],
+        "meaning": "merging or pushing into the production branch `main` (P-030)"
+      }
+    },
+    "request_cues": [
+      "approv",
+      "go-ahead",
+      "go ahead",
+      "permission",
+      "authori",
+      "confirm",
+      "need the ceo",
+      "needs the ceo",
+      "ceo's",
+      "may i",
+      "should i",
+      "can i",
+      "allowed to",
+      "sign-off",
+      "sign off",
+      "موافق",
+      "اذن",
+      "إذن",
+      "ok?",
+      "okay?",
+      "ok to",
+      "is it ok"
+    ],
+    "negations": [
+      "no",
+      "not",
+      "nothing",
+      "never",
+      "without",
+      "n't",
+      "none",
+      "neither",
+      "nor",
+      "لا",
+      "مش",
+      "ممنوع",
+      "بدون"
+    ]
+  },
+  "never": {
+    "note": "Refused by code for everyone, every time. A refusal is an answer, not a question: the worker reads the alternative and continues; it never escalates it to the CEO.",
+    "rules": [
+      {
+        "id": "wrong-supabase-project",
+        "what": "any Supabase call to a project other than wtncuzcskpigqpmnxwws",
+        "instead": "use project wtncuzcskpigqpmnxwws only"
+      },
+      {
+        "id": "secrets-vault",
+        "what": "reading or writing vault.* or auth secret columns",
+        "instead": "secrets are set by Memphis through the provider's secret store, never read back"
+      },
+      {
+        "id": "grant-public",
+        "what": "GRANT to anon/public",
+        "instead": "add an RLS policy on the table instead"
+      },
+      {
+        "id": "force-push",
+        "what": "git push --force / -f / tags rewriting",
+        "instead": "push a new commit"
+      },
+      {
+        "id": "push-main",
+        "what": "pushing dabbler-code main/master",
+        "instead": "Alpha is the release branch; main is merged only by the CEO (P-030)"
+      },
+      {
+        "id": "project-lifecycle",
+        "what": "pause/restore/create/delete a Supabase project",
+        "instead": "not needed for product work; costs money"
+      }
+    ]
+  },
+  "owners": [
+    {
+      "what": "read, write on a team branch, tests, analyze",
+      "owner": "team",
+      "guard": "none"
+    },
+    {
+      "what": "push to Alpha, deploy Worker / Pages / edge function (alpha)",
+      "owner": "memphis",
+      "guard": "analyze + tests before push; deploy verified by live_check"
+    },
+    {
+      "what": "additive migration, editing user data rows",
+      "owner": "memphis",
+      "guard": "BEGIN…ROLLBACK dry-run first; logged to the SQL ledger"
+    },
+    {
+      "what": "DROP / DELETE / TRUNCATE / non-additive migration",
+      "owner": "memphis",
+      "guard": "automatic snapshot into thebes_backup before the statement; logged to the SQL ledger"
+    },
+    {
+      "what": "push Canary, production configuration, destructive git on team branches, governance files",
+      "owner": "orchestrator",
+      "guard": "PM ledger"
+    },
+    {
+      "what": "money / merge into main / sending outside the company",
+      "owner": "ceo",
+      "guard": "ONE question in Arabic carrying its full context"
+    }
+  ],
+  "ops_seats": [
+    "memphis"
+  ],
+  "repeat_guard": {
+    "note": "A worker that reports the same block again is not helped by the same answer. 2nd identical report → the orchestrator decides differently; 3rd → the ticket is labelled `stuck` and the loop stops. Also stuck after `burst_max` decision requests on one ticket inside `burst_hours`. Never escalates to the CEO.",
+    "window_hours": 24,
+    "orchestrator_at": 2,
+    "stuck_at": 3,
+    "burst_max": 6,
+    "burst_hours": 3,
+    "label": "stuck"
+  }
+}

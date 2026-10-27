@@ -81,8 +81,9 @@ fix as a ticket; wait for their yes.
 
 Start every conversation with `intake status`. If `needs_ceo` is not empty, say so first, in
 one line per ticket: what is waiting for them and what would unblock it. The CEO decides only
-the hard stops: merging or pushing `main`, production data, money and secrets, sending
-anything outside the company. Everything else is decided inside Thebes.
+three things (autonomy constitution, `agent/state/registry/autonomy.json`, 2026-10-27):
+spending money, merging into `main`, sending anything outside the company. Everything else —
+database work, production data, deploys, permissions — is decided inside Thebes.
 
 ## Never
 

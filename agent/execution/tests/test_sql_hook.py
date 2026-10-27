@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SQL hook (maintenance 2026-10-13): Memphis's approved Messaging probes stop asking a human."""
+"""SQL hook: Memphis gets allow or deny with the alternative, never a prompt (D-043, 2026-10-27)."""
 import json
 import os
 import shutil
@@ -52,7 +52,7 @@ class SqlHookTests(unittest.TestCase):
         r = self.d(query, **kw)
         return r["decision"] if r else "ask"
 
-    # -- the four cases the CEO named -------------------------------------------------
+    # -- the constitution (D-043): Memphis gets allow or deny, never a prompt ---------------
     def test_a_rollback_probe_on_the_approved_project_is_allowed_for_memphis(self):
         self.assertEqual(self.kind(PROBE), "allow")
 
@@ -60,193 +60,135 @@ class SqlHookTests(unittest.TestCase):
         self.assertEqual(self.kind(PROBE, project=OTHER), "deny")
         self.assertEqual(self.kind("select 1", project=OTHER, sid=KARNAK), "deny")
 
-    def test_drop_is_denied_even_inside_a_probe(self):
-        self.assertEqual(self.kind("begin; drop table t; rollback;"), "deny")
-        self.assertEqual(self.kind("begin; alter table t drop column a; rollback;"), "deny")
+    def test_memphis_never_gets_a_prompt(self):
+        for sql in ("insert into t(a) values (1)", "create table x(a int)", "update t set a = 2",
+                    "drop table t", "select 'unterminated", "", "create extension pg_cron",
+                    "do $$ begin execute 'drop table t'; end $$", "drop schema public cascade"):
+            self.assertIn(self.kind(sql), ("allow", "deny"), sql)
 
-    def test_an_unlisted_write_asks_the_human(self):
-        self.assertEqual(self.kind("insert into t(a) values (1)"), "ask")
-        self.assertEqual(self.kind("update t set a = 2"), "ask")
-        self.assertEqual(self.kind("create table x(a int)"), "ask")
+    def test_additive_writes_are_allowed_for_ops(self):
+        for sql in ("insert into t(a) values (1)", "create table x(a int)",
+                    "create or replace function f() returns int language sql as $$ select 1 $$",
+                    "create extension pg_cron", "drop function public.f()", "drop index i",
+                    "alter table t drop constraint c", "grant select on t to authenticated",
+                    "drop trigger if exists tr on public.t", "drop policy p on t"):
+            self.assertEqual(self.kind(sql), "allow", sql)
 
-    # -- more of the deny list ---------------------------------------------------------
-    def test_the_rest_of_the_deny_list(self):
-        for sql in ("truncate t", "delete from t", "begin; delete from t; rollback;",
-                    "grant select on t to public", "grant all on t to anon",
-                    "create extension pg_cron", "select pg_terminate_backend(1)",
-                    "copy t to program 'x'", "select * from vault.secrets",
-                    "select email from auth.users", "select * from auth.users",
-                    "alter system set x = 1", "select pg_read_file('/etc/passwd')"):
-            self.assertEqual(self.kind(sql), "deny", sql)
+    def test_a_destructive_statement_needs_a_snapshot_and_says_how(self):
+        for sql in ("update t set a = 2", "delete from t where a = 1", "delete from t",
+                    "truncate t", "drop table t", "alter table t drop column a",
+                    "do $$ begin update t set a = 1; end $$"):
+            r = self.d(sql)
+            self.assertEqual(r["decision"], "deny", sql)
+            self.assertIn("python3 -m agent.execution.sql_snapshot public.t", r["reason"])
+            self.assertNotIn("ask the CEO", r["reason"])
+
+    def test_a_snapshot_in_the_same_call_or_in_the_last_two_hours_lets_it_through(self):
+        from agent.execution import sql_snapshot
+        _, snap = sql_snapshot.snapshot_sql("t", "a = 1", "KAN-1")
+        self.assertEqual(self.kind(snap + "\ndelete from public.t where a = 1;"), "allow")
+        self.assertEqual(self.kind("update t set a = 2"), "allow", "recorded by the call above")
+        self.assertEqual(self.kind("update public.other set a = 2"), "deny", "another table")
+        later = sql_snapshot.time.time() + 3 * 3600
+        r = sql_hook.decide({"session_id": MEMPHIS, "tool_name": TOOL,
+                             "tool_input": {"project_id": OK, "query": "update t set a = 3"}},
+                            state_store=store, allow_path=self.reg, now=later)
+        self.assertEqual(r["decision"], "deny", "the window closed")
+
+    def test_a_snapshot_alone_is_allowed_and_recorded(self):
+        from agent.execution import sql_snapshot
+        backup, snap = sql_snapshot.snapshot_sql("public.profiles", ticket="KAN-645")
+        self.assertEqual(self.kind(snap), "allow")
+        self.assertEqual(sql_snapshot.recent("profiles")["backup"], backup)
+
+    def test_a_function_body_only_defines_code_and_needs_no_snapshot(self):
+        fn = ("create or replace function public.trg() returns trigger language plpgsql as $$ "
+              "begin update public.t set a = 1 where id = new.id; delete from public.u where x = 1; "
+              "execute 'delete from public.v'; return new; end $$;")
+        self.assertEqual(self.kind(fn), "allow")
+        self.assertEqual(self.kind(fn + " update public.t set a = 2;"), "deny", "the UPDATE outside runs")
+        self.assertEqual(self.kind("create function f() returns void language sql as $$ "
+                                   "select * from vault.secrets $$"), "deny", "never-list still scans bodies")
+
+    def test_a_table_created_in_the_same_call_needs_no_snapshot(self):
+        self.assertEqual(self.kind("create table s(a int); insert into s values (1); "
+                                   "update s set a = 2; drop table s;"), "allow")
+
+    def test_inside_a_probe_destructive_sql_is_allowed(self):
+        for sql in ("begin; drop table t; rollback;", "begin; alter table t drop column a; rollback;",
+                    "begin; delete from t; rollback;", "begin; update t set a = 1; rollback;"):
+            self.assertEqual(self.kind(sql), "allow", sql)
+
+    def test_the_never_list_is_denied_with_the_alternative(self):
+        for sql in ("grant select on t to public", "grant all on t to anon",
+                    "select pg_terminate_backend(1)", "copy t to program 'x'",
+                    "select * from vault.secrets", "select email from auth.users",
+                    "alter system set x = 1", "select pg_read_file('/etc/passwd')",
+                    "drop schema public cascade", "drop extension pg_cron", "drop role x",
+                    "begin; select * from vault.secrets; rollback;",
+                    "drop table thebes_backup.public__t__20261027000000"):
+            r = self.d(sql)
+            self.assertEqual(r["decision"], "deny", sql)
+            self.assertIn("never take it to the CEO", r["reason"])
 
     def test_what_looks_scary_but_is_not_passes(self):
         self.assertEqual(self.kind("select 'drop table x' as note"), "allow", "inside a literal")
         self.assertEqual(self.kind("select 1 -- drop table x"), "allow", "inside a comment")
         self.assertEqual(self.kind("select count(*) from auth.users"), "allow")
-        self.assertEqual(self.kind("begin; delete from t where a = 1; rollback;"), "allow")
+        self.assertEqual(self.kind("select md5(prosrc) from pg_proc where proname = 'f'"), "allow")
 
-    def test_code_inside_a_dollar_quoted_body_is_scanned(self):
-        self.assertEqual(self.kind("begin; do $$ begin drop table t; end $$; rollback;"), "deny")
-
-    def test_dynamic_sql_hides_nothing_and_is_never_auto_allowed(self):
+    def test_dynamic_sql_that_removes_rows_must_be_written_out(self):
         self.assertEqual(self.kind("do $$ begin execute 'drop table t'; end $$"), "deny")
-        self.assertEqual(self.kind("begin; do $$ begin execute 'select 1'; end $$; rollback;"), "ask")
+        self.assertEqual(self.kind("do $$ begin execute 'delete from t'; end $$"), "deny")
+        self.assertEqual(self.kind("begin; do $$ begin execute 'select 1'; end $$; rollback;"), "allow")
+        self.assertEqual(self.kind("do $$ begin execute format('grant select on %I to authenticated', 't'); "
+                                   "end $$"), "allow")
+        self.assertEqual(self.kind("do $$ begin execute 'grant all on t to anon'; end $$"), "deny")
 
-    # -- what a probe is ---------------------------------------------------------------
-    def test_a_probe_must_begin_first_rollback_last_and_never_commit(self):
-        for sql in ("begin; insert into t values (1); commit;",
-                    "begin; insert into t values (1);",
-                    "insert into t values (1); rollback;",
-                    "begin; insert into t values (1); rollback; insert into t values (2); rollback;",
-                    "begin; insert into t values (1); commit; insert into t values (2); rollback;",
-                    "begin; do $$ begin commit; end $$; rollback;"):
-            self.assertEqual(self.kind(sql), "ask", sql)
-        self.assertEqual(self.kind("begin; savepoint s; insert into t values (1); "
-                                   "rollback to savepoint s; rollback;"), "allow")
+    def test_a_non_probe_transaction_is_judged_on_its_statements(self):
+        self.assertEqual(self.kind("begin; insert into t values (1); commit;"), "allow")
+        self.assertEqual(self.kind("begin; delete from t where a = 1; commit;"), "deny")
+        self.assertEqual(self.kind("begin; delete from t; commit; rollback;"), "deny")
 
-    # -- who it applies to -------------------------------------------------------------
-    def test_only_the_ops_team_is_ever_allowed(self):
-        self.assertEqual(self.kind(PROBE, sid=KARNAK), "ask", "the ops guard governs code teams")
-        self.assertEqual(self.kind("select 1", sid="stranger"), "ask")
+    def test_unparseable_sql_is_denied_for_ops_with_the_fix(self):
+        for sql in ("select 'unterminated", "select $x$ never closed"):
+            r = self.d(sql)
+            self.assertEqual(r["decision"], "deny")
+            self.assertIn("Close the quote", r["reason"])
+        self.assertEqual(self.kind("select 'unterminated", sid=KARNAK), "ask", "the ops guard governs")
+
+    # -- other sessions ---------------------------------------------------------------------
+    def test_other_sessions_read_freely_and_are_refused_writes_elsewhere(self):
+        self.assertEqual(self.kind("select 1", sid="stranger"), "allow")
+        self.assertEqual(self.kind("select 1", sid=KARNAK), "allow")
+        self.assertEqual(self.kind(PROBE, sid=KARNAK), "ask", "the ops guard refuses code-team writes")
+        self.assertEqual(self.kind("drop table t", sid=KARNAK), "deny")
         self.assertIsNone(sql_hook.decide({"session_id": MEMPHIS, "tool_name": "Bash",
                                            "tool_input": {"command": "ls"}}, state_store=store))
 
-    def test_unparseable_sql_asks(self):
-        self.assertEqual(self.kind("select 'unterminated"), "ask")
-        self.assertEqual(self.kind("select $x$ never closed"), "ask")
-
-    # -- released migrations -----------------------------------------------------------
-    def test_a_released_migration_passes_only_while_it_is_unchanged(self):
+    def test_a_released_migration_is_labelled(self):
         sql = "create or replace function f() returns int language sql as $$ select 1 $$;"
-        self.assertEqual(self.kind(sql), "ask")
         with open(self.reg, "w") as fh:
             json.dump({"project_id": OK, "released_migrations": [
                 {"file": "m.sql", "sha256": sql_hook.sha(sql)}]}, fh)
-        self.assertEqual(self.kind(sql), "allow")
-        self.assertEqual(self.kind("  " + sql.replace(" ", "  ") + "\n"), "allow", "whitespace only")
-        self.assertEqual(self.kind(sql.replace("select 1", "select 2")), "ask", "edited: un-released")
-        self.assertEqual(self.kind("drop function f();"), "deny")
+        r = self.d(sql)
+        self.assertEqual(r["decision"], "allow")
+        self.assertIn("released-migration", r["reason"])
 
-    # -- the one DROP exception: CEO 2026-10-26, KAN-644 -------------------------------------
-    SWAP = ("alter table public.profiles drop constraint if exists profiles_persona_type_check;\n"
-            "alter table public.profiles add constraint profiles_persona_type_check "
-            "check (persona_type = any (array['player','contributor']));")
-
-    def release(self, sql, marker=sql_hook.DROP_EXCEPTION):
-        entry = {"file": "m.sql", "sha256": sql_hook.sha(sql)}
-        if marker:
-            entry["drop_exception"] = marker
-        with open(self.reg, "w") as fh:
-            json.dump({"project_id": OK, "released_migrations": [entry]}, fh)
-
-    def test_a_released_migration_may_drop_exactly_the_persona_type_check(self):
-        self.release(self.SWAP)
-        self.assertEqual(self.kind(self.SWAP), "allow")
-        self.assertEqual(self.kind("  " + self.SWAP.replace(" ", "  ") + "\n"), "allow", "whitespace only")
-
-    def test_the_exception_needs_the_release_and_the_marker_and_the_ops_team(self):
-        self.assertEqual(self.kind(self.SWAP), "deny", "unreleased")
-        self.release(self.SWAP, marker=None)
-        self.assertEqual(self.kind(self.SWAP), "deny", "released without the exception marker")
-        self.release(self.SWAP, marker="some_other_constraint")
-        self.assertEqual(self.kind(self.SWAP), "deny", "marker names another constraint")
-        self.release(self.SWAP)
-        self.assertEqual(self.kind(self.SWAP, sid=KARNAK), "deny", "code teams never")
-        self.assertEqual(self.kind(self.SWAP, project=OTHER), "deny", "other project")
-        self.assertEqual(self.kind(self.SWAP.replace("player", "player2")), "deny", "edited: un-released")
-
-    def test_every_other_drop_stays_denied_in_a_released_exception_migration(self):
-        ok = "alter table public.profiles drop constraint if exists profiles_persona_type_check;\n"
-        for body in ("alter table public.profiles drop constraint if exists profiles_other_check;",
-                     "alter table public.profiles drop constraint profiles_persona_type_check;",
-                     "alter table public.profiles drop constraint if exists profiles_persona_type_check cascade;",
-                     "alter table public.profiles drop constraint if exists profiles_persona_type_check, "
-                     "drop column onboard;",
-                     "alter table public.profiles drop column onboard;",
-                     "alter table public.player drop constraint if exists profiles_persona_type_check;",
-                     "alter table profiles drop constraint if exists profiles_persona_type_check;",
-                     "alter table public.profiles drop constraint if exists \"profiles_persona_type_check\";",
-                     "drop trigger if exists trg_player_profile_persona_guard on public.player;",
-                     "drop function public.trgfn_limit_active_profiles();",
-                     "drop table public.profiles;",
-                     "drop schema public cascade;",
-                     "drop index if exists idx_one_active_profile_per_user;",
-                     "truncate public.profiles;",
-                     "do $$ begin alter table public.profiles drop constraint if exists "
-                     "profiles_persona_type_check; end $$;"):
-            sql = ok + body
-            self.release(sql)
-            self.assertEqual(self.kind(sql), "deny", body)
-        only_hidden = "do $$ begin execute 'alter table public.profiles drop constraint if exists " \
-                      "profiles_persona_type_check'; end $$;"
-        self.release(only_hidden)
-        self.assertEqual(self.kind(only_hidden), "deny", "inside dynamic SQL")
-        for body in ("drop table public.profiles;", "truncate public.profiles;"):
-            self.release(body)
-            self.assertEqual(self.kind(body), "deny", "no allowed statement at all: " + body)
-
-    def test_release_cli_refuses_the_exception_unless_asked_and_pins_the_marker(self):
+    def test_release_cli_still_pins_the_persona_exception(self):
         import contextlib
         import io
+        swap = ("alter table public.profiles drop constraint if exists profiles_persona_type_check;\n"
+                "alter table public.profiles add constraint profiles_persona_type_check "
+                "check (persona_type = any (array['player','contributor']));")
         path = os.path.join(self.tmp, "m.sql")
         with open(path, "w") as fh:
-            fh.write(self.SWAP)
-        out = io.StringIO()
-        with contextlib.redirect_stdout(out):
-            self.assertEqual(sql_hook.release_cli([path]), 2)
-        self.assertIn("refused", out.getvalue())
+            fh.write(swap)
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             self.assertEqual(sql_hook.release_cli([path, "--allow-persona-check-drop"]), 0)
-        entry = json.loads(out.getvalue())
-        self.assertEqual(entry["drop_exception"], "profiles_persona_type_check")
-        self.assertEqual(entry["sha256"], sql_hook.sha(self.SWAP))
-        with open(path, "w") as fh:
-            fh.write(self.SWAP + "\ndrop table public.profiles;")
-        out = io.StringIO()
-        with contextlib.redirect_stdout(out):
-            self.assertEqual(sql_hook.release_cli([path, "--allow-persona-check-drop"]), 2)
-
-    # -- integrated migrations: a technical approval is not the CEO's (2026-10-14) ----------
-    MIG = ("-- KAN-522\nbegin;\ncreate or replace function public.f() returns int language sql as "
-           "$$ select 1; $$;\nrevoke all on function public.f() from public;\n"
-           "grant execute on function public.f() to authenticated;\n"
-           "do $$ begin assert true; end $$;\ncommit;\n")
-
-    def dm(self, query, files, sid=MEMPHIS):
-        r = sql_hook.decide({"session_id": sid, "tool_name": TOOL, "_migrations": files,
-                             "tool_input": {"project_id": OK, "query": query}},
-                            state_store=store, allow_path=self.reg)
-        return r["decision"] if r else "ask"
-
-    def test_sql_that_is_a_statement_or_the_whole_of_an_integrated_migration_needs_no_human(self):
-        files = [("supabase/migrations/20261013_x.sql", self.MIG)]
-        stmt = "create or replace function public.f() returns int language sql as $$ select 1; $$"
-        self.assertEqual(self.dm(stmt, files), "allow", "one statement")
-        self.assertEqual(self.dm("revoke all on function public.f() from public;", files), "allow")
-        self.assertEqual(self.dm(self.MIG, files), "allow", "the whole file")
-        self.assertEqual(self.dm("  " + stmt.replace(" ", "   ") + " ;", files), "allow", "whitespace only")
-
-    def test_anything_not_in_an_integrated_file_still_asks_or_is_denied(self):
-        files = [("supabase/migrations/20261013_x.sql", self.MIG)]
-        self.assertEqual(self.dm("create or replace function public.f() returns int language sql as "
-                                 "$$ select 2; $$", files), "ask", "edited text")
-        self.assertEqual(self.dm("create or replace function public.g() returns int language sql as "
-                                 "$$ select 1; $$", files), "ask", "a different function")
-        self.assertEqual(self.dm("select 1", []), "allow", "read-only is allowed anyway")
-        self.assertEqual(self.dm("update t set a = 1", files), "ask")
-        self.assertEqual(self.dm("drop function public.f()", files), "deny")
-        self.assertEqual(self.dm("create or replace function public.f() returns int language sql as "
-                                 "$$ select 1; $$", files, sid=KARNAK), "ask", "code teams never")
-
-    def test_a_migration_with_data_changes_or_drops_never_qualifies(self):
-        for body in ("update t set a = 1;", "insert into t values (1);", "drop table t;",
-                     "alter table t drop column a;", "delete from t where a = 1;"):
-            mig = self.MIG + body
-            files = [("supabase/migrations/20261013_y.sql", mig)]
-            stmt = "revoke all on function public.f() from public"
-            self.assertEqual(self.dm(stmt, files), "ask", body)
-        self.assertEqual(self.dm("select 'x'", []), "allow")
+        self.assertEqual(json.loads(out.getvalue())["drop_exception"], "profiles_persona_type_check")
+        self.assertEqual(self.kind(swap), "allow", "and the swap itself needs no snapshot")
 
     def test_the_statement_splitter_respects_quotes_comments_and_dollar_bodies(self):
         text = "select 'a;b'; -- c;d\ncreate function f() returns int as $$ select 1; select 2; $$ language sql; select 3"
@@ -272,6 +214,7 @@ class SqlHookTests(unittest.TestCase):
         done = subprocess.run([sys.executable, os.path.join(ROOT, "agent", "scripts", "sql_hook.py")],
                               input=json.dumps(payload), capture_output=True, text=True, env=env)
         self.assertEqual(done.returncode, 0)
+        self.assertTrue(done.stdout, done.stderr)
         out = json.loads(done.stdout)["hookSpecificOutput"]
         self.assertEqual((out["hookEventName"], out["permissionDecision"]), ("PreToolUse", "deny"))
         junk = subprocess.run([sys.executable, os.path.join(ROOT, "agent", "scripts", "sql_hook.py")],

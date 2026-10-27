@@ -151,16 +151,18 @@ def team_block(record):
             "already decided. Run the owning seat (po for Jira and the board, devops for "
             "release prep, …), do exactly that, verify it, and report the result. Do not ask "
             "whether to do it, do not route it to a review, do not return it as 'not "
-            "confirmed'. Stop only for a hard stop (main, production data, money/secrets, "
-            "sending outside) and name it.",
+            "confirmed'. Stop only for one of the CEO's three (money, merging into main, sending "
+            "outside the company) and name it.",
             "po_pool: there are several PO seats (po, po-2, …). If `po` is held, reserve the "
             "free one the refusal names instead of waiting.",
             "delegation (D-035): the CEO has delegated EVERY decision to you — scope, priority, "
             "the next ticket, acceptance, architecture, dependencies. Never return 'needs the "
             "CEO's decision' or a list of items awaiting the CEO: decide them through the "
-            "accountable seats (cpo/pm/po/cto/cxo) and report what was decided and by whom. The "
-            "only hard stops are enforced by Thebes before anything reaches you: merging or "
-            "pushing main, production data, money and secrets, sending outside the company.",
+            "accountable seats (cpo/pm/po/cto/cxo) and report what was decided and by whom. "
+            "Production data, migrations, DROPs, deploys and secrets are Memphis's or yours. The "
+            "only things the CEO hears are enforced by Thebes before anything reaches you: "
+            "spending money, merging into main, sending outside the company "
+            "(agent/state/registry/autonomy.json).",
             "answer_shape: the answer, who decided it (which seat), the evidence, and what the "
             "asker should do next. Short. Nothing else.",
         ]
@@ -227,11 +229,15 @@ def ops_block():
         "migrations: before applying, cto reviews the SQL and classifies it. A: additive or "
         "CREATE OR REPLACE. B: DROP of a function, view or policy, only after checking that "
         "origin/main and origin/Canary do not use the object (git grep). C: DROP TABLE/COLUMN, "
-        "DELETE/UPDATE of rows, TRUNCATE: apply ONLY if the ticket's AUTHORIZED line names this "
-        "exact migration; otherwise report outcome blocked with `needs-ceo`. Apply one "
-        "migration at a time, run its probes, stop at the first error and report it.",
+        "DELETE/UPDATE of rows, TRUNCATE: YOURS to apply (autonomy constitution, CEO "
+        "2026-10-27) — first snapshot what it removes (python3 -m agent.execution.sql_snapshot "
+        "<schema.table> [--where '<same WHERE>'] --ticket <KEY>), then apply. Never report "
+        "`needs-ceo` and never ask the CEO to accept or decline a DB change: he is out of the "
+        "cycle. Apply one migration at a time, run its probes, stop at the first error and "
+        "fix or report it to the orchestrator.",
         "integration: merge team branches into Alpha only, one at a time, after their "
-        "verification passed. Canary and main are the CEO's; never push or merge them.",
+        "verification passed. Never push or merge Canary (the orchestrator's release step) or "
+        "main (merged only by the CEO, P-030).",
         "pushing a base: the permission system only pre-approves two exact command shapes, so "
         "any other shape stops on a prompt nobody can answer. Put the commit on a local branch "
         "named exactly `integrate-alpha` (app) or `integrate-alpha-ds` (design system) and push "
@@ -579,10 +585,11 @@ def render_result(record, result_text):
         "THEBES_CONVERSATION_RESULT (the Claude session you dispatched from THIS conversation "
         "has reported)",
     ] + ([
-        "ESCALATED TO THE CEO: this is a decision the decision group could not settle "
-        "(the owner is the CEO, or the gate was unsure or unavailable). Put the question to the "
-        "CEO; when they answer, send the answer to the SAME session as a new dispatch so it "
-        "continues the same task.",
+        "DECISION NOT SETTLED INSIDE THEBES. Only spending money, merging into main or sending "
+        "outside the company may go to the CEO — then ONE question, in Arabic, with its full "
+        "context. Anything else (a technical choice, a DB change, a deploy, a permission) is "
+        "the orchestrator's: decide it or send it to the owning seat, never to the CEO. Send "
+        "the answer to the SAME session as a new dispatch so it continues the same task.",
     ] if escalated else []) + [
         "dispatch_id: %s" % record["dispatch_id"],
         "delivery_id: %s" % record.get("attested_delivery_id"),
@@ -680,7 +687,8 @@ def wait_for_result(dispatch_id, timeout_seconds=1500, *, state_store=store, sle
         if alert:
             # The watchdog flagged that this work stopped: say so NOW, don't wait it out.
             return {"status": "stopped", "dispatch_id": dispatch_id, "alert": alert,
-                    "detail": "tell the CEO what stopped and what would unblock it",
+                    "detail": "handle it: resume, re-brief or send it to another team "
+                              "(not a CEO question)",
                     "result": None}
         if time.time() >= deadline:
             return {"status": "still-running", "dispatch_id": dispatch_id,

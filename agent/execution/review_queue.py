@@ -400,6 +400,8 @@ def qa_items(jira=None, state_store=store):
         key = issue["key"]
         if (issue.get("status") or "").lower() == "self-review" and _team_working(key, state_store):
             continue
+        if is_awaiting(key):                                # passed; waits only to go live
+            continue
         cloud = None
         try:
             from agent.execution import cloud_lane
@@ -659,6 +661,148 @@ def close_passed(ticket, jira, state_store):
     _set_returned(ticket, jira, False)
 
 
+# ------------------------------------------------------------------ Done = live (D-043 section 6)
+# The CEO's part resumes when he SEES the work live, so a PASS is Done only once the reviewed
+# commit is on Alpha and alpha.dabbler.pro serves it. Until then the ticket stays in review,
+# recorded under awaiting-live/, out of the reviewer's queue; the dispatcher's sweep closes it.
+LIVE_LATE_SECONDS = 15 * 60          # on Alpha this long and still not deployed: ops problem
+INTEGRATE_LATE_SECONDS = 24 * 3600   # passed this long and still not on Alpha: integration stuck
+SITE_URL = re.compile(r"https?://alpha\.dabbler\.pro(/[^\s)\]|>\"']*)?")
+
+
+def _awaiting_path(ticket):
+    return os.path.join(_dir("awaiting-live"), "%s.json" % _safe(ticket))
+
+
+def awaiting():
+    out = []
+    for name in sorted(os.listdir(_dir("awaiting-live"))):
+        rec = _read(os.path.join(_dir("awaiting-live"), name))
+        if rec and rec.get("ticket"):
+            out.append(rec)
+    return out
+
+
+def is_awaiting(ticket):
+    return os.path.exists(_awaiting_path(ticket))
+
+
+def live_link(description):
+    """The alpha.dabbler.pro address the ticket's test scenarios name, else the site itself."""
+    from agent.execution import live_check
+    if not isinstance(description, str):                    # ADF or missing
+        description = json.dumps(description) if isinstance(description, (dict, list)) else ""
+    m = SITE_URL.search(description)
+    return m.group(0).rstrip(".,;") if m else live_check.SITE
+
+
+def live_comment(ticket, summary, reason, link, verified, sha):
+    """The one Arabic Done comment the CEO reads: what was done, where to open it."""
+    lines = ["خلصت ✅ وشغالة لايف على Alpha." if verified else
+             "خلصت ✅ ووصلت Alpha (الموقع ما بيقولش رقم البيلد، فاللايف متأكدش منه بالكود).",
+             "اتعمل إيه: %s" % (summary or ticket)]
+    if (reason or "").strip():
+        lines.append("نتيجة المراجعة: %s" % reason.strip()[:300])
+    lines.append("تشوفها فين: افتح %s" % link)
+    if sha:
+        lines.append("الكوميت: %s" % sha[:12])
+    return "Thebes: " + "\n".join(lines)
+
+
+def _close_live(ticket, rec, live, jira, state_store):
+    close_passed(ticket, jira, state_store)
+    summary, description = rec.get("summary"), rec.get("description")
+    if summary is None:
+        try:
+            issue = jira.get_issue(ticket)
+            summary, description = issue.get("summary"), issue.get("description")
+        except Exception:                            # noqa: BLE001
+            pass
+    summary = summary if isinstance(summary, str) else None
+    link = live_link(description)
+    try:                                             # the "what's new" page and ceo_metrics read it
+        with open(os.path.join(store.RUNTIME, "review", "live-done.jsonl"), "a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                                 "ticket": ticket, "summary": summary, "link": link, "live": live,
+                                 "sha": rec.get("sha"), "passed_at": rec.get("at")},
+                                ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+    jira.add_comment(ticket, live_comment(ticket, summary, rec.get("reason"), link,
+                                          live == "live", rec.get("sha")))
+
+
+def close_or_await(ticket, meta, reason, jira, state_store, *, now=None, check=None):
+    """PASS: Done now if the commit is live (or on Alpha and the site cannot say), else wait."""
+    from agent.execution import live_check
+    sha = (meta or {}).get("sha")
+    live = (check or live_check.status)(sha) if sha else "no-commit"
+    rec = {"ticket": ticket, "sha": sha, "branch": (meta or {}).get("branch"),
+           "reason": (reason or "").strip()[:300], "at": now or time.time()}
+    if live in ("live", "on-alpha-unverified", "no-commit"):
+        _close_live(ticket, rec, live, jira, state_store)
+        return live
+    if live == "on-alpha":
+        rec["on_alpha_at"] = rec["at"]
+    with open(_awaiting_path(ticket), "w", encoding="utf-8") as fh:
+        json.dump(rec, fh)
+    jira.add_comment(ticket, "Thebes: PASS — waiting to go live (%s). It moves to Done by itself "
+                     "once %s is on Alpha and alpha.dabbler.pro serves it." % (live, (sha or "")[:12]))
+    return live
+
+
+def sweep_live(*, state_store=store, jira=None, now=None, check=None):
+    """Dispatcher tick: close every awaiting ticket that is now live; flag the late ones to the
+    orchestrator (never the CEO). Never raises."""
+    from agent.execution import live_check
+    now = now or time.time()
+    done = []
+    try:
+        recs = awaiting()
+        if not recs:
+            return []
+        from agent.execution import jira_sync
+        jira = jira_sync._client(jira, state_store)
+        if jira is None:
+            return []
+        for rec in recs:
+            ticket = rec["ticket"]
+            try:
+                live = (check or live_check.status)(rec.get("sha"))
+                if live in ("live", "on-alpha-unverified"):
+                    _close_live(ticket, rec, live, jira, state_store)
+                    os.unlink(_awaiting_path(ticket))
+                    done.append({"action": "done-live", "ticket": ticket, "live": live})
+                    continue
+                if live == "on-alpha" and not rec.get("on_alpha_at"):
+                    rec["on_alpha_at"] = now
+                late = (now - rec["on_alpha_at"] >= LIVE_LATE_SECONDS if rec.get("on_alpha_at")
+                        else now - rec.get("at", now) >= INTEGRATE_LATE_SECONDS)
+                if late and not rec.get("late_flagged"):
+                    rec["late_flagged"] = now
+                    done.append({"action": "not-live-late", "ticket": ticket, "live": live})
+                with open(_awaiting_path(ticket), "w", encoding="utf-8") as fh:
+                    json.dump(rec, fh)
+            except Exception as exc:                 # noqa: BLE001  one ticket never stops the rest
+                done.append({"action": "live-check-failed", "ticket": ticket, "error": str(exc)[:200]})
+    except Exception as exc:                         # noqa: BLE001
+        done.append({"action": "sweep-live-failed", "error": str(exc)[:200]})
+    return done
+
+
+def not_live_for_inbox():
+    """Awaiting tickets flagged late and not yet handed to the orchestrator."""
+    return [r for r in awaiting() if r.get("late_flagged") and not r.get("late_collected")]
+
+
+def mark_not_live_collected(ticket):
+    rec = _read(_awaiting_path(ticket))
+    if rec:
+        rec["late_collected"] = time.time()
+        with open(_awaiting_path(ticket), "w", encoding="utf-8") as fh:
+            json.dump(rec, fh)
+
+
 def submit_qa(item_id, verdict, reason, evidence, *, state_store=store, jira=None):
     from agent.execution import jira_sync
     _owner_check(item_id)
@@ -676,9 +820,9 @@ def submit_qa(item_id, verdict, reason, evidence, *, state_store=store, jira=Non
     if jira is None:
         raise Refused("jira-unavailable", "cannot record a qa verdict without Jira")
     if verdict == "pass":
-        close_passed(ticket, jira, state_store)
         jira.add_comment(ticket, "Thebes reviewer (Codex): PASS. %s\n%sEvidence: %s"
                          % ((reason or "").strip()[:500], tested_line(meta), ev_path))
+        close_or_await(ticket, meta, reason, jira, state_store)
     else:
         send_back(ticket, jira, state_store)
         jira.add_comment(ticket, "Thebes reviewer (Codex): FAIL.\n%s\n%sEvidence: %s"
@@ -963,15 +1107,17 @@ WAKE_PROMPT = ("Reviewer wake: review work is waiting ({tickets}). Re-read agent
 
 
 def wake_prompt(tickets):
-    """The one prompt the CEO pastes into the Desktop Reviewer conversation. A Desktop Codex
-    conversation cannot be woken from outside, so Thebes names the exact text and tells the CEO."""
+    """The prompt that restarts a Reviewer conversation's loop. The orchestrator uses it; it is
+    never handed to the CEO (constitution 2026-10-27)."""
     return WAKE_PROMPT.format(tickets=", ".join(tickets) or "see review_queue status")
 
 
-def notify_stalled(*, state_store=store, now=None, runner=None):
-    """A macOS notification (zero tokens) once per stalled review, with the wake prompt in it, for
-    when the CEO is at the Mac. Never raises."""
-    import subprocess
+def notify_stalled(*, state_store=store, now=None, runner=None, wake=None):
+    """Once per stalled review, wake the reviewer of the ACTIVE channel — never the CEO
+    (constitution 2026-10-27: no notification, no wake prompt for him to paste). Claude channel:
+    Edfu is re-dispatched its loop. Codex channel: a Desktop conversation cannot be woken from
+    outside, so the item waits in the orchestrator's inbox (review_stalled), which may switch the
+    channel to claude itself. Never raises; `runner` is unused and kept for old callers."""
     late = []
     try:
         for i in stalled(state_store, now):
@@ -981,13 +1127,14 @@ def notify_stalled(*, state_store=store, now=None, runner=None):
         if not late:
             return []
         tickets = [i["ticket"] for i, _ in late]
-        text = "Review waiting %s: send 'Reviewer wake' to the Reviewer chat in Codex" % ", ".join(tickets)
-        (runner or subprocess.run)(["osascript", "-e", 'display notification "%s" with title "Thebes"'
-                                    % text.replace('"', "'")], capture_output=True, timeout=10)
+        woke = None
+        if get_channel() == "claude":
+            woke = (wake or _wake_edfu)("claude", state_store)
         for _, m in late:
             with open(m, "w") as fh:
                 fh.write("1")
-        return [{"action": "review-stalled-notified", "tickets": tickets}]
+        return [{"action": "review-stalled-woke-reviewer", "channel": get_channel(),
+                 "tickets": tickets, "wake": woke}]
     except Exception:                                      # noqa: BLE001
         return []
 

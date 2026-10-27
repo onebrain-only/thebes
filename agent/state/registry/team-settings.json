@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/agent/scripts/policy-hook.sh",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  },
+  "remoteControlAtStartup": false
+}

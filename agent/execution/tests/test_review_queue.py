@@ -11,7 +11,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.a
 sys.path.insert(0, ROOT)
 
 from agent.state import store, validate                               # noqa: E402
-from agent.execution import review_queue as rq, review_app, verify, jira_sync    # noqa: E402
+from agent.execution import review_queue as rq, review_app, verify, jira_sync, live_check    # noqa: E402
 
 ORCH = "0eeeeeee-9999-7000-8000-00000000000e"
 LUXOR = "0bbbbbbb-9999-7000-8000-00000000000b"
@@ -36,8 +36,12 @@ class ReviewQueueTests(unittest.TestCase):
         self.heads = {}
         self._bh = rq.branch_head
         rq.branch_head = lambda branch, runner=None, clock=None: self.heads.get(branch)   # no network
+        self.live = "live"
+        self._ls = live_check.status
+        live_check.status = lambda sha, *a, **k: self.live                               # no network
 
     def tearDown(self):
+        live_check.status = self._ls
         rq.branch_head = self._bh
         rq.changed_paths = self._cp
         os.environ.pop("CODEX_THREAD_ID", None)
@@ -260,7 +264,7 @@ class ReviewQueueTests(unittest.TestCase):
                        dispatch=fake)
         self.assertIn("stop your review loop", sent[1][1].lower())
 
-    def test_a_review_nobody_holds_for_half_an_hour_is_reported_once_and_never_switched(self):
+    def test_a_review_nobody_holds_is_reported_once_to_the_orchestrator_never_the_ceo(self):
         from agent.execution import inbox
         import time as _t
         self.judge_root("KAN-9")
@@ -269,10 +273,11 @@ class ReviewQueueTests(unittest.TestCase):
         self.assertEqual([i["ticket"] for i in rq.stalled(now=late)], ["KAN-9"])
         got = [i for i in inbox.collect(ORCH, state_store=store, now=late) if i["kind"] == "review_stalled"]
         self.assertEqual((len(got), got[0]["tickets"]), (1, ["KAN-9"]))
-        self.assertIn("Do NOT switch", got[0]["how"])
+        self.assertIn("never the CEO", got[0]["how"])
+        self.assertIn("channel claude", got[0]["how"], "the orchestrator may fail over itself")
         self.assertEqual([i for i in inbox.collect(ORCH, state_store=store, now=late)
                           if i["kind"] == "review_stalled"], [], "once")
-        self.assertEqual(rq.get_channel(), "codex", "the system never switches by itself")
+        self.assertEqual(rq.get_channel(), "codex", "code never switches; the orchestrator does")
 
     # -- waking a headless reviewer (CEO 2026-10-17) ------------------------------------
     def headless(self, thread="01a0f777-d0e4-7000-8000-000000000001"):
@@ -424,7 +429,7 @@ class ReviewQueueTests(unittest.TestCase):
             os.makedirs(rq.evidence_dir("KAN-9"), exist_ok=True)
             open(os.path.join(rq.evidence_dir("KAN-9"), "tc1-en-light.png"), "wb").close()
             rq.submit_qa(item_id, "pass", "ok", "steps", state_store=store, jira=jira)
-        comment = jira.add_comment.call_args.args[1]
+        comment = " ".join(c.args[1] for c in jira.add_comment.call_args_list)
         self.assertIn("alpha-luxor at %s" % SHA[:12], comment)
         self.assertIn("app on web", comment)
 
@@ -437,7 +442,8 @@ class ReviewQueueTests(unittest.TestCase):
         rq.claim(item_id, meta={"ticket": "KAN-7", "tier": 1, "min_screenshots": 0, "sha": SHA})
         with mock.patch.object(jira_sync, "_move"):
             rq.submit_qa(item_id, "pass", "ok", "diff and tests", state_store=store, jira=jira)
-        self.assertIn("diff and tests (no screen)", jira.add_comment.call_args.args[1])
+        self.assertIn("diff and tests (no screen)",
+                      " ".join(c.args[1] for c in jira.add_comment.call_args_list))
 
     def test_a_ticket_with_a_judge_item_is_not_also_offered_as_a_qa_item(self):
         """A second item would close it without its checks."""
@@ -524,15 +530,16 @@ class ReviewQueueTests(unittest.TestCase):
         with self.assertRaises(rq.Refused):
             rq.submit_judge(item_id, [], {"C2": "blank"}, {}, "looked", state_store=store)
 
-    def test_a_stalled_review_gets_one_mac_notification_with_the_wake_prompt(self):
+    def test_a_stalled_review_wakes_the_reviewer_once_and_never_the_ceo(self):
         self.judge_root("KAN-9")
-        calls = []
+        woke = []
         late = __import__("time").time() + rq.STALL_SECONDS + 60
-        run = lambda argv, **kw: calls.append(argv)
-        out = rq.notify_stalled(state_store=store, now=late, runner=run)
-        self.assertEqual(out[0]["tickets"], ["KAN-9"])
-        self.assertIn("Reviewer wake", calls[0][2])
-        self.assertEqual(rq.notify_stalled(state_store=store, now=late, runner=run), [], "once")
+        wake = lambda channel, state_store: woke.append(channel) or {"status": "notified"}
+        with mock.patch.object(rq, "get_channel", return_value="claude"):
+            out = rq.notify_stalled(state_store=store, now=late, wake=wake)
+            self.assertEqual(out[0]["tickets"], ["KAN-9"])
+            self.assertEqual(woke, ["claude"], "Edfu re-woken; no Mac notification")
+            self.assertEqual(rq.notify_stalled(state_store=store, now=late, wake=wake), [], "once")
         self.assertIn("review_queue wait", rq.wake_prompt(["KAN-9", "KAN-10"]))
         self.assertIn("KAN-9, KAN-10", rq.wake_prompt(["KAN-9", "KAN-10"]))
 
@@ -583,3 +590,79 @@ class SendBackTests(unittest.TestCase):
         rq.send_back("KAN-1", J(), S)
         self.assertIn(("move", "5"), calls)
         self.assertIn(("labels", ["x", "returned"]), calls)
+
+
+class LiveGateTests(unittest.TestCase):
+    setUp, tearDown = ReviewQueueTests.setUp, ReviewQueueTests.tearDown
+
+    def test_a_pass_is_done_only_once_it_is_live(self):
+        """D-043 section 6: the CEO sees it live, so Done waits for alpha.dabbler.pro."""
+        jira = mock.Mock()
+        jira.get_issue.return_value = {"summary": "Venue chips", "labels": [],
+                                       "description": "TC1: open https://alpha.dabbler.pro/venues and tap a chip."}
+        moves = []
+        with mock.patch.object(jira_sync, "_move", side_effect=lambda k, s, *a: moves.append((k, s))):
+            self.live = "not-on-alpha"
+            self.assertEqual(rq.close_or_await("KAN-9", {"sha": SHA, "branch": "alpha-luxor"}, "ok",
+                                               jira, store, now=1000), "not-on-alpha")
+            self.assertEqual(moves, [], "not Done while it is not on Alpha")
+            self.assertTrue(rq.is_awaiting("KAN-9"))
+            self.live = "on-alpha"
+            self.assertEqual(rq.sweep_live(state_store=store, jira=jira, now=2000), [])
+            self.assertEqual(rq.sweep_live(state_store=store, jira=jira, now=2000 + rq.LIVE_LATE_SECONDS),
+                             [{"action": "not-live-late", "ticket": "KAN-9", "live": "on-alpha"}])
+            self.assertEqual([r["ticket"] for r in rq.not_live_for_inbox()], ["KAN-9"])
+            rq.mark_not_live_collected("KAN-9")
+            self.assertEqual(rq.not_live_for_inbox(), [], "handed to the orchestrator once")
+            self.assertEqual(moves, [])
+            self.live = "live"
+            out = rq.sweep_live(state_store=store, jira=jira, now=9000)
+        self.assertEqual(out, [{"action": "done-live", "ticket": "KAN-9", "live": "live"}])
+        self.assertEqual(moves, [("KAN-9", rq.DONE_STATUS_ID)])
+        self.assertFalse(rq.is_awaiting("KAN-9"))
+        done = jira.add_comment.call_args.args[1]
+        self.assertIn("شغالة لايف", done)
+        self.assertIn("https://alpha.dabbler.pro/venues", done)
+        self.assertIn("Venue chips", done)
+
+    def test_an_awaiting_ticket_is_not_offered_to_the_reviewer_again(self):
+        jira = mock.Mock()
+        jira.get_comments.return_value = []
+        raw = {"key": "KAN-9", "fields": {"updated": "2026-10-20T10:00:00.000+0000", "labels": []}}
+        jira.search_issues.return_value = [raw]
+        jira.normalize_issue.side_effect = lambda r: {"key": r["key"], "status": "QA-Test"}
+        self.assertEqual([i["ticket"] for i in rq.qa_items(jira, store)], ["KAN-9"])
+        self.live = "not-on-alpha"
+        with mock.patch.object(jira_sync, "_move"):
+            rq.close_or_await("KAN-9", {"sha": SHA}, "ok", jira, store)
+        self.assertEqual(rq.qa_items(jira, store), [])
+
+    def test_on_alpha_without_a_build_sha_closes_and_says_so(self):
+        jira = mock.Mock()
+        jira.get_issue.return_value = {"summary": "S", "labels": []}
+        self.live = "on-alpha-unverified"
+        with mock.patch.object(jira_sync, "_move") as move:
+            self.assertEqual(rq.close_or_await("KAN-9", {"sha": SHA}, "", jira, store), "on-alpha-unverified")
+        move.assert_called_once()
+        self.assertIn("ما بيقولش رقم البيلد", jira.add_comment.call_args.args[1])
+
+
+class LiveCheckTests(unittest.TestCase):
+    def run_git(self, ancestors):
+        def runner(cmd, **kw):
+            sha, ref = cmd[-2], cmd[-1]
+            return mock.Mock(returncode=0 if (sha, ref) in ancestors else 1)
+        return runner
+
+    def test_status(self):
+        real = live_check.status
+        a, built = "a" * 40, "b" * 40
+        runner = self.run_git({(a, "origin/Alpha"), (a, built)})
+        self.assertEqual(real(a, runner, lambda u: {"git_sha": built}, fetch=False), "live")
+        self.assertEqual(real(a, runner, lambda u: {"version": "1.7.8"}, fetch=False), "on-alpha-unverified")
+        self.assertEqual(real(a, runner, lambda u: {"git_sha": "c" * 40}, fetch=False), "on-alpha")
+        self.assertEqual(real("d" * 40, runner, lambda u: {"git_sha": built}, fetch=False), "not-on-alpha")
+
+        def down(url):
+            raise OSError("offline")
+        self.assertEqual(real(a, runner, down, fetch=False), "on-alpha-unverified", "never 'live' on error")

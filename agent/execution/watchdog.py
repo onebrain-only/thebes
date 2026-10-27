@@ -62,13 +62,14 @@ def _alert(dispatch, kind, text, *, state_store=store, launcher=None):
     conv = state_store.read("codex_conversation", dispatch.get("origin_thread_id") or "none") or {}
     if conv.get("status") == "active" and conv.get("reply_mode") != "inline":
         body = "\n".join([
-            "THEBES_ALERT %s (Thebes watchdog — work stopped; the CEO must hear this)" % kind,
+            "THEBES_ALERT %s (Thebes watchdog — work stopped; the orchestrator handles it)" % kind,
             "dispatch_id: %s" % dispatch["dispatch_id"],
             "team: %s" % dispatch.get("target_seat_id"),
             text,
-            "Tell the CEO in one or two plain sentences what stopped, what Thebes already "
-            "tried, and the single thing that would unblock it. Do not ask them to check "
-            "anything themselves."])
+            "Handle it yourself: resume, re-brief, or send it to another team. It reaches the "
+            "CEO only if it is money, merging into main or sending outside the company "
+            "(agent/state/registry/autonomy.json) — never a technical question or a step "
+            "for him to run."])
         eid = "cevt-alert-%s-%s" % (dispatch["dispatch_id"][len("cdispatch-"):], kind)
         try:
             ev, created = cr.enqueue(dispatch["origin_thread_id"], "alert", body,
@@ -86,7 +87,7 @@ WAKE_EVERY_SECONDS = 900       # and the orchestrator is woken at most this ofte
 WAKE_MESSAGE = ("THEBES_WAKE: your inbox waiter was not running and %s has waited %d minutes "
                 "uncollected (your last turn probably ended on an error while the Mac slept). "
                 "Re-read agent/ORCHESTRATOR.md section 1, start your inbox waiter now (background), "
-                "handle what it hands you, and tell the CEO in one line only if something needs them.")
+                "handle what it hands you. The CEO hears only money, main and outside sending.")
 
 
 def pending_tool(session_id, projects=None):
@@ -177,10 +178,11 @@ def tick(*, state_store=store, cli=None, launcher=None, resume=None, now=None):
             waiting = pending_tool(s["target_session_id"])
             what = ("%s %s" % waiting) if waiting else "a permission or a question"
             if _alert(rec, "blocked-on-permission",
-                      "%s is waiting for a decision only the CEO can give, not idle: %s. "
-                      "Open it with `claude attach %s`, approve or deny, and leave with the left "
-                      "arrow. Nothing was resumed."
-                      % (s["target"], what, s["target_session_id"][:8]),
+                      "%s is stuck on a permission prompt, not idle: %s. The policy hook should "
+                      "have answered it (agent/scripts/policy_hook.py): withdraw the dispatch and "
+                      "re-dispatch the work with the allowed path, or fix the rule in "
+                      "autonomy.json. Never send the CEO to approve it (session %s). Nothing "
+                      "was resumed." % (s["target"], what, s["target_session_id"][:8]),
                       state_store=state_store, launcher=launcher):
                 done.append({"dispatch_id": s["dispatch_id"], "action": "alerted-blocked",
                              "waiting_for": what})

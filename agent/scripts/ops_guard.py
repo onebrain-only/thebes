@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ops guard — PreToolUse hook (D-042): only the ops team writes to the database or pushes.
+"""Ops guard — PreToolUse hook (D-042, D-043): only the ops team writes to the database or pushes.
 
 Every session in this checkout reads the same settings file, so a permission rule cannot
 tell Memphis from Karnak. This hook can: it reads the session id Claude Code passes in,
@@ -9,14 +9,17 @@ finds which team that session is bound to in Persistent State, and decides.
                            Everyone else (code teams, the orchestrator, unbound sessions)
                            is refused at once, so a team never stops on a permission prompt:
                            it reads the refusal and reports `blocked: needs-ops`.
-    Project-destroying     (pause/restore/create project, delete/reset branch) refused for
-    Supabase tools         everyone, ops included: those stay with the CEO.
-    git push               refused for code-lane team sessions. The ops team and sessions
-                           that are not teams keep their normal rules.
+    Project lifecycle      (pause/restore/create project) refused for everyone: never needed
+    and money tools        for product work. confirm_cost is money, the CEO's (D-043).
+    git push               code teams push only their own branch; the ops team pushes Alpha.
 
-Exit 0 = no opinion (the normal permission flow continues). Exit 2 = refuse, reason on
-stderr. A Supabase write the hook cannot attribute is refused (fail closed); anything else
-it cannot parse gets no opinion (fail open), like the other guards.
+Autonomy constitution (D-043, 2026-10-27): a permitted act is ANSWERED, not left to a prompt.
+The hook prints an explicit allow for an ops-team Supabase write on the approved project
+(execute_sql excepted: the SQL hook judges each query), a Supabase read on the approved
+project, and a plain push the rules permit. Exit 2 = refuse, reason on stderr, and every
+refusal carries the alternative and is never a question for the CEO. A Supabase write the
+hook cannot attribute is refused (fail closed); anything else it cannot parse gets no
+opinion (fail open), like the other guards.
 """
 import json
 import os
@@ -27,11 +30,18 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, ROOT)
 
 SUPABASE = "mcp__claude_ai_Supabase__"
+PROJECT = "wtncuzcskpigqpmnxwws"
 WRITE_TOOLS = {"apply_migration", "execute_sql", "deploy_edge_function",
                "create_edge_function_secret", "create_branch", "merge_branch",
-               "rebase_branch"}
-CEO_ONLY_TOOLS = {"pause_project", "restore_project", "create_project", "delete_branch",
-                  "reset_branch", "confirm_cost"}
+               "rebase_branch", "delete_branch", "reset_branch"}
+NEVER_TOOLS = {"pause_project", "restore_project", "create_project", "confirm_cost"}
+CEO_ONLY_TOOLS = NEVER_TOOLS                              # kept for callers of the old name
+READ_TOOLS = {"list_tables", "list_extensions", "list_migrations", "get_advisors", "get_logs",
+              "query_logs", "list_edge_functions", "get_edge_function", "search_docs",
+              "get_project", "get_project_url", "get_publishable_keys", "get_anon_key",
+              "list_branches", "generate_typescript_types", "list_projects", "get_organization",
+              "list_organizations", "get_cost"}
+NOT_CEO = " This is an answer, not a question: never take it to the CEO (D-043)."
 # A read-only query any session may run (D-042 amendment, 2026-10-09): reviewers and the PM
 # must be able to LOOK at the live database. Deliberately conservative: one statement,
 # starting with SELECT / WITH / EXPLAIN / SHOW, no write or DDL keyword anywhere, and no call
@@ -126,13 +136,20 @@ def decide(payload, state_store=None, teams_mod=None):
     sid = payload.get("session_id")
     if tool.startswith(SUPABASE):
         name = tool[len(SUPABASE):]
-        if name in CEO_ONLY_TOOLS:
-            return ("%s is the CEO's to run (D-042): it changes the Supabase project itself. "
-                    "Report it as a hard stop instead." % name)
+        project = (payload.get("tool_input") or {}).get("project_id")
+        if project and project != PROJECT:
+            return ("Only Supabase project %s is ever used; %r is not it. Re-run on %s."
+                    % (PROJECT, project, PROJECT) + NOT_CEO)
+        if name == "confirm_cost":
+            return ("Spending money is the CEO's (D-043). Do not confirm a cost: report "
+                    "`blocked: needs-ceo: money` with the amount and why, and carry on with other work.")
+        if name in NEVER_TOOLS:
+            return ("%s is never needed for product work (it creates, pauses or restores a whole "
+                    "project, which costs money). Work inside project %s." % (name, PROJECT) + NOT_CEO)
         if name == "apply_migration":
             return ("apply_migration is not used (it hangs sessions and is outside the approved "
-                    "route). Run the migration's statements through execute_sql, one at a time; "
-                    "statements of a migration integrated on Alpha are allowed automatically.")
+                    "route). Run the migration's statements through execute_sql in one or more "
+                    "calls; snapshot first if it removes or changes rows." + NOT_CEO)
         if name not in WRITE_TOOLS:
             return None
         if name == "execute_sql" and read_only_sql((payload.get("tool_input") or {}).get("query")):
@@ -146,7 +163,7 @@ def decide(payload, state_store=None, teams_mod=None):
         return ("Database writes belong to the operations team (Memphis), D-042. %s may not run "
                 "%s. Commit the SQL and its probes on your branch and report `blocked: needs-ops` "
                 "naming the migration; the orchestrator sends it to Memphis."
-                % (tid or "This session", name))
+                % (tid or "This session", name) + NOT_CEO)
     if tool == "Bash":
         command = (payload.get("tool_input") or {}).get("command") or ""
         if GIT_WRITE.search(command):
@@ -198,8 +215,9 @@ def ops_push_problem(command):
         for ref in args[1:]:
             dst = ref.split(":")[-1].replace("refs/heads/", "").lstrip("+")
             if dst.lower() in PROTECTED or dst.lower().startswith(("main-", "master-")):
-                return ("Pushing %r is the CEO's (main, master, Canary). Memphis pushes Alpha and "
-                        "alpha-ds only." % dst)
+                return ("Memphis pushes Alpha and alpha-ds only, not %r: Canary is the "
+                        "orchestrator's release step and main is merged only by the CEO (P-030). "
+                        "Push the work to Alpha." % dst + NOT_CEO)
             if deleting and not ALPHA_BRANCH.match(dst):
                 return "A branch delete is only for a merged `alpha-*` team branch, not %r." % dst
             if not deleting and ref.startswith(":"):
@@ -238,6 +256,38 @@ def push_problem(command, team_id):
     return None
 
 
+PURE_SEGMENT = re.compile(r"^\s*(cd\s+\S+|git(\s+-C\s+\S+)*\s+(push|fetch|status|log|rev-parse|"
+                          r"branch\s+--show-current|ls-remote)\b[^;&|<>`$()]*)\s*$")
+
+
+def pure_push(command):
+    """A command that only changes directory, fetches, inspects and pushes: nothing else to judge."""
+    if not PUSH.search(command) or "\n" in command.strip():
+        return False
+    return all(PURE_SEGMENT.match(seg) for seg in re.split(r"&&|;", command) if seg.strip())
+
+
+def allow_reason(payload, state_store=None, teams_mod=None):
+    """An explicit allow for what the rules permit (call only when decide() refused nothing)."""
+    tool = payload.get("tool_name") or ""
+    if tool.startswith(SUPABASE):
+        name = tool[len(SUPABASE):]
+        if name in READ_TOOLS:
+            return "ops guard: Supabase read on the approved project."
+        if name in WRITE_TOOLS and name not in ("execute_sql", "apply_migration"):
+            tid, lane = team_of(payload.get("session_id"), state_store, teams_mod)
+            if lane == "ops":
+                return "ops guard: %s by the ops team on the approved project (D-043)." % name
+        return None
+    if tool == "Bash":
+        command = (payload.get("tool_input") or {}).get("command") or ""
+        if pure_push(command):
+            tid, lane = team_of(payload.get("session_id"), state_store, teams_mod)
+            if lane in ("ops", "code"):
+                return "ops guard: a plain push of a branch %s may push." % tid
+    return None
+
+
 def main():
     try:
         payload = json.load(sys.stdin)
@@ -247,13 +297,21 @@ def main():
         reason = decide(payload)
     except Exception as exc:                              # noqa: BLE001
         tool = payload.get("tool_name") or ""
-        if tool.startswith(SUPABASE) and tool[len(SUPABASE):] in WRITE_TOOLS | CEO_ONLY_TOOLS:
-            reason = "ops guard failed (%s); refusing a database write" % exc
+        if tool.startswith(SUPABASE) and tool[len(SUPABASE):] in WRITE_TOOLS | NEVER_TOOLS:
+            reason = "ops guard failed (%s); refusing a database write. Retry once." % exc + NOT_CEO
         else:
             return 0
     if reason:
         sys.stderr.write("REFUSED by ops guard: %s\n" % reason)
         return 2
+    try:
+        ok = allow_reason(payload)
+    except Exception:                                     # noqa: BLE001
+        ok = None
+    if ok:
+        sys.stdout.write(json.dumps({"hookSpecificOutput": {
+            "hookEventName": "PreToolUse", "permissionDecision": "allow",
+            "permissionDecisionReason": ok}}))
     return 0
 
 

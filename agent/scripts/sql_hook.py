@@ -1,37 +1,31 @@
 #!/usr/bin/env python3
-"""SQL hook — PreToolUse hook for `mcp__claude_ai_Supabase__execute_sql` (maintenance 2026-10-13).
+"""SQL hook — PreToolUse hook for `mcp__claude_ai_Supabase__execute_sql`.
 
-The CEO approved Memphis's Messaging probes and migrations on ONE Supabase project (PM ledger
-ref supabase-messaging-approval): test data only, no DROP, no other project. A plain allow rule
-matches the tool NAME only, so it cannot say "that project, that kind of SQL". This hook can.
+Autonomy constitution (D-043, CEO 2026-10-27): the database is Memphis's, never the CEO's, and
+this hook ANSWERS every ops query — allow or deny with the alternative — so no permission prompt
+ever reaches a human. A refusal is an answer: the team reads it and continues; it is never a
+question for the CEO.
 
-    DENY    the project is not the approved one, or the SQL does any of: DROP, TRUNCATE,
-            DELETE without WHERE, GRANT to public/anon, CREATE EXTENSION, pg_terminate_backend,
-            COPY ... PROGRAM / server files, vault.*, auth.users/identities secret columns,
-            ALTER SYSTEM/ROLE/USER, dblink. Applies to every session.
-    ALLOW   only for a session bound to an `ops`-lane team (Memphis), on the approved project,
-            when the SQL is (a) read-only, (b) a probe: exactly one BEGIN first and one ROLLBACK
-            last, no COMMIT anywhere, or (c) a migration released by maintenance in
-            agent/state/registry/sql_allow.json (pinned by sha256 of the whitespace-normalised
-            text, so editing the file un-releases it). The deny list is checked first, always.
-    ASK     (no decision) everything else: the normal permission prompt still appears.
+    DENY    everyone: another Supabase project; GRANT to public/anon; vault.* / auth secret
+            columns; server files, COPY PROGRAM, dblink, pg_terminate_backend, ALTER SYSTEM/ROLE;
+            DROP SCHEMA/DATABASE/OWNED/ROLE/EXTENSION; dropping a thebes_backup snapshot.
+    ALLOW   ops (Memphis), everything else on the approved project. A statement that removes or
+            changes rows — DROP TABLE, DROP COLUMN, TRUNCATE, DELETE, UPDATE — needs a snapshot
+            of its table first (agent/execution/sql_snapshot.py, taken in the last 2h or at the
+            start of the same call); without one it is refused with the exact command to run.
+            Inside BEGIN … ROLLBACK (a probe) nothing persists, so no snapshot is needed.
+    ALLOW   everyone else: a read-only query. Their writes are refused by the ops guard.
 
 Comments and string literals are stripped before the keyword scans (a 'drop' inside a literal or
 a comment is not a DROP). Dollar-quoted bodies (function / DO blocks) are NOT stripped: they are
-code, and are scanned. Dynamic SQL (an EXECUTE outside a literal) also scans the literals, and
-is never auto-allowed. Anything the lexer cannot parse gets no decision.
+code, and are scanned. Dynamic SQL (an EXECUTE outside a literal) also scans the literals.
 
 Every decision is logged to agent/state/runtime/sql-hook.log: time, team, project id, decision,
 reason, the first 80 characters of the query with every string literal and long token masked.
 
     python3 agent/scripts/sql_hook.py release <migration.sql> [--write]   # maintenance only
-    ... release <migration.sql> --allow-persona-check-drop [--write]      # CEO 2026-10-26, KAN-644
 
-The one DROP exception: a released migration released WITH --allow-persona-check-drop may contain
-exactly `ALTER TABLE public.profiles DROP CONSTRAINT IF EXISTS profiles_persona_type_check;` as a
-top-level statement. Every other DROP, TRUNCATE, and any unreleased SQL stay denied.
-
-Exit code is always 0; the decision is the JSON on stdout (none = ask).
+Exit code is always 0; the decision is the JSON on stdout.
 """
 import hashlib
 import json
@@ -152,6 +146,10 @@ DENY = (
     ("alter-system-or-role", re.compile(r"\balter\s+(system|role|user)\b|\bcreate\s+(role|user)\b")),
     ("dblink", re.compile(r"\bdblink\w*\b|\bpostgres_fdw\b")),
 )
+HARD = ("grant-to-public", "pg-terminate", "copy-program-or-file", "server-files", "secrets-vault",
+        "alter-system-or-role", "dblink")
+DROP_SCOPE = re.compile(r"\bdrop\s+(schema|database|owned|role|user|group|tablespace|server|extension|"
+                        r"publication|subscription|foreign\s+data\s+wrapper)\b")
 AUTH_TABLE = re.compile(r"\bauth\s*\.\s*(users|identities)\b")
 AUTH_SECRET_COLS = re.compile(r"\b(email|phone|encrypted_password|raw_user_meta_data|"
                               r"raw_app_meta_data|recovery_token|confirmation_token|"
@@ -200,6 +198,96 @@ def deny_reason(scan, lit):
             if DELETE.search(piece) and not WHERE.search(piece):
                 return "delete-without-where"
     return None
+
+
+def hard_deny_reason(scan, lit):
+    """The never-list (autonomy.json `never`): refused for every session, ops included."""
+    views = [scan] + ([lit] if DYNAMIC.search(scan) else [])
+    for view in views:
+        low = view.lower()
+        for name, pat in DENY:
+            if name in HARD and pat.search(low):
+                return name
+        if DROP_SCOPE.search(low):
+            return "drop-scope"
+        if AUTH_TABLE.search(low) and AUTH_SECRET_COLS.search(re.sub(r"count\s*\(\s*\*\s*\)", " ", low)):
+            return "auth-secrets"
+    return None
+
+
+# ------------------------------------------------- statements that remove or change rows
+_NAME = r'(""|[a-z_][\w$]*)(?:\s*\.\s*(""|[a-z_][\w$]*))?'
+_ROWS = (
+    ("delete", re.compile(r"\bdelete\s+from\s+(?:only\s+)?" + _NAME)),
+    ("update", re.compile(r"\bupdate\s+(?:only\s+)?" + _NAME + r"(?:\s+(?:as\s+)?[a-z_]\w*)?\s+set\b")),
+    ("drop-column", re.compile(r"\balter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?" + _NAME +
+                               r"[^;]*?\bdrop\s+(?!constraint\b|default\b|not\s+null\b|identity\b|"
+                               r"expression\b)")),
+)
+_LISTS = (
+    ("drop-table", re.compile(r"\bdrop\s+table\s+(?:if\s+exists\s+)?([^;]+)")),
+    ("truncate", re.compile(r"\btruncate\s+(?:table\s+)?([^;]+)")),
+)
+_CREATED = re.compile(r"\bcreate\s+(?:(?:global|local)\s+)?(?:temp|temporary|unlogged)?\s*table\s+"
+                      r"(?:if\s+not\s+exists\s+)?" + _NAME)
+_LIST_TAIL = re.compile(r"\b(cascade|restrict|restart\s+identity|continue\s+identity)\b.*$")
+
+
+def _join(a, b):
+    return a + "." + b if b else a
+
+
+def row_targets(view):
+    """[(kind, table)] for every statement in `view` that removes or changes rows. A quoted name
+    comes back as '""' (the scan view blanks quoted identifiers)."""
+    from agent.execution import sql_snapshot
+    low, out = view.lower(), []
+    for kind, pat in _ROWS:
+        for m in pat.finditer(low):
+            out.append((kind, sql_snapshot.qualify(_join(m.group(1), m.group(2)))))
+    for kind, pat in _LISTS:
+        for m in pat.finditer(low):
+            names = _LIST_TAIL.sub("", m.group(1)).replace("only ", " ")
+            for n in names.split(","):
+                if n.strip():
+                    out.append((kind, sql_snapshot.qualify(n.strip())))
+    return out
+
+
+def created_tables(view):
+    from agent.execution import sql_snapshot
+    return {sql_snapshot.qualify(_join(m.group(1), m.group(2))) for m in _CREATED.finditer(view.lower())}
+
+
+def leading_snapshots(top):
+    """Snapshots taken at the START of the same call (before any other statement) count."""
+    from agent.execution import sql_snapshot
+    found = []
+    for stmt in (x.strip().lower() for x in top.split(";") if x.strip()):
+        snap = sql_snapshot.snapshots_in([stmt])
+        if snap:
+            found.extend(snap)
+        elif BEGIN.match(stmt) or re.match(r"^(create\s+schema\s+if\s+not\s+exists|revoke\b[^;]*\bon\s+schema)"
+                                            r"\s*[^;]*\b" + sql_snapshot.SCHEMA + r"\b", stmt):
+            continue
+        else:
+            break
+    return found
+
+
+_DEFINES = re.compile(r"^\s*create\s+(or\s+replace\s+)?(function|procedure)\b", re.I)
+
+
+def executed(query):
+    """(scan, lit) of the code this call RUNS: a CREATE FUNCTION/PROCEDURE body only defines
+    code, so the UPDATE inside a trigger function needs no snapshot; a DO block runs now."""
+    scans, lits = [], []
+    for stmt in split_statements(query):
+        _, sc, li = lex(stmt)
+        if not _DEFINES.match(sc):
+            scans.append(sc)
+            lits.append(li)
+    return " ; ".join(scans), " ; ".join(lits)
 
 
 def is_probe(top, scan):
@@ -354,10 +442,15 @@ def log(entry):
         pass
 
 
-def decide(payload, state_store=None, teams_mod=None, allow_path=None):
-    """{'decision': allow|deny, 'reason': ...} or None (= ask: the normal prompt)."""
+NOT_CEO = " This is an answer, not a question: never take it to the CEO (D-043)."
+
+
+def decide(payload, state_store=None, teams_mod=None, allow_path=None, now=None):
+    """{'decision': allow|deny, 'reason': ...}, or None for a session that is not the ops team
+    and is not reading (the ops guard refuses its writes)."""
     if (payload.get("tool_name") or "") != TOOL:
         return None
+    from agent.execution import sql_snapshot
     args = payload.get("tool_input") or {}
     project, query = args.get("project_id"), args.get("query")
     reg = registry(allow_path)
@@ -367,59 +460,108 @@ def decide(payload, state_store=None, teams_mod=None, allow_path=None):
         team, lane = ops_guard.team_of(payload.get("session_id"), state_store, teams_mod)
     except Exception:                                      # noqa: BLE001
         team, lane = None, None
+    ops = lane == "ops"
     base = {"team": team, "lane": lane, "project_id": project, "query": mask(query)}
 
     def done(decision, reason, public):
-        log(dict(base, decision=decision or "ask", reason=reason))
+        log(dict(base, decision=decision or "none", reason=reason))
         return {"decision": decision, "reason": public} if decision else None
 
     if project != approved:
         return done("deny", "wrong-project",
-                    "Only the approved Supabase project may be used; %r is not it (the CEO said "
-                    "never to touch the other project)." % (project,))
+                    "Only Supabase project %s is ever used; %r is not it. Re-run on %s." % (approved, project, approved)
+                    + NOT_CEO)
     if not isinstance(query, str) or not query.strip():
-        return done(None, "no-query", None)
+        return done("deny" if ops else None, "no-query", "Send the SQL text in `query`." + NOT_CEO)
     try:
         top, scan, lit = lex(query)
     except LexError as exc:
-        return done(None, "unparseable: %s" % exc, None)
-    dscan, dlit = scan, lit
-    if lane == "ops" and released(query, reg, drop_exception=True):
-        dscan, dlit = without_allowed_drop(top, scan, lit)
-    why = deny_reason(dscan, dlit)
+        return done("deny" if ops else None, "unparseable: %s" % exc,
+                    "The SQL hook could not read this (%s). Close the quote or comment, or send the "
+                    "statements in smaller calls." % exc + NOT_CEO)
+    if not ops:
+        why = deny_reason(scan, lit)
+        if why:
+            return done("deny", "deny:" + why,
+                        "Refused by the SQL hook (%s). Database writes are Memphis's: commit the SQL on "
+                        "your branch and report `blocked: needs-ops`." % why + NOT_CEO)
+        import ops_guard
+        if ops_guard.read_only_sql(query):
+            return done("allow", "read-only", "SQL hook: read-only query on the approved project.")
+        return done(None, "not-ops-session", None)         # the ops guard refuses the write
+    why = hard_deny_reason(scan, lit)
     if why:
-        return done("deny", "deny:" + why,
-                    "Refused by the SQL hook (%s): outside the CEO's Messaging approval "
-                    "(supabase-messaging-approval): test data, no DROP, no other project." % why)
-    if lane != "ops":
-        return done(None, "not-ops-session", None)         # the ops guard governs everyone else
-    if DYNAMIC.search(scan):
-        return done(None, "dynamic-sql", None)
+        rule = {"secrets-vault": "secrets-vault", "auth-secrets": "secrets-vault",
+                "grant-to-public": "grant-public"}.get(why)
+        alt = (autonomy_instead(rule) if rule else None) or "do it without this statement"
+        return done("deny", "deny:" + why, "Refused by the SQL hook (%s): it is on the never-list. "
+                    "Instead: %s." % (why, alt) + NOT_CEO)
+    probe = is_probe(top, scan)
+    run_scan, run_lit = executed(query)
+    targets = row_targets(run_scan)
+    if DYNAMIC.search(run_scan) and not probe and row_targets(run_lit):
+        return done("deny", "dynamic-destructive",
+                    "This EXECUTEs SQL that changes or removes rows, which the hook cannot snapshot. "
+                    "Write those statements out literally (snapshot first), or test it inside "
+                    "BEGIN … ROLLBACK." + NOT_CEO)
+    if any(t.startswith(sql_snapshot.SCHEMA + ".") for k, t in targets if k in ("drop-table", "truncate", "delete")):
+        return done("deny", "drop-backup", "thebes_backup snapshots are kept; do not remove them." + NOT_CEO)
+    if any('""' in t for _, t in targets):
+        return done("deny", "quoted-target",
+                    "Write the table name unquoted (schema.table) so the hook can match its snapshot." + NOT_CEO)
+    if not probe:
+        covered = {t for _, t in leading_snapshots(top)} | created_tables(scan)
+        missing = sorted({t for _, t in targets if t not in covered and not sql_snapshot.recent(t, now=now)})
+        if missing:
+            cmds = "; ".join("python3 -m agent.execution.sql_snapshot %s [--where '<the same WHERE>'] "
+                             "--ticket <KEY>" % t for t in missing)
+            return done("deny", "needs-snapshot:" + ",".join(missing),
+                        "This changes or removes rows of %s. Snapshot first — run: %s — then run the SQL "
+                        "it prints through execute_sql, then this statement again (allowed for %dh). "
+                        "You own this; it is not a CEO decision (D-043)."
+                        % (", ".join(missing), cmds, sql_snapshot.TTL_HOURS))
     import ops_guard
     if ops_guard.read_only_sql(query):
         kind = "read-only"
-    elif is_probe(top, scan):
+    elif probe:
         kind = "probe"
     elif released(query, reg):
         kind = "released-migration"
+    elif targets:
+        kind = "snapshotted:" + ",".join(sorted({t for _, t in targets}))
     else:
+        kind = "write"
+    snaps = sql_snapshot.snapshots_in(x for x in top.split(";") if x.strip()) if not probe else []
+    for backup, table in snaps:
         try:
-            src = in_integrated_migration(query, (payload.get("_migrations")))
-        except Exception:                                  # noqa: BLE001  git trouble: ask
-            src = None
-        if not src:
-            return done(None, "unlisted-write", None)
-        kind = "integrated-migration:%s" % os.path.basename(src)
-    return done("allow", kind, "SQL hook: %s on the approved project (supabase-messaging-approval)." % kind)
+            sql_snapshot.record(table, backup, team=team, now=now)
+        except OSError:
+            pass
+    if snaps:
+        kind = "snapshot:" + ",".join(t for _, t in snaps) + ("+" + kind if kind != "write" else "")
+    return done("allow", kind, "SQL hook: %s on the approved project (ops owns the database, D-043)." % kind)
+
+
+def autonomy_instead(rule_id):
+    try:
+        from agent.state import autonomy
+        r = autonomy.never_rule(rule_id)
+        return r and r.get("instead")
+    except Exception:                                      # noqa: BLE001
+        return None
 
 
 def main():
     try:
         payload = json.load(sys.stdin)
-        result = decide(payload)
-    except Exception as exc:                               # noqa: BLE001  fail to the normal prompt
-        log({"decision": "ask", "reason": "hook-error: %s" % str(exc)[:120]})
+    except Exception:                                      # noqa: BLE001  not a tool call at all
         return 0
+    try:
+        result = decide(payload)
+    except Exception as exc:                               # noqa: BLE001  answer, never fall to a prompt
+        log({"decision": "deny", "reason": "hook-error: %s" % str(exc)[:120]})
+        result = {"decision": "deny", "reason": "The SQL hook failed (%s). Retry once; if it fails "
+                  "again, report `blocked` to the orchestrator with this text.%s" % (str(exc)[:120], NOT_CEO)}
     if result:
         sys.stdout.write(json.dumps({"hookSpecificOutput": {
             "hookEventName": "PreToolUse", "permissionDecision": result["decision"],

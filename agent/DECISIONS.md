@@ -743,3 +743,41 @@ inbox `verification` and `judge` items, envelope VERIFY block, `store.admit_task
 `test_verify.py` (14 tests), `ORCHESTRATOR.md`, `WORKFLOWS.md` §3 "Team dispatches". Not done
 here: automated golden/screenshot generation for design fidelity (a `run` check can call a
 golden test that already exists), and a `qa`-seat runtime layer for dispatches.
+
+## D-043 — Autonomy constitution: only money, `main` and outside reach the CEO
+
+**Status:** ACTIVE (2026-10-27, CEO: "انا مش ديفلوبر، انا CEO … مهمتي بتنتهي عند التاسكات
+وعايز اشوف الحاجة لايف"; he approves technical prompts unread, so a prompt to him is not a
+safety check). **Supersedes** the hard-stop list of D-035, the CEO-only Supabase tools of the
+D-042 draft and the "production data" / "secrets" CEO categories of D-033 wherever they disagree.
+**Evidence (measured 2026-10-27):** 8 independent paths put a technical question in front of the
+CEO — Claude Code permission prompts on his phone (4 teams in default mode, Memphis's
+`sql_hook` returning `ask` on 195 writes, a classifier environment written for another
+project), `ops_guard`/`sql_hook` texts telling teams "this is the CEO's", the Memphis brief's
+"blocked needs-ceo" rule, substring CEO categories (replaying 376 recorded decision requests:
+95 escalated under the old rule, 3 under the new one, all three genuine), stale hard-stop
+texts, watchdog/osascript alerts, "relay every result" in ORCHESTRATOR.md, and no loop
+breaker (KAN-645 was re-asked 140 times in 10 hours).
+**Decision:**
+1. **One source:** `agent/state/registry/autonomy.json`, read through `agent/state/autonomy.py`.
+   Only `money`, `merge_or_push_main` and `external_send` reach the CEO, and only when a sentence
+   ASKS for that act (a request cue) and does not negate it. A keyword alone never escalates.
+2. **Owners, not askers:** database work (additive, user-data edits, DROP/DELETE/TRUNCATE) and
+   alpha deploys are Memphis's — destructive SQL is snapshotted into `thebes_backup` first and
+   logged to the SQL ledger; Canary, production configuration and governance are the
+   orchestrator's. A permanent never-list (wrong Supabase project, vault/auth secrets, GRANT to
+   anon/public, force-push, push `main`, project lifecycle) is refused by code with the
+   alternative written in; a refusal is an answer, never a question.
+3. **Nothing falls through to the CEO:** gate unavailable, orchestrator unbound and delivery
+   failure all hold the request for the orchestrator's inbox (`via: orchestrator`).
+4. **Repeat guard:** the 2nd identical report on a ticket goes to the orchestrator for a
+   different decision; the 3rd (or more than 6 in 3 hours) labels the ticket `stuck`, comments on
+   Jira and stops the loop.
+5. **Review stalls** wake the reviewer (Edfu on the claude channel); no desktop notification.
+**Consequences:** `autonomy.json`, `autonomy.py`, `decision_gate.py` (`ceo_only_hit`, `route`,
+`repeat_count`, `_mark_stuck`, `_to_orchestrator`), `validate.py` (held-for-orchestrator
+requests, `stuck`), `inbox.py`, `review_queue.notify_stalled`, `watchdog.py`,
+`conversation_dispatch.py` (Memphis brief owns DB), `codex_runtime.py`, `ORCHESTRATOR.md` §5–6,
+`REVIEWER.md`, `AGENTS.md`, `route-to-seat` skill. Still to land: a policy hook that answers
+every permission prompt allow/deny (never ask), `sql_snapshot.py`, team settings with auto
+mode, and Done gated on the commit being live on alpha.dabbler.pro.

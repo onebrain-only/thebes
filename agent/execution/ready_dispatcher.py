@@ -477,6 +477,13 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None):
     except Exception as exc:                            # noqa: BLE001
         done.append({"action": "integrate-failed", "error": str(exc)[:200]})
 
+    # A passed ticket is Done once it is live on alpha.dabbler.pro (D-043 section 6).
+    try:
+        from agent.execution import review_queue
+        done.extend(review_queue.sweep_live(state_store=state_store, jira=jira))
+    except Exception as exc:                            # noqa: BLE001
+        done.append({"action": "sweep-live-failed", "error": str(exc)[:200]})
+
     # Ask the PM (and the POs) when the board needs them (D-042).
     reasons = list(brief_reasons)
     try:

@@ -1735,14 +1735,24 @@ def validate_record(kind, rec, prods=None, projs=None, seatset=None, topology=No
         if rec.get("origin_outcome") not in ("decision_required", "blocked",
                                              "clarification_required"):
             errs.append("%s: a decision request answers a decision outcome" % where)
-        if rec.get("route") not in ("owner", "task-owner", "escalate", "approved"):
-            errs.append("%s: route must be owner, task-owner, escalate or approved" % where)
+        if rec.get("route") not in ("owner", "task-owner", "escalate", "approved", "stuck"):
+            errs.append("%s: route must be owner, task-owner, escalate, approved or stuck"
+                        % where)
         if rec.get("route") == "approved" and not rec.get("approved_action"):
             errs.append("%s: an approved request names the routine action (D-033)" % where)
-        if rec.get("status") not in ("open", "answered", "escalated"):
-            errs.append("%s: decision request status must be open, answered or escalated"
+        if rec.get("status") not in ("open", "answered", "escalated", "stuck"):
+            errs.append("%s: decision request status must be open, answered, escalated or stuck"
                         % where)
-        if rec.get("route") == "owner" and (
+        held = rec.get("via") == "orchestrator" and rec.get("delivery") in ("inbox", None)
+        if rec.get("route") == "owner" and held:
+            # Constitution 2026-10-27: an orchestrator request may wait in its inbox before any
+            # orchestrator session is bound (owner_session_id None); never a CEO fallback.
+            if rec.get("owner_seat") not in (None, *seatset) or (
+                    rec.get("owner_session_id") is not None
+                    and not SESSION_UUID.match(str(rec["owner_session_id"]))):
+                errs.append("%s: an orchestrator-held request names a declared seat or none, and "
+                            "a session or none" % where)
+        elif rec.get("route") == "owner" and (
                 rec.get("owner_seat") not in seatset
                 or not SESSION_UUID.match(str(rec.get("owner_session_id") or ""))):
             errs.append("%s: an owner-routed request names a declared owner seat and its "
