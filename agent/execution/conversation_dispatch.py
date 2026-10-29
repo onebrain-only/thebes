@@ -253,9 +253,12 @@ def ops_block():
 
 
 QA_CHECK = {"id": "QA", "kind": "judge",
-            "what": "Codex QA: the ticket's acceptance criteria hold in the running app "
+            "what": "QA: the ticket's acceptance criteria hold in the running app "
                     "(both languages and themes where it is visual)",
-            "pass": "the Codex reviewer's evidence; the team hands over screenshots and steps"}
+            "pass": "the reviewer's evidence; the team hands over screenshots and steps"}
+# CEO 2026-10-29: a ticket marked "no UI" is simple; nobody opens the app for it. Its review is a
+# code double-check, so the brief carries no QA running-app check and the reviewer takes tier 1.
+NO_UI = re.compile(r"\bno[ _-]ui\b", re.I)
 
 
 def is_product(record, teams_mod=None):
@@ -404,6 +407,11 @@ def dispatch(prompt, target_session_id, *, env=None, state_store=store, cli=None
                           % "; ".join(exc.problems))
     elif continuation:
         brief_checks = list(checks or [])
+        if root_dispatch_id:
+            # A fix cycle keeps every judge check no reviewer has passed yet (defect 2).
+            from agent.execution import verify as verify_mod
+            brief_checks = verify_mod.with_judge_checks(
+                brief_checks, state_store.read("conversation_dispatch", root_dispatch_id))
     if jira_key and not continuation and "Every commit message starts with" not in prompt \
             and ("TICKET: %s" % jira_key) not in prompt:
         # Malfunction #24: a by-name dispatch must say the key, or the team guesses one.
@@ -415,7 +423,8 @@ def dispatch(prompt, target_session_id, *, env=None, state_store=store, cli=None
         branch = None
     if (jira_key and not continuation and branch and not integrate_base
             and teams_mod.read().get(binding["seat_id"], {}).get("lane", "code") == "code"
-            and not any(c.get("id") == QA_CHECK["id"] for c in brief_checks)):
+            and not any(c.get("id") == QA_CHECK["id"] for c in brief_checks)
+            and not NO_UI.search(prompt)):
         # D-043 (CEO 2026-10-13): Claude builds, Codex QAs. Product work is never closed on the
         # team's own word or on `run` checks alone: the Codex reviewer looks at it in the app.
         brief_checks = list(brief_checks) + [dict(QA_CHECK)]

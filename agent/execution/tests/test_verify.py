@@ -242,7 +242,8 @@ class VerifyTests(unittest.TestCase):
         fix = store.read("conversation_dispatch", fix_did)
         self.assertEqual((fix["root_dispatch_id"], fix["verify_cycle"], fix["jira_key"]),
                          (did, 2, "KAN-50"))
-        self.assertEqual([c["id"] for c in fix["checks"]], ["C2"])
+        self.assertEqual([c["id"] for c in fix["checks"]], ["C2", "QA"],
+                         "the failing check AND the judge check no reviewer has passed yet")
         text = open(fix["prompt_ref"]).read()
         self.assertIn("C2 FAILED", text)
         self.assertIn("boom: expected 1 got 2", text)
@@ -411,6 +412,75 @@ class VerifyTests(unittest.TestCase):
         got = inbox.collect(ORCH, state_store=store, now=later)
         self.assertEqual([i["kind"] for i in got], ["result"])
         self.assertEqual(rec["status"], "completed")
+
+    # -- 2026-10-29 defects ------------------------------------------------------
+    def backdate(self, did, stamp="2026-10-01T00:00:00Z"):
+        rec = store.read("conversation_dispatch", did)
+        store.update("conversation_dispatch", did, rec["revision"], {"created_at": stamp})
+
+    def test_the_orchestrator_may_judge_product_work_when_the_review_channel_is_claude(self):
+        from agent.execution import review_queue
+        did, cap = self.dispatch()
+        self.submit(did, cap, report(wt=self.wt))
+        self.assertEqual(self.verify_run(did)["verdict"], "needs_judge")
+        with mock.patch.object(review_queue, "get_channel", lambda: "claude"):
+            res = verify.judge_verdict(did, ["C3", "QA"], {}, env={"CLAUDE_CODE_SESSION_ID": ORCH},
+                                       state_store=store, jira=self.jira,
+                                       launcher=lambda d, c: self.sent.append((d, c)))
+        self.assertEqual(res["verdict"], "pass")
+        with mock.patch.object(review_queue, "get_channel", lambda: "codex"), \
+                self.assertRaises(verify.Refused) as ctx:
+            verify.judge_verdict(did, ["C3"], {}, env={"CLAUDE_CODE_SESSION_ID": ORCH},
+                                 state_store=store)
+        self.assertEqual(ctx.exception.code, "codex-reviews-product-work")
+
+    def test_the_qa_check_does_not_name_a_reviewer_and_a_no_ui_ticket_has_none(self):
+        self.assertNotIn("Codex", cd.QA_CHECK["what"] + cd.QA_CHECK["pass"])
+        did, _ = self.dispatch()
+        self.assertIn("QA", [c["id"] for c in store.read("conversation_dispatch", did)["checks"]])
+        did2, _ = self.dispatch(BRIEF.replace("Build the thing", "no UI needed. Build the thing").replace("KAN-50", "KAN-51")
+                                .replace("alpha-karnak", "alpha-luxor"), to=LUXOR, ticket="KAN-51")
+        self.assertNotIn("QA", [c["id"] for c in store.read("conversation_dispatch", did2)["checks"]])
+
+    def test_a_fix_cycle_keeps_every_unpassed_judge_check_so_done_cannot_skip_them(self):
+        did, cap = self.dispatch()
+        self.submit(did, cap, report(wt=self.wt))
+        out = self.verify_run(did, FakeRunner(failing={"flutter analyze lib/home --no-pub --no-fatal-infos"}))
+        self.assertEqual(out["verdict"], "retry")
+        fix_did, fix_cap = self.deliver_sent()
+        fix = store.read("conversation_dispatch", fix_did)
+        self.assertEqual([c["id"] for c in fix["checks"]], ["C2", "C3", "QA"])
+        self.head = SHA2
+        self.submit(fix_did, fix_cap, report(sha=SHA2, wt=self.wt, c=(("C2", "PASS"), ("C3", "PASS"))))
+        out2 = self.verify_run(fix_did)
+        self.assertEqual(out2["verdict"], "needs_judge", "C3 and QA still wait for a reviewer")
+        self.assertNotEqual(self.jira.moves[-1], ("KAN-50", "10007"), "not Done")
+
+    def test_a_continuation_made_before_the_fix_still_checks_the_roots_judge_checks(self):
+        did, cap = self.dispatch()
+        self.submit(did, cap, report(wt=self.wt))
+        self.verify_run(did)
+        root = store.read("conversation_dispatch", did)
+        self.assertEqual([c["id"] for c in verify.with_judge_checks([{"id": "C2", "kind": "run"}], root)],
+                         ["C2", "C3", "QA"])
+
+    def test_a_forced_rerun_of_an_older_dispatch_is_refused_when_a_newer_one_exists(self):
+        did, cap = self.dispatch()
+        self.submit(did, cap, report(wt=self.wt))
+        self.verify_run(did)
+        self.backdate(did)
+        newer, _ = self.dispatch(BRIEF.replace("alpha-karnak", "alpha-luxor"), to=LUXOR)
+        with self.assertRaises(verify.Refused) as ctx:
+            self.verify_run(did, force=True)
+        self.assertEqual(ctx.exception.code, "superseded-dispatch")
+        self.assertIn(newer, str(ctx.exception))
+        self.assertEqual(self.sent, [], "no bogus fix request left the building")
+
+    def test_a_forced_rerun_is_fine_when_the_dispatch_is_the_newest_of_its_ticket(self):
+        did, cap = self.dispatch()
+        self.submit(did, cap, report(wt=self.wt))
+        self.verify_run(did)
+        self.assertEqual(self.verify_run(did, force=True)["status"], "verified")
 
     def clean(self):
         return [e for e in validate.check(store.RUNTIME)

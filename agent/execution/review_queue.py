@@ -283,20 +283,40 @@ def is_headless_thread():
     return cfg.get("mode") == "headless" and bool(cfg.get("thread_id")) and _thread() == cfg["thread_id"]
 
 
+def _superseded(rec, all_recs):
+    """A newer dispatch for the same ticket exists outside this root's own continuations, or the
+    root was discarded: its commit is no longer what the ticket is about (defect 5, 2026-10-29:
+    stale roots kept raising judge items and review_stalled alerts)."""
+    if rec.get("integrated_at") == "discarded":
+        return True
+    family = {rec["dispatch_id"]}
+    for other in all_recs:
+        if other.get("root_dispatch_id") == rec["dispatch_id"]:
+            family.add(other["dispatch_id"])
+    return any(o.get("jira_key") == rec.get("jira_key") and o["dispatch_id"] not in family
+               and (o.get("created_at") or "") > (rec.get("created_at") or "")
+               and o.get("status") not in ("delivery_failed", "withdrawn")
+               for o in all_recs)
+
+
 def judge_items(state_store=store):
     from agent.execution import verify, conversation_dispatch as cd
     out = []
-    for rec in state_store.read_all("conversation_dispatch"):
+    all_recs = state_store.read_all("conversation_dispatch")
+    for rec in all_recs:
         if rec.get("root_dispatch_id") or not rec.get("jira_key") or not cd.is_product(rec):
             continue                       # text/ops deliverables stay with the orchestrator
         pending = verify.pending_judge(rec)
         if not pending:
             continue
+        if (rec.get("verification") or {}).get("verdict") != "needs_judge" or _superseded(rec, all_recs):
+            continue                       # a fix is in flight, or a newer dispatch owns the ticket
         ver = rec.get("verification") or {}
         by_id = {c["id"]: c for c in rec.get("checks") or []}
         commit = with_commit({"branch": ver.get("branch") or rec.get("branch"), "sha": ver.get("sha")},
                              rec["jira_key"], state_store)
         ver = dict(ver, branch=commit["branch"], sha=commit["sha"])
+        brief = _text(rec.get("prompt_ref"))
         out.append({
             "item_id": "judge-%s-c%s" % (rec["dispatch_id"], ver.get("cycle") or 1),
             "kind": "judge", "dispatch_id": rec["dispatch_id"], "ticket": rec["jira_key"],
@@ -305,9 +325,10 @@ def judge_items(state_store=store):
             "checks": [{"id": p["id"], "what": (by_id.get(p["id"]) or {}).get("what") or p.get("what"),
                         "evidence_named": (by_id.get(p["id"]) or {}).get("pass")}
                        for p in pending],
-            **depth(ver.get("branch"), ver.get("sha"), key=rec["jira_key"]),
+            **depth(ver.get("branch"), ver.get("sha"), key=rec["jira_key"],
+                    labels=("tier:1",) if cd.NO_UI.search(brief or "") else ()),
             "team_report": _text(rec.get("result_ref")),
-            "brief": _text(rec.get("prompt_ref")),
+            "brief": brief,
             "at": rec.get("outcome_at") or rec.get("created_at") or ""})
     return out
 

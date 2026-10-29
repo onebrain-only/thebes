@@ -445,6 +445,36 @@ class ReviewQueueTests(unittest.TestCase):
         self.assertIn("diff and tests (no screen)",
                       " ".join(c.args[1] for c in jira.add_comment.call_args_list))
 
+    def set_root(self, did, **changes):
+        rec = store.read("conversation_dispatch", did)
+        return store.update("conversation_dispatch", did, rec["revision"], changes)
+
+    def test_a_root_whose_fix_is_in_flight_raises_no_judge_item(self):
+        """Defect 5: a retry verdict left the old judge checks looking pending."""
+        did = self.judge_root()
+        self.assertEqual(len(rq.judge_items(store)), 1)
+        ver = store.read("conversation_dispatch", did)["verification"]
+        self.set_root(did, verification=dict(ver, verdict="retry"))
+        self.assertEqual(rq.judge_items(store), [])
+
+    def test_a_newer_dispatch_for_the_ticket_or_a_discard_retires_the_old_judge_item(self):
+        old = self.judge_root("KAN-9")
+        self.set_root(old, created_at="2026-10-01T00:00:00Z")
+        newer = self.judge_root("KAN-9")
+        self.assertEqual([i["dispatch_id"] for i in rq.judge_items(store)], [newer])
+        self.set_root(newer, integrated_at="discarded")
+        self.assertEqual([i["dispatch_id"] for i in rq.judge_items(store)], [],
+                         "the stale one stays retired, the discarded one never counts")
+
+    def test_a_no_ui_brief_makes_a_tier_one_judge_item(self):
+        did = self.judge_root()
+        brief = os.path.join(self.tmp, "brief.md")
+        with open(brief, "w", encoding="utf-8") as fh:
+            fh.write("GOAL: no UI needed, a code double-check only\n")
+        self.set_root(did, prompt_ref=brief)
+        item = rq.judge_items(store)[0]
+        self.assertEqual(item["tier"], 1)
+
     def test_a_ticket_with_a_judge_item_is_not_also_offered_as_a_qa_item(self):
         """A second item would close it without its checks."""
         self.judge_root("KAN-9")

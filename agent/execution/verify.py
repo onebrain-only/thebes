@@ -171,6 +171,37 @@ def _verdict(root_checks, results):
     return "pass"
 
 
+def unpassed_judge_checks(root):
+    """The root's judge checks that no reviewer has passed yet. A fix cycle re-runs only the
+    failing `run` checks, but every unpassed judge check still stands: dropping them let KAN-682
+    reach Done without C3, C4 and QA (defect 2, 2026-10-29)."""
+    results = (root.get("verification") or {}).get("results") or {}
+    return [c for c in root.get("checks") or []
+            if c.get("kind") == "judge" and (results.get(c["id"]) or {}).get("status") != "pass"]
+
+
+def with_judge_checks(checks, root):
+    """`checks` plus every unpassed judge check of `root` that is not already in it."""
+    have = {c["id"] for c in checks}
+    return list(checks) + [dict(c) for c in unpassed_judge_checks(root or {}) if c["id"] not in have]
+
+
+def newer_dispatch(rec, state_store):
+    """A later dispatch for the same ticket that is not part of this dispatch's own family, or None.
+    A forced re-run of an older one would verify a stale sha and send a bogus fix request
+    (defect 3, cdispatch-216e5bb2)."""
+    if not rec.get("jira_key"):
+        return None
+    family = {rec["dispatch_id"], rec.get("root_dispatch_id")} - {None}
+    for other in state_store.read_all("conversation_dispatch"):
+        if (other.get("jira_key") == rec["jira_key"] and other["dispatch_id"] not in family
+                and other.get("root_dispatch_id") not in family
+                and (other.get("created_at") or "") > (rec.get("created_at") or "")
+                and other.get("status") not in ("delivery_failed", "withdrawn")):
+            return other
+    return None
+
+
 def run(dispatch_id, *, state_store=store, runner=None, git_head=None, jira=None,
         dispatcher=None, launcher=None, force=False):
     """Settle one reported dispatch. Idempotent: a dispatch is verified once."""
@@ -185,10 +216,17 @@ def run(dispatch_id, *, state_store=store, runner=None, git_head=None, jira=None
     if rec.get("verified_at") and not force:
         return {"status": "already-verified", "dispatch_id": dispatch_id,
                 "verdict": (root.get("verification") or {}).get("verdict")}
+    if force:
+        newer = newer_dispatch(rec, state_store)
+        if newer is not None:
+            raise Refused("superseded-dispatch",
+                          "%s has a newer dispatch %s for %s: a forced re-run of this one would "
+                          "check a stale commit. Verify the newer one instead."
+                          % (dispatch_id, newer["dispatch_id"], rec["jira_key"]))
     with open(rec["result_ref"], encoding="utf-8") as fh:
         report = parse_report(fh.read())
     cycle = rec.get("verify_cycle") or 1
-    to_check = rec.get("checks") or root["checks"]
+    to_check = with_judge_checks(rec.get("checks") or root["checks"], root)
     results = dict((root.get("verification") or {}).get("results") or {})
 
     problem = worktree_problem(report, git_head)
@@ -295,6 +333,8 @@ def _send_back(root, ver, *, state_store, dispatcher=None, launcher=None):
     from agent.execution import conversation_dispatch as cd
     failing = [c for c in root["checks"]
                if (ver["results"].get(c["id"]) or {}).get("status") == "fail"]
+    # What the continuation carries: the failures to fix AND every judge check still unpassed.
+    carried = with_judge_checks(failing, {"checks": root["checks"], "verification": ver})
     env = {k: v for k, v in os.environ.items() if k not in ("CODEX_THREAD_ID",)}
     env[cd.CLAUDE_ORIGIN_ENV] = root["origin_thread_id"]
     try:
@@ -302,7 +342,7 @@ def _send_back(root, ver, *, state_store, dispatcher=None, launcher=None):
             fix_brief(root, ver), root["target_session_id"], env=env, state_store=state_store,
             detach=True, launcher=launcher, ticket=root.get("jira_key"),
             lane_capability=root.get("jira_capability"), continuation=True,
-            root_dispatch_id=root["dispatch_id"], verify_cycle=ver["cycle"] + 1, checks=failing)
+            root_dispatch_id=root["dispatch_id"], verify_cycle=ver["cycle"] + 1, checks=carried)
         try:                       # the reason is written on the ticket, where everyone sees it
             from agent.execution import jira_sync
             jira = jira_sync._client(None, state_store)
@@ -381,10 +421,14 @@ def judge_verdict(dispatch_id, passed, failed, *, env=None, state_store=store, j
         raise Refused("dispatch-not-found", dispatch_id)
     from agent.execution import conversation_dispatch as cd
     if not reviewer and cd.is_product(root):
-        raise Refused("codex-reviews-product-work",
-                      "%s changes the product: its review belongs to the Codex reviewer "
-                      "(D-043, CEO 2026-10-13). Leave it; do not run a judge or a seat on it."
-                      % (root.get("jira_key") or dispatch_id))
+        from agent.execution import review_queue
+        if review_queue.get_channel() != "claude":
+            raise Refused("codex-reviews-product-work",
+                          "%s changes the product: its review belongs to the Codex reviewer "
+                          "(D-043, CEO 2026-10-13). Leave it; do not run a judge or a seat on it."
+                          % (root.get("jira_key") or dispatch_id))
+        # The review channel is Claude (the CEO's explicit order): the gate follows the channel
+        # instead of insisting on a Codex reviewer that is standing by (defect 1, 2026-10-29).
     ver = dict(root.get("verification") or {})
     results = dict(ver.get("results") or {})
     environment = environment or {}

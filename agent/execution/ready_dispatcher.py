@@ -328,6 +328,7 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None):
     # Two passes (D-042): owners take their own domain first, in the PM's rank order;
     # then the rest. A fresh owned ticket waits for its busy owner up to 10 minutes (or not at all with the `any-team` label).
     taken = set()
+    owners_waited_on = set()     # at most ONE ticket per busy owner waits for it (defect 4, 2026-10-29)
     for pass_no in (1, 2):
         for issue, cap in candidates:
             key = issue["key"]
@@ -349,7 +350,11 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None):
                     tid, sid = owner, sid_owner
                 elif pass_no == 1:
                     continue
-                elif key in fresh and ANY_TEAM not in issue["labels"]:
+                elif (key in fresh and ANY_TEAM not in issue["labels"]
+                        and owner not in owners_waited_on):
+                    # The owner keeps its place in line for ONE ticket. A second fresh ticket of
+                    # the same lane no longer waits behind it while other teams sit idle.
+                    owners_waited_on.add(owner)
                     done.append({"key": key, "action": "waiting",
                                  "reason": "owner-busy:%s" % owner})
                     continue

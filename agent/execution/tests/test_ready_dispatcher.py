@@ -241,6 +241,17 @@ class ReadyDispatcherTests(unittest.TestCase):
         out = self.tick(j)
         self.assertEqual((out[0]["action"], out[0]["team"]), ("dispatched", "luxor"))
 
+    def test_only_the_first_fresh_ticket_waits_for_a_busy_owner_the_rest_go_to_free_teams(self):
+        """Defect 4: every fresh ticket of one lane waited on `owner-busy:karnak` while others idled."""
+        j = FakeJira([issue("KAN-630", labels=["cap:frontend"], component="Auth"),
+                      issue("KAN-631", labels=["cap:frontend"], component="Auth")])
+        self.dispatch("x", KARNAK, {}, store, True, "KAN-999", "frontend")   # Karnak busy
+        j.fresh = {"KAN-630", "KAN-631"}
+        out = {d["key"]: d for d in self.tick(j)}
+        self.assertEqual(out["KAN-630"], {"key": "KAN-630", "action": "waiting",
+                                          "reason": "owner-busy:karnak"})
+        self.assertEqual((out["KAN-631"]["action"], out["KAN-631"]["team"]), ("dispatched", "luxor"))
+
     def test_the_any_team_label_skips_the_owner_wait(self):
         j = FakeJira([issue("KAN-621", labels=["cap:frontend", "any-team"], component="Auth")])
         self.dispatch("x", KARNAK, {}, store, True, "KAN-999", "frontend")   # Karnak busy
