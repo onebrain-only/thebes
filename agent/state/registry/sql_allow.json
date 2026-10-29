@@ -31,6 +31,10 @@
     {
       "file": "Dabbler/worktrees/kan678-memphis/supabase/migrations/20261027150000_kan678_rpc_challenge_create_sport.sql",
       "sha256": "972cca72c03531b2e1451a77852afb8ee8e049a1c7a0e6112cd5369f26405cbc"
+    },
+    {
+      "file": "Dabbler/worktrees/kan678-memphis/supabase/migrations/20261027130000_kan672_ratings_grants_hardening.sql",
+      "sha256": "907d8b66a5075275d580e99f1d3baeab70a2d72e16e0f567d02b4012d8a9b09b"
     }
   ]
 }
