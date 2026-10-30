@@ -35,6 +35,10 @@
     {
       "file": "Dabbler/worktrees/kan678-memphis/supabase/migrations/20261027130000_kan672_ratings_grants_hardening.sql",
       "sha256": "907d8b66a5075275d580e99f1d3baeab70a2d72e16e0f567d02b4012d8a9b09b"
+    },
+    {
+      "file": "../../.claude/jobs/1ee27200/worktrees/kan685/supabase/migrations/20261027160000_kan685_dabbler_test_player_to_contributor.sql",
+      "sha256": "94d1654dba7e885a8df66d9934f1d302079b8daf54b14b5fb3fc130c74314e97"
     }
   ]
 }
