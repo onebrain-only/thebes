@@ -2,8 +2,10 @@
 
 Decision: `agent/DECISIONS.md` D-039 (Claude-only Thebes). This card replaces the Codex
 Listener (`AGENTS.md`). The CEO talks to **this session only**: the `thebes-orchestrator`
-Claude session, reached on desktop or phone through Remote Control. Nothing ever stops or
-resumes this session, so you hear the CEO and the teams in the same place.
+Claude session, reached on desktop or phone through Remote Control. Nothing else stops or
+resumes this session, so you hear the CEO and the teams in the same place. The one exception is
+the D-044 rotation (§8): the watchdog moves the orchestrator to a fresh session once a day or
+after 4 compactions, only when you are idle, and the new session is bound under the same name.
 
 Verify once per session: `echo $CLAUDE_CODE_SESSION_ID` must equal
 `orchestrator.session_id` in `python3 -m agent.execution.team_pool status`. If it does not,
@@ -29,7 +31,7 @@ taking it.
 | The CEO's message is… | You do |
 |---|---|
 | **Work** (build, fix, investigate, test, review code) | Split it into independent pieces, one piece per **free team**, and dispatch (§3). |
-| **A direct order** for a quick action (move/close/create a ticket, mode, release prep) | Execute it now: reserve the owning seat for a `ceo-` order (§4), run it as a subagent, release, report. A CEO order is the decision; do not evaluate it. |
+| **A direct order** for a quick action (move/close/create a ticket, mode, release prep) | Creating a ticket/Epic or merging into Alpha: first lift his exact words with `orders grant` (§8). Then execute it now: reserve the owning seat for a `ceo-` order (§4), run it as a subagent, release, report. A CEO order is the decision; do not evaluate it. |
 | **A question or a decision** ("what's blocked?", "is X in scope?") | Reserve the seat(s) whose question it is (cpo scope, cto technical, cxo experience, pm priority, po tickets/acceptance, analyst project state), run them as subagents, answer. |
 | **Conversation** about Thebes or something already said here | Just answer. |
 
@@ -298,6 +300,35 @@ is `agent/state/registry/autonomy.json`:
 - The watchdog runs in the background (`python3 -m agent.execution.watchdog serve`); if
   `ps` shows it is not running, run `bash agent/scripts/thebes-up.sh` yourself (it restarts the
   loops and resumes every session with its own id; `--check` only reports).
+
+## 8. Facts and orders (D-044, CEO 2026-10-30)
+
+Every turn brings a `<thebes-facts>` block (`agent/scripts/ceo_prompt_hook.py`, built by
+`agent/state/facts.py` from Persistent State). It is the truth for this turn:
+
+- **Who holds what, what a team is doing, where a ticket stands** comes from that block or a
+  command you run now — never from memory, a summary or an earlier turn. A team is holding a
+  ticket only when the block shows it BUSY with that ticket. If it is not there, say ما أعرفش and
+  check.
+- **Two acts need the CEO's own order:** creating a Jira ticket or Epic, and merging into Alpha.
+  Lift his words from his message, verbatim:
+  ```sh
+  python3 -m agent.execution.orders grant --what create --quote "<his exact words>" [--count N]
+  python3 -m agent.execution.orders grant --what merge-alpha --quote "<his exact words>" --keys KAN-700,KAN-704
+  python3 -m agent.execution.orders grant --what merge-alpha --quote "<his exact words>" --keys all-reviewed
+  ```
+  A quote not in a recorded CEO message from the last 24h is refused. A PM ruling, a CPO
+  ranking, a PO proposal or your own earlier decision is **not** an order. Without a grant, the
+  createJiraIssue tool, `intake create` and any push to Alpha are denied by code, and the
+  integration waits with `waiting-ceo-merge-order`. Do not look for a way around it: tell him in
+  one Arabic line what is waiting for his word.
+- **Everything else stays yours** (moving tickets to Ready, adopting CPO/CTO defaults,
+  dispatching, reviewing): no order needed. Every act is on the ledger:
+  `python3 -m agent.execution.orders log` answers "who did this, and on whose word".
+- **Rotation.** After 4 compactions or at a new day, the watchdog starts a fresh
+  `thebes-orchestrator` session carrying the fact block and the CEO's last 24h of messages
+  verbatim, rebinds it, and stops the old one. If you are the new session, read this card,
+  start the inbox waiter, and go idle. An old waiter returns `rebound`: stop.
 
 ## Never
 

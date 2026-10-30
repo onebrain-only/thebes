@@ -718,6 +718,7 @@ def _resume_asker(req, answer_text, *, state_store=store, resume=None):
                if k not in ("CODEX_THREAD_ID", cd.CLAUDE_ORIGIN_ENV)}
         if origin.get("origin_provider") == "claude":       # D-039: the orchestrator asked
             env[cd.CLAUDE_ORIGIN_ENV] = req["origin_thread_id"]
+            env.update(THEBES_ACTOR="decision-gate", THEBES_RULE="decision-gate")
         else:
             env["CODEX_THREAD_ID"] = req["origin_thread_id"]
         # The answer continues the SAME work, so it keeps the same review: the origin's checks,
@@ -766,6 +767,7 @@ def retry_resumes(*, state_store=store, dispatch=None):
                    if k not in ("CODEX_THREAD_ID", cd.CLAUDE_ORIGIN_ENV)}
             if origin.get("origin_provider") == "claude":
                 env[cd.CLAUDE_ORIGIN_ENV] = req["origin_thread_id"]
+                env.update(THEBES_ACTOR="decision-gate", THEBES_RULE="decision-gate")
             else:
                 env["CODEX_THREAD_ID"] = req["origin_thread_id"]
             with open(ref, encoding="utf-8") as fh:

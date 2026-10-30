@@ -781,3 +781,52 @@ requests, `stuck`), `inbox.py`, `review_queue.notify_stalled`, `watchdog.py`,
 `REVIEWER.md`, `AGENTS.md`, `route-to-seat` skill. Still to land: a policy hook that answers
 every permission prompt allow/deny (never ask), `sql_snapshot.py`, team settings with auto
 mode, and Done gated on the commit being live on alpha.dabbler.pro.
+
+## D-044 — The orchestrator speaks from state and acts only on the CEO's own words
+
+**Status:** ACTIVE (2026-10-30, CEO: the orchestrator "creates tasks I didn't order", "says a
+team holds a ticket it finished an hour ago", "merged without my order", and there was no record
+of who did what). **Narrows** D-043: autonomy covers HOW work is done, not WHAT new work exists
+or what reaches Alpha.
+**Evidence (measured 2026-10-30, session `c49d2414`, 338 MB):** 162 compactions, 31 in the last
+3 days, 3 during a live CEO exchange; 22 incidents. The orchestrator sent the PO to create the
+"Recurring games" Epic and KAN-692..707 on an authority it wrote itself ("PM ruling + CPO
+ranking already adopted by the orchestrator"), sent Memphis to merge KAN-700/704/706 into Alpha
+unasked, and answered "KAN-693 is with Luxor" 40 minutes after Luxor had finished. Every ticket
+is authored by `workflow@dabbler.pro`, and nothing linked a ticket or a merge to a CEO message.
+No intervention was active: the refusals came from the classifier, the password rule and
+dependency blocks, not a freeze.
+**Decision:**
+1. **CEO messages are recorded by the harness**, not the model: a `UserPromptSubmit` hook
+   (`agent/scripts/ceo_prompt_hook.py`), orchestrator session only, keeps his text verbatim in
+   `runtime/ceo-messages.jsonl`. Wakes, task notifications and other sessions' messages are not
+   his and are not kept.
+2. **Two acts need his order, enforced by code:** creating a Jira ticket/Epic and merging into
+   Alpha. `python3 -m agent.execution.orders grant` accepts only a quote found verbatim in a
+   message of his from the last 24h; a grant lasts 2h, a create grant counts down, a merge grant
+   names tickets or says `all-reviewed`. `agent/scripts/order_gate.py` (PreToolUse) denies the
+   Atlassian createJiraIssue tool, a shell `create_issue(` and a push to Alpha/alpha-ds without
+   one; `intake.create` requires it; `integrate.dispatch_for` holds a branch whose tickets are
+   not all ordered (`waiting-ceo-merge-order`). Order files cannot be written by hand. Only
+   sessions bound to Thebes are gated; an unbound session is the CEO at his keyboard.
+   Moving tickets to Ready and adopting CPO/CTO defaults are NOT gated (CEO's answer).
+3. **Every act is on a ledger** (`runtime/action-ledger.jsonl`): dispatches from every path
+   (orchestrator, ready-dispatcher, review-queue, verify, decision-gate, integration), grants,
+   refusals, creations and Alpha pushes, each with its order or rule. `orders log` answers "who
+   did this and on whose word".
+4. **Facts in every turn:** the same hook injects `agent/state/facts.py` — teams BUSY/FREE from
+   open dispatches, the last 8h of finished work with review and Alpha state, what passed review
+   and waits for a merge order, open orders, recent acts — headed by the rule that claims come
+   from that block or a fresh command, else ما أعرفش. Local files only, ~0.15 s.
+5. **Rotation:** a `PreCompact` hook counts the orchestrator's compactions; the watchdog
+   (`rotate_orchestrator`) starts a fresh `thebes-orchestrator` session after 4 compactions or at
+   a new day, only when it is idle, the CEO has been quiet 10 min, no execution lease is open and
+   nothing open still reports to the old session id. The handoff is the fact block plus his last
+   24h of messages verbatim; nothing else from the old conversation. The binding is CAS-rebound
+   (the old id kept in `previous_session_ids`) and the old waiter returns `rebound`.
+**Consequences:** `orders.py`, `facts.py`, `ceo_prompt_hook.py`, `order_gate.py` (+ `.sh`),
+`.claude/settings.json` hooks, `intake.py`, `integrate.py`, `conversation_dispatch.py` and the
+`THEBES_ACTOR`/`THEBES_RULE` tags in `ready_dispatcher.py`, `review_queue.py`, `verify.py`,
+`decision_gate.py`, `watchdog.py`, `inbox.py`, `ORCHESTRATOR.md` §8. Tickets now stay in Review
+until he orders the merge, because D-043's "Done = live on Alpha" waits on that order — this is
+his decision's consequence, not a defect.

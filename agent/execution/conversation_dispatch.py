@@ -480,6 +480,16 @@ def dispatch(prompt, target_session_id, *, env=None, state_store=store, cli=None
             "checks": brief_checks, "branch": branch, "integrate_base": integrate_base,
             "root_dispatch_id": root_dispatch_id, "verify_cycle": verify_cycle},
             rid=dispatch_id)
+        # D-044 action ledger: who sent what to whom, and the rule or order behind it.
+        from agent.execution import orders
+        orch = (state_store.active_role_session("orchestrator") or {}).get("session_id")
+        actor = env.get("THEBES_ACTOR") or ("orchestrator" if thread_id and thread_id == orch
+                                            else origin_provider)
+        orders.log("dispatch", actor, key=jira_key,
+                   rule=env.get("THEBES_RULE"), order_ref=env.get("THEBES_ORDER_REF"),
+                   sid=thread_id, detail="-> %s: %s" % (binding["seat_id"],
+                                                        (prompt.strip().splitlines() or [""])[0][:160]),
+                   state_store=state_store)
         if detach:
             try:
                 (launcher or _detach_delivery)(dispatch_id, capability)

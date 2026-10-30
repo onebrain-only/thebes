@@ -26,6 +26,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, ROOT)
 
 from agent.state import store, teams                                  # noqa: E402
+from agent.execution import orders                                    # noqa: E402
 
 MAX_BATCH = 5
 MAX_ATTEMPTS = 2
@@ -413,6 +414,19 @@ def brief(group):
     return "\n".join(lines)
 
 
+def ordered_items(items, state_store=store, now=None):
+    """(allowed, unordered keys) — D-044: merging into Alpha needs the CEO's order for each
+    ticket. A branch merges at its latest verified commit, which carries every earlier ticket on
+    it, so a branch goes only when the order covers ALL of its tickets in this batch."""
+    covered = {i["key"] for i in items
+               if orders.covering("merge-alpha", i["key"], state_store=state_store, now=now)}
+    blocked_branches = {(i["branch"], i["sha"]) for i in items if i["key"] not in covered}
+    allowed = [i for i in items if (i["branch"], i["sha"]) not in blocked_branches]
+    unordered = sorted({i["key"] for i in items if (i["branch"], i["sha"]) in blocked_branches},
+                       key=lambda k: int(k.split("-")[1]) if k.split("-")[-1].isdigit() else 0)
+    return allowed, unordered
+
+
 def dispatch_for(state_store=store, jira=None, dispatch=None, runner=None, settings_files=None):
     """Open at most one integration per base. Returns what it did."""
     from agent.execution import conversation_dispatch as cd
@@ -429,6 +443,12 @@ def dispatch_for(state_store=store, jira=None, dispatch=None, runner=None, setti
     done.extend(skipped)
     for base, group in groups.items():
         if open_integration(base, state_store):
+            continue
+        group["items"], unordered = ordered_items(group["items"], state_store)
+        if unordered:
+            done.append({"integrate": base, "action": "waiting", "reason": "waiting-ceo-merge-order",
+                         "tickets": unordered})
+        if not group["items"]:
             continue
         if not push_allowed(group["target"], settings_files):
             done.append({"integrate": base, "action": "waiting",
@@ -449,6 +469,7 @@ def dispatch_for(state_store=store, jira=None, dispatch=None, runner=None, setti
         env = {k: v for k, v in os.environ.items()
                if k not in ("CODEX_THREAD_ID", "CLAUDE_CODE_SESSION_ID")}
         env[cd.CLAUDE_ORIGIN_ENV] = orch
+        env.update(THEBES_ACTOR="ready-dispatcher", THEBES_RULE="integration")
         try:
             out = (dispatch or cd.dispatch)(brief(group), executor, env=env,
                                             state_store=state_store, detach=True, ticket=None)
@@ -464,6 +485,14 @@ def dispatch_for(state_store=store, jira=None, dispatch=None, runner=None, setti
             root = state_store.read("conversation_dispatch", item["dispatch_id"])
             state_store.update("conversation_dispatch", item["dispatch_id"], root["revision"],
                                {"integration_dispatch_id": did})
+        refs = set()
+        for item in group["items"]:
+            g = orders.consume("merge-alpha", item["key"], state_store=state_store)
+            refs.add(g["id"] if g else None)
+        orders.log("integration-dispatched", "ready-dispatcher",
+                   keys=[i["key"] for i in group["items"]],
+                   order_ref=",".join(sorted(r for r in refs if r)) or None,
+                   detail="%s -> %s via %s" % (base, executor[:8], lane), state_store=state_store)
         busy.add(executor)
         done.append({"integrate": base, "action": "dispatched", "dispatch_id": did, "lane": lane,
                      "tickets": [i["key"] for i in group["items"]]})

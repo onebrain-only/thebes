@@ -367,6 +367,10 @@ def _wait_loop(session_id, timeout, state_store, sleep):
             # saw one, and the board waited. A changed Thebes collects nothing stale.
             return {"status": "restart", "items": [],
                     "next": "Thebes code changed; start the inbox waiter again now"}
+        if orchestrator_session(state_store) != session_id:
+            # D-044 rotation: a waiter of the old session would hold the lock for two hours
+            return {"status": "rebound", "items": [],
+                    "next": "this session is no longer the orchestrator; stop"}
         items = collect(session_id, state_store=state_store)
         if items:
             return {"status": "items", "count": len(items), "items": items,

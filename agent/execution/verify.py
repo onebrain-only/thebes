@@ -337,6 +337,7 @@ def _send_back(root, ver, *, state_store, dispatcher=None, launcher=None):
     carried = with_judge_checks(failing, {"checks": root["checks"], "verification": ver})
     env = {k: v for k, v in os.environ.items() if k not in ("CODEX_THREAD_ID",)}
     env[cd.CLAUDE_ORIGIN_ENV] = root["origin_thread_id"]
+    env.update(THEBES_ACTOR="verify", THEBES_RULE="verify-retry")
     try:
         out = (dispatcher or cd.dispatch)(
             fix_brief(root, ver), root["target_session_id"], env=env, state_store=state_store,

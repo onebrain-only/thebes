@@ -79,6 +79,30 @@ class FakeJira:
 
 
 class IntakeTests(unittest.TestCase):
+    def setUp(self):
+        from agent.execution import orders
+        self.tmp = tempfile.mkdtemp()
+        self.old = (store.RUNTIME, store.LOCKS, validate.RUNTIME)
+        store.RUNTIME = os.path.join(self.tmp, "runtime")
+        store.LOCKS = os.path.join(store.RUNTIME, ".locks")
+        validate.RUNTIME = store.RUNTIME
+        orders.record_message("orch", "yes, write it — اعمل التذكرة دي")
+        orders.grant("create", "yes, write it", count=20)
+
+    def tearDown(self):
+        store.RUNTIME, store.LOCKS, validate.RUNTIME = self.old
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_without_an_open_ceo_order_nothing_is_created_d044(self):
+        from agent.execution import orders
+        os.remove(orders.path("grants"))
+        j = FakeJira()
+        with self.assertRaises(intake.IntakeError) as ctx:
+            intake.create(GOOD, approval="PM ruling + CPO ranking already adopted", jira=j)
+        self.assertIn("CEO's explicit order", ctx.exception.problems[0])
+        self.assertEqual(j.created, [])
+        self.assertEqual(orders.recent(1)[0]["action"], "refused-create")
+
     def test_a_good_work_ticket_lands_in_backlog_with_its_labels_component_and_estimate(self):
         j = FakeJira()
         out = intake.create(GOOD, approval="yes, write it", jira=j)

@@ -148,10 +148,15 @@ def duplicates(summary, jira):
     return out
 
 
-def create(text, *, approval, force_new=False, jira=None):
+def create(text, *, approval, force_new=False, jira=None, by="desk"):
     """`approval` is the CEO's own words saying yes to THIS ticket. A ticket is never created on
     the first mention of an idea: the desk proposes, the CEO says go, and the quote goes on the
-    ticket as a comment (an audit trail, and friction against creating on a guess)."""
+    ticket as a comment (an audit trail, and friction against creating on a guess).
+
+    D-044: the words alone are not enough — a model wrote "PM ruling + CPO ranking" as its own
+    approval and created an Epic and sixteen tickets nobody ordered. Creating consumes an open
+    `create` order (agent/execution/orders.py), which exists only if the quote is literally in a
+    message the CEO typed, and the order's quote is what goes on the ticket."""
     if not isinstance(approval, str) or len(approval.strip()) < 2:
         raise IntakeError(["approval: quote the CEO's words saying go (--approved \"...\"). "
                            "Propose the ticket in the conversation first and wait for their yes."])
@@ -163,6 +168,13 @@ def create(text, *, approval, force_new=False, jira=None):
         raise IntakeError(["possible duplicate of %s (%s, %s); update that ticket, or pass --new "
                            "if this is really different" % (d["key"], d["summary"], d["status"])
                            for d in dup])
+    from agent.execution import orders
+    try:
+        order = orders.require("create")
+    except orders.OrderRefused as exc:
+        orders.log("refused-create", by, rule="D-044", detail=t["summary"])
+        raise IntakeError([str(exc)])
+    approval = order["quote"]
     labels = ["intake", "cap:%s" % t["capability"]] + (["ask"] if t["type"] == "ask" else [])
     key = jira.create_issue(PROJECT, t["summary"], body, labels=labels,
                             components=[t["component"]] if t["component"] else None,
@@ -172,6 +184,7 @@ def create(text, *, approval, force_new=False, jira=None):
                          % approval.strip()[:300])
     except Exception:                                      # noqa: BLE001  never blocks
         pass
+    orders.log("created", by, key=key, order_ref=order["id"], detail=t["summary"])
     links = []
     for blocker in t["blocked_by"]:
         jira.link_issues_verified(blocker, key)

@@ -281,12 +281,170 @@ def maybe_compact(*, state_store=store, now=None):
     return session_weight.compact_idle(state_store=state_store, now=now)
 
 
+ROTATE_AFTER_COMPACTIONS = 4   # D-044: CEO 2026-10-30, "كل يوم + بعد 4 compactions"
+ROTATE_QUIET_SECONDS = 600     # never while the CEO is mid-conversation
+ROTATE_MESSAGES_HOURS = 24
+ORCHESTRATOR_NAME = "thebes-orchestrator"
+ORCHESTRATOR_MODEL = "claude-sonnet-5-5"
+HANDOFF = ("You are the Thebes orchestrator, in a FRESH session (D-044 rotation; the previous one "
+           "was %s). Nothing from that conversation is carried over except what is below. Read "
+           "CLAUDE.md and agent/ORCHESTRATOR.md now, start the inbox waiter as section 1 says, and "
+           "then go idle. Answer the CEO only from the <thebes-facts> block every turn brings, or a "
+           "command you run; what is not there you do not know. The CEO's own words from the last "
+           "%dh, verbatim and oldest first, are the only record of what he asked:\n\n%s\n\n%s")
+
+
+def _local_day(stamp):
+    import calendar
+    try:
+        return time.strftime("%Y-%m-%d", time.localtime(
+            calendar.timegm(time.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ"))))
+    except (TypeError, ValueError):
+        return None
+
+
+def rotation_due(binding, *, state_store=store, now=None):
+    """Why the orchestrator should move to a fresh session, or None (D-044)."""
+    sys.path.insert(0, os.path.join(ROOT, "agent", "scripts"))
+    import ceo_prompt_hook
+    now = now or time.time()
+    count = ceo_prompt_hook.read_count(state_store)
+    if (count.get("session_id") == binding["session_id"]
+            and int(count.get("count") or 0) >= ROTATE_AFTER_COMPACTIONS):
+        return "compactions"
+    day = _local_day(binding.get("updated_at"))
+    if day and day < time.strftime("%Y-%m-%d", time.localtime(now)):
+        return "new-day"
+    return None
+
+
+def rotation_blockers(sid, *, state_store=store, now=None):
+    """What makes rotating now unsafe. Empty means it is safe."""
+    from agent.execution import inbox, orders
+    now = now or time.time()
+    out = []
+    if any(not lease.get("closed_at") for lease in state_store.read_all("execution_lease")):
+        out.append("execution-lease-open")
+    last = (orders.messages(state_store=state_store, now=now) or [{}])[-1]
+    if now - orders._epoch(last.get("at")) < ROTATE_QUIET_SECONDS:
+        out.append("ceo-talking")
+    # the inbox routes by origin_thread_id: a dispatch from the old session reports to it only
+    if any(r.get("origin_thread_id") == sid
+           and r.get("status") in state_store.CONVERSATION_DISPATCH_OPEN
+           for r in state_store.read_all("conversation_dispatch")):
+        out.append("dispatches-open")
+    if inbox.pending(sid, state_store=state_store, now=now):
+        out.append("inbox-not-empty")
+    return out
+
+
+def handoff_prompt(old_sid, *, state_store=store, now=None):
+    from agent.execution import orders
+    from agent.state import facts
+    now = now or time.time()
+    since = now - ROTATE_MESSAGES_HOURS * 3600
+    said = orders.messages(state_store=state_store, since=since, now=now)[-30:]
+    words = "\n".join("- [%s %s] %s" % (m["id"], time.strftime(
+        "%m-%d %H:%M", time.localtime(orders._epoch(m["at"]))), m["text"][:1500])
+        for m in said) or "- (none)"
+    return HANDOFF % (old_sid[:8], ROTATE_MESSAGES_HOURS, words, facts.build(now))
+
+
+def _launch(cli, prompt, home):
+    """Start the fresh session and return its session id, read back by name."""
+    done = cli._exec(["--bg", "--name", ORCHESTRATOR_NAME, "--model", ORCHESTRATOR_MODEL,
+                      "--permission-mode", "auto", prompt], cwd=home)
+    if done.returncode:
+        raise RuntimeError("claude --bg exited %d: %s" % (done.returncode,
+                                                          (done.stderr or "").strip()[:200]))
+    return done
+
+
+def rotate_orchestrator(*, state_store=store, cli=None, now=None, launch=None, sleep=None):
+    """Move the orchestrator to a fresh session when it has been compacted
+    ROTATE_AFTER_COMPACTIONS times or the day has changed (D-044), and only when it is
+    idle, no execution lease is open, the CEO has not written for ROTATE_QUIET_SECONDS,
+    and nothing open still reports to the old session. Returns what it did, or None."""
+    from agent.execution.claude_cli import ClaudeCli
+    from agent.state import teams
+    sys.path.insert(0, os.path.join(ROOT, "agent", "scripts"))
+    import ceo_prompt_hook
+    now = now or time.time()
+    binding = state_store.active_role_session(teams.ORCHESTRATOR_ID)
+    if not binding:
+        return None
+    old = binding["session_id"]
+    why = rotation_due(binding, state_store=state_store, now=now)
+    if not why:
+        return None
+    blocked = rotation_blockers(old, state_store=state_store, now=now)
+    cli = cli or ClaudeCli()
+    before = cli.agents()
+    row = cli.find_by_sid(before, old)
+    if row is None:
+        blocked.append("not-running")            # thebes-up resumes it; rotation does not start one
+    elif row.get("state") == "working":
+        blocked.append("mid-turn")
+    if blocked:
+        return {"action": "rotation-waiting", "reason": why, "blocked_by": blocked}
+    known = {r.get("sessionId") for r in before}
+    (launch or _launch)(cli, handoff_prompt(old, state_store=state_store, now=now),
+                        binding["stable_home"])
+    new = None
+    for _ in range(30):
+        new = next((r["sessionId"] for r in cli.agents() if r.get("name") == ORCHESTRATOR_NAME
+                    and r.get("sessionId") not in known), None)
+        if new:
+            break
+        (sleep or time.sleep)(2)
+    if not new:
+        return {"action": "rotation-failed", "reason": why,
+                "error": "the new session did not appear in claude agents"}
+    state_store.bind_role_session(teams.ORCHESTRATOR_ID, "claude", new, binding["stable_home"],
+                                  "orchestrator", session_name=ORCHESTRATOR_NAME,
+                                  expected_revision=binding["revision"])
+    os.makedirs(os.path.dirname(ceo_prompt_hook.count_path(state_store)), exist_ok=True)
+    with open(ceo_prompt_hook.count_path(state_store), "w", encoding="utf-8") as fh:
+        json.dump({"session_id": new, "count": 0, "since": state_store.now()}, fh)
+    try:
+        cli.stop(old[:8])
+    except Exception as exc:                      # noqa: BLE001
+        return {"action": "rotated-orchestrator", "reason": why, "from": old, "to": new,
+                "warning": "old session did not stop: %s" % str(exc)[:200]}
+    from agent.execution import orders
+    orders.log("rotated-orchestrator", "watchdog", rule="D-044", sid=new,
+               detail="%s -> %s (%s)" % (old[:8], new[:8], why), state_store=state_store, now=now)
+    return {"action": "rotated-orchestrator", "reason": why, "from": old, "to": new}
+
+
+ROTATE_CHECK_EVERY = 300
+
+
+def maybe_rotate(*, state_store=store, now=None):
+    now = now or time.time()
+    marker = os.path.join(state_store.RUNTIME, "compaction", "rotation-checked")
+    try:
+        if now - float(open(marker).read()) < ROTATE_CHECK_EVERY:
+            return []
+    except (OSError, ValueError):
+        pass
+    os.makedirs(os.path.dirname(marker), exist_ok=True)
+    with open(marker, "w") as fh:
+        fh.write(str(now))
+    done = rotate_orchestrator(state_store=state_store, now=now)
+    return [done] if done else []
+
+
 def serve(interval=INTERVAL):
     log = os.path.join(store.RUNTIME, "watchdog.log")
     while True:
         try:
             done = tick()
             done = list(done or []) + maybe_compact()
+            try:
+                done += maybe_rotate()
+            except Exception as exc:                       # noqa: BLE001
+                done.append({"action": "rotation-error", "error": str(exc)[:200]})
             try:
                 from agent.execution import review_queue
                 done += review_queue.notify_stalled()

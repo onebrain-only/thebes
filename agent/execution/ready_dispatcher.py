@@ -268,6 +268,7 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None):
         env = {k: v for k, v in os.environ.items()
                if k not in ("CODEX_THREAD_ID", "CLAUDE_CODE_SESSION_ID")}
         env[cd.CLAUDE_ORIGIN_ENV] = orch
+        env.update(THEBES_ACTOR="ready-dispatcher", THEBES_RULE="ready-dispatcher")
         return (dispatch or cd.dispatch)(text, sid, env=env, state_store=state_store,
                                          detach=True, ticket=ticket,
                                          lane_capability=lane_capability)

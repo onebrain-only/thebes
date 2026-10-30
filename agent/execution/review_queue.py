@@ -145,6 +145,7 @@ def _wake_edfu(channel, state_store, dispatch=None):
     from agent.execution import conversation_dispatch as cd
     env = {k: v for k, v in os.environ.items() if k not in ("CODEX_THREAD_ID", "CLAUDE_CODE_SESSION_ID")}
     env[cd.CLAUDE_ORIGIN_ENV] = (state_store.active_role_session(teams.ORCHESTRATOR_ID) or {}).get("session_id")
+    env.update(THEBES_ACTOR="review-queue", THEBES_RULE="review")
     try:
         out = (dispatch or cd.dispatch)(text, sid, env=env, state_store=state_store, detach=True, ticket=None)
         return {"status": "notified", "dispatch_id": out.get("dispatch_id")}

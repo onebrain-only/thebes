@@ -59,6 +59,9 @@ class IntegrateTests(unittest.TestCase):
         for p in self.patches:
             p.start()
         self.sent = []
+        from agent.execution import orders
+        orders.record_message(ORCH, "ادمج كل اللي عدّى الريفيو على Alpha")
+        orders.grant("merge-alpha", "ادمج كل اللي عدّى الريفيو", keys=orders.ALL_REVIEWED)
 
     def tearDown(self):
         for p in self.patches:
@@ -123,6 +126,33 @@ class IntegrateTests(unittest.TestCase):
         self.assertIn("integrate-alpha:Alpha", sent["text"])
         self.assertEqual(self.run_dispatch({"alpha-luxor": SHA}), [], "never twice")
         self.assertTrue(store.read("conversation_dispatch", a)["integration_dispatch_id"])
+
+    def test_nothing_merges_into_alpha_without_the_ceos_order_d044(self):
+        from agent.execution import orders
+        os.remove(orders.path("grants"))
+        self.root("KAN-1", "alpha-luxor", SHA)
+        out = self.run_dispatch({"alpha-luxor": SHA})
+        self.assertEqual([(o["action"], o["reason"], o["tickets"]) for o in out],
+                         [("waiting", "waiting-ceo-merge-order", ["KAN-1"])])
+        self.assertEqual(self.sent, [])
+        orders.grant("merge-alpha", "ادمج كل اللي عدّى", keys=["KAN-1"])
+        out = self.run_dispatch({"alpha-luxor": SHA})
+        self.assertEqual(out[0]["action"], "dispatched")
+        self.assertEqual(orders.open_grants("merge-alpha"), [], "the order is used up")
+        self.assertEqual(orders.recent(1)[0]["action"], "integration-dispatched")
+
+    def test_a_branch_carrying_an_unordered_ticket_waits_whole_d044(self):
+        from agent.execution import orders
+        os.remove(orders.path("grants"))
+        orders.grant("merge-alpha", "ادمج كل اللي عدّى", keys=["KAN-2"])
+        items = [{"key": "KAN-1", "branch": "b", "sha": SHA, "at": "1"},
+                 {"key": "KAN-2", "branch": "b", "sha": SHA, "at": "2"},
+                 {"key": "KAN-3", "branch": "c", "sha": "c" * 40, "at": "3"}]
+        allowed, unordered = integrate.ordered_items(items)
+        self.assertEqual((allowed, unordered), ([], ["KAN-1", "KAN-2", "KAN-3"]))
+        orders.grant("merge-alpha", "ادمج كل اللي عدّى", keys=["KAN-1"])
+        allowed, unordered = integrate.ordered_items(items)
+        self.assertEqual(([i["key"] for i in allowed], unordered), (["KAN-1", "KAN-2"], ["KAN-3"]))
 
     def fast_runner(self, remote, files):
         base = fake_git(remote)
