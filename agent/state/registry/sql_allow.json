@@ -43,6 +43,14 @@
     {
       "file": "../../.claude/jobs/7f6ff1a6/tmp/wt-kan514/supabase/migrations/20261030120000_kan700_rpc_admin_launch_funnel.sql",
       "sha256": "51e9d843d22f2e57baeadde85b8a5304c4ccc6c6e2bba7291ee02f900e597699"
+    },
+    {
+      "file": "../../.claude/jobs/7f6ff1a6/tmp/wt-kan514/supabase/migrations/20261027120000_kan671_game_series.sql",
+      "sha256": "65463e4ce42d0f20a16072d901ad1d3546ac2f436e2e504c9957d5817e2932bc"
+    },
+    {
+      "file": "../../.claude/jobs/7f6ff1a6/tmp/wt-kan514/supabase/migrations/20261030120000_kan693_rpc_create_game_series.sql",
+      "sha256": "80f94770b12ff1b8a8536008f40112a7ab6d3b3508c9199594aacf5e13994b01"
     }
   ]
 }
