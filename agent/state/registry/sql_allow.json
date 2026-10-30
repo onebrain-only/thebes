@@ -39,6 +39,10 @@
     {
       "file": "../../.claude/jobs/1ee27200/worktrees/kan685/supabase/migrations/20261027160000_kan685_dabbler_test_player_to_contributor.sql",
       "sha256": "94d1654dba7e885a8df66d9934f1d302079b8daf54b14b5fb3fc130c74314e97"
+    },
+    {
+      "file": "../../.claude/jobs/7f6ff1a6/tmp/wt-kan514/supabase/migrations/20261030120000_kan700_rpc_admin_launch_funnel.sql",
+      "sha256": "51e9d843d22f2e57baeadde85b8a5304c4ccc6c6e2bba7291ee02f900e597699"
     }
   ]
 }
