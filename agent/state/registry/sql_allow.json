@@ -55,6 +55,10 @@
     {
       "file": "../../.claude/jobs/7f6ff1a6/tmp/wt-kan514/supabase/migrations/20261030130000_kan694_rpc_series_edit_cancel.sql",
       "sha256": "9de6a1fd7140c2b3b7f6b55398d5be5c185cf512b57dd7d9b94a752a0a7aaed6"
+    },
+    {
+      "file": "../../.claude/jobs/7f6ff1a6/tmp/wt-kan514/supabase/migrations/20261030140000_kan694_fix_same_day_topup.sql",
+      "sha256": "29eb4d9e7f0eec90cd00e34fa22d495c44f4f57fb3d8c37b5512455892336069"
     }
   ]
 }
