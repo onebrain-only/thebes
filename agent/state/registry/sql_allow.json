@@ -51,6 +51,10 @@
     {
       "file": "../../.claude/jobs/7f6ff1a6/tmp/wt-kan514/supabase/migrations/20261030120000_kan693_rpc_create_game_series.sql",
       "sha256": "80f94770b12ff1b8a8536008f40112a7ab6d3b3508c9199594aacf5e13994b01"
+    },
+    {
+      "file": "../../.claude/jobs/7f6ff1a6/tmp/wt-kan514/supabase/migrations/20261030130000_kan694_rpc_series_edit_cancel.sql",
+      "sha256": "9de6a1fd7140c2b3b7f6b55398d5be5c185cf512b57dd7d9b94a752a0a7aaed6"
     }
   ]
 }
