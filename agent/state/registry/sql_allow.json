@@ -59,6 +59,10 @@
     {
       "file": "../../.claude/jobs/7f6ff1a6/tmp/wt-kan514/supabase/migrations/20261030140000_kan694_fix_same_day_topup.sql",
       "sha256": "29eb4d9e7f0eec90cd00e34fa22d495c44f4f57fb3d8c37b5512455892336069"
+    },
+    {
+      "file": "../../.claude/jobs/7f6ff1a6/tmp/wt-kan698/supabase/migrations/20261101120000_kan698_v_game_card_series_columns.sql",
+      "sha256": "9b9a1a5c0909703fd62eba04c20ac350ea60acfc16edfe05ba13c32bef535dbb"
     }
   ]
 }
