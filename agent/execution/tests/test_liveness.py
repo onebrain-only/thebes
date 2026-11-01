@@ -145,6 +145,19 @@ class LivenessTests(unittest.TestCase):
         liveness.maybe_sweep(state_store=FakeStore(), now=self.now + 60)
         self.assertEqual(liveness._load("snapshot", {})["at"], before)
 
+    def test_a_review_team_waiting_in_its_queue_is_free_not_silent(self):
+        from agent.execution import watchdog
+        self.transcript("edfu", liveness.SILENT_SECONDS + 600)
+        orig = watchdog.pending_tool
+        watchdog.pending_tool = lambda sid, projects=None: (
+            "Bash", '{"command": "python3 -m agent.execution.review_queue wait --timeout 3600"}')
+        try:
+            got = self.sweep({"edfu": "working"})
+        finally:
+            watchdog.pending_tool = orig
+        self.assertEqual(got["edfu"]["status"], "free")
+        self.assertFalse([e for e in liveness.problems() if e["team"] == "edfu"])
+
 
 if __name__ == "__main__":
     unittest.main()

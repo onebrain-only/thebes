@@ -103,6 +103,7 @@ def review_held(session_id, now):
 
 
 FINISH_GRACE = 10 * 60
+IDLE_WAIT = "review_queue wait"      # the review team idles inside this call; it is not hung
 
 
 def finished_recently(team, now, state_store=store):
@@ -139,7 +140,10 @@ def _probe(tid, t, rows, open_by_seat, now, state_store, projects):
     last = last_activity(sid, projects)
     quiet = int(now - last) if last else None
     entry["quiet_min"] = quiet // 60 if quiet is not None else None
-    if state == "blocked":
+    waiting_on = watchdog.pending_tool(sid, projects) if state == "working" else None
+    if waiting_on and IDLE_WAIT in (waiting_on[1] or "") and not open_:
+        entry.update(status="free", detail="waiting for review work")
+    elif state == "blocked":
         waiting = watchdog.pending_tool(sid, projects)
         entry.update(status="blocked", detail="waits on %s" % (
             ("%s %s" % waiting) if waiting else "a permission or a question"),
