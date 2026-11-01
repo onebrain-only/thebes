@@ -192,7 +192,10 @@ def team_block(record):
         "judge or a qa seat on it. The Codex reviewer checks design and behaviour in the running "
         "app (check QA). Your part is evidence: name the screens, attach screenshots (English and "
         "Arabic, light and dark when it is visual) and the steps to reach them. Leave check QA "
-        "out of your VERIFY block. A QA failure comes back to you as a fix of the same ticket.",
+        "out of your VERIFY block. A QA failure comes back to you as a fix of the same ticket. "
+        "If a check needs the signed-in app and you have no signed-in session, never type a "
+        "password and never report blocked for it: write `Cn: PASS — SKIPPED (environment: needs "
+        "a signed-in reviewer)` and report completed.",
         ("integration: THIS dispatch is the fast lane (CEO 2026-10-10): your small verified "
          "ticket is yours to merge. Follow the integration steps in the brief exactly, in your "
          "own worktree, and push ONLY `git -C <worktree> push origin integrate-alpha:Alpha` (or "

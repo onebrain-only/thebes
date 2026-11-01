@@ -517,8 +517,9 @@ def _epoch(ts):
 
 def repeat_count(repeat_key, qhash, *, state_store=store, now=None):
     """(same, burst) for one ticket: earlier requests with this question hash inside the window,
-    and all requests inside the burst window. Requests before the ticket's last `stuck` do not
-    count — a new brief after a stop starts clean."""
+    and all requests inside the burst window. A `stuck` resets `same` only — a new brief is a new
+    question. `burst` keeps counting through it: KAN-689 (2026-11-01) was stopped twice and each
+    stop zeroed the counter, so the loop started again at once."""
     import time
     from agent.state import autonomy
     g = autonomy.repeat_guard()
@@ -528,13 +529,36 @@ def repeat_count(repeat_key, qhash, *, state_store=store, now=None):
     same = burst = 0
     for r in mine:
         t = _epoch(r.get("created_at"))
-        if t <= last_stuck or r.get("route") == "stuck":
+        if r.get("route") == "stuck":
             continue
-        if r.get("question_hash") == qhash and now - t <= g["window_hours"] * 3600:
+        if (t > last_stuck and r.get("question_hash") == qhash
+                and now - t <= g["window_hours"] * 3600):
             same += 1
         if now - t <= g["burst_hours"] * 3600:
             burst += 1
     return same, burst
+
+
+# A team that cannot sign in to the running app is not blocked: it may never type a password
+# (localhost-first rule), so asking again cannot change the answer. KAN-689 (2026-11-01) spent 18
+# decision requests on exactly this before the orchestrator said "skip it". The answer is fixed.
+SIGNIN_RE = re.compile(
+    r"no (?:qa |sanctioned |test |e2e )?(?:sign-?in|log-?in|credentials|signed-in session)"
+    r"|password entry (?:is )?prohibited|(?:cannot|can't|could not|unable to) (?:sign|log) ?in"
+    r"|not signed in|redirect(?:s|ed)? to (?:/)?landing|shows /landing", re.I)
+SIGNIN_ANSWER = (
+    "ENVIRONMENT SKIP (Thebes, fixed answer): a check that needs a signed-in app cannot run in "
+    "your environment, and that is not a defect or a block. Make no code change for it. Report "
+    "`completed` now with that check written as `Cn: PASS — SKIPPED (environment: needs a "
+    "signed-in reviewer)` and every other check as it stands. The Codex reviewer checks it in "
+    "the running app. Do not ask about sign-in again.")
+
+
+def signin_block(question):
+    """True when the report's only stated blocker is that the team cannot sign in to the app."""
+    if not SIGNIN_RE.search(question or ""):
+        return False
+    return not re.search(r"needs-ops|product_defect|merge conflict", question or "", re.I)
 
 
 def _mark_stuck(ticket, why, *, state_store=store, jira=None):
@@ -581,6 +605,10 @@ def route(record, *, state_store=store, env=None, cfg=None, deliver=None, resume
                else "%d decision requests in %d hours." % (burst + 1, guard["burst_hours"]))
         resolved = {"route": "stuck", "reason": "repeat:%s" % why, "gate": "repeat-guard",
                     "decision_class": None, "accountable_role": "orchestrator", "confidence": None}
+    elif signin_block(question) and approval["verdict"] != "ceo":
+        resolved = {"route": "task-owner", "reason": "environment-skip:sign-in", "gate": "env-skip",
+                    "decision_class": "quality_gate", "accountable_role": "policy",
+                    "confidence": None, "answer": SIGNIN_ANSWER}
     elif same + 1 >= guard["orchestrator_at"] and approval["verdict"] != "ceo":
         # Second identical report: "it is yours to decide" did not unblock it. The orchestrator
         # decides differently (a ruling, a re-brief), instead of the same automatic answer.
@@ -653,8 +681,9 @@ def route(record, *, state_store=store, env=None, cfg=None, deliver=None, resume
         return dict(resolved, decision_request_id=rid,
                     continuation=_resume_asker(req, text, state_store=state_store, resume=resume))
     if resolved["route"] == "task-owner":
-        text = ("This question is task-local (%s): it is yours to decide within the brief. "
-                "Decide, record why in your report, and continue." % resolved["decision_class"])
+        text = resolved.get("answer") or (
+            "This question is task-local (%s): it is yours to decide within the brief. "
+            "Decide, record why in your report, and continue." % resolved["decision_class"])
         return dict(resolved, decision_request_id=rid,
                     continuation=_resume_asker(req, text, state_store=state_store, resume=resume))
     sender = deliver or (_deliver_to_inbox if req.get("via") == "orchestrator"

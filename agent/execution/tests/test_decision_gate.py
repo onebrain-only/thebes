@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -308,6 +309,31 @@ class DecisionGateTests(unittest.TestCase):
         self.assertTrue(reqs[1]["escalation_reason"].startswith("repeat:2"))
         self.assertEqual(reqs[2]["status"], "stuck")
         self.assertEqual(self.clean(), [])
+
+    def test_a_team_that_cannot_sign_in_gets_the_fixed_skip_answer_kan689(self):
+        did, cap = self.settled("blocked", "")
+        router = lambda record, state_store: dg.route(
+            dict(record, jira_key="KAN-689"), state_store=state_store,
+            deliver=self.deliver, resume=self.resume, jira=False)
+        out = self.submit(did, cap, "blocked", "C3: FAIL — not run: no QA sign-in available to "
+                          "me (password entry prohibited); localhost shows /landing.", router=router)
+        self.assertEqual(out["decision"]["route"], "task-owner")
+        self.assertEqual(len(self.resumed), 1)
+        self.assertIn("ENVIRONMENT SKIP", str(self.resumed[0]))
+        self.assertFalse(dg.signin_block("needs-ops: migration; also not signed in"))
+        self.assertFalse(dg.signin_block("C2: FAIL — 2 tests fail on merged"))
+
+    def test_a_stop_does_not_reset_the_burst_counter_kan689(self):
+        def req(route, mins_ago):
+            rid = store.new_id("decision_request")
+            rec = {"repeat_key": "KAN-689", "question_hash": rid[-6:], "route": route,
+                   "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                                               time.gmtime(time.time() - mins_ago * 60))}
+            return rec
+        rows = [req("owner", 100 - i) for i in range(6)] + [req("stuck", 50), req("owner", 10)]
+        with mock.patch.object(store, "read_all", return_value=rows):
+            same, burst = dg.repeat_count("KAN-689", "x", state_store=store)
+        self.assertEqual((same, burst), (0, 7), "the stop resets same, never burst")
 
     def test_a_decision_delivery_record_validates(self):
         """Live P2 run 2 failed here: the delivery record for a dreq- id was refused by
