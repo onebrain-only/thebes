@@ -442,6 +442,11 @@ def serve(interval=INTERVAL):
             done = tick()
             done = list(done or []) + maybe_compact()
             try:
+                from agent.execution import liveness
+                done += liveness.maybe_sweep()
+            except Exception as exc:                       # noqa: BLE001
+                done.append({"action": "liveness-error", "error": str(exc)[:200]})
+            try:
                 done += maybe_rotate()
             except Exception as exc:                       # noqa: BLE001
                 done.append({"action": "rotation-error", "error": str(exc)[:200]})

@@ -830,3 +830,52 @@ dependency blocks, not a freeze.
 `decision_gate.py`, `watchdog.py`, `inbox.py`, `ORCHESTRATOR.md` §8. Tickets now stay in Review
 until he orders the merge, because D-043's "Done = live on Alpha" waits on that order — this is
 his decision's consequence, not a defect.
+
+## D-045 — Liveness: every team is probed every 5 minutes, busy or not
+
+**Date:** 2026-11-01 · **By:** CEO
+**Context:** The CEO found the orchestrator believing work was finished when it was not, or
+that work sat with a team at some stage when it did not. Dispatch-and-wait only notices a team
+when it reports back. A team that hangs (Memphis 2026-10-30: one `execute_sql` never returned,
+and it looked busy for 10h), or a team the orchestrator thinks is free but is still working, is
+never asked. His words: «اي اوركستريتور … مش بس يدي التاسك ويستنى الاجابة … كل 5 دقايق يشوف
+الحاجة ايه اللي واقف فين … لكل التيمز حتى اللي ما بتشتغلش».
+**Decision:**
+1. **What runs:** `watchdog serve` calls `liveness.maybe_sweep()` every 5 minutes. It probes
+   **every** team in `teams.json`, whatever the orchestrator believes.
+2. **What a probe reads:** the CLI agent row, the transcript's last write, the pending tool call,
+   open dispatches and held review claims. It never types into the session, because a probe that
+   interrupts the work it is checking would itself be the fault.
+3. **The statuses:**
+   - `busy`
+   - `free`
+   - `silent` — working, but quiet for 20 minutes
+   - `untracked` — working with no dispatch; 10 minutes of grace after a submit
+   - `blocked`
+   - `stalled`
+   - `no-session`
+4. **Where it shows:** the snapshot (`runtime/liveness.json`) appears as `LIVENESS` rows in every
+   fact block (D-044). A snapshot older than 15 minutes is flagged STALE.
+5. **What gets reported:** `silent`, `untracked`, `no-session`, and `blocked` without a dispatch
+   each reach the orchestrator inbox once per occurrence, as a `liveness` item carrying the
+   action to take. `stalled` and `blocked` with a dispatch were already alerts.
+6. **Reviving:** `liveness revive <team>` stops a silent session and resumes the same session id
+   with an explanation, and is ledgered (`revived-team`, rule D-045). It is refused unless the
+   team really is silent.
+7. **The rule binds every orchestrator, current and future:** `ORCHESTRATOR.md` §9. Claims
+   about what a team is doing come from those rows.
+
+**Also (D-044 hole found the same day):** the CEO typed «ادمج KAN-703» into the retired
+orchestrator session `c49d2414`. It had no gate and no fact block, and the live session never saw
+it. Now:
+- his messages to a retired session are recorded (`retired_session`);
+- they are shown to the live one under `CEO MESSAGES TYPED INTO A RETIRED SESSION`, and can be
+  lifted as orders;
+- the retired session is denied every act but reading, and tells him where to continue;
+- the order gate's PreToolUse matcher widened to `mcp__.*|…|Agent|SendMessage`.
+
+**Consequences:**
+- new: `agent/execution/liveness.py`, `tests/test_liveness.py`;
+- changed: `watchdog.serve`, `inbox.pending/collect/oldest_waiting`, `facts.build`,
+  `orders.retired_orchestrator` and `record_message(retired=)`, `ceo_prompt_hook._retired`,
+  `order_gate.retired`, `.claude/settings.json`, and `ORCHESTRATOR.md` §8–9.

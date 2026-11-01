@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.join(ROOT, "agent", "scripts"))
 from agent.state import store, validate                              # noqa: E402
 from agent.execution import orders, watchdog                         # noqa: E402
 import ceo_prompt_hook                                               # noqa: E402
+import order_gate                                                    # noqa: E402
 
 OLD = "c0000000-0000-4000-8000-0000000000a1"
 NEW = "c0000000-0000-4000-8000-0000000000b2"
@@ -121,6 +122,38 @@ class RotationTests(unittest.TestCase):
         out = self.rotate(cli)
         self.assertEqual(sorted(out["blocked_by"]), ["ceo-talking", "mid-turn"])
         self.assertEqual(cli.prompts, [])
+
+    def test_the_ceo_typing_into_a_retired_session_reaches_the_live_one(self):
+        store.bind_role_session("orchestrator", "claude", NEW, "/tmp", "ceo",
+                                expected_revision=store.active_role_session("orchestrator")["revision"])
+        out = ceo_prompt_hook.handle({"session_id": OLD, "hook_event_name": "UserPromptSubmit",
+                                      "prompt": "ادمج KAN-703"}, now=self.now)
+        ctx = out["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("RETIRED", ctx)
+        self.assertIn(NEW[:8], ctx)
+        msg = orders.messages(now=self.now)[-1]
+        self.assertEqual((msg["text"], msg["retired_session"]), ("ادمج KAN-703", True))
+        self.assertEqual(orders.find_quote("ادمج KAN-703", now=self.now)["id"], msg["id"])
+        from agent.state import facts
+        self.assertIn("ادمج KAN-703", facts.build(self.now))
+
+    def test_a_retired_session_may_read_but_not_act(self):
+        store.bind_role_session("orchestrator", "claude", NEW, "/tmp", "ceo",
+                                expected_revision=store.active_role_session("orchestrator")["revision"])
+        def gate(tool, **args):
+            return order_gate.handle({"session_id": OLD, "hook_event_name": "PreToolUse",
+                                      "tool_name": tool, "tool_input": args})
+        self.assertIsNone(gate("Bash", command="cat agent/ROADMAP.md"))
+        self.assertIsNone(gate("Read", file_path="/tmp/x"))
+        for tool, args in (("Bash", {"command": "git push origin HEAD:Alpha"}),
+                           ("Edit", {"file_path": "/tmp/x"}),
+                           ("Agent", {"prompt": "do it"}),
+                           ("SendMessage", {"to": "memphis"})):
+            out = gate(tool, **args)
+            self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "deny", tool)
+        self.assertIsNone(order_gate.handle({"session_id": "c0000000-0000-4000-8000-0000000000ff",
+                                             "hook_event_name": "PreToolUse",
+                                             "tool_name": "Edit", "tool_input": {}}))
 
 
 if __name__ == "__main__":

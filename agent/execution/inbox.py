@@ -92,6 +92,10 @@ def oldest_waiting(session_id, *, state_store=store, now=None):
             if now - asked > best[0]:
                 best = (now - asked, "reviewer_question %s" % item["question_id"])
             continue
+        elif kind == "liveness":
+            if item["waited_min"] * 60 > best[0]:
+                best = (item["waited_min"] * 60, "liveness %s %s" % (item["team"], item["status"]))
+            continue
         elif kind == "not_live":
             continue                       # flagged by the dispatcher sweep; not a stalled listener
 
@@ -248,6 +252,11 @@ def pending(session_id, *, state_store=store, now=None):
                                 "never tell the reviewer to pass something." % (q["ticket"], q["qid"]))})
     except Exception:                                       # noqa: BLE001  never blocks the inbox
         pass
+    try:
+        from agent.execution import liveness
+        out.extend(liveness.inbox_items(now))
+    except Exception:                                       # noqa: BLE001  never blocks the inbox
+        pass
     for req in requests:
         if (req.get("status") == "open" and req.get("delivery") == "inbox"
                 and req.get("owner_session_id") in (session_id, None)
@@ -290,6 +299,11 @@ def collect(session_id, *, state_store=store, now=None):
             if item["kind"] == "reviewer_question":
                 from agent.execution import review_queue
                 review_queue.mark_collected(item["question_id"])
+                taken.append(item)
+                continue
+            if item["kind"] == "liveness":
+                from agent.execution import liveness
+                liveness.mark_collected(item["key"])
                 taken.append(item)
                 continue
             if item["kind"] == "not_live":

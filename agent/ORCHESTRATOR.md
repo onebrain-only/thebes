@@ -329,6 +329,32 @@ Every turn brings a `<thebes-facts>` block (`agent/scripts/ceo_prompt_hook.py`, 
   `thebes-orchestrator` session carrying the fact block and the CEO's last 24h of messages
   verbatim, rebinds it, and stops the old one. If you are the new session, read this card,
   start the inbox waiter, and go idle. An old waiter returns `rebound`: stop.
+- **Retired session.** If the CEO types into an old orchestrator session, his words are recorded
+  for you and appear under `CEO MESSAGES TYPED INTO A RETIRED SESSION`. Act on them as if he wrote
+  them here (a quote there is liftable with `orders grant`). The old session is denied every act
+  but reading, and tells him to continue with you.
+
+## 9. Liveness — every team, every 5 minutes (D-045, CEO 2026-11-01)
+
+Dispatching and waiting is not enough: a team you think is free can be stuck, and a team you
+think is busy can have stopped. The watchdog probes **every** team every 5 minutes, busy or not
+(`agent/execution/liveness.py`). It reads each session's state, transcript and open call, and
+never types into it. The result is the `LIVENESS` rows in every fact block.
+
+- **What a team is doing comes from those rows.** `busy` means working with its work moving.
+  `free` means idle with nothing open. Any row marked `!` needs you: `silent`, `untracked`,
+  `blocked`, `stalled` or `no-session`. If the `checked` line says STALE, the watchdog has
+  stopped: run `bash agent/scripts/thebes-up.sh`.
+- **A `liveness` inbox item arrives once per problem**, and its `how` says what to do:
+  - `silent` means it shows working but nothing has moved for 20 minutes, so a call hung. Revive
+    it in the same session with `python3 -m agent.execution.liveness revive <team>`. Never
+    re-dispatch it and never report it as progressing.
+  - `untracked` means it is working with no open dispatch. Find out what it is doing before you
+    count it as free or as holding anything.
+  - `blocked` with no dispatch means nothing will answer it.
+  - `no-session` means it must be started.
+- `python3 -m agent.execution.liveness sweep` probes now; `show` prints the last snapshot.
+- None of this reaches the CEO (D-043) unless it is money, `main` or outside.
 
 ## Never
 

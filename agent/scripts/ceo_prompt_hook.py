@@ -45,6 +45,28 @@ def bump_count(session_id, state_store, now=None):
     return cur
 
 
+RETIRED = ("THIS SESSION IS RETIRED (D-044 rotation). The live orchestrator is %s; this message "
+           "has been recorded for it as CEO message %s and it will act on it. Do not act here: no "
+           "dispatch, no edit, no Jira, no git. Reply to the CEO only with this line, verbatim:\n"
+           "الجلسة دي اتقفلت. رسالتك وصلت للأوركستريتور الجديد وهو هيتصرف فيها. "
+           "كمّل الكلام معاه في جلسة thebes-orchestrator (%s).")
+
+
+def _retired(payload, sid, state_store, now):
+    """The CEO typed into an orchestrator session that was rotated away: keep his words for the
+    live one, and tell this session to stand down."""
+    from agent.execution import orders
+    live = orders.retired_orchestrator(sid, state_store)
+    if not live or payload.get("hook_event_name") != "UserPromptSubmit":
+        return None
+    mid = orders.record_message(sid, payload.get("prompt") or "", state_store=state_store,
+                                now=now, retired=True)
+    if not mid:
+        return None
+    return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit",
+                                   "additionalContext": RETIRED % (live[:8], mid, live[:8])}}
+
+
 def handle(payload, state_store=None, now=None):
     """The hook's stdout object, or None to say nothing."""
     import policy_hook
@@ -53,7 +75,7 @@ def handle(payload, state_store=None, now=None):
     sid = payload.get("session_id")
     who = policy_hook.bound(sid, state_store)
     if not who or who[2] != "orchestrator":
-        return None
+        return _retired(payload, sid, state_store, now)
     event = payload.get("hook_event_name")
     if event == "PreCompact":
         bump_count(sid, state_store, now)

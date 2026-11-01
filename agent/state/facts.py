@@ -153,6 +153,16 @@ def _dispatcher(now):
     return rows
 
 
+def _retired_messages():
+    from agent.execution import orders
+    try:
+        found = [m for m in orders.messages() if m.get("retired_session")]
+    except Exception:                                     # noqa: BLE001
+        return []
+    return ["  %s [%s] %s" % (m["at"][11:16], m["id"], " ".join(m["text"].split())[:300])
+            for m in found]
+
+
 def build(now=None):
     now = now or time.time()
     out = ["<thebes-facts at=%s>" % time.strftime("%Y-%m-%d %H:%M", time.localtime(now)), RULE]
@@ -177,6 +187,12 @@ def build(now=None):
         dispatches = []
     out += _section("TEAMS (BUSY = an open dispatch right now; nothing else counts as holding):",
                     lambda: _teams(dispatches, now))
+    retired = _retired_messages()
+    if retired:
+        out += ["CEO MESSAGES TYPED INTO A RETIRED SESSION, last 24h — you never saw them, act on them:"]
+        out += retired
+    out += _section("LIVENESS — every team probed every 5 min, busy or not (D-045; ! = needs you):",
+                    lambda: __import__("agent.execution.liveness", fromlist=["x"]).fact_rows(now))
     out += _section("FINISHED, last %dh (time ticket outcome by-team review Alpha):" % RECENT_HOURS,
                     lambda: _recent(dispatches, now))
     out += _section("REVIEW PASSED, NOT ON ALPHA (merging waits for a CEO order):",

@@ -97,15 +97,29 @@ def is_ceo_text(text):
     return bool(_norm(text)) and not NOT_CEO.match(text or "")
 
 
-def record_message(session_id, text, *, state_store=store, now=None):
-    """Keep one CEO message verbatim. Returns its id, or None for a turn that is not the CEO's."""
+def retired_orchestrator(session_id, state_store=store):
+    """The live orchestrator's session id when `session_id` is one it rotated away from, else None.
+    The CEO can still type into a retired session; it has no gate and no fact block of its own."""
+    if not session_id:
+        return None
+    rec = state_store.active_role_session("orchestrator") or {}
+    if session_id in (rec.get("previous_session_ids") or []):
+        return rec.get("session_id")
+    return None
+
+
+def record_message(session_id, text, *, state_store=store, now=None, retired=False):
+    """Keep one CEO message verbatim. Returns its id, or None for a turn that is not the CEO's.
+    `retired`: typed into a retired orchestrator session; the live one must still act on it."""
     if not is_ceo_text(text):
         return None
     now = now or time.time()
     mid = "msg-%s-%s" % (time.strftime("%Y%m%d%H%M%S", time.gmtime(now)),
                          hashlib.sha256(text.encode("utf-8")).hexdigest()[:8])
-    _append("messages", {"id": mid, "at": _stamp(now), "sid": session_id, "text": text},
-            state_store)
+    rec = {"id": mid, "at": _stamp(now), "sid": session_id, "text": text}
+    if retired:
+        rec["retired_session"] = True
+    _append("messages", rec, state_store)
     return mid
 
 

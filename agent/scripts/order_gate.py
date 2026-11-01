@@ -119,13 +119,33 @@ def post(payload, seat, state_store, now=None):
     return None
 
 
+def retired(payload, state_store):
+    """A retired orchestrator session acts on nothing: the live one owns every decision now."""
+    from agent.execution import orders
+    if payload.get("hook_event_name") != "PreToolUse":
+        return None
+    live = orders.retired_orchestrator(payload.get("session_id"), state_store)
+    if not live:
+        return None
+    tool = payload.get("tool_name") or ""
+    cmd = (payload.get("tool_input") or {}).get("command") or ""
+    if tool == "Bash" and READ_ONLY.match(cmd) and ">" not in cmd:
+        return None
+    if tool in ("Read", "Grep", "Glob"):
+        return None
+    return _deny("This orchestrator session is retired; the live one is %s and owns every "
+                 "dispatch, edit and Jira or git act (D-044). Tell the CEO to continue in "
+                 "thebes-orchestrator (%s); his message here is already recorded for it."
+                 % (live[:8], live[:8]))
+
+
 def handle(payload, state_store=None, now=None):
     import policy_hook
     if state_store is None:
         from agent.state import store as state_store
     who = policy_hook.bound(payload.get("session_id"), state_store)
     if not who:
-        return None
+        return retired(payload, state_store)
     fn = pre if payload.get("hook_event_name") == "PreToolUse" else post
     return fn(payload, who[0], state_store, now)
 
