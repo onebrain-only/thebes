@@ -32,12 +32,27 @@ class OrdersTests(unittest.TestCase):
         store.RUNTIME = os.path.join(self.tmp, "runtime")
         store.LOCKS = os.path.join(store.RUNTIME, ".locks")
         validate.RUNTIME = store.RUNTIME
+        self.old_codex = orders.CODEX_SESSIONS
+        orders.CODEX_SESSIONS = os.path.join(self.tmp, "codex")
         store.bind_role_session("orchestrator", "claude", ORCH, HOME, "ceo")
         store.bind_role_session("luxor", "claude", TEAM, HOME, "ceo")
 
     def tearDown(self):
         store.RUNTIME, store.LOCKS, validate.RUNTIME = self.old
+        orders.CODEX_SESSIONS = self.old_codex
         shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def codex_rollout(self, cwd, turns):
+        os.makedirs(orders.CODEX_SESSIONS, exist_ok=True)
+        lines = [{"type": "session_meta", "payload": {"id": "01a11f0c-codex", "cwd": cwd}}]
+        for at, role, text in turns:
+            lines.append({"timestamp": at, "type": "response_item", "payload": {
+                "type": "message", "role": role,
+                "content": [{"type": "input_text", "text": text}]}})
+        f = os.path.join(orders.CODEX_SESSIONS, "rollout-%s.jsonl" % len(os.listdir(
+            orders.CODEX_SESSIONS)))
+        with open(f, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(json.dumps(l, ensure_ascii=False) for l in lines) + "\n")
 
     # ------------------------------------------------------------ orders
     def test_words_the_ceo_never_typed_are_not_an_order(self):
@@ -67,6 +82,24 @@ class OrdersTests(unittest.TestCase):
             orders.require("create", now=now)
         orders.grant("create", "اعمل تذكرتين", count=1, now=now)
         self.assertIsNone(orders.covering("create", now=now + orders.GRANT_TTL + 1), "expired")
+
+    def test_the_ceos_words_in_codex_in_this_workspace_are_an_order(self):
+        now = time.time()
+        at = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(now - 60))
+        old = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(now - orders.MESSAGE_WINDOW - 60))
+        self.codex_rollout(orders.THEBES_ROOT, [
+            (at, "user", "<environment_context>Start create tasks</environment_context>"),
+            (at, "assistant", "I will create the Epic and eleven tasks"),
+            (old, "user", "create the old idea please"),
+            (at, "user", "Start create tasks, make it detailed")])
+        self.codex_rollout("/Users/someone/Other", [(at, "user", "create the other project's Epic")])
+        g = orders.grant("create", "Start create tasks, make it detailed", count=12, now=now)
+        self.assertTrue(g["message_ref"].startswith("codex-"))
+        self.assertTrue(orders.require("create", now=now))
+        for quote in ("I will create the Epic and eleven tasks", "create the old idea please",
+                      "create the other project's Epic"):
+            with self.assertRaises(orders.OrderRefused, msg=quote):
+                orders.grant("create", quote, now=now)
 
     def test_an_old_message_is_not_an_order_today(self):
         then = time.time() - orders.MESSAGE_WINDOW - 60

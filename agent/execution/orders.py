@@ -132,12 +132,62 @@ def messages(*, state_store=store, since=None, now=None):
     return [m for m in _jsonl("messages", state_store) if _epoch(m.get("at")) >= since]
 
 
+CODEX_SESSIONS = os.path.join(os.environ.get("CODEX_HOME") or os.path.expanduser("~/.codex"),
+                              "sessions")
+THEBES_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def codex_messages(*, now=None, sessions=None, root=None):
+    """CEO turns typed into Codex in this workspace (the window's rollouts, written by the Codex
+    harness). The CEO creates tickets from Codex, and Codex has no prompt hook to record them."""
+    now = now or time.time()
+    sessions, root = sessions or CODEX_SESSIONS, root or THEBES_ROOT
+    since, out = now - MESSAGE_WINDOW, []
+    for dirpath, _, files in os.walk(sessions):
+        for name in files:
+            f = os.path.join(dirpath, name)
+            try:
+                if not name.endswith(".jsonl") or os.path.getmtime(f) < since:
+                    continue
+                with open(f, encoding="utf-8", errors="replace") as fh:
+                    meta, sid = None, name
+                    for line in fh:
+                        if meta is None:
+                            p = (json.loads(line).get("payload") or {})
+                            meta, sid = p.get("cwd") or "", p.get("id") or name
+                            if not (meta == root or meta.startswith(root + os.sep)):
+                                break
+                            continue
+                        if '"user"' not in line:
+                            continue
+                        r = json.loads(line)
+                        p = r.get("payload") or {}
+                        if r.get("type") != "response_item" or p.get("role") != "user":
+                            continue
+                        text = " ".join(c.get("text", "") for c in p.get("content") or []
+                                        if isinstance(c, dict))
+                        at = r.get("timestamp", "")
+                        if _epoch(at[:19] + "Z") < since or not is_ceo_text(text):
+                            continue
+                        out.append({"id": "codex-%s-%s" % (sid[:8], hashlib.sha256(
+                                        (at + text).encode("utf-8")).hexdigest()[:8]),
+                                    "at": at[:19] + "Z", "sid": sid, "text": text,
+                                    "source": "codex"})
+            except (OSError, ValueError):
+                continue
+    return sorted(out, key=lambda m: m["at"])
+
+
 def find_quote(quote, *, state_store=store, now=None):
-    """The newest CEO message (in the window) that literally contains the quote, or None."""
+    """The newest CEO message (in the window) that literally contains the quote, or None.
+    Claude orchestrator turns first, then CEO turns typed into Codex in this workspace."""
     q = _norm(quote)
     if len(q) < MIN_QUOTE:
         return None
     for m in reversed(messages(state_store=state_store, now=now)):
+        if q in _norm(m.get("text")):
+            return m
+    for m in reversed(codex_messages(now=now)):
         if q in _norm(m.get("text")):
             return m
     return None
