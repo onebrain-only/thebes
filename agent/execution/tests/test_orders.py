@@ -116,6 +116,28 @@ class OrdersTests(unittest.TestCase):
         self.assertEqual(orders.recent(1)[0]["key"], "KAN-710")
         self.assertEqual(self.gate(CREATE)["hookSpecificOutput"]["permissionDecision"], "deny")
 
+    def test_a_ticket_supporting_existing_work_needs_no_order_d046(self):
+        self.assertIsNone(self.gate(CREATE, issueTypeName="Task", summary="Fix the card",
+                                    parent="KAN-688"))
+        self.assertEqual(orders.recent(1)[0]["rule"], "supports-KAN-688")
+        self.assertIsNone(self.gate(CREATE, issueTypeName="Bug",
+                                    summary="KAN-689: series edit 400s on save"))
+        self.assertIsNone(self.gate(CREATE, issueTypeName="Task", summary="Fix the card",
+                                    additional_fields={"parent": {"key": "KAN-12"}}))
+        self.gate(CREATE, event="PostToolUse", summary="Fix", _response={"key": "KAN-711"})
+        self.assertEqual(orders.recent(1)[0]["rule"], "supports-KAN-12")
+        for args in ({"issueTypeName": "Epic", "summary": "Recurring games", "parent": "KAN-1"},
+                     {"issueTypeName": "Task", "summary": "A brand new idea nobody asked for"}):
+            self.assertEqual(self.gate(CREATE, **args)["hookSpecificOutput"]
+                             ["permissionDecision"], "deny", args)
+
+    def test_the_orchestrator_cannot_schedule_its_own_polling_d046(self):
+        for tool in ("CronCreate", "ScheduleWakeup"):
+            out = self.gate(tool, cron="* * * * *", prompt="check KAN-688")
+            self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "deny", tool)
+            self.assertIn("does not poll", out["hookSpecificOutput"]["permissionDecisionReason"])
+        self.assertIsNone(self.gate("CronCreate", sid=TEAM, cron="* * * * *", prompt="x"))
+
     def test_a_shell_create_issue_is_gated_like_the_tool(self):
         out = self.gate("Bash", command="python3 -c 'from agent.integrations.jira import J; "
                                         "J().create_issue(\"KAN\", \"x\", \"y\")'")
@@ -148,7 +170,7 @@ class OrdersTests(unittest.TestCase):
         out = ceo_prompt_hook.handle({"session_id": ORCH, "hook_event_name": "UserPromptSubmit",
                                       "prompt": "مين ماسك KAN-693؟"})
         ctx = out["hookSpecificOutput"]["additionalContext"]
-        for part in ("<thebes-facts", "RULE (D-044)", "TEAMS", "luxor", "OPEN CEO ORDERS",
+        for part in ("<thebes-facts", "RULE (D-044/D-046)", "TEAMS", "luxor", "OPEN CEO ORDERS",
                      "recorded as CEO message"):
             self.assertIn(part, ctx)
         self.assertEqual([m["text"] for m in orders.messages()], ["مين ماسك KAN-693؟"])

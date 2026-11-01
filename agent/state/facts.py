@@ -20,11 +20,13 @@ sys.path.insert(0, ROOT)
 from agent.state import store, teams                                  # noqa: E402
 
 RECENT_HOURS = 8
-RULE = ("RULE (D-044): every claim about who holds a ticket, what a team is doing, or a ticket's "
-        "state comes from THIS block or a command you run now — never from memory or an earlier "
-        "turn. If it is not here, say ما أعرفش and check. Creating tickets/Epics and merging into "
-        "Alpha need a CEO order lifted from his own words (python3 -m agent.execution.orders "
-        "grant); a PM ruling, a CPO ranking or your own earlier decision is not an order.")
+RULE = ("RULE (D-044/D-046): every claim about who holds a ticket, what a team is doing, or a "
+        "ticket's state comes from THIS block or a command you run now — never from memory or an "
+        "earlier turn. If it is not here, say ما أعرفش and check. Review-passed work merges into "
+        "Alpha on its own, and a ticket that supports existing work (parent or KAN key in its "
+        "summary) needs no order. Only an Epic or new scope nobody asked for needs a CEO order "
+        "lifted from his own words (python3 -m agent.execution.orders grant). Never poll: no "
+        "cron, no wakeup — the watchdog wakes you through the inbox.")
 
 
 def _epoch(stamp):
@@ -103,8 +105,9 @@ def _awaiting_merge(dispatches, now):
     the integration record and may already be on Alpha by another path."""
     since = now - 3 * 86400
     fresh, old = set(), set()
+    on_alpha = {r["jira_key"] for r in dispatches if r.get("jira_key") and r.get("integrated_at")}
     for r in dispatches:
-        if (r.get("jira_key") and not r.get("root_dispatch_id")
+        if (r.get("jira_key") and not r.get("root_dispatch_id") and r["jira_key"] not in on_alpha
                 and (r.get("verification") or {}).get("verdict") == "pass"
                 and not r.get("integrated_at") and not r.get("integration_dispatch_id")):
             stamp = r.get("verified_at") or r.get("outcome_at")
@@ -195,7 +198,7 @@ def build(now=None):
                     lambda: __import__("agent.execution.liveness", fromlist=["x"]).fact_rows(now))
     out += _section("FINISHED, last %dh (time ticket outcome by-team review Alpha):" % RECENT_HOURS,
                     lambda: _recent(dispatches, now))
-    out += _section("REVIEW PASSED, NOT ON ALPHA (merging waits for a CEO order):",
+    out += _section("REVIEW PASSED, NOT ON ALPHA (integrates on its own, D-046):",
                     lambda: _awaiting_merge(dispatches, now))
     out += _section("OPEN CEO ORDERS:", lambda: _orders(now))
     out += _section("RECENT ACTIONS (agent/state/runtime/action-ledger.jsonl):", _actions)

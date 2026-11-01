@@ -2,10 +2,15 @@
 
 Two acts need an explicit CEO order lifted with `python3 -m agent.execution.orders grant`:
 
-    create        a Jira ticket or Epic: the Atlassian createJiraIssue tool (any MCP server name),
-                  or a shell call into agent.integrations.jira's create_issue
+    create        an Epic, or a ticket that serves no existing one: the Atlassian createJiraIssue
+                  tool (any MCP server name), or a shell call into agent.integrations.jira's
+                  create_issue. D-046: a non-Epic whose parent or summary names the KAN ticket it
+                  supports goes through without an order, ledgered as `supports-KAN-N`.
     merge-alpha   a push to Alpha / alpha-ds. Allowed when a merge-alpha grant is open, or while an
-                  integration dispatch is open (integrate.dispatch_for already required the grant)
+                  integration dispatch is open (D-046: review-passed work integrates on its own)
+
+D-046 also refuses CronCreate / ScheduleWakeup from the orchestrator: it is woken by its inbox
+(the watchdog probes for free), never by a poll it schedules for itself.
 
 and the order records themselves (ceo-messages.jsonl, order-grants.json, action-ledger.jsonl) are
 written only by code: a Write/Edit to them, or a shell command that names them and is not a plain
@@ -29,6 +34,7 @@ SHELL_CREATE = re.compile(r"\bcreate_issue\s*\(")
 ALPHA_REFS = ("Alpha", "alpha-ds")
 READ_ONLY = re.compile(r"^\s*(cat|tail|head|grep|wc|jq|less)\b")
 KAN = re.compile(r"\bKAN-\d+\b")
+POLL_TOOLS = ("CronCreate", "ScheduleWakeup")
 
 
 def _order_files():
@@ -61,7 +67,23 @@ def pre(payload, seat, state_store, now=None):
     args = payload.get("tool_input") or {}
     sid = payload.get("session_id")
 
+    if tool in POLL_TOOLS and seat == "orchestrator":
+        orders.log("refused-poll", seat, sid=sid, rule="D-046", detail=tool,
+                   state_store=state_store, now=now)
+        return _deny("The orchestrator does not poll (D-046). The watchdog probes every team "
+                     "for free and wakes you through your inbox when something changes; with "
+                     "nothing in the inbox, stop and wait. Delete any cron you already made "
+                     "(CronList, CronDelete).")
+
     if CREATE_TOOL.match(tool) or (tool == "Bash" and SHELL_CREATE.search(args.get("command") or "")):
+        extra = (args.get("additional_fields") or {}).get("parent")
+        parent = args.get("parent") or (extra.get("key") if isinstance(extra, dict) else extra)
+        served = orders.supports(issue_type=args.get("issueTypeName"), parent=parent,
+                                 summary=args.get("summary") or "") if tool != "Bash" else None
+        if served:
+            orders.log("create-allowed", seat, sid=sid, rule="supports-%s" % served,
+                       detail=(args.get("summary") or "")[:200], state_store=state_store, now=now)
+            return None
         g = orders.consume("create", state_store=state_store, now=now)
         if g is None:
             orders.log("refused-create", seat, sid=sid, rule="D-044",
@@ -103,8 +125,9 @@ def post(payload, seat, state_store, now=None):
     if CREATE_TOOL.match(tool):
         keys = KAN.findall(text or "")
         args = payload.get("tool_input") or {}
+        last = (orders.recent(1, state_store=state_store) or [{}])[-1]
         orders.log("created", seat, key=keys[0] if keys else None, sid=payload.get("session_id"),
-                   order_ref=(orders.recent(1, state_store=state_store) or [{}])[-1].get("order_ref"),
+                   order_ref=last.get("order_ref"), rule=last.get("rule"),
                    detail=(args.get("issueTypeName") or "") + ": " + (args.get("summary") or ""),
                    state_store=state_store, now=now)
     elif tool == "Bash":

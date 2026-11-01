@@ -879,3 +879,33 @@ it. Now:
 - changed: `watchdog.serve`, `inbox.pending/collect/oldest_waiting`, `facts.build`,
   `orders.retired_orchestrator` and `record_message(retired=)`, `ceo_prompt_hook._retired`,
   `order_gate.retired`, `.claude/settings.json`, and `ORCHESTRATOR.md` §8–9.
+
+## D-046 — The order rule stops invented work, never needed work (refines D-044)
+
+**Date:** 2026-11-01 · **By:** CEO
+
+**Context.** D-044 made two acts wait for the CEO's verbatim order: creating any ticket, and
+merging into Alpha. The result was the opposite of its purpose. KAN-688 and KAN-689 passed review
+and sat for hours on `waiting-ceo-merge-order` while all seven teams were idle. Meanwhile the
+orchestrator ran its own one-minute cron, burning tokens on liveness checks with nothing to do.
+CEO: *"احنا كده بنقول له خليك غبي… مش هو ده ابدا الغرض"* and *"مفيش حاجة وكل التيمات واقفة وعمال
+بيبعت في لايفنس تشيك… ليه كده؟"*
+
+**Decision.**
+1. **Review-passed work integrates into Alpha automatically.** `integrate.ordered_items` lets
+   every verified item through, ledgered with rule `review-passed`. A direct push to Alpha outside
+   an integration dispatch still needs a `merge-alpha` grant.
+2. **A ticket that supports existing work needs no order.** That means a non-Epic whose parent
+   or blocker is a KAN key, or whose summary names the KAN ticket it serves (`orders.supports`).
+   It is ledgered as `supports-KAN-N`, and is enforced in both `order_gate.pre` and
+   `intake.create`. **An Epic, or new scope that serves no existing ticket, still needs the CEO's
+   verbatim order.**
+3. **The orchestrator never polls.** `order_gate` denies `CronCreate` and `ScheduleWakeup` to the
+   bound orchestrator, and the settings matcher now includes both. Waking comes only from the
+   inbox; the watchdog's liveness probe (D-045) costs no tokens.
+
+**Consequences:**
+- changed: `orders.supports`, `intake.create`, `integrate.ordered_items`, `order_gate.pre/post`,
+  the `facts` RULE and its awaiting-merge row (a key already integrated by another record is no
+  longer listed), `.claude/settings.json`, and `ORCHESTRATOR.md` §8;
+- tests: `test_orders`, `test_intake`, `test_integrate`.

@@ -98,10 +98,21 @@ class IntakeTests(unittest.TestCase):
         os.remove(orders.path("grants"))
         j = FakeJira()
         with self.assertRaises(intake.IntakeError) as ctx:
-            intake.create(GOOD, approval="PM ruling + CPO ranking already adopted", jira=j)
+            intake.create(GOOD.replace("BLOCKED BY: KAN-12\n", ""),
+                          approval="PM ruling + CPO ranking already adopted", jira=j)
         self.assertIn("CEO's explicit order", ctx.exception.problems[0])
         self.assertEqual(j.created, [])
         self.assertEqual(orders.recent(1)[0]["action"], "refused-create")
+
+    def test_a_ticket_blocking_existing_work_is_created_without_an_order_d046(self):
+        from agent.execution import orders
+        os.remove(orders.path("grants"))
+        j = FakeJira()
+        out = intake.create(GOOD, approval="found while building KAN-12", jira=j)
+        self.assertEqual(out["status"], "created")
+        line = orders.recent(1)[0]
+        self.assertEqual((line["action"], line["rule"], line.get("order_ref")),
+                         ("created", "supports-KAN-12", None))
 
     def test_a_good_work_ticket_lands_in_backlog_with_its_labels_component_and_estimate(self):
         j = FakeJira()

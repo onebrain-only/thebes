@@ -415,16 +415,11 @@ def brief(group):
 
 
 def ordered_items(items, state_store=store, now=None):
-    """(allowed, unordered keys) — D-044: merging into Alpha needs the CEO's order for each
-    ticket. A branch merges at its latest verified commit, which carries every earlier ticket on
-    it, so a branch goes only when the order covers ALL of its tickets in this batch."""
-    covered = {i["key"] for i in items
-               if orders.covering("merge-alpha", i["key"], state_store=state_store, now=now)}
-    blocked_branches = {(i["branch"], i["sha"]) for i in items if i["key"] not in covered}
-    allowed = [i for i in items if (i["branch"], i["sha"]) not in blocked_branches]
-    unordered = sorted({i["key"] for i in items if (i["branch"], i["sha"]) in blocked_branches},
-                       key=lambda k: int(k.split("-")[1]) if k.split("-")[-1].isdigit() else 0)
-    return allowed, unordered
+    """(allowed, unordered keys). D-046 replaced D-044's per-ticket CEO order: every item here
+    already passed its review (pending() keeps only verdict == pass), and holding reviewed work
+    for a reply the CEO never needed to give stalled the company for hours. So all of it goes;
+    `unordered` stays in the signature for callers and is always empty."""
+    return list(items), []
 
 
 def dispatch_for(state_store=store, jira=None, dispatch=None, runner=None, settings_files=None):
@@ -491,7 +486,7 @@ def dispatch_for(state_store=store, jira=None, dispatch=None, runner=None, setti
             refs.add(g["id"] if g else None)
         orders.log("integration-dispatched", "ready-dispatcher",
                    keys=[i["key"] for i in group["items"]],
-                   order_ref=",".join(sorted(r for r in refs if r)) or None,
+                   order_ref=",".join(sorted(r for r in refs if r)) or None, rule="review-passed",
                    detail="%s -> %s via %s" % (base, executor[:8], lane), state_store=state_store)
         busy.add(executor)
         done.append({"integrate": base, "action": "dispatched", "dispatch_id": did, "lane": lane,

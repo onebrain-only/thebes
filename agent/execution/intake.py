@@ -169,22 +169,29 @@ def create(text, *, approval, force_new=False, jira=None, by="desk"):
                            "if this is really different" % (d["key"], d["summary"], d["status"])
                            for d in dup])
     from agent.execution import orders
-    try:
-        order = orders.require("create")
-    except orders.OrderRefused as exc:
-        orders.log("refused-create", by, rule="D-044", detail=t["summary"])
-        raise IntakeError([str(exc)])
-    approval = order["quote"]
+    served = orders.supports(parent=t["parent"], refs=t["blocked_by"], summary=t["summary"])
+    order = None
+    if served is None:
+        try:
+            order = orders.require("create")
+        except orders.OrderRefused as exc:
+            orders.log("refused-create", by, rule="D-044", detail=t["summary"])
+            raise IntakeError([str(exc)])
+        approval = order["quote"]
+    else:
+        approval = "supports %s (D-046): %s" % (served, approval.strip())
     labels = ["intake", "cap:%s" % t["capability"]] + (["ask"] if t["type"] == "ask" else [])
     key = jira.create_issue(PROJECT, t["summary"], body, labels=labels,
                             components=[t["component"]] if t["component"] else None,
                             original_estimate_seconds=t["estimate"], parent=t["parent"])
     try:
-        jira.add_comment(key, "Created by the desk at the CEO's go: \u201c%s\u201d"
+        jira.add_comment(key, ("Created by the desk at the CEO's go: \u201c%s\u201d" if order else
+                               "Created by the desk to support existing work \u2014 %s")
                          % approval.strip()[:300])
     except Exception:                                      # noqa: BLE001  never blocks
         pass
-    orders.log("created", by, key=key, order_ref=order["id"], detail=t["summary"])
+    orders.log("created", by, key=key, order_ref=order["id"] if order else None,
+               rule=None if order else "supports-%s" % served, detail=t["summary"])
     links = []
     for blocker in t["blocked_by"]:
         jira.link_issues_verified(blocker, key)

@@ -11,8 +11,11 @@ Three append-only records, local to this workspace (runtime is gitignored):
                          ticket, and the order or the rule that allowed it.
 
 A grant is accepted only when its quote is a literal part of a CEO message from the last
-MESSAGE_WINDOW. Creating a Jira issue (agent/scripts/order_gate.py, intake.create) and merging
-into Alpha (integrate.dispatch_for, a direct push) need an open grant; nothing else does.
+MESSAGE_WINDOW. D-046 narrowed what needs one: an Epic, or a ticket that serves no existing ticket
+(new scope), needs an open `create` grant; a ticket that SUPPORTS existing work — a child of a KAN
+ticket, or one naming the KAN ticket it serves in its summary or blockers — is created without
+one and ledgered as `supports-KAN-N` (supports()). Merging review-passed work into Alpha needs no
+grant at all (integrate.ordered_items); a direct push outside an integration dispatch still does.
 
     python3 -m agent.execution.orders grant --what create --quote "<CEO words>" [--count 3]
     python3 -m agent.execution.orders grant --what merge-alpha --quote "<CEO words>" --keys KAN-1,KAN-2
@@ -252,6 +255,22 @@ def refusal(what, key=None):
             "--what %s --quote \"<his words>\"%s. If he did not, do not do it and do not ask him "
             "to approve it: propose it in one line and carry on with ordered work."
             % (act, what, " --keys %s" % (key or "KAN-N") if what == "merge-alpha" else ""))
+
+
+SUPPORT_REF = re.compile(r"\bKAN-\d+\b")
+
+
+def supports(*, issue_type=None, parent=None, refs=(), summary=""):
+    """D-046: the KAN key this new ticket serves, or None when it is new scope. An Epic is always
+    new scope. Otherwise the parent wins, then a blocker, then a key named in the summary — the
+    work it unblocks or fixes. None means the CEO's `create` order is still required."""
+    if (issue_type or "").strip().lower() == "epic":
+        return None
+    for k in [parent] + list(refs or ()):
+        if isinstance(k, str) and KEY.match(k.strip()):
+            return k.strip()
+    hit = SUPPORT_REF.search(summary or "")
+    return hit.group(0) if hit else None
 
 
 # ------------------------------------------------------------------ action ledger

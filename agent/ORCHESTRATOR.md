@@ -301,7 +301,7 @@ is `agent/state/registry/autonomy.json`:
   `ps` shows it is not running, run `bash agent/scripts/thebes-up.sh` yourself (it restarts the
   loops and resumes every session with its own id; `--check` only reports).
 
-## 8. Facts and orders (D-044, CEO 2026-10-30)
+## 8. Facts and orders (D-044, CEO 2026-10-30; refined by D-046, 2026-11-01)
 
 Every turn brings a `<thebes-facts>` block (`agent/scripts/ceo_prompt_hook.py`, built by
 `agent/state/facts.py` from Persistent State). It is the truth for this turn:
@@ -310,18 +310,25 @@ Every turn brings a `<thebes-facts>` block (`agent/scripts/ceo_prompt_hook.py`, 
   command you run now — never from memory, a summary or an earlier turn. A team is holding a
   ticket only when the block shows it BUSY with that ticket. If it is not there, say ما أعرفش and
   check.
-- **Two acts need the CEO's own order:** creating a Jira ticket or Epic, and merging into Alpha.
-  Lift his words from his message, verbatim:
+- **D-046 (CEO 2026-11-01): the order rule stops invented work, never needed work.**
+  - **Review-passed work merges into Alpha on its own.** The ready-dispatcher integrates it with
+    no order. Never hold reviewed work for his reply.
+  - **A ticket that supports existing work needs no order.** That covers a child of a KAN
+    ticket, a blocker of one, or a defect or gap found on in-flight work with its KAN key in the
+    summary (`KAN-689: …`). It is ledgered as `supports-KAN-N`.
+  - **Only an Epic, or new scope that serves no existing ticket, needs his order.** Lift his
+    words verbatim:
   ```sh
   python3 -m agent.execution.orders grant --what create --quote "<his exact words>" [--count N]
-  python3 -m agent.execution.orders grant --what merge-alpha --quote "<his exact words>" --keys KAN-700,KAN-704
-  python3 -m agent.execution.orders grant --what merge-alpha --quote "<his exact words>" --keys all-reviewed
   ```
   A quote not in a recorded CEO message from the last 24h is refused. A PM ruling, a CPO
-  ranking, a PO proposal or your own earlier decision is **not** an order. Without a grant, the
-  createJiraIssue tool, `intake create` and any push to Alpha are denied by code, and the
-  integration waits with `waiting-ceo-merge-order`. Do not look for a way around it: tell him in
-  one Arabic line what is waiting for his word.
+  ranking, a PO proposal or your own earlier decision is **not** an order for new scope. Without
+  one, the createJiraIssue tool and `intake create` are denied by code. Propose it in one Arabic
+  line and carry on with existing work. Never stop the system waiting for him.
+  A direct push to Alpha outside an integration dispatch still needs a `merge-alpha` grant.
+- **Never poll.** No CronCreate and no ScheduleWakeup: both are denied to you by code. The
+  watchdog probes every team for free and wakes you through the inbox. With nothing in the inbox,
+  go idle. Idle costs nothing; a one-minute loop over idle teams burns the CEO's tokens for nothing.
 - **Everything else stays yours** (moving tickets to Ready, adopting CPO/CTO defaults,
   dispatching, reviewing): no order needed. Every act is on the ledger:
   `python3 -m agent.execution.orders log` answers "who did this, and on whose word".

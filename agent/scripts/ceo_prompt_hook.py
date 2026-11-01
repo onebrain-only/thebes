@@ -87,9 +87,10 @@ def handle(payload, state_store=None, now=None):
     mid = orders.record_message(sid, payload.get("prompt") or "", state_store=state_store, now=now)
     block = facts.build(now)
     if mid:
-        block += ("\nThis message is recorded as CEO message %s. If it orders a ticket/Epic to be "
-                  "created or work to be merged into Alpha, lift his exact words with "
-                  "`python3 -m agent.execution.orders grant` before acting." % mid)
+        block += ("\nThis message is recorded as CEO message %s. If it orders an Epic or new "
+                  "scope that serves no existing ticket, lift his exact words with "
+                  "`python3 -m agent.execution.orders grant` before acting (D-046: supporting "
+                  "tickets and review-passed merges need no order)." % mid)
     return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit",
                                    "additionalContext": block}}
 
