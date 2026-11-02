@@ -993,3 +993,21 @@ often held fewer tickets than there were free teams.
 `REVIEWER.md`, `roles/pm.md`; tests `test_ready_dispatcher`, `test_review_fast_path`,
 `test_review_tier`. The loop breaker and batched integration already existed; the review skip
 already happened before any claim, so the measured "40% waste" was bookkeeping only.
+
+## D-050 — One live session per team; same-named leftovers are retired
+
+**Date:** 2026-11-02 · **By:** CEO (approved plan; asked "why there is many teams in same name")
+
+**Context.** `claude agents` showed karnak four times, edfu three and memphis twice. Each team
+has one bound session and only that one receives work. The rest were leftovers:
+`start-teams.sh --restart` and the old orchestrator rotation left old copies alive, a resume that
+reaches a still-running session creates a copy (`claude_cli.wait_stopped`), and `start-teams.sh`
+found the new session by name and could bind an older copy while the new one stayed orphaned.
+
+**Decision.** `team_pool.sweep_duplicates` runs inside the 5-minute liveness sweep. Any
+`thebes-team-*`, `thebes-orchestrator` or `conversation-dispatch-*` session that is not bound,
+not targeted by an open dispatch and not the origin of one is retired. A live one is stopped,
+which can be undone with `--resume`. One that exited more than 6 hours ago is removed with
+`claude rm`, after its transcript is copied to `agent/state/runtime/session-archive/`. The
+discard and force flags are never passed, so the CLI refuses on unpushed work. `start-teams.sh`
+binds the session that was not there before it ran, then sweeps that team's copies.

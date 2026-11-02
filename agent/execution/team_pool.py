@@ -16,11 +16,15 @@ reserve on another team's behalf, and a seat session cannot reserve at all.
     python3 -m agent.execution.team_pool release <seat> --dispatch <cdispatch-id>
     python3 -m agent.execution.team_pool free [--capability frontend]
     python3 -m agent.execution.team_pool status
+    python3 -m agent.execution.team_pool sweep-duplicates [--dry-run] [team]
 """
 import argparse
+import glob
 import json
 import os
+import shutil
 import sys
+import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
@@ -142,6 +146,101 @@ def direct_seats(state_store=store):
     return sorted(out, key=lambda r: r["seat_id"])
 
 
+# ---------------------------------------------------------------- duplicates (D-050)
+#
+# Restarts, rotations and resume copies leave old sessions under the same
+# `thebes-team-<id>` name. Only the BOUND session ever receives work; the rest are
+# leftovers. Live ones are stopped (reversible: --resume brings them back); exited
+# ones older than RM_AFTER are removed after their transcript is archived.
+
+SESSION_PREFIXES = ("thebes-team-", "thebes-orchestrator", "conversation-dispatch-")
+LIVE_STATES = ("working", "blocked", "idle", "busy")
+RM_AFTER = 6 * 3600
+ARCHIVE = os.path.join(ROOT, "agent", "state", "runtime", "session-archive")
+
+
+def _protected_sids(state_store):
+    """Every sid that is bound to a seat or that an open dispatch targets or reports to."""
+    out = {r.get("session_id") for r in state_store.read_all("role_session")
+           if r.get("status") == "active"}
+    for r in state_store.read_all("conversation_dispatch"):
+        if r.get("status") in store.CONVERSATION_DISPATCH_OPEN:
+            out.add(r.get("target_session_id"))
+            origin = r.get("origin_thread_id") or ""
+            if origin.startswith("claude:"):
+                out.add(origin.split(":", 1)[1])
+    out.discard(None)
+    return out
+
+
+def _team_of(name):
+    if name == "thebes-orchestrator":
+        return teams.ORCHESTRATOR_ID
+    if name.startswith("conversation-dispatch-"):
+        return "dispatch-copy"                            # a resume copy; never a bound session
+    return name[len("thebes-team-"):]
+
+
+def duplicates(rows, *, state_store=store, team=None, now=None):
+    """Same-named thebes sessions that are not the bound one and nothing depends on."""
+    now = now or time.time()
+    protected = _protected_sids(state_store)
+    out = []
+    for r in rows:
+        name, sid = r.get("name") or "", r.get("sessionId")
+        if not sid or not name.startswith(SESSION_PREFIXES) or sid in protected:
+            continue
+        tid = _team_of(name)
+        if team and tid != team:
+            continue
+        started = (r.get("startedAt") or 0) / 1000.0
+        live = r.get("state") in LIVE_STATES
+        if not live and now - started < RM_AFTER:
+            continue
+        out.append({"team": tid, "session_id": sid, "id": r.get("id") or sid[:8],
+                    "state": r.get("state"), "action": "stop" if live else "rm"})
+    return out
+
+
+def _archive(sid, projects=None):
+    root = projects or os.path.expanduser("~/.claude/projects")
+    os.makedirs(ARCHIVE, exist_ok=True)
+    copied = 0
+    for f in glob.glob(os.path.join(root, "*", "%s.jsonl" % sid)):
+        shutil.copy2(f, os.path.join(ARCHIVE, os.path.basename(f)))
+        copied += 1
+    return copied
+
+
+def sweep_duplicates(*, state_store=store, cli=None, team=None, dry_run=False, now=None,
+                     projects=None):
+    from agent.execution.claude_cli import ClaudeCli, ClaudeCliError
+    from agent.execution import orders
+    cli = cli or ClaudeCli()
+    found = duplicates(cli.agents(include_completed=True), state_store=state_store,
+                       team=team, now=now)
+    if dry_run:
+        return found
+    for d in found:
+        try:
+            if d["action"] == "stop":
+                cli.stop(d["id"])
+            else:
+                _archive(d["session_id"], projects)
+                cli.rm(d["id"])
+            d["result"] = "done"
+        except (ClaudeCliError, OSError) as exc:
+            d["result"] = "refused"
+            d["error"] = str(exc)[:200]
+        try:
+            orders.log("retired-duplicate-session", "orchestrator", sid=d["session_id"], state_store=state_store,
+                       rule="D-050", detail="%s %s %s: %s" % (d["team"], d["action"], d["state"],
+                                                              d["result"]))
+        except Exception:                                 # noqa: BLE001  the log never blocks cleanup
+            pass
+    return found
+
+
 def status(state_store=store):
     return {"teams": team_bindings(state_store),
             "orchestrator": orchestrator_binding(state_store),
@@ -158,12 +257,17 @@ def main(argv=None):
     l = sub.add_parser("release"); l.add_argument("seat_id"); l.add_argument("--dispatch", required=True)
     f = sub.add_parser("free"); f.add_argument("--capability", default=None)
     sub.add_parser("status")
+    d = sub.add_parser("sweep-duplicates")
+    d.add_argument("team", nargs="?", default=None)
+    d.add_argument("--dry-run", action="store_true")
     ns = ap.parse_args(argv)
     try:
         if ns.cmd == "reserve":
             out = reserve(ns.seat_id, ns.dispatch)
         elif ns.cmd == "release":
             out = release(ns.seat_id, ns.dispatch)
+        elif ns.cmd == "sweep-duplicates":
+            out = sweep_duplicates(team=ns.team, dry_run=ns.dry_run)
         elif ns.cmd == "free":
             out = {"free_seats": free_seats(ns.capability), "free_teams": free_teams()}
         else:

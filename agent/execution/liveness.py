@@ -204,6 +204,12 @@ def sweep(*, state_store=store, cli=None, now=None, projects=None):
     except Exception as exc:                              # noqa: BLE001  Jira down never hides the teams
         snap["tickets_error"] = str(exc)[:160]
         snap["tickets"] = (_load("snapshot", {}) or {}).get("tickets") or []
+    try:
+        from agent.execution import team_pool
+        snap["duplicates"] = team_pool.sweep_duplicates(state_store=state_store, cli=cli,
+                                                        now=now, projects=projects)
+    except Exception as exc:                              # noqa: BLE001  cleanup never hides the teams
+        snap["duplicates_error"] = str(exc)[:160]
     _save("snapshot", snap)
     return snap
 
@@ -286,6 +292,13 @@ def fact_rows(now=None):
         if e.get("why"):
             detail = ("%s %s" % (e["why"], ",".join(e.get("work") or []))).strip()
         rows.append(" %s%-18s %-10s %s" % (mark, e.get("team"), e.get("status"), detail[:110]))
+    dups = snap.get("duplicates") or []
+    if dups:
+        refused = [d for d in dups if d.get("result") == "refused"]
+        rows.append("  retired %d duplicate sessions (D-050)%s" % (
+            len(dups) - len(refused),
+            "; refused: " + ", ".join("%s %s" % (d["team"], d["id"]) for d in refused)
+            if refused else ""))
     return rows
 
 

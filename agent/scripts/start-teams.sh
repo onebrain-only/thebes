@@ -58,12 +58,17 @@ while read -r tid lane old_sid old_rev display; do
   else
     role="a Thebes code team, an execution island that runs seats as subagents; you push only your own branch, never merge into Alpha, Canary or main, and never write to the database"
   fi
+  # D-050: the new session is the one that was NOT there before, not the first row by name.
+  before=$(claude agents --json --all 2>/dev/null | python3 -c "
+import json,sys
+print(' '.join(r.get('sessionId','') for r in json.load(sys.stdin)))" 2>/dev/null)
   claude --bg --name "$name" --model "$MODEL" --effort "$EFFORT" --settings agent/state/registry/team-settings.json "You are Thebes team $display, $role. Read CLAUDE.md and agent/skills/route-to-seat/SKILL.md. Do nothing now. Reply with one line: $(echo "$display" | tr a-z A-Z) READY, then go idle. Later a THEBES_CONVERSATION_DISPATCH envelope will arrive as a user turn; follow its team, lane and report instructions exactly." >/dev/null
   sid=""
   for _ in $(seq 1 30); do
     sid=$(claude agents --json 2>/dev/null | python3 -c "
 import json,sys
-rows=[r for r in json.load(sys.stdin) if r.get('name')=='$name' and r.get('sessionId')!='$old_sid']
+before=set('$before'.split())
+rows=[r for r in json.load(sys.stdin) if r.get('name')=='$name' and r.get('sessionId') not in before]
 print(rows[0]['sessionId'] if rows else '')" 2>/dev/null)
     [ -n "$sid" ] && break
     sleep 2
@@ -78,6 +83,8 @@ store.bind_role_session(tid, "claude", sid, home, "ceo", session_name=name,
                         expected_revision=None if old_rev == "-" else int(old_rev))
 print("  bound %s -> %s" % (tid, sid))
 EOF
+  python3 -m agent.execution.team_pool sweep-duplicates "$tid" >/dev/null \
+    && echo "  retired old $name copies"
 done <<< "$unbound"
 
 echo; python3 -m agent.execution.team_pool free

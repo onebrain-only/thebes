@@ -100,6 +100,15 @@ class ClaudeCli:
                                  % (short_id, (completed.stderr or completed.stdout or "").strip()))
         return (completed.stdout or "").strip()
 
+    def rm(self, short_id):
+        """Delete an exited background session. Never passes --discard-unpushed or
+        --force-remove-worktree: a worktree holding unpushed work makes the CLI refuse."""
+        completed = self._exec(["rm", short_id])
+        if completed.returncode:
+            raise ClaudeCliError("claude rm %s refused: %s"
+                                 % (short_id, (completed.stderr or completed.stdout or "").strip()))
+        return (completed.stdout or "").strip()
+
     def wait_stopped(self, session_id, timeout_seconds, sleep=time.sleep, pid=None,
                      pid_alive=None):
         """Bounded wait for the SID to leave the live list AND its process to
