@@ -934,3 +934,26 @@ ticket that fell back into a working column was never picked up again.
 tests `test_orphans`, `test_ready_dispatcher`. Not done: a ticket reviewed but not merged to Alpha
 (branch missing on origin) is not yet an orphan state, and a dispatch discarded while the work is
 on Alpha does not yet close its ticket; both wait for the CEO's go-ahead.
+
+
+## D-048 — One orchestrator conversation, never rotated (supersedes D-044's rotation)
+
+**Date:** 2026-11-02 · **By:** CEO ("موافق")
+
+**Context.** D-044 rotation opened a fresh `thebes-orchestrator` conversation every new day and
+after 4 compactions. Every one carries the same name, so the CEO could not tell which was live. Typing into an old one
+restarted it: on 2026-11-02 three were running at once (b9b99f0a live; 4e79edf3 and f305ed4e
+retired but revived).
+
+**Decision.**
+1. Rotation is off (`watchdog.ROTATION_ENABLED = False`). The orchestrator stays in one
+   conversation. Compaction is safe because every CEO turn brings the fact block.
+2. A prompt typed into a retired orchestrator session is blocked before the model sees it
+   (`ceo_prompt_hook`, `decision: block`). The CEO gets one Arabic line, and his words are
+   recorded and raised as a `ceo_retired` inbox item for the live orchestrator, which wakes and
+   acts on them.
+3. The two revived sessions were stopped. `order_gate` already denies any acting tool to a retired
+   session.
+
+**Consequences:** changed `watchdog`, `ceo_prompt_hook`, `inbox`; `test_rotation` covers both.
+`rotate_orchestrator` stays in the code, unused, so the change can be reversed with one flag.

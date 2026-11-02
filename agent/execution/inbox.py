@@ -96,6 +96,8 @@ def oldest_waiting(session_id, *, state_store=store, now=None):
             if item["waited_min"] * 60 > best[0]:
                 best = (item["waited_min"] * 60, "liveness %s %s" % (item["team"], item["status"]))
             continue
+        elif kind == "ceo_retired":
+            stamp = item["at"]
         elif kind == "orphan":
             continue                       # raised once per rescue count; not a stalled listener
         elif kind == "not_live":
@@ -258,6 +260,15 @@ def pending(session_id, *, state_store=store, now=None):
         from agent.execution import liveness
         out.extend(liveness.inbox_items(now))
         out.extend(liveness.orphan_items())
+        from agent.execution import orders
+        seen = set(liveness._load("collected", []))
+        for m in orders.messages(state_store=state_store, now=now,
+                                 since=(now or time.time()) - 6 * 3600):
+            if m.get("retired_session") and "retired:%s" % m["id"] not in seen:
+                out.append({"kind": "ceo_retired", "key": "retired:%s" % m["id"], "message_id": m["id"],
+                            "at": m["at"], "text": m["text"],
+                            "how": ("The CEO typed this into a retired orchestrator session; it never "
+                                    "reached you. Treat it exactly as if he had typed it here now.")})
     except Exception:                                       # noqa: BLE001  never blocks the inbox
         pass
     for req in requests:
@@ -304,7 +315,7 @@ def collect(session_id, *, state_store=store, now=None):
                 review_queue.mark_collected(item["question_id"])
                 taken.append(item)
                 continue
-            if item["kind"] in ("liveness", "orphan"):
+            if item["kind"] in ("liveness", "orphan", "ceo_retired"):
                 from agent.execution import liveness
                 liveness.mark_collected(item["key"])
                 taken.append(item)

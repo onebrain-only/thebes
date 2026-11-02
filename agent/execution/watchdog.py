@@ -418,9 +418,12 @@ def rotate_orchestrator(*, state_store=store, cli=None, now=None, launch=None, s
 
 
 ROTATE_CHECK_EVERY = 300
+ROTATION_ENABLED = False       # D-048, CEO 2026-11-02: ONE orchestrator conversation, never rotated
 
 
 def maybe_rotate(*, state_store=store, now=None):
+    if not ROTATION_ENABLED:
+        return []
     now = now or time.time()
     marker = os.path.join(state_store.RUNTIME, "compaction", "rotation-checked")
     try:

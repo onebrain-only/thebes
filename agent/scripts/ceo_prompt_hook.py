@@ -8,7 +8,8 @@ from other sessions are not recorded (orders.NOT_CEO) but still get the fact blo
 PreCompact: counts compactions of the orchestrator (runtime/compaction/orchestrator-count) so the
 watchdog can rotate it to a fresh session (watchdog.rotate_orchestrator).
 
-Any other session, or any failure: silent exit 0. This hook never blocks a prompt.
+A retired orchestrator session: the CEO's words are kept for the live one and the prompt is
+blocked with one Arabic line (D-048). Any other session, or any failure: silent exit 0.
 """
 import json
 import os
@@ -52,6 +53,10 @@ RETIRED = ("THIS SESSION IS RETIRED (D-044 rotation). The live orchestrator is %
            "كمّل الكلام معاه في جلسة thebes-orchestrator (%s).")
 
 
+RETIRED_TO_CEO = ("المحادثة دي قديمة ومقفولة، ورسالتك اتبعتت للأوركستريتور الشغال (%s) وهو هيتصرف فيها. "
+                  "الأوركستريتور واحد بس ومش بيتغير (D-048).")
+
+
 def _retired(payload, sid, state_store, now):
     """The CEO typed into an orchestrator session that was rotated away: keep his words for the
     live one, and tell this session to stand down."""
@@ -63,8 +68,8 @@ def _retired(payload, sid, state_store, now):
                                 now=now, retired=True)
     if not mid:
         return None
-    return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit",
-                                   "additionalContext": RETIRED % (live[:8], mid, live[:8])}}
+    # D-048: the prompt never reaches the retired model, so a retired session runs no turn at all.
+    return {"decision": "block", "reason": RETIRED_TO_CEO % live[:8]}
 
 
 def handle(payload, state_store=None, now=None):

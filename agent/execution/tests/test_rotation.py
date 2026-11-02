@@ -128,14 +128,20 @@ class RotationTests(unittest.TestCase):
                                 expected_revision=store.active_role_session("orchestrator")["revision"])
         out = ceo_prompt_hook.handle({"session_id": OLD, "hook_event_name": "UserPromptSubmit",
                                       "prompt": "ادمج KAN-703"}, now=self.now)
-        ctx = out["hookSpecificOutput"]["additionalContext"]
-        self.assertIn("RETIRED", ctx)
-        self.assertIn(NEW[:8], ctx)
+        self.assertEqual(out["decision"], "block")          # D-048: the retired model runs no turn
+        self.assertIn(NEW[:8], out["reason"])
         msg = orders.messages(now=self.now)[-1]
         self.assertEqual((msg["text"], msg["retired_session"]), ("ادمج KAN-703", True))
         self.assertEqual(orders.find_quote("ادمج KAN-703", now=self.now)["id"], msg["id"])
         from agent.state import facts
         self.assertIn("ادمج KAN-703", facts.build(self.now))
+        from agent.execution import inbox
+        items = [i for i in inbox.pending(NEW, now=self.now) if i["kind"] == "ceo_retired"]
+        self.assertEqual([i["text"] for i in items], ["ادمج KAN-703"])
+
+    def test_rotation_is_off_one_orchestrator_conversation(self):
+        """D-048: the watchdog never opens a new orchestrator conversation."""
+        self.assertEqual(watchdog.maybe_rotate(now=self.now), [])
 
     def test_a_retired_session_may_read_but_not_act(self):
         store.bind_role_session("orchestrator", "claude", NEW, "/tmp", "ceo",
