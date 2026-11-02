@@ -282,6 +282,17 @@ def mark_integrated(dispatch_id, base, sha, evidence, *, state_store=store, runn
             "base": target["base"], "sha": sha}
 
 
+def stack_wait(rec, roots):
+    """D-049: a ticket stacked on another ticket's checked commit carries that commit. It may reach
+    its base only once that ticket passed review too (its root is in `roots`, the verdict-pass
+    roots) — integrated already or riding in the same batch. Returns the key it waits for."""
+    passed = {r.get("jira_key") for r in roots if r.get("integrated_at") != "discarded"}
+    for s in rec.get("stacked_on") or ():
+        if s.get("key") and s["key"] not in passed:
+            return s["key"]
+    return None
+
+
 def pending(state_store=store, runner=None, skipped=None):
     """Verified, pushed, not-yet-integrated work, grouped by base. Never raises.
 
@@ -335,6 +346,11 @@ def pending(state_store=store, runner=None, skipped=None):
             cur = state_store.read("conversation_dispatch", rec["dispatch_id"])
             state_store.update("conversation_dispatch", cur["dispatch_id"], cur["revision"],
                                {"integrated_at": state_store.now(), "integrated_sha": latest[lkey]})
+            continue
+        held = stack_wait(rec, roots)
+        if held:
+            _skipped(skipped, state_store, "stacked on %s: not reviewed yet" % held,
+                     rec.get("jira_key"))
             continue
         groups.setdefault(target["base"], {"target": target, "items": []})["items"].append(
             {"dispatch_id": rec["dispatch_id"], "key": rec["jira_key"], "branch": branch,

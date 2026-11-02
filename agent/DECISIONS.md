@@ -957,3 +957,39 @@ retired but revived).
 
 **Consequences:** changed `watchdog`, `ceo_prompt_hook`, `inbox`; `test_rotation` covers both.
 `rotate_orchestrator` stays in the code, unused, so the change can be reversed with one flag.
+
+
+## D-049 — A ticket every 10 minutes: work runs in parallel, review only where an eye is needed
+
+**Date:** 2026-11-02 · **By:** CEO ("I agree all your recommendations"; "I want work to be a
+parallel even on same epic")
+
+**Context.** The bottleneck was process, not coding. Dependent tickets waited for their blocker to
+reach Alpha, tickets in one Epic were chained by Blocks links that were only ordering, every
+change waited for a reviewer, a screen review covered two languages and two themes, and Ready
+often held fewer tickets than there were free teams.
+
+**Decision.**
+1. Finished = on Alpha and Done in Jira. Target: 6 tickets an hour across teams, ~50 minutes of
+   work at most per ticket.
+2. **Stacking.** A ticket whose Blocks-inward blocker has a checked commit (verdict `pass` or
+   `needs_judge`, not yet integrated) is no longer waiting: the brief tells the team to merge that
+   exact sha, and `integrate.pending` holds the ticket until its blocker passed review
+   (`ready_dispatcher.stack_source`, `integrate.stack_wait`). The reviewer judges only the
+   commits that carry the item's own key.
+3. **Review tiers.** Tier 1 (no screen, nothing sensitive, paths known) passes by itself on green
+   analyze and tests (`review_queue.auto_pass_tier1`, reviewer `thebes-tier1-auto`). Tier 2 is one
+   language and theme, AR+Dark when user-facing text changed. Tier 3 (money, sign-in, database) is
+   unchanged.
+4. **Ready target.** Ready holds at least 10 startable tickets. Below that the PM gets
+   `ready-below-target`, every 15 minutes, whatever the Backlog, and cuts Epics the CEO already
+   approved. New scope still needs his order. Ready tickets waiting on blockers raise
+   `serial-chain`: the PM keeps a Blocks link only for a real code or data dependency; same Epic is
+   not one. One ticket = one screen or one function plus its test.
+5. Skills: official sources, plus community skills read in full; nothing that downloads or runs
+   npx at runtime. Flutter web only for now.
+
+**Consequences:** changed `ready_dispatcher`, `integrate`, `review_tier`, `review_queue`, `inbox`,
+`REVIEWER.md`, `roles/pm.md`; tests `test_ready_dispatcher`, `test_review_fast_path`,
+`test_review_tier`. The loop breaker and batched integration already existed; the review skip
+already happened before any claim, so the measured "40% waste" was bookkeeping only.

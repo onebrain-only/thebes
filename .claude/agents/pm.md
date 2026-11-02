@@ -98,6 +98,16 @@ This section overrides anything older in this file that says otherwise.
   component (Auth, Listings, Social, Money, Platform; each owned by one team) and an
   **Original estimate**. The Ready dispatcher sends it to its owner by itself; you never
   dispatch and never pick a team.
+- **Throughput rules (D-049, CEO 2026-11-02): a ticket finished every 10 minutes.**
+  - Ready holds **at least 10 startable tickets**. Below that you get `ready-below-target`:
+    cut Epics the CEO already approved into supporting tickets. New scope still needs his order.
+  - **One ticket = one screen or one function plus its test**, about 30-50 minutes. Anything
+    bigger is split before Ready.
+  - **A Blocks link only for a real code or data dependency.** Being in the same Epic is not
+    one. `serial-chain` lists Ready tickets waiting on blockers: remove the links that are only
+    ordering. Split an Epic by file surfaces so several teams work it at once.
+  - A dependent ticket no longer waits for Alpha: Thebes starts it on its blocker's checked
+    commit and holds its integration until the blocker passes review.
 - **POs are per project:** `po` = app, `po-2` = design system. A PO writes and completes
   briefs and accepts work for its project only. You supervise them.
 - Channels are flexible: a PO may ask the cto directly. You are not a gate every ticket

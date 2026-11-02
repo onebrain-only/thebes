@@ -81,30 +81,54 @@ def lane_of(issue, capability):
     return "code" if capability in CODE_CAPABILITIES else "ops"
 
 
-def _not_on_base(key, state_store):
-    """Malfunction #20/#26: a blocker is Done in Jira, but its verified work was never merged into
-    its base. A ticket that builds on it would start from a base without it."""
-    from agent.execution import integrate
+STACKABLE = ("pass", "needs_judge")   # D-049: analyze + tests passed; review may still be open
+
+
+def stack_source(key, state_store=store):
+    """D-049 (CEO 2026-11-02, "parallel even on the same epic"): the newest verified commit of
+    ticket `key` that is not on its base yet, as {key, branch, sha}, or None. `needs_judge` counts:
+    a dependent does not wait for the blocker's review, it builds on the blocker's exact sha."""
+    best = None
     for r in state_store.read_all("conversation_dispatch"):
         v = r.get("verification") or {}
-        if (r.get("jira_key") == key and not r.get("root_dispatch_id") and v.get("verdict") == "pass"
-                and v.get("branch") and integrate.base_for(v["branch"]) and not r.get("integrated_at")):
-            return True
-    return False
+        if (r.get("jira_key") == key and not r.get("root_dispatch_id")
+                and v.get("verdict") in STACKABLE and v.get("branch") and v.get("sha")
+                and not r.get("integrated_at")):
+            at = r.get("verified_at") or r.get("outcome_at") or ""
+            if best is None or at > best[0]:
+                best = (at, {"key": key, "branch": v["branch"], "sha": v["sha"]})
+    return best[1] if best else None
 
 
-def blockers(raw_links, jira, state_store=store):
-    """Keys of tickets that block this one: unfinished, or finished but not yet on their base."""
+def blockers(raw_links, jira, state_store=store, stacks=None):
+    """Keys of tickets that really block this one. Malfunction #20/#26 used to hold a dependent
+    until its blocker was on Alpha; D-049 replaces that: a blocker whose work passed its checks
+    (in review, Done, or verified but not merged) no longer blocks. It goes into `stacks` and the
+    dependent merges that sha first. Only a blocker with no checked commit still blocks."""
     out = []
     for link in raw_links or []:
         if (link.get("type") or {}).get("name") != "Blocks" or "inwardIssue" not in link:
             continue
         other = link["inwardIssue"]
         cat = (((other.get("fields") or {}).get("status") or {}).get("statusCategory") or {})
-        if cat.get("key") != "done":
+        src = stack_source(other.get("key"), state_store)
+        if src:
+            if stacks is not None:
+                stacks.append(src)
+        elif cat.get("key") != "done":
             out.append(other.get("key"))
-        elif _not_on_base(other.get("key"), state_store):
-            out.append("%s (not on its base yet)" % other.get("key"))
+    return out
+
+
+def stack_lines(stacks):
+    """The brief lines that make a dependent start from its blockers' checked commits."""
+    out = []
+    for s in stacks or ():
+        out.append("STACKED ON %(key)s (D-049): this ticket builds on %(key)s's commit, which passed "
+                   "its checks but is not on Alpha yet. Before you write anything, in your "
+                   "worktree: `git fetch origin %(branch)s && git merge --no-edit %(sha)s`. Do not "
+                   "rework %(key)s's code beyond what this ticket needs; Thebes holds this "
+                   "ticket's integration until %(key)s lands." % s)
     return out
 
 
@@ -169,7 +193,7 @@ def skills_line(issue):
     return "Skills to invoke by name (Skill tool): " + "; ".join(always) + "."
 
 
-def prompt_for(issue, team_id):
+def prompt_for(issue, team_id, stacks=()):
     body = fill_branch(issue.get("description") or "", team_id)
     return "\n".join([
         "Jira %s: %s" % (issue["key"], issue.get("summary") or ""),
@@ -177,6 +201,7 @@ def prompt_for(issue, team_id):
         "Source: the ticket description, dispatched by the Thebes Ready dispatcher (D-042).",
         "Every commit message starts with `%s:`." % issue["key"],
         skills_line(issue),
+        *stack_lines(stacks),
         "",
         body,
     ])
@@ -204,6 +229,11 @@ def _flag_brief(issue, problems, jira, comment=True):
 
 # ------------------------------------------------------------------ priority requests
 PRIORITY_MIN_SECONDS = 3600      # the PM re-plans at most hourly unless a brief is needed
+# D-049 (CEO 2026-11-02): at least READY_TARGET startable tickets in Ready, so a free team never
+# waits for a cut. These two are gauges, asked about every READY_ASK_SECONDS whatever the Backlog.
+READY_TARGET = 10
+READY_ASK_SECONDS = 900
+GAUGES = ("ready-below-target", "serial-chain")
 DONE_JQL = 'project = KAN AND status = "Done" ORDER BY updated DESC'
 # Epics are not executable: an open epic alone used to wake the PM forever (B2, KAN-494).
 BACKLOG_JQL = 'project = KAN AND status = "To Do" AND issuetype != Epic ORDER BY rank ASC'
@@ -235,6 +265,13 @@ def raise_priority_request(reasons, signature, *, state_store=store, now=None):
     now = now or time.time()
     reqs = sorted(state_store.read_all("priority_request"), key=lambda r: r.get("created_at") or "")
     open_req = next((r for r in reqs if r.get("status") == "open"), None)
+    # Gauges skip the Backlog rules below and keep their own clock (D-049).
+    asked = {g.get("kind"): max(_ts(r.get("created_at")), _ts(r.get("updated_at")))
+             for r in reqs for g in r.get("reasons") or () if g.get("kind") in GAUGES}
+    gauges = [r for r in reasons if r.get("kind") in GAUGES
+              and now - asked.get(r["kind"], 0) >= READY_ASK_SECONDS
+              and not (open_req and any(g.get("kind") == r["kind"] for g in open_req["reasons"]))]
+    reasons = [r for r in reasons if r.get("kind") not in GAUGES]
     last = reqs[-1] if reqs else None
     # created_at has one-second resolution: requests made in the same second are all "last"
     latest = {r.get("backlog_signature") for r in reqs
@@ -250,6 +287,7 @@ def raise_priority_request(reasons, signature, *, state_store=store, now=None):
         new_keys = sorted({k.split("@")[0] for k in signature.split("|") if k} - seen)
         reasons = [r for r in reasons if r.get("kind") == "needs-brief"] + (
             [{"kind": "new-in-backlog", "keys": new_keys}] if new_keys else [])
+    reasons += gauges
     if not reasons:
         return None
     if open_req:
@@ -323,7 +361,10 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None, liveness_tick
                 brief_reasons.append({"kind": "needs-brief", "key": key})
                 _label(jira, key, issue["labels"], BRIEF_REQUESTED)
             continue
-        waiting = blockers((issue_raw.get("fields") or {}).get("issuelinks"), jira, state_store)
+        stacks = []
+        waiting = blockers((issue_raw.get("fields") or {}).get("issuelinks"), jira, state_store,
+                           stacks)
+        issue["stacks"] = stacks
         if waiting:
             done.append({"key": key, "action": "waiting", "blocked_by": waiting})
             continue
@@ -381,7 +422,7 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None, liveness_tick
                     done.append({"key": key, "action": "waiting",
                                  "reason": "no-free-%s-team" % lane})
                 continue
-            text = prompt_for(issue, tid)
+            text = prompt_for(issue, tid, issue.get("stacks"))
             try:
                 dispatch_brief.lint(text, tid)
             except dispatch_brief.BriefError as exc:
@@ -397,6 +438,11 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None, liveness_tick
                              "error": str(exc)[:300]})
                 continue
             taken.add(key)
+            if issue.get("stacks") and out.get("dispatch_id"):
+                rec = state_store.read("conversation_dispatch", out["dispatch_id"])
+                if rec:
+                    state_store.update("conversation_dispatch", rec["dispatch_id"], rec["revision"],
+                                       {"stacked_on": issue["stacks"]})
             if lane == "code":
                 code_open += 1
             done.append({"key": key, "action": "dispatched", "team": tid,
@@ -526,6 +572,13 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None, liveness_tick
     except Exception as exc:                            # noqa: BLE001
         done.append({"action": "cloud-scan-failed", "error": str(exc)[:200]})
 
+    # D-049: tier-1 work (no screen, nothing sensitive, run checks green) passes by itself.
+    try:
+        from agent.execution import review_queue
+        done.extend(review_queue.auto_pass_tier1(state_store=state_store, jira=jira))
+    except Exception as exc:                            # noqa: BLE001
+        done.append({"action": "auto-pass-failed", "error": str(exc)[:200]})
+
     # A review waiting for the headless Codex reviewer wakes it (zero tokens until there is work).
     try:
         from agent.execution import review_queue
@@ -574,7 +627,15 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None, liveness_tick
             if ready_left < free_code:
                 reasons.append({"kind": "ready-short", "ready": ready_left,
                                 "free_code_teams": free_code})
-        req = None if (backlog_settling and not brief_reasons) else \
+        # D-049: keep Ready at READY_TARGET startable tickets, and break chains that are not real.
+        chained = sorted(d["key"] for d in done if d.get("action") == "waiting")
+        if ready_left < READY_TARGET:
+            reasons.append({"kind": "ready-below-target", "startable": ready_left,
+                            "target": READY_TARGET})
+            if len(chained) >= 2:
+                reasons.append({"kind": "serial-chain", "waiting": chained})
+        req = None if (backlog_settling and not brief_reasons
+                       and not any(r["kind"] in GAUGES for r in reasons)) else \
             raise_priority_request(reasons, signature, state_store=state_store, now=now)
         if req:
             done.append({"action": "priority-request",

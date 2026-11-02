@@ -258,6 +258,8 @@ def changed_paths(branch, sha, runner=None, key=None):
         try:
             from agent.execution import integrate
             t = integrate.target_for(branch or "", sha, runner)
+            if t is None and sha:        # a branch outside alpha-/canary- (KAN-710): the commit still names its repo
+                t = next((x for x in integrate._targets() if integrate.has_commit(x["repo"], sha, runner)), None)
             files = ticket_files(t["repo"], sha, key, runner) if (t and key) else None
             if not files and t:
                 files = integrate.changed_files(t["repo"], t["base"], sha, runner, fetch=False) or None
@@ -274,9 +276,41 @@ def needs_browser(branch, sha, runner=None, labels=(), key=None):
 
 def depth(branch, sha, labels=(), runner=None, key=None):
     """tier, platform and the screenshots a PASS needs (agent/execution/review_tier.py)."""
-    out = review_tier.describe(changed_paths(branch, sha, runner, key) if sha else None, labels)
+    paths = changed_paths(branch, sha, runner, key) if sha else None
+    out = review_tier.describe(paths, labels)
     out["needs_browser"] = out["tier"] >= 2
+    out["auto_pass"] = review_tier.auto_pass(paths, labels)   # actual paths decide, not the label
     return out
+
+
+AUTO_REVIEWER = "thebes-tier1-auto"
+
+
+def auto_pass_tier1(*, state_store=store, jira=None, items=None):
+    """D-049 (CEO 2026-11-02, Q3): a tier-1 judge item (no screen, nothing sensitive, run checks
+    green) is passed by Thebes itself instead of waiting for Codex or Edfu. Claimed first, so a
+    reviewer never holds the same item. Returns what it passed."""
+    from agent.execution import verify
+    done = []
+    for item in (judge_items(state_store) if items is None else items):
+        if not item.get("auto_pass") or is_done(item["item_id"]) or not item.get("sha"):
+            continue
+        if not claim(item["item_id"], meta={"ticket": item["ticket"], "tier": 1,
+                                             "by": AUTO_REVIEWER}):
+            continue
+        ids = [c["id"] for c in item.get("checks") or []]
+        note = ("tier-1 auto pass (D-049): no screen and nothing sensitive changed at %s; "
+                "analyze and tests were green" % item["sha"][:12])
+        try:
+            verify.judge_verdict(item["dispatch_id"], ids, [], state_store=state_store, jira=jira,
+                                 reviewer=AUTO_REVIEWER, notes={c: note for c in ids})
+        except Exception as exc:                            # noqa: BLE001  leave it to a reviewer
+            finish(item["item_id"], {"skipped": "auto-pass-failed: %s" % str(exc)[:200]})
+            done.append({"auto_pass": item["ticket"], "error": str(exc)[:200]})
+            continue
+        finish(item["item_id"], {"pass": sorted(ids), "by": AUTO_REVIEWER})
+        done.append({"auto_pass": item["ticket"], "checks": ids})
+    return done
 
 
 def is_headless_thread():
@@ -328,6 +362,7 @@ def judge_items(state_store=store):
                        for p in pending],
             **depth(ver.get("branch"), ver.get("sha"), key=rec["jira_key"],
                     labels=("tier:1",) if cd.NO_UI.search(brief or "") else ()),
+            "stacked_on": [x.get("key") for x in rec.get("stacked_on") or ()],
             "team_report": _text(rec.get("result_ref")),
             "brief": brief,
             "at": rec.get("outcome_at") or rec.get("created_at") or ""})

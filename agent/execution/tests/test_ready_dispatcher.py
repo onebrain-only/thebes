@@ -93,6 +93,8 @@ class ReadyDispatcherTests(unittest.TestCase):
         store.set_operating_mode("PRODUCT_EXECUTION", "ceo", "test")
         self.sent = []
         self.patches = [mock.patch.object(subprocess, n, _refuse) for n in ("run", "Popen")]
+        # The D-049 Ready gauge is off here; ReadyGaugeTests turns it on.
+        self.patches.append(mock.patch.object(rd, "READY_TARGET", 0))
         real = teams.read()
         self.lanes = dict((t, dict(e)) for t, e in real.items())
         self.patches.append(mock.patch.object(teams, "read", lambda path=None: self.lanes))
@@ -279,18 +281,44 @@ class ReadyDispatcherTests(unittest.TestCase):
         out = self.tick(j)
         self.assertEqual((out[0]["action"], out[0]["team"]), ("dispatched", "luxor"))
 
-    def test_a_done_blocker_that_is_not_on_its_base_still_blocks(self):
-        """Malfunction #20: KAN-465 started on an Alpha without KAN-464's work."""
-        link = {"type": {"name": "Blocks"}, "inwardIssue": {"key": "KAN-464", "fields": {
-            "status": {"statusCategory": {"key": "done"}}}}}
-        self.assertEqual(rd.blockers([link], None, store), [])           # nothing verified: free
+    def test_a_checked_blocker_stacks_instead_of_blocking(self):
+        """D-049 replaces malfunction #20's wait: a blocker whose commit passed its checks (in
+        review or verified, not on Alpha yet) no longer blocks; the dependent merges that sha."""
+        def link(cat):
+            return {"type": {"name": "Blocks"}, "inwardIssue": {"key": "KAN-464", "fields": {
+                "status": {"statusCategory": {"key": cat}}}}}
+        self.assertEqual(rd.blockers([link("done")], None, store), [])         # nothing verified
+        self.assertEqual(rd.blockers([link("indeterminate")], None, store), ["KAN-464"])
         recs = [{"jira_key": "KAN-464", "root_dispatch_id": None,
-                 "verification": {"verdict": "pass", "branch": "alpha-memphis", "sha": "a" * 40}}]
+                 "verification": {"verdict": "needs_judge", "branch": "alpha-luxor",
+                                  "sha": "a" * 40}}]
         fake = mock.Mock()
         fake.read_all.return_value = recs
-        self.assertEqual(rd.blockers([link], None, fake), ["KAN-464 (not on its base yet)"])
-        recs[0]["integrated_at"] = "2026-10-10T00:00:00Z"
-        self.assertEqual(rd.blockers([link], None, fake), [])
+        for cat in ("indeterminate", "done"):
+            stacks = []
+            self.assertEqual(rd.blockers([link(cat)], None, fake, stacks), [])
+            self.assertEqual(stacks, [{"key": "KAN-464", "branch": "alpha-luxor", "sha": "a" * 40}])
+        recs[0]["verification"]["verdict"] = "retry"                          # checks failed
+        self.assertEqual(rd.blockers([link("indeterminate")], None, fake, []), ["KAN-464"])
+        recs[0]["verification"]["verdict"] = "pass"
+        recs[0]["integrated_at"] = "2026-10-10T00:00:00Z"                     # on Alpha already
+        stacks = []
+        self.assertEqual(rd.blockers([link("done")], None, fake, stacks), [])
+        self.assertEqual(stacks, [])
+
+    def test_the_brief_tells_the_team_to_merge_the_stacked_sha(self):
+        text = rd.prompt_for({"key": "KAN-714", "summary": "s", "description": "BRANCH: alpha-<team>"},
+                             "habu", [{"key": "KAN-713", "branch": "alpha-luxor", "sha": "b" * 40}])
+        self.assertIn("STACKED ON KAN-713", text)
+        self.assertIn("git merge --no-edit %s" % ("b" * 40), text)
+
+    def test_integration_holds_a_stacked_ticket_until_its_blocker_passed_review(self):
+        from agent.execution import integrate
+        dep = {"jira_key": "KAN-714", "stacked_on": [{"key": "KAN-713"}]}
+        self.assertEqual(integrate.stack_wait(dep, [dep]), "KAN-713")
+        self.assertIsNone(integrate.stack_wait(dep, [dep, {"jira_key": "KAN-713"}]))
+        self.assertEqual(integrate.stack_wait(
+            dep, [dep, {"jira_key": "KAN-713", "integrated_at": "discarded"}]), "KAN-713")
 
     def test_a_ceo_step_sits_in_ready_and_is_never_dispatched_or_flagged(self):
         """2026-10-14, KAN-537: the CEO's own step had no capability and was flagged as unknown."""
@@ -353,6 +381,49 @@ class ReadyDispatcherTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReadyGaugeTests(unittest.TestCase):
+    """D-049: Ready under 10 startable asks the PM every 15 minutes, Backlog or not."""
+    tearDown = ReadyDispatcherTests.tearDown
+    dispatch = ReadyDispatcherTests.dispatch
+    tick = ReadyDispatcherTests.tick
+
+    def setUp(self):
+        ReadyDispatcherTests.setUp(self)
+        gauge = [p for p in self.patches if getattr(p, "attribute", None) == "READY_TARGET"][0]
+        gauge.stop()                            # READY_TARGET back to 10
+        self.patches.remove(gauge)
+
+    def asks(self, out):
+        return [d for d in out if d.get("action") == "priority-request"]
+
+    def test_a_short_ready_asks_the_pm_to_cut_even_with_an_empty_backlog(self):
+        j = FakeJira([])
+        req = self.asks(self.tick(j))[0]
+        self.assertEqual(req["reasons"], ["ready-below-target"])
+        from agent.execution import inbox
+        item = [i for i in inbox.collect(ORCH, state_store=store) if i["kind"] == "priority"][0]
+        self.assertIn("one screen or one function", item["how"])
+        self.assertFalse(self.asks(self.tick(j)), "within 15 minutes: not asked again")
+        later = __import__("time").time() + rd.READY_ASK_SECONDS + 5
+        self.assertTrue(self.asks(rd.tick(state_store=store, jira=j, dispatch=self.dispatch,
+                                          now=later)))
+
+    def test_an_open_request_is_not_asked_twice(self):
+        j = FakeJira([])
+        self.asks(self.tick(j))
+        later = __import__("time").time() + rd.READY_ASK_SECONDS + 5
+        self.assertFalse(self.asks(rd.tick(state_store=store, jira=j, dispatch=self.dispatch,
+                                           now=later)), "the PM has not collected the first")
+
+    def test_ready_tickets_waiting_on_blockers_ask_for_false_links(self):
+        out = rd.raise_priority_request(
+            [{"kind": "ready-below-target", "startable": 0, "target": 10},
+             {"kind": "serial-chain", "waiting": ["KAN-715", "KAN-716"]}], "",
+            state_store=store)
+        self.assertEqual([r["kind"] for r in out["reasons"]],
+                         ["ready-below-target", "serial-chain"])
 
 
 class SkillsLineTests(unittest.TestCase):

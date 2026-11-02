@@ -211,7 +211,14 @@ def pending(session_id, *, state_store=store, now=None):
                                 "labels. board: run the PM to re-prioritise the Backlog "
                                 "(including returned work and new sub-tasks) and move what the "
                                 "free teams can take into Ready, in rank order, with an "
-                                "Original estimate and a domain component on each.")})
+                                "Original estimate and a domain component on each. D-049: "
+                                "ready-below-target: cut Epics the CEO already approved into "
+                                "tickets of one screen or one function plus its test (30-50 "
+                                "minutes) until Ready holds 10 startable; never new scope. "
+                                "serial-chain: on each waiting ticket keep a Blocks link only "
+                                "for a real code or data dependency (same Epic is not one) and "
+                                "remove the rest; split by file surfaces so one Epic runs on "
+                                "several teams at once.")})
     try:
         from agent.execution import review_queue
         late = review_queue.stalled_unalerted(state_store, now)

@@ -101,9 +101,14 @@ alpha.dabbler.pro or any public URL. Every item carries `branch`, `sha`, `tier` 
 
 | tier | what it is | what you do |
 |---|---|---|
-| 1 | no screen changed | read the diff of the ticket's commits and their tests; no app |
-| 2 | a screen changed | the ticket's TCs in EN+Light and AR+Dark, on the item's ONE platform |
+| 1 | no screen changed | read the diff of the ticket's commits and their tests; no app. **D-049: a tier-1 change that touches nothing sensitive never reaches you** — Thebes passes it on its green analyze + tests. You only see tier 1 when it is sensitive (money, sign-in, database) or its paths are unknown |
+| 2 | a screen changed | the ticket's TCs in **ONE** language and theme (D-049, CEO 2026-11-02): the item's `coverage` says which. When user-facing text changed it is **AR+Dark** |
 | 3 | a screen in money / sign-in / database work | every TC, both languages and themes, then the 10-minute exploratory pass below |
+
+**Stacked tickets (D-049).** An item with `stacked_on: [KAN-x]` was built on top of KAN-x's checked
+commit before KAN-x reached Alpha, so its diff against Alpha also carries KAN-x's commits. Judge only
+the commits whose message starts with this item's ticket key; KAN-x is reviewed on its own item.
+Thebes keeps this ticket off Alpha until KAN-x passes.
 
 One codebase, ONE platform: the **web** build in your internal browser. No simulators, no
 emulators (CEO 2026-10-22). A change that only a phone shows (native code, permissions, push) is
@@ -133,7 +138,7 @@ browser console for errors a screen does not show.
    in a file, a screenshot, a comment or your reply. If the keychain asks, it is the CEO's to allow.
 4. Database writes. Additive test rows are allowed ONLY as the Codex QA test account (dabbler.pro@proton.me), under the CEO standing approval of 2026-10-22 (Codex test data on the QA account). Never another account. Never DROP. Never delete rows you did not create. Never read auth.users. Never mint or read user tokens.
 5. If a check cannot run because of the review environment (blank canvas, no browser, no simulator, no clipboard, a missing build define), submit it with `review_queue submit --env C<n>:"why"` instead of failing it. It is not charged to the team.
-6. **Both languages and both themes** when the check is about how something looks.
+6. **Languages and themes:** what the item's `coverage` names (tier 2: one; tier 3: both).
 7. **Budget: 10 minutes per item** (tier 3: 20). If you cannot finish, submit what you have as `blocked`
    and say exactly what is missing. Do not guess a verdict.
 
