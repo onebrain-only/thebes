@@ -426,6 +426,12 @@ class ReadyGaugeTests(unittest.TestCase):
                          ["ready-below-target", "serial-chain"])
 
 
+class TooBigGaugeTest(unittest.TestCase):
+    def test_an_hours_estimate_is_a_gauge(self):
+        self.assertIn("too-big", rd.GAUGES)
+        self.assertEqual(rd.MAX_ESTIMATE_SECONDS, 3600)
+
+
 class SkillsLineTests(unittest.TestCase):
     """CEO 2026-11-02: every code brief names the skills the team invokes."""
 

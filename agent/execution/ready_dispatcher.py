@@ -233,7 +233,10 @@ PRIORITY_MIN_SECONDS = 3600      # the PM re-plans at most hourly unless a brief
 # waits for a cut. These two are gauges, asked about every READY_ASK_SECONDS whatever the Backlog.
 READY_TARGET = 10
 READY_ASK_SECONDS = 900
-GAUGES = ("ready-below-target", "serial-chain")
+# Real team time per ticket, measured 2026-11-02 over 86 tickets: median 25 min, p75 62. An
+# Original estimate over an hour is a human-hours guess and the ticket needs `epic-cut`.
+MAX_ESTIMATE_SECONDS = 3600
+GAUGES = ("ready-below-target", "serial-chain", "too-big")
 DONE_JQL = 'project = KAN AND status = "Done" ORDER BY updated DESC'
 # Epics are not executable: an open epic alone used to wake the PM forever (B2, KAN-494).
 BACKLOG_JQL = 'project = KAN AND status = "To Do" AND issuetype != Epic ORDER BY rank ASC'
@@ -336,13 +339,15 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None, liveness_tick
     except Exception:                                   # noqa: BLE001
         fresh = set()
 
-    candidates = []
+    candidates, too_big = [], []
     for issue_raw in jira.search_issues(JQL, fields=FIELDS, limit=50, raw=True):
         issue = jira.normalize_issue(issue_raw)
         issue["components"] = [c.get("name") for c in
                                ((issue_raw.get("fields") or {}).get("components") or [])]
         issue["estimate_seconds"] = (issue_raw.get("fields") or {}).get("timeoriginalestimate")
         key = issue["key"]
+        if (issue["estimate_seconds"] or 0) > MAX_ESTIMATE_SECONDS:
+            too_big.append(key)
         if key in open_keys:
             continue
         if CEO_ACTION in issue["labels"]:
@@ -634,6 +639,8 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None, liveness_tick
                             "target": READY_TARGET})
             if len(chained) >= 2:
                 reasons.append({"kind": "serial-chain", "waiting": chained})
+        if too_big:
+            reasons.append({"kind": "too-big", "keys": too_big})
         req = None if (backlog_settling and not brief_reasons
                        and not any(r["kind"] in GAUGES for r in reasons)) else \
             raise_priority_request(reasons, signature, state_store=state_store, now=now)

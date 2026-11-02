@@ -218,7 +218,8 @@ def pending(session_id, *, state_store=store, now=None):
                                 "serial-chain: on each waiting ticket keep a Blocks link only "
                                 "for a real code or data dependency (same Epic is not one) and "
                                 "remove the rest; split by file surfaces so one Epic runs on "
-                                "several teams at once.")})
+                                "several teams at once. too-big: an Original estimate over an hour; "
+                                "real team time is a median 25 minutes, so cut it with epic-cut.")})
     try:
         from agent.execution import review_queue
         late = review_queue.stalled_unalerted(state_store, now)

@@ -106,6 +106,7 @@ This section overrides anything older in this file that says otherwise.
   - **A Blocks link only for a real code or data dependency.** Being in the same Epic is not
     one. `serial-chain` lists Ready tickets waiting on blockers: remove the links that are only
     ordering. Split an Epic by file surfaces so several teams work it at once.
+  - **Every cut follows the `epic-cut` skill** and passes `cut_plan check` with no errors.
   - A dependent ticket no longer waits for Alpha: Thebes starts it on its blocker's checked
     commit and holds its integration until the blocker passes review.
 - **POs are per project:** `po` = app, `po-2` = design system. A PO writes and completes
@@ -176,6 +177,7 @@ feature list.
 
 | Moment | Skill |
 |---|---|
+| Cutting an approved Epic into parallel tickets, or breaking a Blocks chain (`ready-below-target`, `serial-chain`) | **`epic-cut`** — then prove the plan with `python3 -m agent.execution.cut_plan check` before the `po` writes a ticket |
 | Deciding what to do next across a backlog | **`prioritization-advisor`**, **`feature-investment-advisor`** |
 | Judging whether a feature is worth its cost | **`feature-investment-advisor`**, **`opportunity-solution-tree`** |
 | A request arriving with no clear shape | **`incoming-request-advisor`**, then **`problem-framing-canvas`** |
