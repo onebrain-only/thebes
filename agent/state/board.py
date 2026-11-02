@@ -45,7 +45,8 @@ COLUMNS = ("Backlog", "Ready", "Operations", "Frontend Development",
 STATUSES = {
     "10004": ("To Do",       "Backlog",              READY,       "11"),
     "10008": ("Ready",       "Ready",                READY,       "2"),
-    "10047": ("Design",      "Operations",           DEVELOPMENT, "9"),
+    # CEO 2026-11-02: Design moved under Frontend Development (UX is UI work per team).
+    "10047": ("Design",      "Frontend Development", DEVELOPMENT, "9"),
     "10048": ("Content",     "Operations",           DEVELOPMENT, "10"),
     "10049": ("Operations",  "Operations",           DEVELOPMENT, "12"),
     "10046": ("Front-end",   "Frontend Development", DEVELOPMENT, "8"),
