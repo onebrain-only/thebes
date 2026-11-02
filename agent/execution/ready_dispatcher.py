@@ -155,6 +155,20 @@ def effort_line(seconds):
         "%dh" % hours if hours == int(hours) else "%.1fh" % hours)
 
 
+def skills_line(issue):
+    """The skills a code team invokes by name on this ticket (CEO 2026-11-02: the skills were
+    installed but no brief named one, so no team used them). Project skills live in
+    `.claude/skills/`; the `flutter-*`/`dart-*` ones come from the dart-flutter plugin."""
+    always = ["`tdd` (every change ships with its test)",
+              "`flutter-add-widget-test` / `dart-generate-test-mocks` for Flutter tests",
+              "`dart-run-static-analysis` before you hand over",
+              "`rtl-arabic-checklist` for any user-facing string or screen",
+              "`drive-the-app` before claiming a UI change works"]
+    if "Money" in (issue.get("components") or []):
+        always.append("`money-write-invariants` (Money component: every ledger write)")
+    return "Skills to invoke by name (Skill tool): " + "; ".join(always) + "."
+
+
 def prompt_for(issue, team_id):
     body = fill_branch(issue.get("description") or "", team_id)
     return "\n".join([
@@ -162,6 +176,7 @@ def prompt_for(issue, team_id):
         effort_line(issue.get("estimate_seconds")),
         "Source: the ticket description, dispatched by the Thebes Ready dispatcher (D-042).",
         "Every commit message starts with `%s:`." % issue["key"],
+        skills_line(issue),
         "",
         body,
     ])

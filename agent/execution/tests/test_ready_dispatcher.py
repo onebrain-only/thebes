@@ -353,3 +353,18 @@ class ReadyDispatcherTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SkillsLineTests(unittest.TestCase):
+    """CEO 2026-11-02: every code brief names the skills the team invokes."""
+
+    def test_brief_names_the_project_skills(self):
+        text = rd.prompt_for({"key": "KAN-1", "summary": "s", "description": "d"}, "karnak")
+        for name in ("tdd", "rtl-arabic-checklist", "drive-the-app", "dart-run-static-analysis"):
+            self.assertIn("`%s`" % name, text)
+        self.assertNotIn("money-write-invariants", text)
+
+    def test_money_component_adds_the_money_invariants(self):
+        text = rd.prompt_for({"key": "KAN-1", "summary": "s", "description": "d",
+                                            "components": ["Money"]}, "ramesseum")
+        self.assertIn("`money-write-invariants`", text)

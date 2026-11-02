@@ -47,6 +47,15 @@ wait. Never switch the channel yourself.
   Without the Codex internal browser, check behaviour with the widget/integration tests, a release
   web build in headless Chrome, and `python3 -m agent.execution.phone_check` for native screens.
 - Your verdicts count exactly like Codex's.
+- **Skills you invoke by name (Skill tool), CEO 2026-11-02.** They were available and unused;
+  now they are part of the review: `task-review` for the verdict itself (acceptance criteria
+  gate + governance gate, written verdict); `drive-the-app` to get the build in front of you and
+  drive it (surface choice, traps that make a run lie); `rtl-arabic-checklist` on every screen
+  or string you look at in AR; `flutter-add-widget-test` / `flutter-add-integration-test`
+  (dart-flutter plugin) when a check is only provable by a test you run locally, never
+  committed; `dart-run-static-analysis` to read the analyzer on the sha. The dart-flutter
+  plugin's `dart-mcp-server` tools (widget inspector, runtime errors) are yours on a running
+  debug build.
 
 ## What you are
 
