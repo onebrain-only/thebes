@@ -909,3 +909,28 @@ CEO: *"احنا كده بنقول له خليك غبي… مش هو ده ابد�
   the `facts` RULE and its awaiting-merge row (a key already integrated by another record is no
   longer listed), `.claude/settings.json`, and `ORCHESTRATOR.md` §8;
 - tests: `test_orders`, `test_intake`, `test_integrate`.
+
+
+## D-047 — Liveness sees tickets with no team, not only idle sessions (extends D-045)
+
+**Date:** 2026-11-02 · **By:** CEO
+
+**Context.** KAN-694 sat in Back-end for days with every team `free`: its last dispatch had been
+discarded, and nothing moves Jira when a dispatch dies. D-045 probed sessions only, so the
+orchestrator could not see work that had lost its team. The dispatcher picks up `Ready` only, so a
+ticket that fell back into a working column was never picked up again.
+
+**Decision.**
+1. The liveness sweep reads working-column tickets from Jira (one read-only query) and classifies
+   each against the dispatch records and review queue (`agent/execution/orphans.py`):
+   `ok`, `orphan`, `dead-end`, `waiting-judge`, `waiting-human`.
+2. A `free` team's row says why it is free; `idle-work-waiting` names the tickets.
+3. The ready dispatcher re-sends `orphan` and `dead-end` tickets through the normal free-team path,
+   at most twice and 30 minutes apart, never into a review column. After that, or for a review
+   column, an `orphan` inbox item reaches the orchestrator.
+4. Nothing here claims, stops, resumes or types into a running session, and the CEO is not asked.
+
+**Consequences:** changed `liveness`, `inbox`, `facts`, `ready_dispatcher`; new `orphans`;
+tests `test_orphans`, `test_ready_dispatcher`. Not done: a ticket reviewed but not merged to Alpha
+(branch missing on origin) is not yet an orphan state, and a dispatch discarded while the work is
+on Alpha does not yet close its ticket; both wait for the CEO's go-ahead.

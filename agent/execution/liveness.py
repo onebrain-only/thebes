@@ -191,6 +191,19 @@ def sweep(*, state_store=store, cli=None, now=None, projects=None):
         except Exception as exc:                          # noqa: BLE001  one team never hides the rest
             entries.append({"team": tid, "status": "unknown", "detail": str(exc)[:160]})
     snap = {"at": now, "teams": entries}
+    try:
+        from agent.execution import orphans
+        snap["tickets"] = orphans.scan(state_store=state_store, now=now)
+        wanting = orphans.needs_team(snap["tickets"])
+        for e in entries:
+            if e.get("status") == "free":
+                work = [t["key"] for t in wanting if t.get("team") in (None, e["team"])]
+                e["why"] = "idle-work-waiting" if work else "idle-nothing-to-do"
+                if work:
+                    e["work"] = work
+    except Exception as exc:                              # noqa: BLE001  Jira down never hides the teams
+        snap["tickets_error"] = str(exc)[:160]
+        snap["tickets"] = (_load("snapshot", {}) or {}).get("tickets") or []
     _save("snapshot", snap)
     return snap
 
@@ -227,6 +240,25 @@ HOW = {
 }
 
 
+def orphan_items():
+    """One inbox item per ticket that needs a team once automatic re-sends are used up."""
+    from agent.execution import orphans
+    seen = set(_load("collected", []))
+    out = []
+    for t in (_load("snapshot", {}).get("tickets") or []):
+        key = "orphan:%s:%d" % (t["key"], orphans.rescue_state(t["key"])["n"])
+        if orphans.exhausted(t) and key not in seen:
+            out.append({"kind": "orphan", "ticket": t["key"], "state": t["state"], "key": key,
+                        "team": t.get("team"), "waited_min": 0,
+                        "why": t.get("why"), "jira": t.get("jira"),
+                        "how": ("%s sits in %s with no team on it (%s) and the automatic re-sends "
+                                "are used up or it is in a review column. Decide: dispatch it to a "
+                                "free same-capability team yourself, route its review, or move it "
+                                "back to Ready. The CEO hears none of this (D-043)."
+                                % (t["key"], t.get("jira"), t.get("why")))})
+    return out
+
+
 def inbox_items(now=None):
     out = []
     for e in uncollected():
@@ -249,9 +281,25 @@ def fact_rows(now=None):
         " — STALE: the watchdog is not probing; run bash agent/scripts/thebes-up.sh"
         if age > STALE_SECONDS else "")]
     for e in snap.get("teams") or []:
-        mark = "!" if e.get("status") in INBOX + ("stalled",) else " "
-        rows.append(" %s%-18s %-10s %s" % (mark, e.get("team"), e.get("status"),
-                                          (e.get("detail") or "")[:110]))
+        mark = "!" if e.get("status") in INBOX + ("stalled",) or e.get("work") else " "
+        detail = e.get("detail") or ""
+        if e.get("why"):
+            detail = ("%s %s" % (e["why"], ",".join(e.get("work") or []))).strip()
+        rows.append(" %s%-18s %-10s %s" % (mark, e.get("team"), e.get("status"), detail[:110]))
+    return rows
+
+
+def ticket_rows():
+    """TICKETS WITH NO TEAM: working-column tickets nobody holds (D-047)."""
+    snap = _load("snapshot", {})
+    rows = []
+    if snap.get("tickets_error"):
+        rows.append("  Jira unreadable at the last sweep: %s" % snap["tickets_error"])
+    bad = [t for t in snap.get("tickets") or [] if t.get("state") != "ok"]
+    for t in bad:
+        rows.append(" !%-8s %-14s %-14s %s" % (t["key"], t["state"], t.get("jira") or "", t.get("why", "")[:90]))
+    if not bad and not snap.get("tickets_error"):
+        rows.append("  none: every working-column ticket has a team, a review or a recent Jira move")
     return rows
 
 

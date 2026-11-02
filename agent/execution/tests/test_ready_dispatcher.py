@@ -125,6 +125,26 @@ class ReadyDispatcherTests(unittest.TestCase):
         store.bind_role_session("habu", "claude", HABU, HOME, "ceo")
 
     # -----------------------------------------------------------------------
+    def test_a_dead_end_ticket_is_re_sent_twice_then_left_for_the_inbox(self):
+        """D-047: a working-column ticket whose dispatch died goes back to a free team, max twice."""
+        from agent.execution import orphans
+
+        class J(FakeJira):
+            def get_issue(self, key, fields=None, raw=False):
+                return issue(key, labels=["cap:frontend"])
+
+        j = J([])
+        rows = [{"key": "KAN-600", "state": "dead-end", "jira": "Development", "why": "last dispatch blocked"}]
+        out = rd.tick(state_store=store, jira=j, dispatch=self.dispatch, now=1_000_000,
+                      liveness_tickets=rows)
+        self.assertEqual([(d["key"], d["action"]) for d in out], [("KAN-600", "rescued")])
+        self.assertTrue(self.sent[0]["text"].startswith("RESCUE: KAN-600"))
+        again = rd.tick(state_store=store, jira=j, dispatch=self.dispatch, now=1_000_100,
+                        liveness_tickets=rows)                     # inside the 30-minute gap
+        self.assertEqual([d for d in again if d.get("action") == "rescued"], [])
+        self.assertEqual(orphans.rescue_state("KAN-600")["n"], 1)
+
+    # -----------------------------------------------------------------------
     def test_a_ready_ticket_is_dispatched_to_a_free_code_team_with_its_branch(self):
         j = FakeJira([issue("KAN-500", labels=["cap:frontend"])])
         out = self.tick(j)

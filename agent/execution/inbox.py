@@ -96,6 +96,8 @@ def oldest_waiting(session_id, *, state_store=store, now=None):
             if item["waited_min"] * 60 > best[0]:
                 best = (item["waited_min"] * 60, "liveness %s %s" % (item["team"], item["status"]))
             continue
+        elif kind == "orphan":
+            continue                       # raised once per rescue count; not a stalled listener
         elif kind == "not_live":
             continue                       # flagged by the dispatcher sweep; not a stalled listener
 
@@ -255,6 +257,7 @@ def pending(session_id, *, state_store=store, now=None):
     try:
         from agent.execution import liveness
         out.extend(liveness.inbox_items(now))
+        out.extend(liveness.orphan_items())
     except Exception:                                       # noqa: BLE001  never blocks the inbox
         pass
     for req in requests:
@@ -301,7 +304,7 @@ def collect(session_id, *, state_store=store, now=None):
                 review_queue.mark_collected(item["question_id"])
                 taken.append(item)
                 continue
-            if item["kind"] == "liveness":
+            if item["kind"] in ("liveness", "orphan"):
                 from agent.execution import liveness
                 liveness.mark_collected(item["key"])
                 taken.append(item)

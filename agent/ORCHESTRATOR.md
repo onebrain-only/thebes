@@ -362,6 +362,17 @@ never types into it. The result is the `LIVENESS` rows in every fact block.
   - `no-session` means it must be started.
 - `python3 -m agent.execution.liveness sweep` probes now; `show` prints the last snapshot.
 - None of this reaches the CEO (D-043) unless it is money, `main` or outside.
+- **Tickets with no team (D-047).** The same sweep reads Jira once (read-only) and joins every
+  working-column ticket with the dispatch records and the review queue. The fact block's
+  `TICKETS WITH NO TEAM` section lists the ones nobody holds: `orphan` (no dispatch holds it),
+  `dead-end` (its last dispatch ended blocked/failed/delivery_failed/withdrawn),
+  `waiting-judge` (a review item with no judge) or `waiting-human` (a question for
+  `decision_gate`). A `free` team row now says why: `idle-nothing-to-do`, or
+  `idle-work-waiting <KAN keys>` (marked `!`).
+- **The ready dispatcher re-sends `orphan` and `dead-end` tickets by itself**, through its normal
+  free-team path, at most twice, 30 minutes apart, never into a review column. After that an
+  `orphan` inbox item reaches you with the reason: dispatch it to a free same-capability team,
+  route its review, or move it back to Ready. Do not poll for these.
 
 ## Never
 

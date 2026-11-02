@@ -196,6 +196,8 @@ def build(now=None):
         out += retired
     out += _section("LIVENESS — every team probed every 5 min, busy or not (D-045; ! = needs you):",
                     lambda: __import__("agent.execution.liveness", fromlist=["x"]).fact_rows(now))
+    out += _section("TICKETS WITH NO TEAM (working column, nobody holds it; D-047):",
+                    lambda: __import__("agent.execution.liveness", fromlist=["x"]).ticket_rows())
     out += _section("FINISHED, last %dh (time ticket outcome by-team review Alpha):" % RECENT_HOURS,
                     lambda: _recent(dispatches, now))
     out += _section("REVIEW PASSED, NOT ON ALPHA (integrates on its own, D-046):",

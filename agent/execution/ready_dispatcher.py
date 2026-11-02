@@ -251,7 +251,7 @@ def raise_priority_request(reasons, signature, *, state_store=store, now=None):
         "collected_at": None})
 
 
-def tick(*, state_store=store, jira=None, dispatch=None, now=None):
+def tick(*, state_store=store, jira=None, dispatch=None, now=None, liveness_tickets=None):
     """One pass. Returns a list of what happened, for the log."""
     from agent.execution import conversation_dispatch as cd, dispatch_brief
     jira = jira or _jira()
@@ -439,6 +439,50 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None):
                          "dispatch_id": out.get("dispatch_id")})
     except Exception as exc:                            # noqa: BLE001
         done.append({"action": "permission-retry-failed", "error": str(exc)[:200]})
+
+    # D-047: a working-column ticket whose dispatch died (blocked/failed/delivery_failed/withdrawn)
+    # or finished with the ticket left behind has no team. Re-send it through the same free-team
+    # path, at most MAX_RESCUES times, 30 minutes apart; after that it goes to the inbox.
+    try:
+        from agent.execution import orphans
+        try:
+            rows = liveness_tickets or orphans.scan(state_store=state_store, jira=jira, now=now)
+        except Exception:                               # noqa: BLE001  unreadable Jira: liveness shows it
+            rows = []
+        for row in orphans.needs_team(rows):
+            key = row["key"]
+            st = orphans.rescue_state(key)
+            if (key in open_keys or row.get("jira") in orphans.REVIEW_COLUMNS
+                    or st["n"] >= orphans.MAX_RESCUES or (now or time.time()) - st["at"] < orphans.RESCUE_GAP):
+                continue
+            issue_raw = jira.get_issue(key, fields=FIELDS, raw=True)
+            issue = jira.normalize_issue(issue_raw)
+            issue["components"] = [c.get("name") for c in
+                                   ((issue_raw.get("fields") or {}).get("components") or [])]
+            if CEO_ACTION in issue["labels"] or CLOUD_LANE in issue["labels"]:
+                continue
+            cap = capability_of(issue, state_store)
+            if not cap or state_store.intervention_blocks_claim(key, cap):
+                continue
+            lane = lane_of(issue, cap)
+            if lane == "code" and code_open >= MAX_PARALLEL:
+                continue
+            tid, sid = free_team(lane, state_store)
+            if not tid:
+                continue
+            note = ("RESCUE: %s is in %s with no team on it (%s). Pick it up from the current branch "
+                    "and repository state; do not start over.\n\n" % (key, issue.get("status"), row["why"]))
+            try:
+                out = send(note + prompt_for(issue, tid), sid, key, cap)
+            except cd.Refused as exc:
+                done.append({"key": key, "action": "rescue-refused", "code": exc.code})
+                continue
+            orphans.note_rescue(key, now)
+            if lane == "code":
+                code_open += 1
+            done.append({"key": key, "action": "rescued", "team": tid, "dispatch_id": out.get("dispatch_id")})
+    except Exception as exc:                            # noqa: BLE001
+        done.append({"action": "rescue-failed", "error": str(exc)[:200]})
 
     # An open dispatch whose ticket is already Done is closed, so it stops holding a team and a slot.
     try:
