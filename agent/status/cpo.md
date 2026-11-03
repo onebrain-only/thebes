@@ -833,3 +833,15 @@ re-posting once auth is restored.
 ## 2026-10-09 — KAN-452 Notion messaging/follow report
 Read-only observation report written to /Users/moataz/.claude/jobs/7f6ff1a6/tmp/kan452-report.md. Finding: corpus (11b) lists chat features but no follow/block permission rules; only non-corpus "Play mode" gates chat; conflicts with P-002/P-033 flagged. No rulings, no writes to Notion/Jira/DB.
 - 2026-10-15 cpo: product plan for CEO order 'open game chat to everyone + Home entry'; read-only; verdict ALIGNED WITH CONSEQUENCE (reverses KAN-516 no-inbox/no-unread and P2 internal-only cohort; needs D1/P-002/P-020 ruling). Plan returned to orchestrator.
+
+## 2026-10-27 — next product scope ruling
+Ranked 5 deferred items (offline, squads, ratings, recurring games, map view) from ROADMAP.md §4 + PROJECT_STATE.md. Notion corpus NOT read this pass (low effort); citations to corpus marked unverified. No tickets written.
+
+## 2026-10-27 — organiser definition (actor_is_organiser)
+Read-only verdict: organiser = persona_type=organiser; profile_type=business not a corpus concept. Cited BRIEF.md §2, DECISIONS.md P-003. No Jira/DB writes.
+
+## 2026-10-29 dreq-de35fff8 (KAN-682 Contributor profile gaps A-F)
+Decided: A = client-side definition (joined/confirmed, non-cancelled, deduped by game id, meetups out); B and C omitted; D = Upcoming plus Games I organise only; E = real Primary with zero history; F = organiser view, post-count error state. Follow-ups listed. File: /Users/moataz/.claude/jobs/c49d2414/tmp/dreq-de35fff8-decision.md
+
+## 2026-10-30 — recurring-games product Qs + next ranking
+Recurring end/cap/cancel/paid: not documented in corpus; recommended defaults. Next: analytics instrumentation (GTM launch gate, BRIEF:27,475) > bench mode > venue booking (Phase 1B M9) > wallet (SVF-gated, BRIEF:224). R2 outside CEO-approved Workers+D1 -> CEO money call. No tickets written.

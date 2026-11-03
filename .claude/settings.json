@@ -1,47 +1,46 @@
 {
-  "enabledPlugins": {
-    "everything-claude-code@everything-claude-code": true,
-    "dart-flutter@dart-flutter": true,
-    "incoming-request-advisor@pm-skills": true,
-    "autonomous-investigation@pm-skills": true,
-    "product-strategy-session@pm-skills": true,
-    "problem-framing-canvas@pm-skills": true,
-    "positioning-statement@pm-skills": true,
-    "recommendation-canvas@pm-skills": true,
-    "prioritization-advisor@pm-skills": true,
-    "feature-investment-advisor@pm-skills": true,
-    "derisk-measurement-advisor@pm-skills": true,
-    "opportunity-solution-tree@pm-skills": true,
-    "business-health-diagnostic@pm-skills": true,
-    "saas-revenue-growth-metrics@pm-skills": true,
-    "saas-economics-efficiency-metrics@pm-skills": true,
-    "tam-sam-som-calculator@pm-skills": true,
-    "competitive-analysis-process@pm-skills": true,
-    "jobs-to-be-done@pm-skills": true,
-    "swot-analysis@pm-skills": true,
-    "ansoff-matrix@pm-skills": true,
-    "prd-development@pm-skills": true,
-    "vp-cpo-readiness-advisor@pm-skills": true,
-    "product-strategy@wondelai-skills": true,
-    "product-innovation@wondelai-skills": true,
-    "strategy-growth@wondelai-skills": true,
-    "marketing-cro@wondelai-skills": true,
-    "sales-influence@wondelai-skills": true,
-    "systems-architecture@wondelai-skills": true,
-    "code-craftsmanship@wondelai-skills": true
+  "permissions": {
+    "allow": [
+      "Bash(git push origin alpha-*)",
+      "Bash(git push -u origin alpha-*)",
+      "Bash(git -C Dabbler/dabbler-code push origin alpha-*)",
+      "Bash(git -C Dabbler/dabbler-design-system push origin alpha-*)",
+      "Bash(git -C Dabbler/dabbler-code push origin integrate-alpha:Alpha)",
+      "Bash(git -C Dabbler/dabbler-design-system push origin integrate-alpha-ds:alpha-ds)",
+      "Bash(git -C Dabbler/dabbler-code push origin --delete alpha-*)",
+      "Bash(git -C Dabbler/dabbler-design-system push origin --delete alpha-*)",
+      "Bash(python3 -m agent.execution.*)",
+      "Bash(python3 -c *agent.integrations.jira*)",
+      "mcp__claude_ai_Atlassian_Rovo__transitionJiraIssue",
+      "mcp__claude_ai_Atlassian_Rovo__addCommentToJiraIssue",
+      "mcp__claude_ai_Atlassian_Rovo__createJiraIssue",
+      "mcp__claude_ai_Atlassian_Rovo__createIssueLink",
+      "Bash(python3 agent/scripts/sql_hook.py *)",
+      "Edit(agent/scripts/sql_hook.py)",
+      "Edit(agent/state/registry/sql_allow.json)",
+      "Bash(python3 -m agent.listener conversation-dispatch *)",
+      "Bash(python3 -m agent.listener submit *)",
+      "Bash(python3 -m agent.execution.conversation_dispatch dispatch:*)",
+      "Bash(git -C * push origin integrate-alpha:Alpha)",
+      "Bash(git -C * push origin integrate-alpha-ds:alpha-ds)"
+    ],
+    "deny": [
+      "Bash(git -C Dabbler/dabbler-code push*main*)",
+      "Bash(git -C Dabbler/dabbler-code push*master*)"
+    ]
   },
   "hooks": {
     "PreToolUse": [
       {
+        "matcher": "*",
         "hooks": [
           {
             "type": "command",
             "command": "agent/scripts/flow-hook.sh PreToolUse",
-            "async": true,
-            "timeout": 5
+            "timeout": 5,
+            "async": true
           }
-        ],
-        "matcher": "*"
+        ]
       },
       {
         "matcher": "Bash",
@@ -77,19 +76,39 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "mcp__.*|Bash|Write|Edit|MultiEdit|NotebookEdit|Agent|SendMessage|CronCreate|ScheduleWakeup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/agent/scripts/order-gate.sh",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "PostToolUse": [
       {
+        "matcher": "*",
         "hooks": [
           {
             "type": "command",
             "command": "agent/scripts/flow-hook.sh PostToolUse",
-            "async": true,
-            "timeout": 5
+            "timeout": 5,
+            "async": true
           }
-        ],
-        "matcher": "*"
+        ]
+      },
+      {
+        "matcher": "mcp__.*[Aa]tlassian.*__createJiraIssue|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/agent/scripts/order-gate.sh",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "SubagentStart": [
@@ -98,8 +117,8 @@
           {
             "type": "command",
             "command": "agent/scripts/flow-hook.sh SubagentStart",
-            "async": true,
-            "timeout": 5
+            "timeout": 5,
+            "async": true
           }
         ]
       }
@@ -110,29 +129,48 @@
           {
             "type": "command",
             "command": "agent/scripts/flow-hook.sh SubagentStop",
-            "async": true,
-            "timeout": 5
+            "timeout": 5,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/agent/scripts/policy-hook.sh",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/agent/scripts/ceo-prompt-hook.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/agent/scripts/ceo-prompt-hook.sh",
+            "timeout": 10
           }
         ]
       }
     ]
   },
-  "permissions": {
-    "allow": [
-      "Bash(git push origin main)",
-      "Bash(git push origin alpha-*)",
-      "Bash(git push -u origin alpha-*)",
-      "Bash(git -C Dabbler/dabbler-code push origin alpha-*)",
-      "Bash(git -C Dabbler/dabbler-design-system push origin alpha-*)",
-      "Bash(git -C * push origin integrate-alpha:Alpha)",
-      "Bash(git -C * push origin integrate-alpha-ds:alpha-ds)",
-      "Bash(python3 -m agent.execution.pm_ledger *)",
-      "Bash(python3 -m agent.execution.intake unlink *)",
-      "Bash(git -C * push origin --delete alpha-*)"
-    ],
-    "deny": [
-      "Bash(git -C Dabbler/dabbler-code push*main*)",
-      "Bash(git -C Dabbler/dabbler-code push*master*)"
-    ]
+  "enabledPlugins": {
+    "dart-flutter@dart-flutter": true
   }
 }

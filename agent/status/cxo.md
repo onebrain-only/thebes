@@ -45,3 +45,14 @@ Read-only. PASS 1,2,4 on evidence; 3 mapping PASS (design venuesTheme=main, l.20
 
 ## 2026-10-10 — KAN-485 splash experience direction (read-only)
 Q1 ruled (a): device appearance is the default for users with no stored preference; stored values untouched; frontend ticket via po. Q2 ruled: request artwork change (design ticket, CEO artwork source); ship meanwhile. No D- entry written yet (owed). No docs standard found for auto/time-of-day theme.
+
+## 2026-10-27 — KAN-669 C5 DS check (read-only)
+Verdict PASS. Toggle = DabblerPageHeaderAction (games_screen.dart:226-230), default list (games_map_view.dart:14), pins via DabblerMap -> DabblerIcon colors.brandPrimary (lib/core/maps/dabbler_map.dart:111-114), empty = ListingEmpty, EN/AR ARB present, 0 colour literals. design_system_gate_test not run by me. Brief worktree path was wrong (kan585-luxor); judged kan669-luxor at ef20fbb1.
+
+## 2026-10-28 — KAN-681 dark palette ruling (Hathor)
+- Ruled: tokens/colors.css neutral dark is canonical for onboarding and app; the .dc.html warm override is a design-side defect, not a code defect. No token change for Karnak.
+- Live Claude Design file NOT re-read (local copies dated 2026-10-03/04 lack the warm set); colors.css read at dabbler-design-system/test/fixtures/live/tokens/colors.css:195-217.
+- Arabic: keep المساهم; replace المتفاعل; Organiser copy fine; "تم اختيار 2 رياضتين" ungrammatical -> plural rule. Footnote overlap not checked (needs running app).
+
+## 2026-11-01 KAN-688 scope ruling
+Ruled 6 scope items + C3 evidence; file /Users/moataz/.claude/jobs/f305ed4e/tmp/dec-kan688-scope.md. Not checked: running app, live design etag, Jira body.

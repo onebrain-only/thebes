@@ -693,3 +693,30 @@ BEFORE the attempt (10995) with preconditions re-measured immediately beforehand
 outcome posted back after (10997). **What unblocks this: permission to run
 `apply_migration` on `wtncuzcskpigqpmnxwws` for this one file.** Everything else is
 finished and measured.
+
+## 2026-11-02 — KAN-723 (KAN-714 B04, Epic KAN-708): nearby/following RPCs read events
+- Commit `4de93e4fbd0f16e4a2ba0df0520beccc03baba83` on `alpha-habu` (worktree kan680), not pushed.
+- Files: `supabase/migrations/20261104100400_kan714_b04_rpc_nearby_following.sql`, `supabase/tests/events_p2/kan714_b04_nearby_following.sql`.
+- Local throwaway PG 54775 only: with B04 `#TOTAL|pass=39|fail=0`; control (no B04) `#TOTAL|pass=26|fail=13|K_fail=13|eq_fail=0`. Server stopped. Nothing applied to Supabase.
+- Findings for routing: 5-arg/6-arg `rpc_get_nearby_games` overload drift makes a 5-arg call ambiguous where both exist; Dart `nearby_games_datasource.dart:45` hardcodes the RPC name; `supabase_games_datasource.dart:665` calls `get_nearby_games` (different function).
+- Route PEER: needs another backend-N reviewer. Did not self-review.
+
+## 2026-11-02 — KAN-727 (KAN-714 B08) capacity/join/rating checks read events — Nekhbet
+
+- Commit `aba8732e7aca51c40b904e9bd9928b18d3f5c622` on `alpha-habu` (worktree kan680), not pushed.
+- Files: `supabase/migrations/20261104100800_kan714_b08_capacity_join_rating_checks.sql`, `supabase/tests/events_p2/kan714_b08_capacity_join.sql`.
+- Converted: game_slots_left (sql -> plpgsql INVOKER, events branch when events readable), meetup_slots_left, rpc_rate_game/user/venue (end_at + cancel union from events). Join path relies on KAN-713's can_current_user_join_game (already events-backed) and the converted slots.
+- Local only (port 54775): B08 `#TOTAL|pass=69|fail=0|K_fail=0|eq_fail=0`; control `#TOTAL|pass=55|fail=14|K_fail=14|eq_fail=0`. Production untouched. Server stopped.
+- Not converted: rpc_meetup_decide_request, rpc_remove_player (out of planned surface); rpc_meetup_rsvp absent locally. join_policy vs rsvp_policy reported only.
+- Estimate 45 min exceeded (multi-session). This status entry is outside the planned surfaces (role rule).
+- Route: PEER (schema) — needs another backend-N reviewer.
+
+## 2026-11-03 — KAN-722 (KAN-714 B03) rescue
+- Cherry-picked Karnak c6e80c4d onto alpha-habu (kan680 worktree) as 6e47b63f; follow-up 63a5208d removes the v_host_weekly_metrics rewrite (B07/KAN-726 owns it), test asserts B03+B07 chain, rollback restores only v_rateable_after_game.
+- Local PG16 (port 54775) only: with B03+B07 27/0, control (B07, no B03) 23/4 FAIL, rollback expect=pre 27/0 with the fingerprint unchanged. Not applied anywhere live. Not pushed (the orchestrator pushes). Next step: PEER review by another backend seat.
+
+## 2026-11-03 — KAN-733 (KAN-714 B14) rescue — completed (not applied anywhere live)
+- Cherry-picked Karnak 3f21e3ab + bbea705d onto alpha-habu; fix commit 314d9bdd.
+- Stage guard no longer requires 20261104110000 / 20261104110300 triggers (both sort after B14; original refused in filename order).
+- Wrapped series RPCs now changed via kan712_unwrap_rpc -> replace -> kan712_wrap_rpc (migration and rollback); post-checks prove wrapper survived.
+- Local PG16: strict order 189/0, control 167/22, rollback expect=pre 189/0 with unchanged fingerprint. Route: PEER (backend reviewer).

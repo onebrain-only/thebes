@@ -74,3 +74,8 @@ Could not translate into Flutter: neither Apple nor Material names Flutter's `ma
 
 ## 2026-10-09 KAN-464
 Authored EN/AR key table for Create Post (11 NEW_KEY, rest reuse/skip); files in /Users/moataz/.claude/jobs/7f6ff1a6/tmp/kan464-keys.{json,md}. Awaiting dispatcher apply and peer review.
+
+## 2026-10-23 KAN-628 strings
+Posted Jira comment 13845 on KAN-628: 4 new keys location_saved_set_primary/rename/rename_title/rename_hint, EN+AR, RTL notes. No existing key reused. Strings only, no code.
+
+## 2026-10-25 content-2: dreq-f3fbf4a9 (KAN-591 R2) answered: venue placeholder missing (neutral block, cxo to choose visual); button gap = DS gap, accept DS values. No strings changed.

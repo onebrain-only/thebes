@@ -3067,3 +3067,47 @@ Wrote /Users/moataz/.claude/jobs/7f6ff1a6/tmp/kan451-report.md. Live DB evidence
 - Read KAN-494/495/502/581, Brief v1.0, origin/Alpha 82db0c74 workers/messaging + docs/messaging, pm-ledger cloudflare-messaging-approval (line 245), design export §12/Q1-Q12.
 - Finding: no R2 binding/code/migration exists; only operating approval is Workers+D1 free (2026-10-14), R2 explicitly excluded; no newer approval found. No approved image limits. Live not inspected (wrangler not installed).
 - Output: report handed back to orchestrator; nothing created, no ticket moved.
+
+## 2026-10-20 — dreq-2a502389 (KAN-580 receipts UI unblock)
+Ruled: (a) Luxor lands receipt components in alpha-ds, Ramesseum bumps pin; (b) Ramesseum authors Worker GET summary+recipients routes (sender-of-seq check in Worker; recipients fn EXECUTE service_role only); (c) DS || Worker routes in parallel, Memphis applies 150000 then 160000 then one Worker deploy, then pin bump + render; (d) stays under KAN-580, no new ticket. No files changed besides this entry.
+
+## 2026-10-21 — KAN-580 receipts migrations review (read-only)
+Reviewed 20261020150000_kan580_msg_receipts.sql and 20261020160000_kan580_msg_receipt_recipients.sql. Both Class A, APPLY. Flagged follow-ups: unbounded p_through_seq can poison own watermark permanently; msg_receipt_summary exposes aggregate counts for any seq to any member (Worker filter bypassable via PostgREST); caller-controlled p_access_mode semantics not verified. No SQL run, no files changed beyond this entry.
+- 2026-10-21 dreq-9882ee33: ruled YES on DS DabblerMessage sender maxLines 1 + ellipsis; KAN-620 passes with one skip that names the DS ticket key; unskip when the DS pin bumps.
+
+## 2026-10-22 — Migration classification for Memphis (KAN-585, KAN-611 x4, KAN-621)
+Read-only review of alpha-habu 61e2e186 + 63fd9c33. KAN-585 and KAN-621 = A (additive). KAN-611 file 1 = A; files 2-4 = B (RENAME + replace + ACL tightening on rpc_create_game). No anon caller of rpc_create_game in lib/ or supabase/functions/. Ruling: idempotency_tests.sql may run on live only as single BEGIN..ROLLBACK batches with seeded test accounts; otherwise X1 + read-back. Nothing applied.
+
+## 2026-10-22 — KAN-611 / KAN-584 ruling (Memphis ops batch)
+- KAN-611: live profile-keyed version stands; Habu four-file split (61e2e186) withdrawn, not to land on Alpha; no delta required. Evidence: habu split pre-checks RAISE when *_legacy_v2 exists (…120200:24-26, …120300:23-24) so it cannot apply on live.
+- KAN-584: class A additive (new table, RLS, own-row policies, anon revoked; file :9-34). May apply under standing additive approval before KAN-585 with pre-checks listed in report.
+
+## 2026-10-26 — ceo-kan646-edges (Personas S2–S6 parallelism ruling)
+Read KAN-645..649 and alpha-644-karnak S1 migration. Ruling: remove 645->646 (contract fixed in 645 brief; 646 fixtures built as owner role, S1 trigger blocks only anon/authenticated); split 648 into 648a (intention model/state/ARB/copy/RPC constant, start now) and 648b (final wiring + evidence, after 645+647); keep 647 independent of 645; 649 stays tail. Risks: function-ownership partition 645 vs 646; ARB/l10n generated files shared by 647/648a; migration timestamps must be distinct and 646 must not CREATE OR REPLACE rpc_onboard_*. No files or Jira touched.
+
+## 2026-10-27 — four rulings for next wave
+T-097..T-100 appended to dabbler-docs/DECISIONS.md (offline cache, squad SELECT policies, game_series, flutter_map+OSM). No DB writes.
+
+## 2026-10-27 — KAN-673 ruling (read-only)
+- F2: REVOKE alone insufficient (SECURITY DEFINER, no owner check, authenticated can write any profile's sport_profiles; baseline :11990-12003). Ruled: REVOKE PUBLIC/anon + CREATE OR REPLACE same signature adding `user_id = auth.uid()` owner check.
+- F1: deferred to its own ticket. profiles_profile_type_check (baseline profiles table) forbids 'organiser', so actor_is_organiser (:2040-2048) and policy at :25102 are constant-false; fixing widens authorization across host/challenge/meetup paths — needs a separate cto-shaped ticket + cpo on who an organiser is.
+- Single backend ticket; PEER (schema_change).
+
+## 2026-10-27 — KAN-673 F1 ruling (actor_is_organiser), read-only
+- Ruled: rewrite actor_is_organiser body to persona_type='organiser' AND is_active (CREATE OR REPLACE, same signature, revoke anon); one backend ticket, one migration. Meetup + challenge gates stay organiser-only pending cpo; game hosting gate is advisory only (capability map), no enforcing caller found. v_actor_context.organiser_profile_id (baseline :25102) needs the same fix in the same migration.
+- Open for cpo: whether meetups/challenges should be organiser-only; whether 'host' persona counts.
+
+## 2026-10-27 dreq-0ca2 (KAN-644/646)
+- D1: trgfn_contributor_sports_check CASE in DECLARE resolves NEW.profile_id/NEW.id on wrong table -> every profiles/sport_profiles write fails at COMMIT. P0, backend CREATE OR REPLACE with IF branches, PEER.
+- D2: J1/J4 expectation not changed; legacy control also not_found => fixture defect; fix fixture first.
+- choose_actor anon revoke P2; rpc_challenge_create sport P1 (shape ruling needed).
+- Decision file: /Users/moataz/.claude/jobs/c49d2414/tmp/dreq-0ca2.md
+
+## 2026-10-27 — KAN-678 shape ruling (read-only)
+Ruled: (B) explicit 5-arg overload `rpc_challenge_create(p_profile_type text, p_title text, p_visibility text, p_sport text, p_description text)`, p_sport REQUIRED (no DEFAULT — a defaulted trailing arg makes 4-arg calls ambiguous against the surviving 4-arg function). Param is a sport KEY (text), not p_sport_id: the trigger resolves `sport_id` from `challenges.sport` text and recomputes on INSERT regardless (old is null), so a passed sport_id is overwritten. Rejected (A) defaulted param, (C) derive from organiser. Old 4-arg overload kept (no DROP), anon/PUBLIC revoked. Evidence: baseline 20260829080500 L19774 trigger, L36151 anon grant; zero callers in lib/ and supabase/functions.
+
+## 2026-10-30 — dreq-4777f8ba (KAN-685) ruling
+Ruled: Memphis authors, commits, pushes, applies the Dabbler-Test Player->Contributor data migration end to end in /Users/moataz/.claude/jobs/1ee27200/worktrees/kan685 (alpha-kan685-karnak); constraints: idempotent, keyed on both ids, before-state snapshot, exact rollback, isolation probes; C3 app check by QA (Codex) after apply. Nothing applied by cto.
+
+## 2026-10-30 — dreq-e2a1e56f KAN-685 (decision only, nothing applied)
+Ruled YES to scoped onboard=false -> persona/intention -> organiser insert -> onboard=true in one transaction for profile 5eeb4305 only; not a global bypass (uses the guard's own unfinished-sole-row path). Preconditions: read-only probe that primary_sport=4fd36109 is in interests, has a sport_profiles row, and every sport_profiles sport is in interests; else abort, no invented rows. Post-commit rollback is impossible by design (contributor->player raises persona_conversion_blocked); rollback = in-transaction abort only. Evidence: 20261026100000_kan644_personas_s1_schema_guards.sql lines 77-127, 139-164.

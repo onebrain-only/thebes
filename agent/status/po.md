@@ -5331,3 +5331,136 @@ Drafted offline ticket set from KAN-599 to /Users/moataz/.claude/jobs/c49d2414/t
 
 ## 2026-10-20 KAN-603 work_acceptance (Horemheb)
 ACCEPTED at Alpha 82db0c74 (origin/Alpha): AC1-AC5 verified against code; analyze exit 0, 620+ targeted tests pass. Non-blocking notes: splash backstop (20 s) shows localized BootstrapErrorApp rather than proceeding; mapper vs Failure.from differ on PGRST301/403 category. Device TCs deferred to beta. Read-only; no Jira/code edits. Noted CEO rule: verify ALLOWED PATHS exist on origin/Alpha (mark new) in tickets I write.
+
+## 2026-10-21 po (Horemheb): KAN-614 created
+CEO-ordered ticket: receipts sheet stat tiles show All/Nobody. Backlog (To Do), cap:frontend, parent KAN-494, Relates KAN-580. One ticket covering dabbler-design-system (DabblerReceiptsSheet._tile) + dabbler-code wiring. Not Ready: no Work Effort/due_date. No other tickets touched.
+
+## 2026-10-21 po (Horemheb): CEO order, make dispatchable
+Readied (Work Effort via ready set, due_date, surfaces from ALLOWED PATHS + repo grep, Jira Ready, addendum comment): KAN-614 (2, due 10-23), KAN-587 (2, 10-23), KAN-588 (3, 10-26), KAN-589 (3, 10-26, relabelled backend->frontend), KAN-592 (3, 10-24), KAN-594 (2, 10-28, ranking-weights approval gate), KAN-607 (3, 10-28), KAN-612 (2, 10-27; description ALLOWED PATHS corrected, lib/features/composers does not exist). Left: KAN-581 (Q1-Q12 and R2 unresolved), KAN-610 (blocked by design KAN-604). No new Blocks links added (chain 587->588->594 and 611->612, 605->607 already existed). KAN-614 moved to Front-end in Jira by something other than po right after Ready.
+
+## 2026-10-21 Horemheb
+Created KAN-615 (backend, Backlog, parent KAN-576, relates KAN-608): users.language_updated_at migration, authored only. No Work Effort/due_date/ready set; Backlog per brief.
+
+## 2026-10-21 po-2 (Horemheb) - KAN-615 readied
+Set component Platform, Original estimate 1d (matches sibling KAN-608; migration + trigger + model/mapper + tests), moved To Do -> Ready (transition 2). ALLOWED PATHS confirmed in description: supabase/migrations only (one new file), authored not applied, no DROP/RLS/grant. No due_date set (none derivable here; KAN-608 also has none).
+
+## 2026-10-21 - Horemheb - split of KAN-587 / KAN-589 / KAN-612
+Created KAN-616 (from 587, area search above keyboard), KAN-617 (from 589, profile city vs saved-places separation), KAN-618 (from 612, client request-id holder). Each: frontend, 1 sitting, 3h original estimate, relates-to parent, no Blocks, paths disjoint from KAN-585/592/602/603; moved to Ready via ready.py (Jira Ready). Parents left open with a scope comment. KAN-617 does not remove the users.latitude/longitude write in setPrimary (reports readers instead). Evidence: Jira keys above.
+
+## 2026-10-21 — KAN-619 created (Horemheb)
+CEO order: scrim animates out in sync with drawer. Ticket KAN-619 (parent KAN-576, component Platform, labels frontend+cap:frontend, 2h, due 2026-10-23), Ready via ready.py (capability frontend, effort 2). Shared helper is lib/utils/transitions/app_sheet_route.dart (KAN-596 already did a first pass; ticket says verify/sync duration+curve). Surfaces left unassessed for executing seat.
+
+## 2026-10-21 Horemheb — D-042 prio-dab47fae: briefs for KAN-616/617/618
+Rewrote descriptions with DECISIONS MADE, BRANCH, ALLOWED PATHS, FORBIDDEN, criteria, Codex QA testing scenarios, CHECKS (C1 run / C2 judge). Removed needs-brief (brief-requested was not present). Status Ready, estimate (3h) and component untouched. KAN-616 excludes auth_onboarding (KAN-602). KAN-617 narrowed to tests only (no lib/ edits; profile_edit_screen seam dropped from allowed paths; users.latitude/longitude write in setPrimary untouched, KAN-592/Luxor). KAN-618 unchanged in scope.
+
+## 2026-10-21 Horemheb: build tickets from designs KAN-577 and KAN-591 (CEO order)
+Created and moved to Ready (ready set, Jira Ready): KAN-620 (frontend, Social, parent KAN-494, 8h, due 10-26; typing/receipts DESIGN-CONFORMANCE pass: KAN-579/580 already built and CEO-accepted, no backend gap found), KAN-621 (backend, Social, parent KAN-574, 4h, due 10-27; rpc_sport_overview, authored not applied: no sport follower-count aggregate exists, games/meetups/venues have area_id, posts have none), KAN-622 (frontend, Social, parent KAN-574, 16h, due 10-30; Sport Overview page; Blocks link 621->622 verified). Relates: 620-577, 621-591, 622-591. Design tickets KAN-577/591/604/583 untouched. Image/GIF (KAN-581), KAN-593, Places tab excluded. Dates are sitting counts, not capacity.py output. I could not open the Claude Design file for Sport Overview v2 (no local copy); criteria rest on the KAN-591 handoff text.
+2026-10-21 po: decided dreq-89bc7a00 KAN-589 REJECTED (build L27 Auto/Manual from Jira text)
+
+## 2026-10-21 po-2 (Ay) KAN-624
+Created KAN-624 "DS: card-coloured thumb variant for DabblerTabs segmented control": parent KAN-573, component Design System, cap:frontend, effort 2 sittings, due 2026-10-23 (8 frontend seats free, empty queue), relates-to KAN-589 and KAN-583, moved to Ready. Remaining claim reasons: surfaces-unassessed (executing seat states at Preflight), unverified-jira.
+
+## 2026-10-21 - KAN-589 Ready -> QA-Test
+PO ruling relayed: code complete at ebb85ae0; transition id 3 read back live; comment 13492 posted; C2 deviation accepted, follow-up KAN-624. Not moved to Done.
+
+## 2026-10-22 KAN-588 (Horemheb)
+Rewrote TESTING SCENARIOS (TC-A country-only, TC-B city chosen; Maybe later only) per CEO ruling; comment 13662 added; transitioned Reopened -> Self-review (id 6) OK. AC unchanged. No new tickets.
+
+## 2026-10-22 prio-d8a86bf6 (Horemheb)
+- KAN-625 brief written in description (goal, facts, decisions, BRANCH, allowed/forbidden paths, 7 ACs, CHECKS C1-C4, if-blocked); needs-brief removed (brief-requested was not present). Ticket premise corrected: MESSAGING_ACCESS_MODE is a Cloudflare Worker variable, not a DB setting; scope is now Worker fail-closed + no-write-path proof. No status change, no DB, no new ticket.
+
+## 2026-10-22 KAN-625
+Added comment 13693 (authenticated smoke request for Codex QA). Ticket already in Self-review (10044); no transition made, no new tickets.
+
+## 2026-10-24 KAN-591 brief (D-042 needs_brief)
+Rewrote description: removed duplicate historical C1/C2 checks (renamed H1/H2), added TS1-TS10 click-by-click iOS scenarios. Removed label needs-brief. Status unchanged. Unsettled: current etag of design (MCP read not performed), Frame 5.svg sport unknown.
+
+## 2026-10-25 KAN-641 brief written
+Description rewritten as structured brief with test scenarios (CEO order). Labels needs-brief and brief-requested removed. Status unchanged (Ready). No tickets created.
+
+## 2026-10-26 Horemheb: KAN-646 edges per CTO (Khnum) ruling, dispatch ceo-kan646-edges-po
+- KAN-646 description rewritten (S1-only boundary, fixed S2 contract, C4 + AC6/7); comment 14087.
+- KAN-648 -> 648b (comment 14088); KAN-650 created as 648a (no edges); KAN-649 comment 14090, links unchanged.
+- KAN-650 and KAN-646 moved to Ready via ready set (effort 2 / 3, basis recorded).
+- NOT DONE: delete Blocks link 10466 (645 blocks 646) - no delete-link tool; needs Jira UI. No due_date set (no capacity count).
+
+## 2026-10-26 KAN-650 brief repair (ceo-650-brief)
+KAN-650: dispatcher failed on "DECISIONS MADE (APPROVED...):" (parenthetical broke the header) and BRANCH none. Fixed to plain "DECISIONS MADE:" with the rulings inline, BRANCH alpha-karnak, added C6 l10n parity run check; dispatch_brief lint passes. due_date 2026-10-29 (effort 2, frontend 8 seats free, ARB sequencing after KAN-647). Labels needs-brief and brief-requested removed. KAN-646: had no due_date; set 2026-10-30 (effort 3, backend seats free). No tickets created.
+
+## 2026-10-26 KAN-646 brief fix (po)
+Set BRANCH none -> alpha-646-karnak in Jira description only; CHECKS stay judge (all non-flutter). dispatch_brief lint --team karnak: status ok. No tickets created, no status changed.
+
+## 2026-10-27 Horemheb: created KAN-672 (ratings grants hardening, Social, 1d, Backlog, Relates KAN-664) and KAN-673 (KAN-646 Ramesseum F1/F2, Platform, 1d, Backlog, held for cto owner-check answer). No duplicates found. Estimates are PO placeholders, not capacity-derived; no due_date set (PM ranks).
+
+## 2026-10-27 D-042 needs_brief prio-8f3e29a8
+KAN-669 and KAN-672 briefs completed (AC, DECISIONS MADE, BRANCH, CHECKS in C-line format). ready set: 669 frontend/3, 672 backend/1. needs-brief removed. brief-requested was not on either ticket. Remaining unclaimable: unverified-jira, surfaces-unassessed (expected).
+
+## 2026-10-27 KAN-673 CTO ruling applied (po)
+Summary and description rewritten (owner check + revoke, F1 deferred), brief in dispatcher format (lint ok --team karnak, BRANCH alpha-673-karnak), labels schema_change, due_date 2026-10-29, ready set backend/1, moved to Ready. No tickets created.
+
+## 2026-10-27 KAN-674 brief + Ready (Horemheb)
+Wrote BRIEF into KAN-674 description (lint --team karnak: ok), due 2026-10-28, ready set backend/effort 1, moved to Ready. cto precondition (no anon-reachable view uses actor_is_organiser) placed in IF BLOCKED/DECISIONS. No other tickets created.
+
+## 2026-10-27 KAN-669 acceptance judgement (Horemheb)
+Verdict PASS (Jira comment 14220) at alpha-luxor ef20fbb1. Ran map test (12), design gate (45), analyze: all exit 0. C3 literal grep not empty (pre-existing mapbox_search at pubspec.yaml:149, geocoding only; lib/features/listings does not exist) - ticket wording was PO's fault, intent met. No live walk; widget tests cover TC1-TC9.
+
+## 2026-10-27 KAN-675 created (Horemheb)
+Sign-up sports picker empty for Global. Jira has no Bug type, so created as Task with labels cap:frontend, bug, blocks-signup, priority High, due 2026-10-28 (placeholder, not capacity-derived). Brief in dispatcher format. ready set frontend/effort 1, moved to Ready. Remaining unclaimable: unverified-jira, surfaces-unassessed (expected). dispatch_brief lint not run (tool not located). No other tickets created.
+
+## 2026-10-27 prio-71c370c8
+Removed needs-brief from KAN-676/677/679 (brief-requested was not present). Read back from edit response: 676 [cap:backend, schema_change]; 677 [cap:backend]; 679 [cap:backend, schema_change]. No other change, no tickets created.
+
+## 2026-10-27 KAN-677 label cleanup
+Removed needs-brief and brief-requested from KAN-677 (dispatcher brief already exists). Read back: labels=[cap:backend], status unchanged (QA-Test). No tickets created, no transition.
+
+## 2026-10-27 — KAN-680 created (po / Horemheb)
+Created KAN-680 "Frontend: call rpc_challenge_create with the picked sport key" (Task, capability frontend). Linked KAN-678 BLOCKS KAN-680 (read back on KAN-680: "is blocked by" KAN-678). Left in To Do (10004): no due_date and no Work Effort, so the five Ready facts are not met; no needs-brief label added. No parent Epic (KAN-678 has none). No other tickets.
+
+## 2026-10-30 KAN-685 acceptance ruling (po)
+- Decision: YES, accept closing with C3 recorded as "not run by an agent: sign-in password entry not permitted; first live check is the CEO's own login". Comment posted on KAN-685; no transition, no tickets created.
+- Why: C3 is an environment/permission limit, not a defect; the account exists for the CEO to test as Contributor, so the CEO login is the natural first live check. C3 stays UNVERIFIED, not passed.
+
+## 2026-10-30 KAN-690 brief completed (Horemheb)
+Rewrote KAN-690 description with CHECKS C1-C4 in `Cn | run|judge | what | pass` form; recorded decision to remove dead callers (no switcher recreated); removed needs-brief label (brief-requested was not present). No follow-up tickets.
+
+## 2026-10-30 · po (Horemheb) · ceo-spread-2026-10-30-b · Recurring games Epic
+Created KAN-692 (Epic) with KAN-693 B2, 694 B3, 695 Design, 696 Copy, 697 F1, 698 F2 (all To Do, component Listings, labels cap:* + recurring-games, Original estimates 1d/6h/4h/3h/6h/6h). Blocks: 693>694, 693>697, 695>697, 696>697, 694>698, 697>698; read back from Jira. Four product questions answered by Orchestrator (CPO v1 defaults) and written as DECISIONS MADE in the Epic and all briefs. Briefs lint ok with a real team substituted for alpha-<team>. Persistent State: capability, Work Effort, surfaces set (backend 2/1, others 1 sitting). No due_date set. Live read: KAN-671 migration NOT applied (no game_series, no games.series_id).
+
+## 2026-10-30 - Horemheb (po): KAN-693/694 apply-order note + backlog tickets (PM prio-a1f7ac39, CPO rank)
+- JOB 1 done: comments 14443/14444 and APPLY-ORDER NOTE in descriptions of KAN-693 and KAN-694 (migration 20261027120000_kan671_game_series.sql exists only on alpha-671-habu; cherry-pick unedited onto alpha-memphis, apply first). KAN-693 already in Back-end.
+- JOB 2 created, all To Do, read back via JQL: Epics KAN-699 (analytics, Platform), KAN-701 (bench, Profile), KAN-702 (Apple, Auth). Tasks KAN-700 (cap:backend), KAN-703 (cap:frontend), KAN-704 (cap:ux-engineer design), KAN-705 (cap:devops + needs-ceo), KAN-706 (cap:frontend), KAN-707 (cap:frontend).
+- Blocks links: KAN-700->KAN-703, KAN-704->KAN-706, KAN-705->KAN-707.
+- Premise corrections: analytics sink already live (rpc_track_event); Apple iOS already shipped and verified (KAN-90); bench backend exists, no client.
+- Not verifiable: live SQL (ops guard refused execute_sql); schema facts come from repo baseline migration + list_tables. Work Effort and due_date not set (To Do; executor sizes).
+
+## 2026-10-30 KAN-706 brief (po, Horemheb)
+Rewrote KAN-706 description as a dispatch brief (GOAL/BRANCH alpha-bench-client/ALLOWED PATHS/FORBIDDEN/DECISIONS MADE/IF BLOCKED/CHECKS C1-C7). Lint status ok. Removed needs-brief. Ticket kept in Ready. Labels read back: bench-mode, cap:frontend. No new tickets. Arabic copy still pending content-manager review.
+
+## 2026-10-30 KAN-703 brief fix (prio-9a41e9e6)
+Reformatted description to pass dispatch_brief lint (BRANCH alpha-deir-el-bahari, DECISIONS MADE/IF BLOCKED added, CHECKS C1/C2 plain run commands exit 0, test assertions moved to judge C5). Removed needs-brief, brief-requested. No transition, no ticket created.
+
+## 2026-10-30 — KAN-693 dreq-253c8a40
+Ruled: ops C1 reworded (list_migrations was a mis-specified proxy; substance met on live-object proof + c7bbccf). KAN-693 not yet acceptable: P5 cannot fail (generator loop never runs; occurrences_ahead<=12), ticket C2 requires 52-cap proof; Memphis rewrites P5 rolled back. P12 RLS not in KAN-693 scope (KAN-671 object). Decision: /Users/moataz/.claude/jobs/c49d2414/tmp/po-dreq-253c8a40.md
+
+## 2026-11-01 KAN-691 brief (prio-6a9c1d39)
+Rewrote description with standard brief + C1-C4 checks + acceptance criteria; removed needs-brief and brief-requested. Status untouched (Ready). No new tickets. Ambiguity: profileGameCountsProvider is AsyncValue<GameCounts> on Alpha, not SourceState; narrowest reading stated in DECISIONS MADE.
+
+## KAN-687 acceptance question (2026-11-01)
+REJECTED sha a7773202: item 3 reorder + C2 wiring test outstanding. Hero dash approved temporary (b if id sets exist); partners/per-sport tiles approved exclusion; etag waived. Decision: jobs/f305ed4e/tmp/dec-3da4a5b0.md
+
+## 2026-11-01 KAN-694 work_acceptance (dreq-c24b1a03)
+ACCEPTED. KAN-694 already on origin/Alpha (cf836e13, 189b9568, 4c1bc31b); supabase/ diff Alpha vs 63837c81 empty; 20 game-composer failures pre-existing on Alpha, outside KAN-694 paths. Decision: /Users/moataz/.claude/jobs/f305ed4e/tmp/dec-694-accept.md
+
+## 2026-11-02 KAN-699 cut (grant-20261102090233-d36423)
+Epic's original children KAN-700 and KAN-703 were both Done. Cut 4 residual tickets under KAN-699: KAN-750 (frontend, game_created price), KAN-759 (frontend, composer event test), KAN-765 (frontend, joinGame event test), KAN-767 (devops, funnel re-verify note). No Blocks links; all four moved to Ready. cut_plan check: 0 errors, 1 warning (hotspot game_composer_screen.dart, only KAN-750 edits it), one wave, critical_min 45.
+
+## 2026-11-02 KAN-702 epic cut (Horemheb)
+Cut Epic KAN-702 into 6 tickets (KAN-746, 752, 754, 760, 764, 768); cut_plan check clean, 1 wave, critical 45 min. 5 moved to Ready via agent.state.ready; KAN-768 (needs-ceo, Apple credentials) left in Backlog. No Blocks links. due_date not set on tickets (not requested by brief; flag).
+
+## 2026-11-02 po (Horemheb): KAN-702 brief rewrite
+Rewrote descriptions of KAN-746/752/754/760/764 with GOAL, BRANCH (alpha-<team>), DECISIONS MADE, IF BLOCKED, CHECKS (C1..C3), keeping AC, surfaces, scenarios. Local dispatch_brief.lint (with <team> -> frontend-3, --team frontend-3): all ok. Removed needs-brief and brief-requested; labels read back as [apple-signin, cap:frontend] on all five.
+
+## 2026-11-02 — dreq-4283921b (KAN-738, Ramesseum): decided (a), no widening
+- KAN-742 already owns meetup_models.dart / meetup_search_result.dart and is Blocked-by KAN-721 (event_id exposure) and KAN-741. Widening KAN-738 would collide.
+- KAN-738 narrowed to test-only (RPC-only guard test, no lib/ change). KAN-742 widened to absorb meetup_mappers.dart, meetup_repository_impl.dart, regenerated freezed/g files, nullable title. Both descriptions rewritten (ADF), comments added (KAN-738 #14817, KAN-742 #14818). No transitions, no new tickets, no links changed.
+- Answer: /Users/moataz/.claude/jobs/b9b99f0a/tmp/dreq-4283921b-answer.md; decision_gate status=answered, dispatch cdispatch-703fbbe8-d514-4f8a-b4fa-b781f3327f72 to ramesseum.

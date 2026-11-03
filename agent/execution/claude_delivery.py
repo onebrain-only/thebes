@@ -231,8 +231,13 @@ def resume_same_sid(finish, cli, state_store, delivery_id, sid, message, stable_
     try:
         live = cli.agents()
         count_before = len(live)
+        # Every session that EXISTED before this call, finished or not. A session that was merely
+        # stopped and came back live (another delivery resuming the team's own bound SID in the same
+        # window: 30cf0932 for KAN-757/771/784) is not a copy this call created.
+        everyone = cli.agents(include_completed=True)
+        existed = {r.get("sessionId") for r in everyone}
         row = cli.find_by_sid(live, sid)
-        if row is None and cli.find_by_sid(cli.agents(include_completed=True), sid) is None:
+        if row is None and cli.find_by_sid(everyone, sid) is None:
             return finish(UNREACHABLE, "session %s is not in `claude agents --json --all`; "
                           "no session is created in its place" % sid,
                           message_ref=message_ref, session_count_before=count_before,
@@ -269,7 +274,7 @@ def resume_same_sid(finish, cli, state_store, delivery_id, sid, message, stable_
         row_after = cli.find_by_sid(after, sid)
         # The bound SID coming back is the point; anything ELSE that appeared is a copy.
         new_ids = sorted(set(r.get("sessionId") for r in after)
-                         - set(r.get("sessionId") for r in live) - {sid})
+                         - set(r.get("sessionId") for r in live) - existed - {sid})
         if COPY_MARKER in text or row_after is None or new_ids:
             for new_sid in new_ids:                     # stop only what THIS call created
                 copy = cli.find_by_sid(after, new_sid)

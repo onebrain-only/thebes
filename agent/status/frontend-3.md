@@ -153,3 +153,12 @@ No lib change needed: route already maps non-DateTime extra to null; thread_item
 
 ## 2026-10-20 — KAN-596 (team Habu) bottom-drawer scrim slides with panel
 Worktree kan-456-habu / alpha-habu @ a08947bc, uncommitted. Root cause DS sheet_route.dart:149-165 (route SlideTransition over a page that contains the scrim). Fix: lib/utils/transitions/app_sheet_route.dart (AppSheetRoute/showAppSheet drives DabblerSheet.open; no route slide; keyboard lifts the sheet), 62 call sites in 46 files routed through it; reduced motion added to BottomSheetTransitionPage/AdaptiveModalPage. New test test/utils/transitions/app_sheet_route_test.dart (11). analyze exit 0 (0 err/0 warn, 39 infos = baseline); flutter test exit 0, +3034. Not committed/pushed per brief.
+
+## 2026-10-25 — KAN-589 round E (alpha-ramesseum, wt-639) five location defects
+Commit 3acc0340 (base a689f41a), not pushed. Root causes found in the real browser (release build, 127.0.0.1:8595): (1) address search used Geocoding v6, which has no POIs, so it now uses the Search Box forward API; (3)+(4) on HEAD, saving any place failed with no write because profileControllerProvider is only loaded by the profile screens, so ProfileLocationNotifier now falls back to myProfileIdProvider. Duplicate block and delete (204) seen working. (2) drag/zoom and (5) manual location (home line, nearby, listings, survives logout/login) already worked on HEAD a689f41a; re-verified on the new build. The CEO's 8589 server was a stale round-C `flutter run` (PID 30223), now stopped. Tests: place_search_589e_test (3), save_place_profile_id_589e_test (3), both fail on the old code. analyze exit 0 (0 err/0 warn/43 infos); flutter test exit 0 (+4087). Shots in $CLAUDE_JOB_DIR/tmp/shots-589e/.
+
+## 2026-11-02 — KAN-749 (frontend) — game view realtime on events/games
+- Branch alpha-habu (worktree kan680), commit ea7a4638a5397e164c32cd20e50bd7343c4a42c0, not pushed.
+- game_view_$gameId channel now also listens to events/games (id=eq.gameId) via existing debounce; single-channel guard; dispose/load inert after dispose; GameView.fromJson tolerates null end_at; SupabaseConfig.eventsTable added.
+- Tests: test/features/games/game_view_realtime_test.dart 8/8 green; join-event regression 4/4; analyze 0 errors/0 warnings.
+- Limitation: realtime publication of events/games not verified on prod; controller file is 784 lines (was 726, already over the 500 cap).

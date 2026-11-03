@@ -2086,3 +2086,249 @@ Moved to Ready: KAN-602 (Auth, 4h), KAN-603 (Platform, 6h), KAN-611 (Social, 8h,
 
 ## 2026-10-20 pm (Anubis) D-042 prio-0ea8facb
 Backlog read (13 To Do). Moved 0 to Ready: every executable ticket is Blocks-gated by KAN-603 (Self-review), KAN-611 (Back-end) or KAN-605 (To Do); 604 needs-design; 494/573-576 are parent epics. No Jira writes made.
+
+## 2026-10-21 Anubis - priority prio-a0e92d10 (+ prio-1af45913, prio-de57ee2f, prio-a80e0392)
+Moved nothing: Backlog holds only epics, KAN-604 (cxo), KAN-610 (blocked by KAN-604), KAN-613 (parked). Ready already has 6 tickets (587,588,589,594,607,612), more than the 2 free teams can take. KAN-614 (Operations, no component, no estimate) flagged. Ledger entry added.
+- 2026-10-21 prio-079f69c0: KAN-615 held in Backlog pending PO component+estimate (PM may not spawn po).
+
+## 2026-10-21 Anubis - priority prio-8faff92d
+Moved nothing: Backlog has only epics, KAN-604 (cxo design) and KAN-613 (parked); no build tickets from designs 577/591 exist yet. Ready holds 588,593,594,607,610,612 (all component+estimate). No Rank tool available, so requested order (610, 593, 588) not applied in Jira. Ledger entry added.
+
+## 2026-10-21 D-042 board pass (KAN-604, KAN-613)
+Moved to Ready: none. Backlog executable tickets: none. KAN-604 stays (cap:cxo design; only CEO closes). KAN-613 stays (parked; blocked by KAN-605 still QA-Test; needs CEO release). Epics 494/573-576 non-executable. Ready: 588,593,594,601,607,612,620,621,622. Logged in pm_ledger.
+
+## 2026-10-21 · PM priority run (Anubis)
+Atlassian connector timed out on 4 calls (resources, JQL x2, getIssue KAN-620). Retry limit reached. Nothing read from or written to Jira: no tickets moved to Ready, KAN-620/621 descriptions and labels unchanged. Last ledger state (12:36Z): Ready already holds 588,593,594,601,607,612,620,621,622; Backlog has only epics, KAN-604, KAN-613.
+- 2026-10-21T16:23:42Z · pm · prio-90c226d5 · PM 2026-10-21: KAN-621 rework scope written on ticket (P5c anon capture then RESET ROLE then insert; seed games/meetups/posts probes; revert KAN-611 test edit). Already owned by ramesseum in dev (fix 1 of 3), component Social, estimate 4h. Backlog (To Do) holds only epics, KAN-604, KAN-613: nothing to move to Ready. KAN-622 stays blocked on 621.
+
+## 2026-10-21 prio-804151ce (PM)
+Held 593/607/620/612 (test-infra) and 581 (R2 decision) with comments; KAN-589 returned to Ready as rework (missing Auto/Manual control, L27). No other Backlog ticket executable; nothing else moved.
+
+## 2026-10-21 PM deep backlog pass
+- Read epics 494/573-576: every child is Done, in flight, or a cap:cxo design (577/583/591/604). No unscoped committed scope remains; no PO tickets written (nothing to invent).
+- KAN-605 is already Done, so KAN-613 (Platform, 3h, cap:frontend) has no open blocker: moved To Do -> Ready. Its text still says "CEO releases from parked"; the CEO's order today is taken as that release, flagged for orchestrator.
+- Nothing else in To Do besides epics and KAN-604 (design, untouched).
+- Ops/integration note (no ticket): none new.
+
+## 2026-10-21 PM (Anubis): Need Input pass
+- "Need Input" status/column does not exist (board.py COLUMNS/STATUSES and live transitions list have none). Not creatable via API. Stopgap: label `need-input` on KAN-624, 589, 581, 593, 607, 620, 612, each with an Arabic CEO-steps comment.
+- Order: Ready is fully dependency-blocked (588<-585, 594<-588+593, 622<-621). No unblocked Ready ticket for Deir el-Bahari or Ramesseum; no tickets created, nothing moved to Done.
+
+## 2026-10-22 Anubis (CEO "Accelerate")
+- KAN-588: deps KAN-585/586/587 all Done; already started by Luxor 12:04 (status Back-end). No move needed.
+- KAN-594: still blocked by KAN-588 (in progress) and KAN-593 (Reopened).
+- KAN-611 closed Done as superseded (live profile-keyed version stands); KAN-612 unblocked.
+- Created KAN-625 (MESSAGING_ACCESS_MODE dashboard-only, backend, To Do) and KAN-626 (QA player-persona account, ops, To Do; KAN-475 not relaxed). Both lack Original estimate; not Ready.
+
+## 2026-10-22 prio-defce6eb (Anubis)
+PM 2026-10-22: KAN-626 (Platform, cap:ops, 4h) moved to Ready: unblocks KAN-622 AC9 QA without touching KAN-475. KAN-594 already in Ready (Social, 6h) for the free code team. KAN-625 (Social, 6h set, KAN-581 Done) stays To Do next in rank: Social team already holds 622 and 594. Reopened 589/593/607/612/620 not moved: held for CEO hand QA (test-infra gaps), not product defects. Epics untouched.
+
+## 2026-10-22 prio-d5b19a54 (KAN-588 qa-failed)
+Decision: KAN-588 held in Reopened, not Ready: Codex FAIL is a test-state/reach gap (City-only search is KAN-587, Done, on origin/alpha; reviewer profile had Al Barsha set). Comment 13661 added with fresh-client check. Moved to Ready: none. Ready already 594, 622. KAN-625 stays To Do (Social team busy). Held reopened 589/593/607/612/620 unchanged. Logged in pm_ledger.
+
+## 2026-10-22 prio-0340c8a1
+KAN-625 moved To Do -> Ready (Social, Original estimate 6h already set, capability backend). Nothing else was in Backlog: remaining open tickets are design (577/583/591), Reopened held for CEO hand QA (588/589/593/607/612/620), in-flight (594, 622, 624, 580) and Epics. No runtime edits, no Open transitions. Ledger entry added.
+
+## 2026-10-22 prio-de1a0467 (Anubis)
+PM 2026-10-22: KAN-625 qa-failed (valid-values coverage: access_mode.test.ts covers off/allowlist/all only on list/send, not every route sending p_access_mode). Test-only rework scope written (comment 13677), Reopened -> Ready (Social, 6h) for Karnak/alpha-karnak. Backlog otherwise only epics; KAN-594 and 622 already Ready; 588/589/593/607/612/620 untouched (CEO hand QA); design 577/583/591 untouched; KAN-624 DS in flight.
+
+## 2026-10-22 prio-290bdab8 (Anubis)
+Board pass: Backlog only epics; nothing moved to Ready. Ready 594, 622 (needs-brief). Reopened set held for CEO hand QA. No Jira edits.
+
+## 2026-10-22 prio-a763648e (Anubis)
+KAN-581 failed Codex QA on 4dce00c5 (Messages "Couldn't load your chats"; client calls Supabase RPC msg_my_conversations, not the Worker). Cause unknown, not assumed to be a KAN-581 defect. Read-only facts: live function exists, authenticated has EXECUTE, result columns match the KAN-555/560 shape; live migration list holds no messaging migration (KAN-559 meetup_id file is authored, not applied). Created KAN-627 (Social, cap:backend, 4h): reproduce with status/body, diff live vs repo, fix on owning side; moved to Ready (transition id 2); linked Blocks KAN-581; comment 13699 on KAN-581. KAN-581 held in Reopened (not sent to dev), returns to QA-Test after KAN-627. Backlog (To Do) otherwise only epics 494/573-576; nothing else moved. Ready: 594 (blocked by 588+593, unchanged), 622 (needs-brief), 627. Reopened 588/589/593/607/612/620 untouched; design 577/583/591 untouched; KAN-592 not re-applied; no Open transitions. Note: a second execute_sql probe was refused by the ops guard (correctly); no DB write made.
+
+## 2026-10-22 prio-8d3bd3e6 (Anubis)
+KAN-607 qa-failed = review-build env gap (Worker defines, fixed cd185f6); comment + Reopened -> QA-Test for fresh-sha re-review. Backlog only epics; nothing moved to Ready. Ready: 594, 622. Ledger entry added.
+
+## 2026-10-22 prio-9106a1a5
+KAN-620 environment fault (as KAN-607): comment + Reopened -> QA-Test. Backlog only epics; nothing to Ready. KAN-622 unclaimable (not-ready, unverified-jira, surfaces-unassessed, stale-jira; no estimate/component). Ledger entry added.
+
+## 2026-10-22 review-environment returns
+KAN-620, KAN-607, KAN-589, KAN-612: commented (env fault, not code) and moved Reopened -> QA-Test (id 3) via agent.integrations.jira; read back QA-Test on all four. KAN-593 untouched.
+
+- 2026-10-22 pm: posted correction comment on KAN-593 (S1 approved 2026-10-21; cleared to implement).
+
+## 2026-10-22 prio-7090424b
+PM 2026-10-22: Backlog (To Do) holds only epics 494/573-576; no returned work or new sub-tasks in Reopened/To Do. Nothing moved to Ready. Ready = KAN-594 only (dependency-blocked on 588+593, stays). 622 Operations not claimable, left. 577/583/591 untouched, 592 not re-applied, 588/594 blocked, no Open transitions, no follow-up tickets.
+
+## 2026-10-22 prio-ea98e244
+PM 2026-10-22: key 'done' is malformed, ignored. Backlog (To Do) holds only epics 494/573-576; no returned work (Reopened = 0) and no new sub-tasks; nothing moved to Ready. KAN-622 settled: Jira already carries component Social and Original estimate 2d (=16h); earlier 'no estimate/component' read came from the normalized view, not Jira. Decision Social/16h stands; status Operations, not claimable, left. KAN-594 stays blocked on 588+593. 577/583/591 untouched; no Open transitions; no tickets created.
+
+## 2026-10-22 prio-24b380a6 (Anubis)
+KAN-594 qa-failed on 0aca1d6f: both reviewer gaps are real code defects (candidateCap=500; null-city unscoped query). Rework scope comment 13793; Reopened -> Ready (Social, 6h). No other non-epic in To Do/Reopened/Ready. Ledger entry added.
+
+## 2026-10-22 prio-56f9b37c KAN-592
+KAN-592 qa-failed (posts_content_model_check on Dubai origin + Abu Dhabi tag, sha 573389d). Comment 13805 added; Reopened -> Ready (transition 2), Social, 6h. Backlog holds only epics; no other promotion. Ledger logged.
+
+## 2026-10-22 prio-9db1b7a3
+Backlog re-prioritised: To Do holds only epics KAN-494/573-576. Nothing promoted. Ready: KAN-592 (Social, 6h). Design 577/583/591 untouched. No tickets created, no Open transitions. Logged in pm_ledger.
+
+## 2026-10-22 prio-6e0b9948
+KAN-588 returned to Front-end (Luxor), comment 13824. Backlog epics only; nothing moved to Ready.
+
+## 2026-10-22 KAN-577 to QA-Test
+CEO ruling: design tickets follow normal flow. KAN-577 was Front-end (label design-ready); transition 3 was available directly, Self-review not needed. Comment 13826 added (SHA 78cbc0cb, analyze 0, test 3827, AC table, unreadable frames 25-48 caveat). Read back: status QA-Test (10009). Not moved to Done. No tickets created, no Open transition, runtime untouched.
+
+## 2026-10-22 prio-db4ff9a1 (Anubis)
+Backlog/Reopened/Ready hold only epics 494/573-576. Nothing moved. Logged to pm_ledger.
+
+## 2026-10-22 prio-dc235cff (Anubis)
+KAN-583 (Reopened, Codex QA-fail on stale "ask ticket, no code" wording) corrected, not a code defect. Description/AC/title rewritten to the built implementation (location intro + Settings > Location, EN/AR, light/dark); labels ask and cap:cxo removed, design-ready kept; estimate 6h and component Platform unchanged. Comment 13834. Reopened -> QA-Test (transition 3) for Codex re-review of a0ad89c7/Alpha 0d6d5d59. Open: AC4 fidelity unverified; missing EN/AR copy to be requested from Content via the orchestrator (content-manager); Auto/Manual thumb = KAN-624. Backlog (To Do) holds only epics 494/573-576; nothing moved to Ready. No Open transitions, no new tickets.
+
+## 2026-10-23 prio-7adff351
+Backlog/Reopened/Ready: epics only, nothing moved. KAN-583 in Self-review: follow-up copy-wiring DEV ticket not created (deferred until review closes). No Open transitions.
+
+## 2026-10-23 KAN-628
+Created KAN-628 (Platform, cap:frontend, 3h, To Do, under KAN-573): wire location_intro_select_city, location_settings_device_title, location_mode_auto/manual (Content 13835) plus 4 hardcoded labels (Set as primary, Rename, Rename location, Custom name) that still need Content keys. Not moved to Ready: waits for the Content request for scope B (or Ready for A only). Verified on origin/Alpha 50793eeb that title, empty state, delete dialog were already wired by KAN-583.
+
+## 2026-10-23 KAN-628
+Moved To Do -> Ready (transition 2). Component Platform, Original estimate 3h confirmed. Content complete (comments 13835, 13845); scope A and B both in. No new tickets.
+
+## 2026-10-23 PM board pass (Anubis)
+KAN-588: qa-failed judged review-ENVIRONMENT failure (MAPBOX_ACCESS_TOKEN absent in review build; same as KAN-591), CEO-directed. Comment 13847; Reopened -> QA-Test (transition 3), not returned to Luxor; pending CEO adding token + fresh-sha re-review. Backlog (To Do) non-epic: none. Ready: KAN-628 (Platform, 3h) already queued. 622/591 Self-review, 594 Peer-review, 577/580 QA-Test, 624 Front-end untouched. pm_ledger add was denied by the permission classifier; not logged there.
+
+## 2026-10-23 prio-88436240
+PM: Backlog had only KAN-629 non-epic; held (Codex handoff, owner billing setup). Nothing moved to Ready. Ledger entry added.
+
+## 2026-10-23 prio-98fae9be
+Nothing moved to Ready. KAN-630 Mapbox experiment + subtasks 631-635 are codex-execution-only (held To Do). KAN-629 closed, untouched. Ready empty.
+
+## 2026-10-23 prio-8a5262b8 (Anubis)
+Backlog re-ranked: only epics 494/573-576, KAN-577 (design, cxo capability, untouched) and excluded Mapbox 630-635. Nothing moved to Ready. No tickets created, no code or DB changes.
+
+## 2026-10-24 prio-ffafcb14 (PM)
+Moved KAN-638 To Do -> Ready (Listings, 2h, rank 1 of executable). Held: KAN-636 (excluded; component Auth looks wrong), KAN-637 (blocked by 636), epics 494/573-576, KAN-577 (design, untouched). Only one executable item existed for 4 free teams. No tickets created.
+
+## 2026-10-24 prio-d2bc6f04
+Moved KAN-640 (Auth, 4h, cap:frontend) To Do -> Ready. Nothing else executable in Backlog.
+
+## 2026-10-26 prio-ea4e7b9a
+Backlog re-ranked: KAN-644 -> Ready (Auth, 12h). 645-649 held by BLOCKS chain from 644. Epics 494/573-576 unsplit, reported only. Logged in pm_ledger.
+
+## 2026-10-26 prio-ea4e7b9a (PM)
+Nothing moved to Ready: 644 in Back-end, 645-649 all BLOCKS-blocked. No rulings needed. Order on 644 Done: 645+647, 646, 648, 649.
+
+## 2026-10-26 board run
+Nothing moved to Ready; 644 in Back-end blocks 645/646/647/649. Components and estimates already set on 643-649. No tickets created.
+
+## 2026-10-26 ceo-kan644-unblock
+KAN-644 Done. Moved KAN-645 and KAN-647 To Do -> Ready (Auth, 12h each, full briefs, component and estimate already set). KAN-646/648/649 held behind open Blocks edges. No new tickets. Ledger entry added. Claimability/surface assessment left to the Ready dispatcher and owning seat.
+
+## 2026-10-26 ceo-epics-split
+Read Jira: all children of KAN-573 (12), 574 (4), 575 (4), 576 (21), 494 (57) are Done. Nothing to split, no brief needed, nothing moved to Ready. 643 chain: 645 Back-end, 647 Ready, 646/648/649 To Do behind Blocks edges. Edge review needs cto, dispatched by the orchestrator (PM does not spawn). No tickets created, no Jira edits. Ledger entry added.
+
+## 2026-10-27 ceo-backlog-to-ready
+PM 2026-10-27 (CEO: move backlog to Ready): nothing moved. To Do = epics 494/573-576/643 + KAN-648 (Auth,12h,fe) and KAN-649 (Platform,6h,devops). 648 blocked by 645 (Self-review, not Done); 649 blocked by 645+646+648. 644 and 647 Done; 650 in QA-Test. KAN-646 is ALREADY in Ready (Platform,18h) while blocked by 645 (not Done): left, dispatcher refuses claim as dependency-blocked; flag. Release order when 645 Done: 646 stays, then 648 (shares ARB/gen-l10n with 650; auth_service.dart only 650/648), then 649. No CEO-gated items.
+
+## 2026-10-27 next-wave request
+PM 2026-10-27 (CEO: next wave at full capacity): NO tickets created. Epics 494/573/574/575/576 are empty (all 95 children Done, JQL verified); 643 holds only the in-flight personas chain (645 Ready, 646 Back-end, 648 Ready, 649 Ready, 650 QA-Test). Dabbler/dabbler-docs/ROADMAP.md commits no further Listings or Platform scope (its sec.4 deferred list is 2026-08 history, strategy = cpo). Not invented. Needs CEO/cpo to name new scope; candidates already held: KAN-629 (Places PoC, needs Google billing), KAN-630-635 (Mapbox, codex-only).
+
+## 2026-10-27 · pm (Anubis) · next-scope-wave tickets
+- Created epics KAN-651 (Offline), 652 (Squads), 653 (Ratings), 654 (Games map). Stories: 655-657 offline; 658-663, 670 squads; 664-666 ratings; 667, 669 map; 671 recurring B1; 668 cto-ruling ticket (superseded by T-099, closed).
+- Rulings applied: T-097 (offline: sqflite + shared_preferences, clear on sign-out/user switch, check added as comments on 655-657), T-099 (671), T-100 (667/669, comment on 667). T-098 carried by KAN-670.
+- Blocks links created for offline, ratings and map chains; Squads links partly created before CEO STOP.
+- CEO STOP on Squads: 658, 659, 670 moved Ready -> To Do; no more Squads work from me; orchestrator cancels 652, 658-663, 670.
+- Ready now: KAN-667 (Listings, fe, 12h), KAN-671 (Listings, be, 10h), KAN-655 (Platform, fe, 14h), KAN-664 (Social, be, 8h). Held in To Do by Blocks: 656, 657 (655); 665, 666 (664); 669 (667).
+- Open: one Blocks link 664->665 had a timeout, verify it exists. Recurring frontend stories not written yet (follow KAN-671 applied). Ratings tickets (653 family) are Social, not Squads; left in play.
+
+## 2026-10-27 prio-68a35939
+KAN-665 then KAN-666 (Social, fe) moved To Do -> Ready. 656/657/669 held (open BLOCKS by 655/667). Epics untouched. No tickets created.
+- 2026-10-27T05:23:35Z · pm · prio-accel-2026-10-27 · PM 2026-10-27: KAN-656 (Offline S2, Platform, 10h, fe) and KAN-657 (Offline S3, Platform, 10h, fe) To Do -> Ready (transition 2); S1 KAN-655 Done, briefs complete. Held: KAN-669 (excluded, in flight), epics 494/573-576/643/651/653/654 (containers). No needs_brief, no tickets created.
+
+## 2026-10-27 prio-63694c71
+PM 2026-10-27: KAN-672 (Social, 8h, cap:backend added, priority Highest, security, rank 1) and KAN-669 (Listings, 12h, fe; 667 Done) To Do -> Ready. KAN-673 held in To Do (cto owner-check answer pending; Platform 8h; no cap label, no brief check). Rank field not settable via this API; order = 672, 669. KAN-657 already Ready. No returned work, no tickets written.
+
+## 2026-10-27 prio-b52e727c (pm)
+Board read from Jira: nothing moved to Ready. Non-Done = epics 494/573-576/643/651/653/654, KAN-650 (Front-end), 669 (Self-review), 657 (QA-Test), KAN-673 (To Do, held for cto). No returned work, no new executable sub-tasks, no Ready items. No tickets written, no edits.
+
+## 2026-10-27 KAN-674 created (CEO order)
+Created KAN-674 "F1 organiser predicate: actor_is_organiser and v_actor_context use persona_type": Platform, 1d, labels schema_change + cap:backend (cap label added to match other backend tickets), priority High, status To Do. Linked Relates to KAN-673 and KAN-646. Not moved to Ready; PO owes the brief. Rank field (customfield_10019) is auto-assigned at creation, not settable via this API. No other tickets.
+
+## 2026-10-27 prio-b52e727c (pm, second run)
+PM 2026-10-27 (prio-b52e727c, Ready empty): nothing moved. Every To Do item is an Epic (494,573-576,643,651,653,654); epics are containers, not executable, and all their children are Done (non-Done JQL verified). KAN-673 is in Back-end, 674 and 675 in Self-review: in flight. No executable ticket exists in Backlog; no tickets created. Next free work needs new scope from CEO/cpo via PO.
+
+## 2026-10-27 — KAN-676..679 created from cto ruling dreq-0ca2
+- KAN-676 P0 trgfn_contributor_sports_check fix: Ready (Highest, Auth, 1d, cap:backend, schema_change)
+- KAN-677 P1 J1/J4 probe fixture: Ready (High, Listings, 1d, cap:backend)
+- KAN-678 P1 rpc_challenge_create sport param: To Do, label blocked-on-cto-shape (Social, 1d); NOT Ready until cto shape ruling
+- KAN-679 P2 choose_actor revoke anon/PUBLIC: Ready (Medium, Auth, 2h, cap:backend, schema_change)
+- Deviation: tickets written by PM directly via Jira tools at caller's instruction (PM cannot spawn po); components/estimates chosen by PM, no due_date set (capacity-derived).
+
+## 2026-10-27 prio-6ebb5292 (D-042)
+Nothing moved to Ready. KAN-680 given component Social + Original estimate 4h, left in To Do (blocked by KAN-678 in Back-end; release when 678 Done and applied). Other To Do items are epics. No tickets created; 678/679 untouched.
+
+## 2026-10-28 prio-9f1839a9
+Backlog re-ranked: only epics (494,573-576,643,651,653,654) plus KAN-680 in Front-end (excluded). Nothing moved to Ready; 5 free teams stay idle for lack of executable scope. No tickets written.
+
+## 2026-10-29 prio-9d2c1740
+Moved KAN-683 then KAN-682 To Do -> Ready (both Auth, estimates set, briefs complete). Epics only left in Backlog. No tickets created. Logged in pm_ledger.
+
+## 2026-10-29 PM run prio-ecb7738f: KAN-684 moved to Ready.
+
+## 2026-10-30 PM status
+prio-ce534c68: KAN-685 To Do -> Ready (Auth 4h, backend).
+- 2026-10-30T08:15:57Z pm prio-3938d840: nothing moved to Ready. To Do = epics only (494,573-576,643,651,653,654); KAN-685 in Back-end left untouched (qa-failed flag premature, Memphis mid-task). No tickets created.
+
+## 2026-10-30 prio-60c817c5
+Nothing moved to Ready: only epics in To Do; KAN-685 in flight. No tickets created.
+
+## 2026-10-30 prio-da91acb2
+Moved KAN-686 to Ready (transition 2). Held 687/688/689 (Blocks chain 686>687>688>689). Epics untouched. No tickets written.
+
+## 2026-10-30 prio-f46fff28
+Created KAN-690 (Ready) and KAN-691 (To Do, blocked by 686). No backend-gap ticket (cpo omit-unproven ruling; needs cpo/CEO scope). Held 687-689 behind 686. Ledger entry added.
+
+## 2026-10-30 prio-f46fff28 (Ready empty, 5 free teams)
+Nothing moved. Epics only (not executable); 687-689/691 Blocks-chained behind 686 (Front-end). No tickets created. Free teams idle for lack of executable unblocked scope.
+- 2026-10-30 PM (CEO order spread): nothing moved to Ready. Non-Done executable: 686 (Front-end, habu), 687/688/689/691 (To Do). All four blocked by 686 (not Done); 687>688>689 chain, 691 blocks 687. Rest are Epics. Split of 686 not recommended: single provider/read-model surface, steps 2-5 depend on step 1 inventory.
+
+## 2026-10-30 ceo-spread follow-up
+Read all 9 Epics + children via JQL. 8 Epics fully Done; 643 only has the 686 chain open. Squads cancelled (KAN-652). Recurring games is the only committed unfinished scope (T-099; KAN-671 Done). PO request drafted but po not reachable from this seat; returned to orchestrator. No Jira writes. Ledger ref ceo-spread-2026-10-30-b.
+
+## 2026-10-30 ceo-spread-2026-10-30-c (pm)
+KAN-693, KAN-695, KAN-696 due dates set (11-03, 11-02, 11-02), To Do -> Ready, Jira read-back verified (status Ready, component Listings, estimates 8h/4h/3h). Ledger entry added. Backlog asks to PO: Analytics, Bench mode client, Apple sign-in. No tickets created by pm.
+
+## 2026-10-30 prio-a1f7ac39
+PM 2026-10-30 (prio-a1f7ac39): nothing moved to Ready. Jira read fresh: non-Done = 9 Epics + KAN-686 (Front-end, in flight) + 687/688/689/691 (blocked by 686) + 693 (Back-end, in flight) + 694/697/698 (blocked by 693; 698 also by 694/697). 695/696 Done. No executable unblocked To Do exists. Needs PO brief (no tickets exist, none created): analytics instrumentation (launch gate), bench mode client, Apple sign-in.
+
+## 2026-10-30 KAN-699..707 sort
+PM 2026-10-30: KAN-700 (Platform, 4h, cap:backend) and KAN-704 (Profile, 6h, cap:ux-engineer design) estimate set, To Do -> Ready (transition 2), read back from Jira. Held To Do: 703 (blocked by 700), 706 (blocked by 704), 707 (blocked by 705), 705 (needs-ceo Apple credentials, untouched), 702 Apple sign-in deferred not launch-gating. Epics 699/701/702 containers. Components were already set by PO. No tickets created, no PEER reviewer chosen.
+
+## 2026-10-30 PM board event (Backlog changed, Ready empty)
+KAN-703 (Platform, 4h) and KAN-706 (Profile, 12h) To Do -> Ready, read back. Blocks edges released (700, 704 Done). Held: 705 needs-ceo, 707 (blocked by 705), 686 chain (687/688/689/691), 693 chain (694/697/698). No tickets created.
+
+- 2026-10-30 pm board-idle: PM 2026-10-30 (board event, idle teams): nothing moved to Ready. 651,653,654,699,701,702 are all Epics (containers, no open executable children); 701 is the Epic of bench mode whose only child KAN-706 is already in QA-Test, not a duplicate ticket. 702 children: 705 needs-ceo, 707 blocked by 705. Held: 686 chain 687/688/689/691, 693 chain 694/697/698. 703 already Ready. No needs_brief candidates, no tickets created.
+- 2026-10-30 board-ready-empty: no move possible; all open work in flight/blocked/epic/Apple
+
+## 2026-10-30 — Backlog cleared to Ready (CEO order)
+- Transitioned KAN-687, 688, 689, 691, 694, 697, 698 To Do -> Ready (id 2). Re-read via JQL: all 7 status Ready.
+- Blocks links and labels untouched; dispatcher holds them until blockers are canonical Done. No tickets created.
+- Leftover To Do: 12 Epics only (494, 573-576, 643, 651, 653, 654, 692, 699, 701, 702) — non-executable parents; 0 in Backlog.
+
+## 2026-11-01 prio-633ae8ba
+Nothing moved to Ready. Backlog (To Do) holds only Epics (494,573-576,643,651,653,654,692,699,701,702): containers, no executable children. KAN-689 already Ready but blocked by 688 (Design): dispatcher holds. KAN-698 left with ramesseum, not treated as failed (qa-failed was a misattribution; label returned still on it, untouched). No tickets created.
+
+## 2026-11-01 prio-1aa36b84 (Anubis)
+Board read (KAN, non-Done). Moved nothing to Ready: To Do holds only Epics plus KAN-710..719 (blocks-chain behind KAN-709, which is in Back-end). Ledger entry added. No tickets created, no Jira writes.
+- 2026-11-01 PM prio-9104c9d9: nothing moved to Ready. To Do = 13 Epics + KAN-711..719 chain (blocked by KAN-710 in Self-review). No executable unblocked item. No tickets created.
+
+## 2026-11-02 PM
+Moved KAN-711..719 To Do -> Ready per CEO order; BLOCKS chain intact (dispatcher waits on KAN-710). 13 Epics remain in To Do (non-executable). No tickets created.
+
+## 2026-11-02 prio-da76ac2e (Anubis)
+serial-chain 714-719: all links real, none removed; split proposals returned. ready-below-target: no approved Epic has uncut scope (708 fully ticketed); 12 other Epics need CEO order. Nothing moved, no tickets created. Ledger entry added.
+
+## 2026-11-03 Anubis: board check, Ready was 0 (D-049 target 10)
+Moved To Do -> Ready (transition 2, all confirmed Ready): KAN-741, 743, 744, 745, 735, 756, 761, 762 (every Blocks blocker Done; Events children of KAN-708, component Listings, estimates 35-50 min). Ready now 8. Left in To Do: KAN-742/747/753/758 wait on KAN-741; 748/763/766/757 chain; 734 waits on 722/725/728/733 (in flight); KAN-769-783 wait on 734/771/774 chain. Parents 714-719 are split containers, not executable. Not readied: KAN-768 (needs-ceo), 643/651/653/654/692/699/701/702 (no estimate/not under an approved cut). No tickets created.
+
+## 2026-11-03 - orphan:KAN-756:0
+- KAN-756 moved Self-review -> To Do (Backlog); Jira comment 14967 names the two unblock prerequisites. Not sent to Ready, not dispatched. No tickets created.
+- KAN-761 also in Self-review (labels cap:qa, intake; no stuck). No task record readable in this worktree runtime, so no-owner not verified; left unchanged. Likely same Events env dependency (Q04); orchestrator to confirm ownership.
+- Ledger entry added.
+
+## 2026-11-03 prio-7c87c910 (Anubis)
+Moved To Do -> Ready (transition 2, confirmed Ready): KAN-734 (backend, 45m), KAN-748 (frontend, 45m), KAN-753 (frontend, 40m); all Listings, every Blocks blocker Done. Ready 3 = MAX_PARALLEL. Held: KAN-756/761/762 and KAN-758 (QA journeys need public.events on a writable DB: environment), KAN-757 (waits 753), KAN-763 (waits 748, 744), KAN-766 (waits all Q), KAN-769/770 (wait 734), KAN-771 (waits 744 Self-review), 772-783 chain (real deps), KAN-768 needs-ceo, 714-719 split parents. No Blocks links removed (remaining are real). No tickets created.
+
+## 2026-11-03 prio-cb1d0552 (Anubis)
+Readied KAN-757, 763, 769, 770, 771 (Listings, 35-50m each); created and readied KAN-784, KAN-785 (D-046 supporting). Held: 766, 772-783 (real Blocks), 756/758/761/762 (env), 768 (CEO). Ready listing: 6 (769 already dispatched).

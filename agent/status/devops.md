@@ -1227,3 +1227,23 @@ No Jira ticket created.
 ## devops — 2026-09-11 — KAN-138 header corrected per cto's T-082, committed and pushed (5e602aa)
 
 cto corrected the reasoning in the header I pushed as `8df3c08`: the danger isn't reverting KAN-169 (the 5-param signature here doesn't match live `settle_game(uuid,boolean)`, so CREATE OR REPLACE would create a second overload, not revert the fix) — it's that the file has zero GRANT/REVOKE and `pg_default_acl` grants anon/authenticated EXECUTE on new public functions by default, so applying it would create a brand-new, unprotected, anon-reachable privilege-escalation function. Replaced exactly the flagged paragraph with team-lead's supplied text verbatim, verified diff was a clean swap (12 insertions/2 deletions, nothing else touched), confirmed tree clean of anything else before staging. Committed `5e602aa`, pushed immediately per the standing instruction not to hold a security marker local. Local == origin/Canary == `5e602aa`. `main` unchanged at `a1501904`.
+2026-10-24 push 4f954339 -> origin/Alpha (FF from 88aa48f8); Alpha only, no deploy verification applicable
+
+## 2026-10-25 KAN-591 push to Alpha
+- Fast-forwarded origin/Alpha 4f954339 -> b6f8313f (alpha-591r2-edfu), no force. Ancestor check passed.
+- Deploy result: pending, not verified; if no later entry exists, it was never confirmed. (Push only; no build check run.)
+
+## 2026-10-25 KAN-642 ship to Alpha
+DS alpha-ds dee5257..e9eb8b6 (ff). App Alpha b6f8313f..6abc112b (ff, pubspec.lock only). analyze exit 0, flutter test exit 0 (4027 pass). Alpha deploy build result: not verified; if no later entry exists, it was never confirmed.
+
+## KAN-641 to Alpha (devops, 2026-10-25)
+Alpha 6abc112b -> 8bdb2f1c. d97287d7 was NOT a fast-forward (Alpha had 3 KAN-642 commits); cherry-picked 004d436a+d97287d7 onto Alpha cleanly (b8b47f75, 8bdb2f1c). analyze 0 errors/0 warnings (43 infos), flutter test 4029 passed. Cloudflare Pages check-run on 8bdb2f1c: completed/success (verified via gh check-runs).
+
+## 2026-10-25 KAN-640 to Alpha
+Cherry-picked 9 KAN-640 commits onto origin/Alpha 8bdb2f1c, pushed b8dd5abc. analyze 0 errors/0 warnings (43 infos), flutter test 4063 passed. Cloudflare Pages check on b8dd5abc: completed/success. Temp worktree removed.
+
+## 2026-10-27 dreq-2526 KAN-679
+Decided: cherry-pick 1aafe33a onto alpha-habu and push; Ops applies via one execute_sql with before/after read-backs. Deploy result: not applicable, no push done by me. Decision at /Users/moataz/.claude/jobs/c49d2414/tmp/dreq-2526.md
+
+## 2026-11-01 devops (Ptah) - alpha-luxor KAN-694/695 ruling
+Read-only check: Alpha 55a839a9 holds KAN-694 files byte-identical to old remote alpha-luxor b05fe264 (commits 4c1bc31b, cf836e13). No KAN-695 work on Alpha or old branch. Ruled: no force push, no -s ours merge, nothing to integrate for 694. Deploy: n/a, nothing pushed. Answer: /Users/moataz/.claude/jobs/f305ed4e/tmp/ans2.md

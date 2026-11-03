@@ -1836,3 +1836,34 @@ Reviewed backend-1's applied work, independently re-verified against live `wtncu
 Caveat recorded: the Jira issue itself was unreachable during this review (`getJiraIssue` failed repeatedly with a transient site error), so AC text was taken from the review brief rather than read live. Every AC verified above was verified against the database and the repo directly, not against the executor's report.
 
 Verdict recorded via `store.record_review_result('KAN-131', 18, 'backend-4', 'pass', ...)` → revision 19.
+
+## 2026-11-02 — KAN-724 (KAN-714 B05) search/filter over events — AUTHORED, NOT APPLIED
+- Seat backend-4 (Min), team Ramesseum, worktree .claude/worktrees/ramesseum-kan724 on alpha-ramesseum. No commit/push.
+- Files: supabase/migrations/20261104100500_kan714_b05_search_filter_indexes.sql (491 lines),
+  supabase/tests/events_p2/kan714_b05_search_indexes.sql (370 lines).
+- Changed: rpc_unified_search_sectioned (games: events.search_tsv + events AND legacy filters; meetups: match stays
+  on meetups.search_tsv, filters events AND legacy; tie-break score DESC, start_at, id). New partial GIN index
+  events_game_public_search_tsv_idx. Not KAN-712-wrapped, so plain replace (asserted in preconditions).
+- Exceptions left unchanged: rpc_search_entities / rpc_autocomplete_entities (pre-existing 42703 on sport), nearby/geo
+  family (PostGIS not in harness), getnearby* (dead), no viewer/block filtering in unified search (pre-existing).
+- Evidence (local /tmp/kan724_pg :54724 only): pre-image 7/7 [K] FAIL + all [=] PASS; post ALL PASS (60 checks);
+  real rollback block restored md5 fe3382197842fa66564b2f62d9b754f5, data hashes identical; cluster stopped.
+- Live catalogue reads refused by ops guard (D-042): inventory derived from migrations; md5 pin fails closed.
+- Route: PEER (schema_change) — needs a backend-N reviewer; live apply is Memphis/ops (needs-ops).
+
+## 2026-11-02 — KAN-724 rework: verifier C2 (not runnable from the documented chain) — FIXED
+- Cause: the first run's pre-image rpc_unified_search_sectioned (and the empty section stand-ins) were installed by
+  hand on /tmp/kan724_pg; nothing in the repo created them, so the documented chain died at test :177 / migration P5.
+- Added (supabase/tests/events_p2/): local_harness_kan724.sql (161 lines; pre-image extracted by sed from
+  baseline_schema.sql:16246-16337 + grants :36875-36877, md5 pin asserted, empty stand-ins, Supabase refusal guard),
+  build_kan724.sh (59 lines; fresh cluster + full 14-step chain), datahash_kan724.sql (11 lines; read-only hashes).
+  Changed: kan714_b05_search_indexes.sql Build/Run header (now 399 lines). Migration NOT changed.
+- Proof on brand-new /tmp/kan724b_pg :54725 following only the header: pre-image PRE-IMAGE OK (50 PASS, 7 K FAIL);
+  apply NOTICE Q1-Q3 ok, 35 probe queries identical; ALL PASS (60 checks); rollback block: 3 table hashes identical,
+  fn md5 fe338219... restored, index gone; restored PRE-IMAGE OK (7 K). Numbers equal the first report. Cluster stopped.
+- Not committed (orchestrator commits). Route still PEER.
+
+## 2026-11-03 — KAN-731 (KAN-714 B12) feed / meetup notification triggers / active_stream read events — authored, local proof green, NOT applied
+- Files (worktree ramesseum-kan724, uncommitted): supabase/migrations/20261104101200_kan714_b12_feed_notifications_stream.sql (937), supabase/tests/events_p2/kan714_b12_feed_stream.sql (881), local_harness_kan731.sql (433), build_kan731.sh (59), datahash_kan731.sql (17).
+- Fresh PG16 /tmp/kan731_pg:54731: run1 PRE-IMAGE OK (12 K) / apply NOTICE Q1-Q3 ok, 63 probes identical / run3 ALL PASS (263) / rollback: 6 table hashes identical, 4 pins restored / run5 PRE-IMAGE OK. Cluster stopped.
+- Route: PEER (backend-N reviewer). Production never touched. Pins taken from repo migration text, not live catalogue — reviewer must re-check pins against live before apply.

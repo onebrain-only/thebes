@@ -66,6 +66,8 @@ class FakeClaude:
                 new = OTHER
                 self.live.append({"sessionId": new, "id": new[:8], "name": "thebes-po-c", "pid": self.next_pid})
                 return Completed("note: session is already running; starts a copy\nbackgrounded · %s" % new[:8])
+            if self.resume_behaviour == "neighbour":     # another delivery wakes a stopped session meanwhile
+                self.live += [dict(r, pid=self.next_pid + 1) for r in self.completed if r["sessionId"] == OTHER]
             self.live.append({"sessionId": sid, "id": sid[:8], "name": "thebes-po-c", "pid": self.next_pid})
             return Completed("note: woke session %s with its saved options\nbackgrounded · %s" % (sid[:8], sid[:8]))
         raise AssertionError("unexpected argv %r" % argv)
@@ -227,6 +229,16 @@ class ClaudeDeliveryTests(unittest.TestCase):
         self.assertEqual([a[2] for a in fake.calls if a[1] == "stop"], [SID[:8], OTHER[:8]],
                          "original stopped for delivery, then the copy this call created")
         self.assertFalse(any(r["sessionId"] == OTHER for r in fake.live))
+
+    def test_a_known_stopped_session_coming_back_live_is_not_a_copy(self):
+        """KAN-757/771/784: Memphis's own bound SID was woken by a parallel delivery inside this
+        call's window; it is not new, so the delivery must not be failed for it."""
+        fake = FakeClaude([LIVE_ROW], resume_behaviour="neighbour")
+        fake.completed.append({"sessionId": OTHER, "id": OTHER[:8], "name": "thebes-neighbour",
+                               "status": "exited"})
+        res = self.deliver(fake)
+        self.assertEqual(res.status, cd.DELIVERED)
+        self.assertFalse(any(a[1] == "stop" and a[2] == OTHER[:8] for a in fake.calls))
 
     def test_resume_waits_for_the_old_process_to_exit_not_just_the_listing(self):
         """Regression for the live copy of 2026-09-28: the listing dropped the job

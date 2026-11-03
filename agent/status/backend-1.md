@@ -1805,3 +1805,45 @@ Both probes were wrapped so the transaction aborts after inspection — nothing 
 behind. Verdict recorded via `store.record_review_result('KAN-189', 11, 'backend-1',
 'pass', ...)`; task revision 11 → 12. No Jira transition, no ownership change —
 Orchestrator handles closure.
+
+## 2026-11-02 — KAN-775 (KAN-718 D07) series occurrence uniqueness — AUTHORED, committed 00564a7ced8c04ad4429bae6cef347f275994f62 on alpha-habu (not pushed, not applied)
+- Migration 20261104110300_kan718_d07_series_occurrence_unique.sql: immediate AFTER ROW guard (events start_at / games series_id,event_id), same advisory key as KAN-710; legacy index kept; KAN-710 deferred backstop kept.
+- Test supabase/tests/events_p4/kan718_d07_series_unique.sql: 35/35 PASS on local chain + D07; 5 [K] FAIL without D07 (W1 loses occurrence_time_taken, W4b statement-time refusal). Idempotent re-apply proven; pre-check refusal proven (index absent).
+- Follow-ups: withdrawal ticket must pre-check D07 live; fn_generate_game_series_occurrences + kan694 RPCs still read games.start_at (slated). Local PG only; no remote DB touched.
+
+## 2026-11-02 — KAN-722 (KAN-714 B03) rating/host-metrics views on public.events — DONE locally, awaiting PEER
+- Commit `c6e80c4d87a4a85bc6518fdbf08287cdf1c994a7` on `alpha-karnak` (worktree Dabbler/worktrees/kan714-karnak), 3 files only: migration `20261104100300_kan714_b03_views_rating_host_metrics.sql`, test `supabase/tests/events_p2/kan714_b03_rating_views.sql`, rollback `supabase/tests/events_p2/rollback_kan714_b03.sql`. Not pushed, not applied remotely.
+- v_rateable_after_game + v_host_weekly_metrics repointed to events (join id + event_type='game'); v_game_rating unchanged (reads games.id only). Owner views; ACL/owner/reloptions asserted unchanged; no grant on events.
+- Local postgres@16: RED 18/25 (7 expected fails) without, GREEN 25/25 with; rollback back to pre 25/25, fingerprint 7873d6fb... equal; second run refused by drift pin; stage guard demonstrated failing.
+- CONFLICT: Luxor's 20261105100000 aborts after this file (v_host_weekly_metrics dep pin 49ec8d... now 0c619a...). Not fixed — owner's call.
+
+## 2026-11-02 — KAN-725 (KAN-714 B06) meetup read RPCs -> events — DONE locally, commit 3514b6be on alpha-karnak (not pushed)
+- rpc_meetup_card + rpc_meetup_attendees repointed: shared columns from events (id + event_type='meetup'); description/location_name/host_actor_id stay on meetups. None KAN-712-wrapped; caller rpc_meetup_update_kan712_inner unchanged (C1 pass).
+- rpc_meetup_my left unchanged: pre-image raises 42703 (nonexistent meetups columns), no app caller. Needs separate ticket via po.
+- Local harness only (b3713 clone): RED post 18/8, pre 26/0, GREEN post 26/0, re-apply refused by pin, rollback -> pre 26/0 fingerprint equal, rollback re-run refused.
+- No Jira change, no push, no remote DB. Awaits PEER (backend-N) review.
+
+## 2026-11-02 — KAN-728 (KAN-714 B09) booking reads — Shu
+- Commit `44a3494d39309839927529ddb94d54f45be042ff` on `alpha-karnak` (worktree kan714-karnak), not pushed. Local harness only (PGPORT 54714, clones of `b3713b`), no Jira, no remote DB.
+- Changed: `rpc_booking_hold_for_meetup` only (owner_user_id 42703 -> creator from events). Not wrapped.
+- Pinned unchanged: `_slot_conflicts_game` (INVOKER, E4-blocked), `rpc_booking_hold_for_game` (+inner, KAN-712 wrapped; unwrap needs DROP), `rpc_booking_cancel`, `_game_belongs_to_venue`.
+- Evidence: RED post 14/11, pre 25/0, GREEN 25/0, re-apply refused by pin, rollback -> pre 25/0 fingerprint equal, rollback re-run refused.
+- Open: cto decision on `_slot_conflicts_game` (has_table_privilege branch / DEFINER / stay on mirror). Route PEER, needs a backend-N reviewer.
+
+## 2026-11-03 — KAN-730 (KAN-714 B11, msg_* readers onto events) — committed locally, not pushed
+- Commit 914e486a on alpha-karnak (worktree Dabbler/worktrees/kan714-karnak). Migration 20261104101100_kan714_b11_msg_functions.sql (591), test events_p2/kan714_b11_msg_functions.sql (1018), rollback_kan714_b11.sql (404).
+- Changed: msg_evaluate, msg_authorize, msg_my_conversations (SECDEF, superuser owner; not wrapped). Pinned: msg_game_conversation, msg_user_unavailable, msg_system_game_trg.
+- Local harness kv730r (from b3713b): RED post 108/24, pre 132/0, GREEN 132/0, re-apply refused by md5 pin, rollback -> pre 132/0 with fingerprint equal (c3993faa...), rollback re-run refused.
+- Open: harness kind_check stub (game only) replaced inside the test's rolled-back tx; production md5s/callers not verified. Needs PEER review by another backend-N. No Jira or push done (per brief).
+
+## 2026-11-03 — KAN-733 (KAN-714 B14, series RPC reads) — for team Karnak
+- Committed `3f21e3ab17f29f3e7a021ef4209302237791574a` on alpha-karnak (worktree kan714-karnak). Not pushed. Not applied to any hosted DB.
+- The three series RPCs are KAN-712-wrapped. Only the `*_kan712_inner` bodies were replaced, in place. Wrappers, ACLs and `kan712_wrapped_rpcs` are byte-identical.
+- Local b3713b clone results: RED post 167/22, pre 189/0, GREEN 189/0, after rollback pre 189/0. Fingerprint `ca37ec03…` was the same in every run. A re-apply is refused and a second rollback is refused.
+- DECISION open for cto or the owner: does the in-place inner replacement satisfy the KAN-712 "unwrap/wrap only" rule, given that test group K proves the round trip gives the same end state?
+
+## 2026-11-03 — KAN-728 (KAN-714 B09, _slot_conflicts_game decision) — for team Karnak
+- Pushed alpha-karnak `50fafe21796484e4869b9e8d39682618b52a8e98` (my work in `0d1b0966`, then merge of origin/Alpha `d824a4f7`). Not applied to any hosted DB.
+- `_slot_conflicts_game`: has_table_privilege branch (option a). Privileged callers read time and cancelled state from events. Other callers read the games mirror. The language changed from sql to plpgsql, because a sql version raises 42501 (C3b proves it). The game hold is unchanged and recorded as an accepted exception under the KAN-712 wrap.
+- Fresh b3713b clone: pre 35/0, RED post 17/18, GREEN post 35/0, after rollback pre 35/0. Fingerprint `fe9a7f4d…` was the same in every run. A re-apply is refused, and so is a second rollback.
+- Harness fact: games has RLS with zero policies, so `authenticated` sees no games and the mirror branch is always false for it. To exercise the mirror over real rows, the test uses a BYPASSRLS probe role that it creates and then rolls back.

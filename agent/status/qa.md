@@ -780,3 +780,16 @@ mine." Completed the close-out:
 
 KAN-167 is closed: Jira `Done` (10007), Persistent State `canonical: done`,
 `review_result: pass`, revision 14.
+
+## 2026-10-22 KAN-602 ruling
+Ruled (a): accept on widget coverage + EN/light pass, AR/dark running-app recorded NOT RUN; follow-up ticket for local QA locale/theme override. Retest bound reached, CEO confirms. Read-only, no transition. Ruling: /Users/moataz/.claude/jobs/c49d2414/tmp/ruling602b.md
+
+## 2026-11-01 KAN-689 C3 final
+PASS-PARTIAL; @nixonorg not-found = RPC get_profile_by_id inactive-persona rule (KAN-100), outside diff. Decision: /Users/moataz/.claude/jobs/f305ed4e/tmp/dec-d76d6722.md
+- 2026-11-01 dreq-1bf638a1 (KAN-703 C4): decided (a) - Edfu signs in on localhost per REVIEWER.md rule 3 and runs create/join/check-in; keychain prompt => BLOCKED line. Written to /Users/moataz/.claude/jobs/f305ed4e/tmp/dec-1bf638a1.md
+
+## 2026-11-01 KAN-697 integration decision dreq-367cad72
+Decision INTEGRATE at 8a8bbc35. Review record cdispatch-dd9ae87e verification pass (C1,C2,C3,QA), issued 06:34:52 after abort 06:34:47. Residual risk: 52-card live, RTL, dark untested. File: /Users/moataz/.claude/jobs/f305ed4e/tmp/dec-367cad72.md
+
+## 2026-11-01 KAN-689 findings ruling (qa / Ammut)
+Ruled on visitor-pass findings at alpha-698-ramesseum 983b72bf. (a) Upcoming error = PRODUCT_DEFECT, frontend, in scope, blocks (contributor_profile_provider.dart _meetupColumns selects creator_user_id dropped by migration 20260915120000). (b) contributorNew = widget evidence + named untested, not blocking. (c) Arabic = residual risk. (d) return defect to Ramesseum, retest visitor pass, then reviewer. Invite conditional block. File: /Users/moataz/.claude/jobs/f305ed4e/tmp/dec-kan689-findings.md

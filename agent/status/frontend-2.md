@@ -357,3 +357,26 @@ renders a squad owner" is true, but no UI renders a squad at all.
 
 ## 2026-10-06 — CEO order: launch video splash (integ-app, alpha-k437)
 Committed d5550f12 (not pushed). StartupSplash plays assets/Splash.mp4 while bootstrap runs; native/web launch plain #7328CE. analyze 0 err/0 warn, flutter test 1187 pass, build web ok. iOS/Android not run.
+
+## 2026-11-03 — KAN-743 (Events P3, R03) — Team Habu frontend
+- Worktree kan680, branch alpha-habu, commit c4c2b030c91950b5a4714bc346e04762d68c1e78 (not pushed).
+- B04 keeps RPC names and result columns (no event_id); Dart callers already matched. Doc-only changes to model and datasource, plus new test/features/games/nearby_games_event_backed_test.dart (10 tests).
+- analyze: 0 errors, 0 warnings, 45 infos (same as baseline). New test green. Games suite: 6 failures in game_composer_request_id_test.dart, the same 6 at baseline.
+
+## 2026-11-03 — KAN-745 (Events P3, KAN-715 R05) sport overview reads event-backed counts — Team Habu frontend
+- Worktree kan680, branch alpha-habu, base c4c2b030 -> commit 11f2a4e556d10c9e432565ff877d7f5638b6c733 (not pushed).
+- B07 (20261104100700_kan714_b07_sport_overview_counts.sql:189-191) keeps rpc_sport_overview's RETURNS TABLE shape unchanged; Dart change is comments only plus new test test/features/sports/sport_overview_event_backed_test.dart (4 tests).
+- C1 analyze --no-fatal-infos exit 0, 45 infos (no new); C2 exit 0; test/features/sports/ 93 passed. Tests shown to fail on four deliberate breaks, then restored.
+- Jira transitions not performed by me (brief ran under the Habu orchestrator).
+
+## 2026-11-03 — KAN-747 (Team Habu subagent) — offline cache/codec version bump
+- Commit 29cfd9d9 on alpha-habu (worktree kan680). Entry format version 2 + account tag in OfflineCache; kGameCodecVersion 2 in game_codec; decodeGame returns null on old/missing version or missing required field.
+- Chose payload versioning over renaming `_root` (v1 -> v2): the rename would break ~12 assertions in test/core/cache/{offline_cache,cache_cleanup}_test.dart (outside planned surfaces) and orphan v1 keys outside the sign-out wipe.
+- C1 exit 0 (45 infos, unchanged); C2 exit 0 (8/8). test/core + test/features: 3795 pass, 5 fail — same 5 fail at base without the change.
+
+## 2026-11-03 — KAN-748 (Events P3, KAN-716 V01): event cache invalidation contract
+- Worktree Dabbler/dabbler-code/.claude/worktrees/kan680, branch alpha-habu, commit c551ad908f5f94a874c221f7cb32e99d547862b4 (not pushed).
+- Contract + isInvalidatedBy in cache_policy.dart; EventCacheInvalidator + eventCacheInvalidatorProvider in cache_providers.dart; late-write guards in swrFetch and readThrough (currentAccountId param).
+- Exception outside planned four: lib/core/cache/offline_cache.dart +5 lines, public keysOf(accountId).
+- analyze --no-fatal-infos exit 0, 45 infos (unchanged); plain analyze exit 1 (infos). New test 19/19; core+meetups+games 724 passed, 0 failed.
+- Feature call sites not wired (other KAN-716 pieces).
