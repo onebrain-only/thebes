@@ -284,6 +284,16 @@ def depth(branch, sha, labels=(), runner=None, key=None):
 
 
 AUTO_REVIEWER = "thebes-tier1-auto"
+AUTO_RETRY_SECONDS = 10 * 60
+
+
+def _auto_pass_failed(item_id, now=None):
+    """A done marker left by a failed auto pass, old enough to try again. Such a marker is not a
+    verdict: the item still waits (2026-11-03, KAN-736..739/760 sat in review behind one)."""
+    rec = _read(os.path.join(_dir("done"), _safe(item_id))) or {}
+    skipped = str((rec.get("outcome") or {}).get("skipped") or "")
+    return (skipped.startswith("auto-pass-failed")
+            and (now or time.time()) - rec.get("at", 0) >= AUTO_RETRY_SECONDS)
 
 
 def auto_pass_tier1(*, state_store=store, jira=None, items=None):
@@ -293,8 +303,12 @@ def auto_pass_tier1(*, state_store=store, jira=None, items=None):
     from agent.execution import verify
     done = []
     for item in (judge_items(state_store) if items is None else items):
-        if not item.get("auto_pass") or is_done(item["item_id"]) or not item.get("sha"):
+        if not item.get("auto_pass") or not item.get("sha"):
             continue
+        if is_done(item["item_id"]):
+            if not _auto_pass_failed(item["item_id"]):
+                continue
+            os.unlink(os.path.join(_dir("done"), _safe(item["item_id"])))
         if not claim(item["item_id"], meta={"ticket": item["ticket"], "tier": 1,
                                              "by": AUTO_REVIEWER}):
             continue
@@ -302,7 +316,7 @@ def auto_pass_tier1(*, state_store=store, jira=None, items=None):
         note = ("tier-1 auto pass (D-049): no screen and nothing sensitive changed at %s; "
                 "analyze and tests were green" % item["sha"][:12])
         try:
-            verify.judge_verdict(item["dispatch_id"], ids, [], state_store=state_store, jira=jira,
+            verify.judge_verdict(item["dispatch_id"], ids, {}, state_store=state_store, jira=jira,
                                  reviewer=AUTO_REVIEWER, notes={c: note for c in ids})
         except Exception as exc:                            # noqa: BLE001  leave it to a reviewer
             finish(item["item_id"], {"skipped": "auto-pass-failed: %s" % str(exc)[:200]})

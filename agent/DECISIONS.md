@@ -994,6 +994,12 @@ often held fewer tickets than there were free teams.
 `test_review_tier`. The loop breaker and batched integration already existed; the review skip
 already happened before any claim, so the measured "40% waste" was bookkeeping only.
 
+**Correction 2026-11-03:** the tier-1 auto pass called `judge_verdict` with `failed=[]`, which
+needs a dict, so every auto pass raised and left a `skipped: auto-pass-failed` done marker. That
+marker also hid the item from reviewers, and KAN-736, 737, 738, 739 and 760 sat in review with
+nobody looking at them. Fixed: it now passes `{}`, a failed-auto-pass marker is retried after 10
+minutes, and a test binds the call to the real `judge_verdict` signature.
+
 ## D-050 — One live session per team; same-named leftovers are retired
 
 **Date:** 2026-11-02 · **By:** CEO (approved plan; asked "why there is many teams in same name")
