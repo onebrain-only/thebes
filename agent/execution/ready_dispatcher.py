@@ -149,6 +149,27 @@ def fill_branch(text, team_id):
     return re.sub(r"(?im)^(BRANCH:\s*)(\S.*)$", repl, text)
 
 
+PARK_AFTER_BLOCKS = 2
+UNBLOCKED = "unblocked"          # label: the team or the orchestrator cleared the park
+
+
+def blocked_streak(key, state_store=store):
+    """How many of this ticket's most recent fresh dispatches in a row ended `blocked`. A
+    blocked outcome spends no review cycle, so without this a ticket blocked on the environment
+    was re-dispatched for ever (KAN-757 and KAN-763: four dispatches each, one block each).
+    Continuations are not counted; a later completed dispatch ends the streak."""
+    roots = sorted((r for r in state_store.read_all("conversation_dispatch")
+                    if r.get("jira_key") == key and not r.get("root_dispatch_id")
+                    and r.get("outcome") in ("blocked", "completed")),
+                   key=lambda r: r.get("outcome_at") or "")
+    streak = 0
+    for r in reversed(roots):
+        if r.get("outcome") != "blocked":
+            break
+        streak += 1
+    return streak
+
+
 def open_dispatches(state_store=store):
     return [r for r in state_store.read_all("conversation_dispatch")
             if r.get("status") in store.CONVERSATION_DISPATCH_OPEN]
@@ -374,6 +395,12 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None, liveness_tick
             if BRIEF_REQUESTED not in issue["labels"]:
                 brief_reasons.append({"kind": "needs-brief", "key": key})
                 _label(jira, key, issue["labels"], BRIEF_REQUESTED)
+            continue
+        if UNBLOCKED not in issue["labels"] and \
+                blocked_streak(key, state_store) >= PARK_AFTER_BLOCKS:
+            # Reported blocked twice running: parked until the team or the orchestrator adds the
+            # `unblocked` label (or a dispatch completes). Visible, never dispatched.
+            done.append({"key": key, "action": "parked", "reason": "blocked-%dx" % PARK_AFTER_BLOCKS})
             continue
         stacks = []
         waiting = blockers((issue_raw.get("fields") or {}).get("issuelinks"), jira, state_store,

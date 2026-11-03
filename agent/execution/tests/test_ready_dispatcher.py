@@ -379,6 +379,41 @@ class ReadyDispatcherTests(unittest.TestCase):
                       "B8: one case everywhere; Alpha-memphis and alpha-memphis collide on macOS")
 
 
+class ParkAfterBlocksTests(ReadyDispatcherTests):
+    """A ticket reported blocked twice running is parked until `unblocked` or a completed dispatch."""
+
+    def seed(self, key, outcomes):
+        for i, outcome in enumerate(outcomes):
+            did = store.new_id("conversation_dispatch")
+            store._atomic_write(store.path_for("conversation_dispatch", did), {
+                "dispatch_id": did, "origin_provider": "claude", "origin_thread_id": ORCH,
+                "target_provider": "claude", "target_session_id": KARNAK,
+                "target_seat_id": "karnak", "delivery_id": did, "capability_sha256": "0" * 64,
+                "prompt_ref": "/x", "status": "completed", "jira_key": key,
+                "outcome": outcome, "outcome_at": "2026-11-03T0%d:00:00Z" % i,
+                "schema_version": store.SCHEMA_VERSION, "revision": 1})
+
+    def test_two_blocks_park_the_ticket(self):
+        self.seed("KAN-600", ["blocked", "blocked"])
+        out = self.tick(FakeJira([issue("KAN-600", labels=["cap:frontend"])]))
+        self.assertEqual(out, [{"key": "KAN-600", "action": "parked", "reason": "blocked-2x"}])
+        self.assertEqual(self.sent, [])
+
+    def test_one_block_does_not_park(self):
+        self.seed("KAN-601", ["blocked"])
+        out = self.tick(FakeJira([issue("KAN-601", labels=["cap:frontend"])]))
+        self.assertEqual(out[0]["action"], "dispatched")
+
+    def test_unblocked_label_lifts_the_park(self):
+        self.seed("KAN-602", ["blocked", "blocked"])
+        out = self.tick(FakeJira([issue("KAN-602", labels=["cap:frontend", "unblocked"])]))
+        self.assertEqual(out[0]["action"], "dispatched")
+
+    def test_a_later_completed_dispatch_ends_the_streak(self):
+        self.seed("KAN-603", ["blocked", "blocked", "completed"])
+        self.assertEqual(rd.blocked_streak("KAN-603", store), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
 
