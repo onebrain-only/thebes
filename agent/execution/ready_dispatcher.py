@@ -529,6 +529,9 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None, liveness_tick
             issue = jira.normalize_issue(jira.get_issue(key, fields=FIELDS, raw=True))
             if (issue.get("status") or "").lower() == "done":
                 continue
+            if UNBLOCKED not in issue["labels"] and \
+                    blocked_streak(key, state_store) >= PARK_AFTER_BLOCKS:
+                continue            # parked: a retry would chain a new blocked dispatch (KAN-757)
             sid = (state_store.active_role_session(r["target_seat_id"]) or {}).get("session_id")
             if not sid or sid in {o["target_session_id"] for o in open_dispatches(state_store)}:
                 continue

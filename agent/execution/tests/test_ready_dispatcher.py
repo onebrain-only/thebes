@@ -414,6 +414,31 @@ class ParkAfterBlocksTests(ReadyDispatcherTests):
         self.assertEqual(rd.blocked_streak("KAN-603", store), 0)
 
 
+class ParkedPermissionRetryTest(ParkAfterBlocksTests):
+    def test_a_parked_ticket_gets_no_permission_retry(self):
+        self.with_ops()
+        res = os.path.join(self.tmp, "result.txt")
+        with open(res, "w") as fh:
+            fh.write("push denied by permission system")
+        self.seed("KAN-604", ["blocked", "blocked"])
+        for r in store.read_all("conversation_dispatch"):
+            if r.get("jira_key") == "KAN-604":
+                r.update(status="blocked", target_seat_id="habu", result_ref=res)
+                store._atomic_write(store.path_for("conversation_dispatch", r["dispatch_id"]), r)
+        j = FakeJira([issue("KAN-604", labels=["cap:ops"])])
+        j.get_issue = lambda key, fields=None, raw=False: j.issues[0]
+
+        def raw_update(kind, rid, rev, changes):       # the seeded records are not schema-valid
+            cur = store.read(kind, rid)
+            cur.update(changes, revision=cur["revision"] + 1)
+            store._atomic_write(store.path_for(kind, rid), cur)
+            return cur
+        with mock.patch.object(store, "update", raw_update):
+            out = self.tick(j)
+        self.assertFalse([d for d in out if d.get("action") == "permission-retry"], out)
+        self.assertEqual(self.sent, [])
+
+
 if __name__ == "__main__":
     unittest.main()
 
