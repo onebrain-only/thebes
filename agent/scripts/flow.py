@@ -39,6 +39,7 @@ PROJECTS = os.path.expanduser("~/.claude/projects")
 
 sys.path.insert(0, os.path.join(ROOT, "agent", "state"))
 import view                                             # noqa: E402
+import flow_map                                         # noqa: E402
 
 
 # ---------------------------------------------------------------- session activity
@@ -603,11 +604,25 @@ class Handler(BaseHTTPRequestHandler):
             payload = state()
         except Exception as e:                           # never 500 into a blank page
             payload = {"error": str(e), "meta": {"empty_state": "VIEW UNAVAILABLE"}}
-        if self.path.startswith("/api/state"):
+        path = self.path.split("?")[0]
+        if path.startswith("/api/state"):
             self._send(json.dumps(payload), "application/json")
             return
-        self._send(PAGE.replace("__STATE_JSON__", embed_json(payload)),
-                   "text/html; charset=utf-8")
+        if path == "/api/live":
+            try:
+                live = flow_map.build()
+            except Exception as e:                       # never 500 into a blank page
+                live = {"error": str(e), "nodes": [], "loops": [], "stale": True}
+            self._send(json.dumps(live), "application/json")
+            return
+        if path == "/map":
+            self._send(flow_map.PAGE, "text/html; charset=utf-8")
+            return
+        if path == "/agent-view":
+            self._send(PAGE.replace("__STATE_JSON__", embed_json(payload)),
+                       "text/html; charset=utf-8")
+            return
+        self._send(flow_map.SHELL, "text/html; charset=utf-8")
 
 
 def main():
