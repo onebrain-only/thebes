@@ -487,5 +487,13 @@ class VerifyTests(unittest.TestCase):
                 if any(k in e for k in ("task", "conversation", "decision"))]
 
 
+class NoUiPhraseTest(unittest.TestCase):
+    def test_no_new_ui_counts_as_no_ui(self):
+        from agent.execution import conversation_dispatch as cd
+        for text in ("No UI.", "no ui needed", "No new UI. Run: flutter test", "no-UI ticket"):
+            self.assertTrue(cd.NO_UI.search(text), text)
+        self.assertFalse(cd.NO_UI.search("a new UI screen"))
+
+
 if __name__ == "__main__":
     unittest.main()

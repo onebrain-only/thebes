@@ -261,7 +261,7 @@ QA_CHECK = {"id": "QA", "kind": "judge",
             "pass": "the reviewer's evidence; the team hands over screenshots and steps"}
 # CEO 2026-10-29: a ticket marked "no UI" is simple; nobody opens the app for it. Its review is a
 # code double-check, so the brief carries no QA running-app check and the reviewer takes tier 1.
-NO_UI = re.compile(r"\bno[ _-]ui\b", re.I)
+NO_UI = re.compile(r"\bno[ _-](?:new[ _-])?ui\b", re.I)   # "no UI" and "No new UI" (KAN-753)
 
 
 def is_product(record, teams_mod=None):
