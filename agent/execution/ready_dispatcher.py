@@ -233,6 +233,9 @@ PRIORITY_MIN_SECONDS = 3600      # the PM re-plans at most hourly unless a brief
 # waits for a cut. These two are gauges, asked about every READY_ASK_SECONDS whatever the Backlog.
 READY_TARGET = 10
 READY_ASK_SECONDS = 900
+# The same gauge with the same numbers is not news: the PM already answered it (2026-11-03, "Ready
+# 1 of 10" reached the CEO a dozen times while the only fix was an Epic order).
+READY_REPEAT_SECONDS = 4 * 3600
 # Real team time per ticket, measured 2026-11-02 over 86 tickets: median 25 min, p75 62. An
 # Original estimate over an hour is a human-hours guess and the ticket needs `epic-cut`.
 MAX_ESTIMATE_SECONDS = 3600
@@ -269,10 +272,16 @@ def raise_priority_request(reasons, signature, *, state_store=store, now=None):
     reqs = sorted(state_store.read_all("priority_request"), key=lambda r: r.get("created_at") or "")
     open_req = next((r for r in reqs if r.get("status") == "open"), None)
     # Gauges skip the Backlog rules below and keep their own clock (D-049).
-    asked = {g.get("kind"): max(_ts(r.get("created_at")), _ts(r.get("updated_at")))
-             for r in reqs for g in r.get("reasons") or () if g.get("kind") in GAUGES}
+    asked, said = {}, {}
+    for r in reqs:
+        for g in r.get("reasons") or ():
+            if g.get("kind") in GAUGES:
+                asked[g["kind"]] = max(_ts(r.get("created_at")), _ts(r.get("updated_at")))
+                said[g["kind"]] = json.dumps(g, sort_keys=True)
     gauges = [r for r in reasons if r.get("kind") in GAUGES
-              and now - asked.get(r["kind"], 0) >= READY_ASK_SECONDS
+              and now - asked.get(r["kind"], 0) >= (
+                  READY_REPEAT_SECONDS if said.get(r["kind"]) == json.dumps(r, sort_keys=True)
+                  else READY_ASK_SECONDS)
               and not (open_req and any(g.get("kind") == r["kind"] for g in open_req["reasons"]))]
     reasons = [r for r in reasons if r.get("kind") not in GAUGES]
     last = reqs[-1] if reqs else None

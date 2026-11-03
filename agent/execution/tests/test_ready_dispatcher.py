@@ -406,9 +406,25 @@ class ReadyGaugeTests(unittest.TestCase):
         item = [i for i in inbox.collect(ORCH, state_store=store) if i["kind"] == "priority"][0]
         self.assertIn("one screen or one function", item["how"])
         self.assertFalse(self.asks(self.tick(j)), "within 15 minutes: not asked again")
-        later = __import__("time").time() + rd.READY_ASK_SECONDS + 5
+        for r in store.read_all("priority_request"):
+            store.update("priority_request", r["priority_request_id"], r["revision"],
+                         {"status": "collected"})
+        now = __import__("time").time()
+        self.assertFalse(self.asks(rd.tick(state_store=store, jira=j, dispatch=self.dispatch,
+                                           now=now + rd.READY_ASK_SECONDS + 5)),
+                         "same numbers: the PM already answered it")
         self.assertTrue(self.asks(rd.tick(state_store=store, jira=j, dispatch=self.dispatch,
-                                          now=later)))
+                                          now=now + rd.READY_REPEAT_SECONDS + 5)))
+
+    def test_a_changed_gauge_is_asked_after_fifteen_minutes(self):
+        first = rd.raise_priority_request(
+            [{"kind": "ready-below-target", "startable": 1, "target": 10}], "", state_store=store)
+        store.update("priority_request", first["priority_request_id"], first["revision"],
+                     {"status": "collected"})
+        later = __import__("time").time() + rd.READY_ASK_SECONDS + 5
+        self.assertTrue(rd.raise_priority_request(
+            [{"kind": "ready-below-target", "startable": 0, "target": 10}], "",
+            state_store=store, now=later))
 
     def test_an_open_request_is_not_asked_twice(self):
         j = FakeJira([])

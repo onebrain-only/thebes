@@ -999,6 +999,9 @@ needs a dict, so every auto pass raised and left a `skipped: auto-pass-failed` d
 marker also hid the item from reviewers, and KAN-736, 737, 738, 739 and 760 sat in review with
 nobody looking at them. Fixed: it now passes `{}`, a failed-auto-pass marker is retried after 10
 minutes, and a test binds the call to the real `judge_verdict` signature.
+Same day: a gauge with the same numbers as last time is asked again only after 4 hours, not 15
+minutes. The PM had already answered "Ready 1 of 10: only an Epic order fixes it", and the repeats
+reached the CEO about a dozen times.
 
 ## D-050 — One live session per team; same-named leftovers are retired
 
