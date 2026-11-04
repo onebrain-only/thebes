@@ -131,6 +131,34 @@ class SqlHookTests(unittest.TestCase):
             self.assertEqual(r["decision"], "deny", sql)
             self.assertIn("never take it to the CEO", r["reason"])
 
+    # -- dreq-fd5f4a36 / KAN-845: the one GRANT EXECUTE carve-out -------------------------
+    FNS = ("public.kan713_meetup_visible(uuid), public.kan713_meetup_can_read_row(uuid),\n"
+           "  public.kan713_meetup_attendee_visible(uuid), public.kan713_meetup_can_write_row(uuid)")
+    STEP8 = "GRANT EXECUTE ON FUNCTION " + FNS + " TO anon, authenticated, service_role;"
+
+    def test_kan845_step8_grant_execute_is_allowed(self):
+        self.assertEqual(self.kind(self.STEP8), "allow")
+        self.assertIsNone(sql_hook.deny_reason(*sql_hook.lex(self.STEP8)[1:]))
+        revoke = ("REVOKE ALL ON FUNCTION " + self.FNS
+                  + " FROM PUBLIC, anon, authenticated, service_role;\n")
+        self.assertEqual(self.kind(revoke + self.STEP8), "allow")
+
+    def test_kan845_carve_out_stays_narrow(self):
+        fn = "public.kan713_meetup_visible(uuid)"
+        for sql in (self.STEP8.replace("TO anon", "TO public, anon"),
+                    self.STEP8.replace("service_role;", "public;"),
+                    self.STEP8.replace("GRANT EXECUTE", "GRANT ALL"),
+                    self.STEP8.replace(";", " WITH GRANT OPTION;"),
+                    self.STEP8.replace(fn, fn + ", public.kan713_other(uuid)"),
+                    self.STEP8.replace(fn, "public.other_fn(uuid)"),
+                    "grant execute on function " + fn + " to anon; grant select on t to anon",
+                    "GRANT SELECT ON public.events TO anon",
+                    "grant execute on all functions in schema public to anon"):
+            r = self.d(sql)
+            self.assertEqual(r["decision"], "deny", sql)
+            self.assertEqual(sql_hook.deny_reason(
+                *sql_hook.lex(sql)[1:]), "grant-to-public", sql)
+
     def test_what_looks_scary_but_is_not_passes(self):
         self.assertEqual(self.kind("select 'drop table x' as note"), "allow", "inside a literal")
         self.assertEqual(self.kind("select 1 -- drop table x"), "allow", "inside a comment")

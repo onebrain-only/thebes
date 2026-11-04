@@ -136,7 +136,7 @@ def lex(text):
 DENY = (
     ("drop", re.compile(r"\bdrop\b")),
     ("truncate", re.compile(r"\btruncate\b")),
-    ("grant-to-public", re.compile(r"\bgrant\b[^;]*\bto\b[^;]*\b(public|anon)\b")),
+    ("grant-to-public", None),                       # judged by _grant_to_public (KAN-845 carve-out)
     ("create-extension", re.compile(r"\bcreate\s+extension\b")),
     ("pg-terminate", re.compile(r"\bpg_(terminate|cancel)_backend\b")),
     ("copy-program-or-file", re.compile(r"\bcopy\b[^;]*\b(program|from\s+''|to\s+'')")),
@@ -146,6 +146,7 @@ DENY = (
     ("alter-system-or-role", re.compile(r"\balter\s+(system|role|user)\b|\bcreate\s+(role|user)\b")),
     ("dblink", re.compile(r"\bdblink\w*\b|\bpostgres_fdw\b")),
 )
+GRANT_TO_PUBLIC = re.compile(r"\bgrant\b[^;]*\bto\b[^;]*\b(public|anon)\b")
 HARD = ("grant-to-public", "pg-terminate", "copy-program-or-file", "server-files", "secrets-vault",
         "alter-system-or-role", "dblink")
 DROP_SCOPE = re.compile(r"\bdrop\s+(schema|database|owned|role|user|group|tablespace|server|extension|"
@@ -160,6 +161,23 @@ DYNAMIC = re.compile(r"\bexecute\b(?!\s+(on|function|procedure)\b)")   # the pri
 BEGIN = re.compile(r"^(begin|start\s+transaction)(\s+(work|transaction))?"
                    r"(\s+(isolation\s+level\s+\w+(\s+\w+)?|read\s+(write|only)|(not\s+)?deferrable))*$")
 ROLLBACK = re.compile(r"^(rollback|abort)(\s+(work|transaction))?$")
+# CTO ruling dreq-fd5f4a36 (KAN-845, CEO-approved 2026-11-04): ONE narrow carve-out from
+# grant-to-public. EXECUTE only, on exactly these four (uuid) predicates, to anon/authenticated/
+# service_role only. PUBLIC, ALL, WITH GRANT OPTION, table grants and any other function stay denied,
+# and every other statement in the batch is still judged against the full DENY list.
+_KAN845_FN = r"public\.kan713_meetup_(visible|can_read_row|attendee_visible|can_write_row)\(uuid\)"
+_KAN845_ROLE = r"(anon|authenticated|service_role)"
+KAN845_GRANT = re.compile(r"grant\s+execute\s+on\s+function\s+" + _KAN845_FN
+                          + r"(\s*,\s*" + _KAN845_FN + r")*\s+to\s+" + _KAN845_ROLE
+                          + r"(\s*,\s*" + _KAN845_ROLE + r")*\s*")
+
+
+def _grant_to_public(low):
+    """grant-to-public, statement by statement, minus the one KAN-845 carve-out."""
+    return any(GRANT_TO_PUBLIC.search(piece) and not KAN845_GRANT.fullmatch(piece.strip())
+               for piece in low.split(";"))
+
+
 ENDS_TX = re.compile(r"^(commit|end|abort|prepare\s+transaction|begin|start\s+transaction|"
                      r"rollback(?!\s+to\b))")
 
@@ -190,7 +208,7 @@ def deny_reason(scan, lit):
     for view in views:
         low = view.lower()
         for name, pat in DENY:
-            if pat.search(low):
+            if (_grant_to_public(low) if pat is None else pat.search(low)):
                 return name
         if AUTH_TABLE.search(low) and AUTH_SECRET_COLS.search(re.sub(r"count\s*\(\s*\*\s*\)", " ", low)):
             return "auth-secrets"
@@ -206,7 +224,7 @@ def hard_deny_reason(scan, lit):
     for view in views:
         low = view.lower()
         for name, pat in DENY:
-            if name in HARD and pat.search(low):
+            if name in HARD and (_grant_to_public(low) if pat is None else pat.search(low)):
                 return name
         if DROP_SCOPE.search(low):
             return "drop-scope"
