@@ -183,6 +183,20 @@ def _note(record, phase, outcome, state_store, alert=True):
                         state_store=state_store)
 
 
+TEAM_LABEL = "team:"
+
+
+def set_team_label(jira, key, seat_id):
+    """The card shows which team holds it: one `team:<seat>` label, replacing any earlier one.
+    The Jira assignee is not execution authority (CLAUDE.md), so this is display only."""
+    labels = list(jira.get_issue(key, fields=["labels"]).get("labels") or [])
+    want = TEAM_LABEL + seat_id
+    if want in labels:
+        return False
+    jira.update_issue(key, {"labels": [l for l in labels if not l.startswith(TEAM_LABEL)] + [want]})
+    return True
+
+
 def on_start(record, *, state_store=store, jira=None):
     """Called once the team has the work (delivery DELIVERED)."""
     if not record.get("jira_key") or _done(record, "start"):
@@ -205,6 +219,11 @@ def on_start(record, *, state_store=store, jira=None):
         out = dict(moved, status="ok")
     except Exception as exc:                                 # noqa: BLE001
         out = {"status": "failed", "error": str(exc)[:300]}
+    try:
+        if record.get("target_seat_id"):
+            set_team_label(jira, record["jira_key"], record["target_seat_id"])
+    except Exception:                                        # noqa: BLE001 — display only
+        pass
     _note(record, "start", out, state_store)
     return out
 

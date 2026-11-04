@@ -45,12 +45,16 @@ class FakeJira:
         self.status, self.fail = {}, fail
         self.default = status
         self.comments, self.moves = [], []
+        self.labels = {}
 
-    def get_issue(self, key):
+    def get_issue(self, key, fields=None):
         if self.fail:
             raise RuntimeError("Jira did not answer")
         return {"key": key, "status_id": self.status.get(key, self.default),
-                "status": "x"}
+                "status": "x", "labels": list(self.labels.get(key, []))}
+
+    def update_issue(self, key, fields):
+        self.labels[key] = list(fields["labels"])
 
     def get_transitions(self, key):
         return [{"id": t, "to_status_id": s} for s, t in self.TRANSITIONS.items()]
@@ -62,6 +66,15 @@ class FakeJira:
     def add_comment(self, key, body):
         self.comments.append((key, body))
         return {"id": "1"}
+
+
+class TeamLabelTests(unittest.TestCase):
+    def test_the_card_names_the_team_and_a_new_team_replaces_it(self):
+        j = FakeJira()
+        j.labels["KAN-1"] = ["bug", "team:edfu"]
+        self.assertTrue(jira_sync.set_team_label(j, "KAN-1", "karnak"))
+        self.assertEqual(j.labels["KAN-1"], ["bug", "team:karnak"])
+        self.assertFalse(jira_sync.set_team_label(j, "KAN-1", "karnak"))   # already shown: no write
 
 
 class JiraSyncTests(unittest.TestCase):
@@ -135,6 +148,7 @@ class JiraSyncTests(unittest.TestCase):
         self.assertEqual(out["jira_key"], "KAN-50")
         self.assertEqual(self.jira.moves, [("KAN-50", "10046")])
         self.assertIn("team Karnak started", self.jira.comments[0][1])
+        self.assertEqual(self.jira.labels["KAN-50"], ["team:karnak"])
         self.submit(did, cap, "completed", "Done: widget + 3 tests, analyze clean.")
         self.assertEqual(self.jira.moves[-1], ("KAN-50", "10044"), "untracked → Self-review")
         self.assertIn("reported completed", self.jira.comments[-1][1])
