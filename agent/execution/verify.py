@@ -451,6 +451,46 @@ def judge_verdict(dispatch_id, passed, failed, *, env=None, state_store=store, j
                    jira=jira, dispatcher=dispatcher, launcher=launcher, mark=False)
 
 
+def waive(dispatch_id, check_ids, reason, *, env=None, state_store=store, jira=None,
+          dispatcher=None, launcher=None):
+    """The orchestrator closes some checks BY DECISION (a QA journey the environment cannot run,
+    a check superseded by a ruling). The checks leave the root, the waiver is recorded with its
+    reason, and the verdict is re-settled over what remains: so the reviewer never records a
+    literal `fail` for a check the orchestrator has already decided (KAN-753, KAN-802, KAN-805).
+    Only the orchestrator; a reason is mandatory; a check that already passed is not waivable."""
+    env = os.environ if env is None else env
+    from agent.state import teams
+    orch = (state_store.active_role_session(teams.ORCHESTRATOR_ID) or {}).get("session_id")
+    if not orch or env.get("CLAUDE_CODE_SESSION_ID") != orch:
+        raise Refused("not-orchestrator", "only the orchestrator waives a check")
+    if not (reason or "").strip():
+        raise Refused("reason-required", "a waiver carries the decision that justifies it")
+    root = state_store.read("conversation_dispatch", dispatch_id)
+    if root is None or not root.get("checks") or root.get("root_dispatch_id"):
+        raise Refused("dispatch-not-found", "%s is not a root dispatch with checks" % dispatch_id)
+    ver = dict(root.get("verification") or {})
+    if not ver.get("results"):
+        raise Refused("not-verified-yet", "no check has run on %s: waive after the first pass"
+                      % dispatch_id)
+    have = {c["id"]: c for c in root["checks"]}
+    for cid in check_ids:
+        if cid not in have:
+            raise Refused("unknown-check", "%s has no check %s" % (dispatch_id, cid))
+        if (ver["results"].get(cid) or {}).get("status") == "pass":
+            raise Refused("already-passed", "%s already passed: nothing to waive" % cid)
+    keep = [c for c in root["checks"] if c["id"] not in check_ids]
+    if not keep:
+        raise Refused("nothing-left", "waiving every check is not a verdict: discard or decide")
+    results = {i: r for i, r in ver["results"].items() if i not in check_ids}
+    waived = list(root.get("qa_waived") or []) + [
+        {"id": c, "reason": reason.strip()[:400], "at": state_store.now()} for c in check_ids]
+    cur = state_store.read("conversation_dispatch", dispatch_id)
+    root = state_store.update("conversation_dispatch", dispatch_id, cur["revision"],
+                              {"checks": keep, "qa_waived": waived})
+    return _settle(root, root, results, ver.get("cycle") or 1, {}, state_store=state_store,
+                   jira=jira, dispatcher=dispatcher, launcher=launcher, mark=False)
+
+
 def discard(dispatch_id, reason, *, env=None, state_store=store, jira=None):
     """The orchestrator discards a DUPLICATE dispatch: no rework, never integrated, the ticket is
     not moved (the other copy owns it). A failed verdict always means rework; this does not."""
@@ -509,11 +549,16 @@ def main(argv=None):
                    help='C3:"reason" — repeat per failing check')
     d = sub.add_parser("discard", help="discard a DUPLICATE dispatch: no rework, not integrated")
     d.add_argument("dispatch_id"); d.add_argument("--reason", required=True)
+    w = sub.add_parser("waive", help="orchestrator: close checks BY DECISION and re-settle")
+    w.add_argument("dispatch_id"); w.add_argument("--check", action="append", required=True)
+    w.add_argument("--reason", required=True)
     s = sub.add_parser("status"); s.add_argument("dispatch_id")
     ns = ap.parse_args(argv)
     try:
         if ns.cmd == "run":
             out = run(ns.dispatch_id, force=ns.force)
+        elif ns.cmd == "waive":
+            out = waive(ns.dispatch_id, ns.check, ns.reason)
         elif ns.cmd == "discard":
             out = discard(ns.dispatch_id, ns.reason)
         elif ns.cmd == "verdict":

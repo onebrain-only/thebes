@@ -231,6 +231,31 @@ class VerifyTests(unittest.TestCase):
         self.assertEqual([(i["kind"], i["verdict"]) for i in final], [("verification", "pass")])
         self.assertEqual(self.clean(), [])
 
+    def test_a_check_closed_by_decision_is_waived_not_failed_and_the_rest_still_decide(self):
+        did, cap = self.dispatch()
+        self.submit(did, cap, report(wt=self.wt))
+        self.verify_run(did)
+        orch = {"CLAUDE_CODE_SESSION_ID": ORCH}
+        for args, code in (((did, ["QA"], ""), "reason-required"),
+                           ((did, ["C1"], "x"), "already-passed"),
+                           ((did, ["NOPE"], "x"), "unknown-check")):
+            with self.assertRaises(verify.Refused) as ctx:
+                verify.waive(*args, env=orch, state_store=store)
+            self.assertEqual(ctx.exception.code, code)
+        with self.assertRaises(verify.Refused) as ctx:
+            verify.waive(did, ["QA"], "env cannot run it", env={"CLAUDE_CODE_SESSION_ID": KARNAK},
+                         state_store=store)
+        self.assertEqual(ctx.exception.code, "not-orchestrator")
+        out = verify.waive(did, ["QA"], "no supabase CLI here; decided by the orchestrator",
+                           env=orch, state_store=store, jira=self.jira)
+        self.assertEqual(out["verdict"], "needs_judge", "C3 still stands")
+        root = store.read("conversation_dispatch", did)
+        self.assertEqual([c["id"] for c in root["checks"]], ["C1", "C2", "C3"])
+        self.assertEqual(root["qa_waived"][0]["id"], "QA")
+        res = self.codex_pass(did, ("C3",))
+        self.assertEqual(res["verdict"], "pass")
+        self.assertEqual(self.jira.moves[-1], ("KAN-50", "10007"), "Done")
+
     def test_a_failing_check_sends_back_only_that_check_and_the_fix_closes_it(self):
         brief_run_only = "\n".join(l for l in BRIEF.splitlines() if "| judge |" not in l)
         did, cap = self.dispatch(brief_run_only)
