@@ -536,7 +536,9 @@ def decide(payload, state_store=None, teams_mod=None, allow_path=None, now=None)
             return done("deny", "needs-snapshot:" + ",".join(missing),
                         "This changes or removes rows of %s. Snapshot first — run: %s — then run the SQL "
                         "it prints through execute_sql, then this statement again (allowed for %dh). "
-                        "You own this; it is not a CEO decision (D-043)."
+                        "Run the destructive statement itself with `python3 -m agent.execution.sql_psql --file <sql>` "
+                        "(the same hook judges it; execute_sql would raise a terminal confirmation nobody can answer "
+                        "unattended). You own this; it is not a CEO decision (D-043)."
                         % (", ".join(missing), cmds, sql_snapshot.TTL_HOURS))
     import ops_guard
     if ops_guard.read_only_sql(query):
