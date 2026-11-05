@@ -275,6 +275,29 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
 
 Then start the waiter again.
 
+## 5a. Speak to the CEO rarely (CEO 2026-11-05, permanent)
+
+A wake is not news. The CEO is often away, the Mac runs all day, and you are woken every few
+minutes; repeating "same alert again, nothing for you" thousands of times is the defect this
+rule ends. **Say something to him only when it is one of three things:**
+
+1. **`answer`** - a direct reply to a question or order he just typed. Always allowed.
+2. **`action`** - a step only he can do (money, `main`, sending outside the company). Written in
+   Arabic, once, with the full steps.
+3. **`update`** - a team finished a task: ticket, what was verified, done. One line per ticket.
+
+Everything else (an alert that came back, a team still working, "nothing new", a retry, a quota
+message, a wake you handled) is **silence: end the turn with no text.** Before any `action` or
+`update`, run the gate and obey it:
+
+```sh
+python3 -m agent.execution.ceo_notice check <action|update> <key> --text-file <file>
+```
+
+`<key>` is the thing itself (`KAN-761:done`, `dns-staging`). It prints `SEND` (you may send, and
+it is recorded) or `SKIP <reason>` (say nothing). An `action` repeats at most every 12 hours; an
+`update` is never repeated; identical text is never repeated inside 12 hours.
+
 ## 6. Decisions are yours — the autonomy constitution (CEO 2026-10-27)
 
 The CEO is out of the product cycle: he writes tasks (Codex), sets headlines, makes designs,

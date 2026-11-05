@@ -1020,3 +1020,12 @@ which can be undone with `--resume`. One that exited more than 6 hours ago is re
 `claude rm`, after its transcript is copied to `agent/state/runtime/session-archive/`. The
 discard and force flags are never passed, so the CLI refuses on unpushed work. `start-teams.sh`
 binds the session that was not there before it ran, then sweeps that team's copies.
+
+## D-051 — The CEO hears a thing once: a gate on every orchestrator message
+**Date:** 2026-11-05 · **By:** CEO ("the same message every 5 minutes, maybe thousands of times, and I don't even get a notification")
+
+**Context.** The orchestrator transcript held 1,127 text blocks; one sentence ("the same alert is back, Ready below target, nothing for you") appeared 23 times and a quota message 14 times. The 5-minute wakes (inbox waiter, watchdog, liveness) are correct; the defect was that the orchestrator narrated every wake to the CEO.
+
+**Decision.** `ORCHESTRATOR.md` §5a: speak to the CEO only for a direct answer, a step only he can do (`action`), or a finished task (`update`); everything else is silence. `agent/execution/ceo_notice.py check <kind> <key>` is the gate: an `action` repeats at most every 12 hours, an `update` never repeats, identical text is held for 12 hours, and any other kind is skipped. State lives in `agent/state/runtime/ceo-notices.json`.
+
+**Not done.** Delivery of notifications to his phone is a separate question (Remote Control push); this gate only cuts what is sent.
