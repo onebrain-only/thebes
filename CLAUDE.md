@@ -19,6 +19,18 @@ instructions below. If a required source is unavailable or conflicts with runtim
 stop Product decisions and resolve the discrepancy in SYSTEM_MAINTENANCE; conversation
 memory cannot substitute for repository sources.
 
+## Where things live (CEO, 2026-11-05)
+
+- **Plans, briefs, reports and decisions live in `Dabbler/dabbler-docs/`, nowhere else.** No plan or
+  report folder on the Desktop or inside `Dabbler/`. Old material is in `dabbler-docs/alpha-plan-archive/`.
+- **No design PNGs, no screenshot folders.** A design is read live from its Claude Design link, never from a
+  saved copy. A screenshot is the last resort after a live test (drive the running app, read DOM/console/
+  network), and one taken is deleted when the task ends. Do not make "no screenshots" a hard block: a test
+  that cannot run live may still take one.
+- **Branches per team, not per story.** A team works on its one branch (`<base>-<team>`); do not create a
+  folder or worktree for each task. Unmerged work is merged into Alpha, never left in a side folder.
+- **Never delete what an agent judges "not useful".** Deletion of plans/docs is the CEO's call; move, don't remove.
+
 ## The Orchestrator
 
 **This governs every session started in Thebes**, whatever the task and whoever opened it.

@@ -280,7 +280,11 @@ def verify_block(record):
     lines = [
         "branching: work ONLY on the branch named in the brief's BRANCH line, in your own git "
         "worktree. Never check out or commit to the shared base branch; integration into it is "
-        "a separate, serial dispatch." if record.get("branch") else
+        "a separate, serial dispatch. ONE worktree per team, reused for every ticket "
+        "(Dabbler/worktrees/<your-team>); do not create a folder or worktree per ticket, and "
+        "remove any temporary one before you report. Plans and reports go in Dabbler/dabbler-docs/, "
+        "never in a new folder; test the running app live and take a screenshot only as a last "
+        "resort, deleting it when the task ends." if record.get("branch") else
         "branching: the brief names no branch.",
         "checks: the brief's CHECKS are the agreed scenarios for 'done'. Run each one yourself "
         "before reporting. Do not invent extra scenarios and do not stop to re-plan them. "
