@@ -228,6 +228,13 @@ def on_start(record, *, state_store=store, jira=None):
     return out
 
 
+def _claimed_failures(result_text):
+    """Check ids the team's own VERIFY block marks FAIL (empty when it has none)."""
+    from agent.execution import verify
+    claims = verify.parse_report(result_text).get("claims") or {}
+    return sorted(c for c, v in claims.items() if v.get("claim") == "FAIL")
+
+
 def on_finish(record, result_text, *, state_store=store, jira=None, escalated=False):
     """Called once the team's result is settled and not routed for a decision."""
     if not record.get("jira_key") or _done(record, "finish"):
@@ -242,7 +249,15 @@ def on_finish(record, result_text, *, state_store=store, jira=None, escalated=Fa
         summary = summary[:SUMMARY_CHARS] + " …"
     try:
         if outcome == "completed":
-            if _operations_only(record, state_store):
+            failed = _claimed_failures(result_text) if _operations_only(record, state_store) else []
+            if failed:
+                # Live 2026-11-05: KAN-871 reported "parked, C1 FAIL not run" and was still moved to
+                # Done, so the dispatcher released its dependents (821, 830) early. A team's own
+                # FAIL is not completion.
+                moved = {"moved": False}
+                head = ("Thebes: team %s reported completed but its own checks say FAIL (%s); "
+                        "Operations-only ticket NOT moved to Done." % (team, ", ".join(failed)))
+            elif _operations_only(record, state_store):
                 # CEO 2026-10-24: Review is for coded work. Operations-only work goes to Done.
                 moved = _move(record["jira_key"], DONE_STATUS_ID, jira, state_store)
                 head = ("Thebes: team %s reported completed; Operations-only work (no code), "
