@@ -786,7 +786,19 @@ def _current_session_of(req, state_store):
     return ((state_store.active_role_session(seat) or {}).get("session_id")) if seat else None
 
 
-def retry_resumes(*, state_store=store, dispatch=None):
+STALE_ANSWER_SECONDS = 24 * 3600
+
+
+def _age_seconds(stamp, now):
+    import calendar
+    import time as _t
+    try:
+        return now - calendar.timegm(_t.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ"))
+    except (TypeError, ValueError):
+        return 0
+
+
+def retry_resumes(*, state_store=store, dispatch=None, now=None):
     """Send every answer that was queued because its asker was busy, as soon as it is free.
     Never raises; the Ready dispatcher calls it every tick. One request that cannot be sent
     never holds back the others (live 2026-11-05: an answer for a restarted team's old session
@@ -802,6 +814,8 @@ def retry_resumes(*, state_store=store, dispatch=None):
             ref = req.get("pending_resume_ref")
             if not ref or req.get("continuation_dispatch_id"):
                 continue
+            if _age_seconds(req.get("created_at"), now or __import__("time").time()) > STALE_ANSWER_SECONDS:
+                continue                # a day-old answer answers a question nobody is asking now
             asker = req["asker_session_id"]
             if cd.open_work_for(asker, state_store):
                 continue

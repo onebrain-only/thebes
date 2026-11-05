@@ -61,6 +61,19 @@ class RetryResumesRebindTests(unittest.TestCase):
         self.assertEqual(sent, ["live"])
         self.assertEqual([o["action"] for o in out], ["answer-delivered"])
 
+    def test_an_answer_older_than_a_day_is_not_sent(self):
+        old = req("dreq-a", "live", "luxor", self.f.name)
+        old["created_at"] = "2026-11-03T00:00:00Z"
+        fresh = req("dreq-b", "live", "luxor", self.f.name)
+        fresh["created_at"] = "2026-11-05T12:00:00Z"
+        st = FakeStore([old, fresh], {"luxor": "live"})
+        sent = []
+        with mock.patch.object(cd, "open_work_for", return_value=[]), \
+             mock.patch.object(cd, "target_binding"):
+            out = dg.retry_resumes(state_store=st, now=1793880000.0,   # 2026-11-05T12:40Z
+                                   dispatch=lambda text, sid, **k: sent.append(sid) or {"dispatch_id": "x"})
+        self.assertEqual([o["request"] for o in out], ["dreq-b"[-8:]])
+
 
 if __name__ == "__main__":
     unittest.main()
