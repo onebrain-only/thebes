@@ -779,17 +779,31 @@ def _resume_asker(req, answer_text, *, state_store=store, resume=None):
     return out
 
 
+def _current_session_of(req, state_store):
+    """The active session of the seat that asked, or None. A team is restarted under a new
+    session id; an answer queued for the old one belongs to the new."""
+    seat = req.get("asker_seat_id")
+    return ((state_store.active_role_session(seat) or {}).get("session_id")) if seat else None
+
+
 def retry_resumes(*, state_store=store, dispatch=None):
     """Send every answer that was queued because its asker was busy, as soon as it is free.
-    Never raises; the Ready dispatcher calls it every tick."""
+    Never raises; the Ready dispatcher calls it every tick. One request that cannot be sent
+    never holds back the others (live 2026-11-05: an answer for a restarted team's old session
+    failed every minute and stopped every answer after it)."""
     from agent.execution import conversation_dispatch as cd
     done = []
     try:
-        for req in state_store.read_all("decision_request"):
+        reqs = list(state_store.read_all("decision_request"))
+    except Exception as exc:                               # noqa: BLE001
+        return [{"action": "answer-retry-failed", "error": str(exc)[:200]}]
+    for req in reqs:
+        try:
             ref = req.get("pending_resume_ref")
             if not ref or req.get("continuation_dispatch_id"):
                 continue
-            if cd.open_work_for(req["asker_session_id"], state_store):
+            asker = req["asker_session_id"]
+            if cd.open_work_for(asker, state_store):
                 continue
             origin = state_store.read("conversation_dispatch", req["origin_dispatch_id"]) or {}
             env = {k: v for k, v in os.environ.items()
@@ -801,8 +815,16 @@ def retry_resumes(*, state_store=store, dispatch=None):
                 env["CODEX_THREAD_ID"] = req["origin_thread_id"]
             with open(ref, encoding="utf-8") as fh:
                 text = fh.read()
+            try:
+                cd.target_binding(asker, state_store)
+            except cd.Refused as exc:
+                if exc.code != "target-session-not-bound":
+                    raise
+                asker = _current_session_of(req, state_store)
+                if not asker or cd.open_work_for(asker, state_store):
+                    continue
             out = (dispatch or cd.dispatch)(
-                text, req["asker_session_id"], env=env, state_store=state_store, detach=True,
+                text, asker, env=env, state_store=state_store, detach=True,
                 ticket=origin.get("jira_key"), lane_capability=origin.get("jira_capability"),
                 continuation=True, checks=origin.get("checks") or None,
                 root_dispatch_id=origin.get("root_dispatch_id")
@@ -814,8 +836,9 @@ def retry_resumes(*, state_store=store, dispatch=None):
                                 "pending_resume_ref": None})
             done.append({"action": "answer-delivered", "key": origin.get("jira_key"),
                          "request": req["decision_request_id"][-8:]})
-    except Exception as exc:                               # noqa: BLE001
-        done.append({"action": "answer-retry-failed", "error": str(exc)[:200]})
+        except Exception as exc:                           # noqa: BLE001
+            done.append({"action": "answer-retry-failed", "request": str(req.get("decision_request_id"))[-8:],
+                         "error": str(exc)[:200]})
     return done
 
 
