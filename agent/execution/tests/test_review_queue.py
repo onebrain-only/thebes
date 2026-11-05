@@ -61,13 +61,13 @@ class ReviewQueueTests(unittest.TestCase):
             "delivery_id": did, "capability_sha256": "0" * 64, "prompt_ref": "/x",
             "status": "completed", "delivery_status": "DELIVERED", "outcome": "completed",
             "result_ref": "/x", "result_sha256": "0" * 64, "outcome_at": store.now(),
-            "attested_delivery_id": did, "reported_session_id": LUXOR, "jira_key": key, "branch": "alpha-luxor",
+            "attested_delivery_id": did, "reported_session_id": LUXOR, "jira_key": key, "branch": "staging-luxor",
             "checks": [{"id": "C1", "kind": "run", "what": "flutter analyze", "pass": "exit 0"},
                        {"id": "C2", "kind": "judge", "what": "chips equal height",
                         "pass": "screenshot en light"},
                        {"id": "C3", "kind": "judge", "what": "same in Arabic",
                         "pass": "screenshot ar"}],
-            "verification": {"verdict": "needs_judge", "cycle": 1, "branch": "alpha-luxor",
+            "verification": {"verdict": "needs_judge", "cycle": 1, "branch": "staging-luxor",
                              "sha": SHA, "results": results}}, rid=did)
         return did
 
@@ -405,7 +405,7 @@ class ReviewQueueTests(unittest.TestCase):
         rq._FILES.clear()
         jira = self._search({"KAN-9": "QA-Test", "KAN-8": "QA-Test"})
         items = {i["ticket"]: i for i in rq.qa_items(jira, store)}
-        self.assertEqual((items["KAN-9"]["branch"], items["KAN-9"]["sha"]), ("alpha-luxor", SHA))
+        self.assertEqual((items["KAN-9"]["branch"], items["KAN-9"]["sha"]), ("staging-luxor", SHA))
         self.assertEqual((items["KAN-9"]["tier"], items["KAN-9"]["platform"]), (2, "web"))
         self.assertIsNone(items["KAN-8"]["sha"], "no team record: said, not guessed")
         self.assertFalse(items["KAN-8"]["commit_resolved"])
@@ -415,7 +415,7 @@ class ReviewQueueTests(unittest.TestCase):
         item_id = "qa-KAN-9@2026-10-21T10:00:00.000+0000"
         self.assertTrue(rq.claim(item_id, meta={"ticket": "KAN-9", "tier": tier, "platform": "web",
                                                 "min_screenshots": {1: 0, 2: 1, 3: 2}[tier],
-                                                "branch": "alpha-luxor", "sha": SHA}))
+                                                "branch": "staging-luxor", "sha": SHA}))
         return item_id
 
     def test_a_pass_on_a_screen_needs_a_screenshot_of_the_running_app(self):
@@ -430,7 +430,7 @@ class ReviewQueueTests(unittest.TestCase):
             open(os.path.join(rq.evidence_dir("KAN-9"), "tc1-en-light.png"), "wb").close()
             rq.submit_qa(item_id, "pass", "ok", "steps", state_store=store, jira=jira)
         comment = " ".join(c.args[1] for c in jira.add_comment.call_args_list)
-        self.assertIn("alpha-luxor at %s" % SHA[:12], comment)
+        self.assertIn("staging-luxor at %s" % SHA[:12], comment)
         self.assertIn("app on web", comment)
 
     def test_a_fail_or_a_light_item_needs_no_screenshot(self):
@@ -497,18 +497,18 @@ class ReviewQueueTests(unittest.TestCase):
         """KAN-622: its newest dispatch had branch null and no sha, an older one named the branch."""
         did = self.judge_root("KAN-622")
         self._no_sha(did)
-        self.heads["alpha-luxor"] = "b" * 40
+        self.heads["staging-luxor"] = "b" * 40
         items = {i["ticket"]: i for i in rq.qa_items(self._search({"KAN-622": "Self-review"}), store)}
         item = items["KAN-622"]
-        self.assertEqual((item["branch"], item["sha"]), ("alpha-luxor", "b" * 40))
+        self.assertEqual((item["branch"], item["sha"]), ("staging-luxor", "b" * 40))
         self.assertEqual(item["sha_from"], "branch-head")
         self.assertTrue(item["commit_resolved"])
 
     def test_the_branch_falls_back_to_the_teams_own_when_no_dispatch_names_one(self):
         did = self.judge_root("KAN-5")
         self._no_sha(did, branch=None)
-        self.assertEqual(rq.team_branch("KAN-5"), "alpha-luxor")
-        self.heads["alpha-luxor"] = "c" * 40
+        self.assertEqual(rq.team_branch("KAN-5"), "staging-luxor")
+        self.heads["staging-luxor"] = "c" * 40
         self.assertEqual(rq.with_commit({"branch": None, "sha": None}, "KAN-5")["sha"], "c" * 40)
 
     def test_an_item_with_no_resolvable_commit_is_never_offered(self):
@@ -633,7 +633,7 @@ class LiveGateTests(unittest.TestCase):
         moves = []
         with mock.patch.object(jira_sync, "_move", side_effect=lambda k, s, *a: moves.append((k, s))):
             self.live = "not-on-alpha"
-            self.assertEqual(rq.close_or_await("KAN-9", {"sha": SHA, "branch": "alpha-luxor"}, "ok",
+            self.assertEqual(rq.close_or_await("KAN-9", {"sha": SHA, "branch": "staging-luxor"}, "ok",
                                                jira, store, now=1000), "not-on-alpha")
             self.assertEqual(moves, [], "not Done while it is not on Alpha")
             self.assertTrue(rq.is_awaiting("KAN-9"))
@@ -687,7 +687,7 @@ class LiveCheckTests(unittest.TestCase):
     def test_status(self):
         real = live_check.status
         a, built = "a" * 40, "b" * 40
-        runner = self.run_git({(a, "origin/Alpha"), (a, built)})
+        runner = self.run_git({(a, "origin/staging"), (a, built)})
         self.assertEqual(real(a, runner, lambda u: {"git_sha": built}, fetch=False), "live")
         self.assertEqual(real(a, runner, lambda u: {"version": "1.7.8"}, fetch=False), "on-alpha-unverified")
         self.assertEqual(real(a, runner, lambda u: {"git_sha": "c" * 40}, fetch=False), "on-alpha")

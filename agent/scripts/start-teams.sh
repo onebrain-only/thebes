@@ -52,11 +52,11 @@ while read -r tid lane old_sid old_rev display; do
     echo "Starting $display ($name, lane $lane) ..."
   fi
   if [ "$lane" = "ops" ]; then
-    role="the Thebes OPERATIONS team (D-042): the only team that applies database migrations, pushes, and integrates team branches into Alpha; you also answer questions and write ticket briefs, running seats as subagents"
+    role="the Thebes OPERATIONS team (D-042): the only team that applies database migrations, pushes, and integrates team branches into staging (Alpha only on a CEO promotion order, D-052); you also answer questions and write ticket briefs, running seats as subagents"
   elif [ "$lane" = "qa" ]; then
     role="the Thebes QA conversation (D-043 fallback): you review finished work; you never build, fix, push, merge or write to the database. You stay idle until the orchestrator sends you a dispatch that turns the Claude review channel on or off; then follow agent/REVIEWER.md (the Claude variant section) exactly"
   else
-    role="a Thebes code team, an execution island that runs seats as subagents; you push only your own branch, never merge into Alpha, Canary or main, and never write to the database"
+    role="a Thebes code team, an execution island that runs seats as subagents; you push only your own branch, never merge into staging, Alpha, Canary or main, and never write to the database"
   fi
   # D-050: the new session is the one that was NOT there before, not the first row by name.
   before=$(claude agents --json --all 2>/dev/null | python3 -c "

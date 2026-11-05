@@ -27,8 +27,9 @@ memory cannot substitute for repository sources.
   saved copy. A screenshot is the last resort after a live test (drive the running app, read DOM/console/
   network), and one taken is deleted when the task ends. Do not make "no screenshots" a hard block: a test
   that cannot run live may still take one.
-- **Branches per team, not per story.** A team works on its one branch (`<base>-<team>`); do not create a
-  folder or worktree for each task. Unmerged work is merged into Alpha, never left in a side folder.
+- **Branches per team, not per story.** A team works on its one branch (`staging-<team>`, or
+  `staging-ds-<team>` in the design system); do not create a folder or worktree for each task. Unmerged
+  work is merged into `staging`, never left in a side folder (D-052).
 - **Never delete what an agent judges "not useful".** Deletion of plans/docs is the CEO's call; move, don't remove.
 
 ## The Orchestrator
@@ -445,7 +446,10 @@ git -C Dabbler/dabbler-docs checkout ea8515d05431e59055742737990cd552465315f2
 
 - **`main`** is the Cloudflare Pages production branch and deploys straight to https://app.dabbler.pro. Pushing to main ships to real users immediately. **Never push directly to main** — always open a PR from `Canary`.
 - **`Canary`** (capital C) is the default working branch and deploys to https://canary.dabbler.pro.
-- **`Alpha`** is where team work is integrated (by Memphis) and deploys to https://alpha.dabbler.pro — that is where the CEO sees work live (`agent/DECISIONS.md` D-043). Teams work on their own branches; `Canary` and `main` stay governed below.
+- **`staging`** is where team work is integrated (by Memphis) and tested, in both repos. dabbler-code `staging` deploys to https://staging.dabbler.pro (Cloudflare Pages project `dabbler-staging`). A ticket is Done when its commit is on `staging` and staging.dabbler.pro serves it (`agent/DECISIONS.md` D-052). A push to `staging` needs an open integration dispatch (`order_gate`).
+- **`Alpha`** is the customer trial and deploys to https://alpha.dabbler.pro. It moves **only** as a promotion of `staging` that the CEO chose: a push to `Alpha` (or `alpha-ds`) needs an open `promote-alpha` order (`python3 -m agent.execution.orders grant --what promote-alpha …`). Nobody merges into Alpha on their own initiative.
+- **Team branches** are `staging-<team>` (app) and `staging-ds-<team>` (design system); a team pushes only its own. The `alpha-<team>` names were retired by D-052.
+- `Canary` and `main` stay governed below; `main` is production, frozen under P-030.
 - Flow: commit → push to `Canary` → wait for the Cloudflare build → verify on canary.dabbler.pro → only then open a PR into `main`. A successful push is not a successful deploy — verify the deployment itself.
 
 **STANDING FREEZE, PO ruling 2026-09-01 — do not merge any PR into `main`, ever, without the

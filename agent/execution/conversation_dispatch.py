@@ -184,7 +184,7 @@ def team_block(record):
         "(`git push origin <base>-<your team>`, no force) so its commits show on the Jira "
         "ticket. First step of every ticket: `git fetch origin` and merge origin/<base> into "
         "your branch (settle trivial conflicts; report `blocked` for real ones), so you start "
-        "from what the other teams already delivered. You never merge into a base branch (Alpha, Canary, main), never push another "
+        "from what the other teams already delivered. You never merge into a base branch (staging, Alpha, Canary, main), never push another "
         "branch, and never write to the database: a hook refuses all three. A migration is SQL "
         "plus probes committed on your branch; report `blocked` with `needs-ops: <migration "
         "file>` and the operations team applies it.",
@@ -198,8 +198,8 @@ def team_block(record):
         "a signed-in reviewer)` and report completed.",
         ("integration: THIS dispatch is the fast lane (CEO 2026-10-10): your small verified "
          "ticket is yours to merge. Follow the integration steps in the brief exactly, in your "
-         "own worktree, and push ONLY `git -C <worktree> push origin integrate-alpha:Alpha` (or "
-         "`integrate-alpha-ds:alpha-ds`); the push rule for exactly that command is the only "
+         "own worktree, and push ONLY `git -C <worktree> push origin integrate-staging:staging` (or "
+         "`integrate-staging-ds:staging` in the design system); the push rule for exactly that command is the only "
          "exception to \"never merge into a base\".") if record.get("integrate_base") else
         "no integration: this dispatch does not merge anything into a base branch.",
         "phone: when your diff touches ios/, android/, lib/features/app_boot/, "
@@ -226,7 +226,7 @@ def ops_block():
     """What the OPERATIONS team (Memphis, D-042) is told on every dispatch."""
     return [
         "lane: you are the OPERATIONS team (Memphis, D-042): the only team allowed to apply "
-        "Supabase migrations, push, and integrate team branches into Alpha. You run seats as "
+        "Supabase migrations, push, and integrate team branches into staging (D-052). You run seats as "
         "subagents: cto for migrations and schema, devops for integration and push, po for "
         "briefs and acceptance, analyst / cpo / cxo for questions and analysis.",
         "migrations: before applying, cto reviews the SQL and classifies it. A: additive or "
@@ -238,18 +238,20 @@ def ops_block():
         "`needs-ceo` and never ask the CEO to accept or decline a DB change: he is out of the "
         "cycle. Apply one migration at a time, run its probes, stop at the first error and "
         "fix or report it to the orchestrator.",
-        "integration: merge team branches into Alpha only, one at a time, after their "
-        "verification passed. Never push or merge Canary (the orchestrator's release step) or "
-        "main (merged only by the CEO, P-030).",
+        "integration: merge team branches into staging only, one at a time, after their "
+        "verification passed (staging = internal integrate and test, staging.dabbler.pro). "
+        "Alpha is the customer trial: it moves only as a promotion of staging that the CEO "
+        "chose (an open `promote-alpha` order), never on your own initiative. Never push or "
+        "merge Canary (the orchestrator's release step) or main (merged only by the CEO, P-030).",
         "pushing a base: the permission system only pre-approves two exact command shapes, so "
         "any other shape stops on a prompt nobody can answer. Put the commit on a local branch "
-        "named exactly `integrate-alpha` (app) or `integrate-alpha-ds` (design system) and push "
-        "with `git -C <worktree> push origin integrate-alpha:Alpha` or "
-        "`git -C <worktree> push origin integrate-alpha-ds:alpha-ds`. Never push a bare sha, "
+        "named exactly `integrate-staging` (app) or `integrate-staging-ds` (design system) and push "
+        "with `git -C <worktree> push origin integrate-staging:staging` or "
+        "`git -C <worktree> push origin integrate-staging-ds:staging`. Never push a bare sha, "
         "`refs/heads/...`, or any other shape, even if the ticket text spells one out; "
         "translate it to the shape above. If the push is still refused, report blocked once.",
-        "your own tickets: commit the work on your branch `alpha-memphis` and PUSH it plainly "
-        "(`git push origin alpha-memphis`). Thebes integrates a verified branch by itself, but "
+        "your own tickets: commit the work on your branch `staging-memphis` and PUSH it plainly "
+        "(`git push origin staging-memphis`). Thebes integrates a verified branch by itself, but "
         "only a pushed one; an unpushed ops branch left KAN-465 starting without KAN-464's keys.",
         "no po or pm: the PM and the POs run only in the orchestrator (D-042); ask there.",
     ]

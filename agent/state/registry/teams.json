@@ -48,7 +48,7 @@
    "number": 6,
    "display_name": "Memphis",
    "lane": "ops",
-   "note": "D-042: the operations team. Memphis was the administrative capital and seat of the vizier, where the state was run. The only team that applies Supabase migrations, pushes and integrates team branches into Alpha; runs cto, devops, po, analyst, cpo and cxo as subagents for operations, briefs and questions."
+   "note": "D-042: the operations team. Memphis was the administrative capital and seat of the vizier, where the state was run. The only team that applies Supabase migrations, pushes and integrates team branches into staging (D-052; Alpha moves only on a CEO-chosen promotion of staging); runs cto, devops, po, analyst, cpo and cxo as subagents for operations, briefs and questions."
   },
   "edfu": {
    "number": 7,

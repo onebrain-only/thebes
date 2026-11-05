@@ -186,7 +186,7 @@ def check(plan, hot=()):
             "critical_min": critical_minutes(tickets)}
 
 
-def hotspots(days=30, top=15, repo=CODE, ref="origin/Alpha"):
+def hotspots(days=30, top=15, repo=CODE, ref="origin/staging"):
     """{path: commits} for the files touched most often lately, generated files left out."""
     try:
         out = subprocess.run(["git", "-C", repo, "log", "--since=%d.days" % days, "--name-only",

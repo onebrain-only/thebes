@@ -21,7 +21,7 @@ A ticket file is a header, a blank line, then the brief:
     PARENT: KAN-10                  # optional
 
     GOAL: ...
-    BRANCH: alpha-<team>            # or `none` for an ask
+    BRANCH: staging-<team>          # or `none` for an ask
     ALLOWED PATHS: ...
     FORBIDDEN: ...
     DECISIONS MADE: ...
@@ -281,7 +281,7 @@ ESTIMATE: <30m | 2h | 1d>
 BLOCKED BY:
 
 GOAL: <the outcome, one or two sentences>
-BRANCH: alpha-<team>
+BRANCH: staging-<team>
 ALLOWED PATHS: <where the team may write>
 FORBIDDEN: <what it must not touch>
 DECISIONS MADE: <rulings already taken, or none>
@@ -329,7 +329,7 @@ def main(argv=None):
     el.add_argument("--by", default="")
     mi = sub.add_parser("mark-integrated", help="record that a verified dispatch is already in its "
                         "base (git must agree); frees the tickets it was holding")
-    mi.add_argument("dispatch_id"); mi.add_argument("--base", required=True, help="Alpha or alpha-ds")
+    mi.add_argument("dispatch_id"); mi.add_argument("--base", required=True, help="staging (app) or staging-ds (design system)")
     mi.add_argument("--sha", required=True, help="the commit in the base that contains it")
     mi.add_argument("--evidence", required=True)
     rk = sub.add_parser("rank", help="move a ticket before/after another in the board rank")

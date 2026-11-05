@@ -1,6 +1,6 @@
 """Run the team's branch locally for the reviewer, on the web (CEO 2026-10-22).
 
-Review happens on the exact commit a team handed over, on this Mac, before the work reaches Alpha,
+Review happens on the exact commit a team handed over, on this Mac, before the work reaches staging,
 and never on a public URL. One codebase, so ONE platform: a web build opened in the reviewer's
 internal browser. (Phone simulators were tried on 2026-10-21/22: 14 to 27 minutes per build against
 80 seconds on the web, so they were dropped.) Thebes does the build (zero

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""D-044: only the CEO's own words authorise creating tickets and merging into Alpha; every act is
+"""D-044, D-052: only the CEO's own words authorise creating tickets and promoting staging to
+Alpha; every act is
 on the ledger; the orchestrator answers from a fact block, not from memory."""
 import json
 import os
@@ -103,24 +104,19 @@ class OrdersTests(unittest.TestCase):
 
     def test_an_old_message_is_not_an_order_today(self):
         then = time.time() - orders.MESSAGE_WINDOW - 60
-        orders.record_message(ORCH, "ادمج KAN-700 على Alpha", now=then)
+        orders.record_message(ORCH, "رقّي staging على Alpha", now=then)
         with self.assertRaises(orders.OrderRefused):
-            orders.grant("merge-alpha", "ادمج KAN-700 على Alpha", keys=["KAN-700"])
+            orders.grant("promote-alpha", "رقّي staging على Alpha")
 
-    def test_merge_orders_name_tickets_or_say_all_reviewed(self):
-        orders.record_message(ORCH, "ادمج KAN-700 و KAN-704 على Alpha")
-        g = orders.grant("merge-alpha", "ادمج KAN-700 و KAN-704", keys=["kan-704", "KAN-700"])
-        self.assertEqual(g["keys"], ["KAN-700", "KAN-704"])
-        self.assertIsNone(orders.covering("merge-alpha", "KAN-706"))
-        orders.consume("merge-alpha", "KAN-700")
-        self.assertIsNone(orders.covering("merge-alpha", "KAN-700"), "used once")
-        self.assertTrue(orders.covering("merge-alpha", "KAN-704"))
+    def test_a_promote_order_counts_down_and_merge_alpha_is_retired(self):
+        """D-052: Alpha moves only as a promotion of staging the CEO chose, one push per unit."""
+        orders.record_message(ORCH, "رقّي staging على Alpha")
+        orders.grant("promote-alpha", "رقّي staging على Alpha", count=1)
+        self.assertTrue(orders.covering("promote-alpha"))
+        orders.consume("promote-alpha")
+        self.assertIsNone(orders.covering("promote-alpha"), "used once")
         with self.assertRaises(orders.OrderRefused):
-            orders.grant("merge-alpha", "ادمج KAN-700 و KAN-704", keys=[])
-        orders.record_message(ORCH, "ادمج كل اللي عدّى الريفيو")
-        orders.grant("merge-alpha", "كل اللي عدّى الريفيو", keys=orders.ALL_REVIEWED)
-        orders.consume("merge-alpha", "KAN-706")
-        self.assertTrue(orders.covering("merge-alpha", "KAN-999"), "all-reviewed is not used up")
+            orders.grant("merge-alpha", "رقّي staging على Alpha", keys=["KAN-700"])
 
     def test_every_grant_is_on_the_ledger_with_the_ceos_words(self):
         orders.record_message(ORCH, "اعمل Epic للـ recurring games")
@@ -179,14 +175,35 @@ class OrdersTests(unittest.TestCase):
     def test_an_unbound_session_is_the_ceo_and_is_not_gated(self):
         self.assertIsNone(self.gate(CREATE, sid="someone-else"))
 
-    def test_a_push_to_alpha_needs_an_order_or_an_open_integration(self):
-        push = "git -C Dabbler/dabbler-code push origin integrate-alpha:Alpha"
+    def open_integration(self):
+        did = store.new_id("conversation_dispatch")
+        store.create("conversation_dispatch", {
+            "dispatch_id": did, "origin_provider": "claude", "origin_thread_id": ORCH,
+            "target_provider": "claude", "target_session_id": TEAM, "target_seat_id": "memphis",
+            "delivery_id": did, "capability_sha256": "0" * 64, "prompt_ref": "/x",
+            "status": "delivered", "delivery_status": "DELIVERED", "integrates_base": "staging"},
+            rid=did)
+
+    def test_a_push_to_alpha_needs_the_ceos_promotion_order(self):
+        """D-052: an open integration dispatch does not move Alpha; only promote-alpha does."""
+        push = "git -C Dabbler/dabbler-code push origin staging:Alpha"
+        deny = lambda out: out["hookSpecificOutput"]["permissionDecision"]
+        self.assertEqual(deny(self.gate("Bash", command=push)), "deny")
+        self.assertIsNone(self.gate("Bash", command="git -C Dabbler/dabbler-code push origin "
+                                                    "staging-luxor"), "team branches are free")
+        self.open_integration()
+        self.assertEqual(deny(self.gate("Bash", command=push)), "deny",
+                         "integration reaches staging, never Alpha")
+        orders.record_message(ORCH, "رقّي staging على Alpha")
+        orders.grant("promote-alpha", "رقّي staging على Alpha", count=1)
+        self.assertIsNone(self.gate("Bash", command=push))
+        self.assertEqual(deny(self.gate("Bash", command=push)), "deny", "one push per unit")
+
+    def test_a_push_to_staging_needs_an_open_integration_dispatch(self):
+        push = "git -C Dabbler/dabbler-code push origin integrate-staging:staging"
         self.assertEqual(self.gate("Bash", command=push)["hookSpecificOutput"]
                          ["permissionDecision"], "deny")
-        self.assertIsNone(self.gate("Bash", command="git -C Dabbler/dabbler-code push origin "
-                                                    "alpha-luxor"), "team branches are free")
-        orders.record_message(ORCH, "ادمج KAN-700 على Alpha")
-        orders.grant("merge-alpha", "ادمج KAN-700", keys=["KAN-700"])
+        self.open_integration()
         self.assertIsNone(self.gate("Bash", command=push))
 
     def test_order_records_cannot_be_written_by_hand(self):

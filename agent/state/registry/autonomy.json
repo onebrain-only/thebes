@@ -101,7 +101,7 @@
       {
         "id": "push-main",
         "what": "pushing dabbler-code main/master",
-        "instead": "Alpha is the release branch; main is merged only by the CEO (P-030)"
+        "instead": "staging is the integration branch and Alpha the customer trial (D-052); main is merged only by the CEO (P-030)"
       },
       {
         "id": "project-lifecycle",
@@ -117,7 +117,7 @@
       "guard": "none"
     },
     {
-      "what": "push to Alpha, deploy Worker / Pages / edge function (alpha)",
+      "what": "push to staging (integration dispatch) or Alpha (CEO promotion order only), deploy Worker / Pages / edge function",
       "owner": "memphis",
       "guard": "analyze + tests before push; deploy verified by live_check"
     },

@@ -6,8 +6,13 @@ Two acts need an explicit CEO order lifted with `python3 -m agent.execution.orde
                   tool (any MCP server name), or a shell call into agent.integrations.jira's
                   create_issue. D-046: a non-Epic whose parent or summary names the KAN ticket it
                   supports goes through without an order, ledgered as `supports-KAN-N`.
-    merge-alpha   a push to Alpha / alpha-ds. Allowed when a merge-alpha grant is open, or while an
-                  integration dispatch is open (D-046: review-passed work integrates on its own)
+    promote-alpha a push to Alpha / alpha-ds (D-052: Alpha is the customer trial, moved only as a
+                  promotion of staging the CEO chose). Allowed only while a promote-alpha grant
+                  is open; each push spends one unit. An open integration dispatch does NOT allow it.
+
+A push to `staging` (the internal integrate-and-test branch, both repos) needs no CEO order but
+needs an open integration dispatch (D-046: review-passed work integrates on its own); outside
+one it is refused, so staging only ever receives verified, integrated work.
 
 D-046 also refuses CronCreate / ScheduleWakeup from the orchestrator: it is woken by its inbox
 (the watchdog probes for free), never by a poll it schedules for itself.
@@ -32,6 +37,7 @@ sys.path.insert(0, os.path.join(ROOT, "agent", "scripts"))
 CREATE_TOOL = re.compile(r"^mcp__.*atlassian.*__createJiraIssue$", re.I)
 SHELL_CREATE = re.compile(r"\bcreate_issue\s*\(")
 ALPHA_REFS = ("Alpha", "alpha-ds")
+STAGING_REFS = ("staging",)
 READ_ONLY = re.compile(r"^\s*(cat|tail|head|grep|wc|jq|less)\b")
 KAN = re.compile(r"\bKAN-\d+\b")
 POLL_TOOLS = ("CronCreate", "ScheduleWakeup")
@@ -52,13 +58,21 @@ def _integration_open(state_store):
                for r in state_store.read_all("conversation_dispatch"))
 
 
-def _alpha_targets(command):
+def _push_targets(command):
     import importlib.util
     spec = importlib.util.spec_from_file_location(
         "branch_guard", os.path.join(ROOT, "agent", "state", "branch_guard.py"))
     bg = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(bg)
-    return [t for t in bg.push_targets(command) if t in ALPHA_REFS]
+    return bg.push_targets(command)
+
+
+def _alpha_targets(command):
+    return [t for t in _push_targets(command) if t in ALPHA_REFS]
+
+
+def _staging_targets(command):
+    return [t for t in _push_targets(command) if t in STAGING_REFS]
 
 
 def pre(payload, seat, state_store, now=None):
@@ -107,13 +121,20 @@ def pre(payload, seat, state_store, now=None):
     if any(f in cmd for f in _order_files()) and (not READ_ONLY.match(cmd) or ">" in cmd):
         return _deny("The CEO order records are written only by Thebes code (D-044). Read them "
                      "with `python3 -m agent.execution.orders open|log|messages`.")
-    hit = _alpha_targets(cmd)
-    if hit:
-        g = orders.covering("merge-alpha", state_store=state_store, now=now)
-        if g is None and not _integration_open(state_store):
-            orders.log("refused-merge", seat, sid=sid, rule="D-044", detail=cmd[:200],
+    if _alpha_targets(cmd):
+        g = orders.consume("promote-alpha", state_store=state_store, now=now)
+        if g is None:
+            orders.log("refused-promote", seat, sid=sid, rule="D-052", detail=cmd[:200],
                        state_store=state_store, now=now)
-            return _deny(orders.refusal("merge-alpha"))
+            return _deny(orders.refusal("promote-alpha"))
+        orders.log("promote-allowed", seat, order_ref=g["id"], sid=sid, detail=cmd[:200],
+                   state_store=state_store, now=now)
+    if _staging_targets(cmd) and not _integration_open(state_store):
+        orders.log("refused-staging", seat, sid=sid, rule="D-052", detail=cmd[:200],
+                   state_store=state_store, now=now)
+        return _deny("A push to staging needs an open integration dispatch (D-052): staging only "
+                     "receives verified work that Thebes sent to integrate. Push your own team "
+                     "branch (staging-<team>) instead; Thebes integrates it once it passes review.")
     return None
 
 
@@ -132,12 +153,12 @@ def post(payload, seat, state_store, now=None):
                    state_store=state_store, now=now)
     elif tool == "Bash":
         cmd = (payload.get("tool_input") or {}).get("command") or ""
-        hit = _alpha_targets(cmd)
-        if hit:
-            g = orders.covering("merge-alpha", state_store=state_store, now=now)
-            orders.log("pushed-alpha", seat, sid=payload.get("session_id"),
-                       order_ref=g["id"] if g else None,
-                       rule=None if g else "integration-dispatch", detail=cmd[:200],
+        if _alpha_targets(cmd):
+            orders.log("pushed-alpha", seat, sid=payload.get("session_id"), rule="promote-alpha",
+                       detail=cmd[:200], state_store=state_store, now=now)
+        if _staging_targets(cmd):
+            orders.log("pushed-staging", seat, sid=payload.get("session_id"),
+                       rule="integration-dispatch", detail=cmd[:200],
                        state_store=state_store, now=now)
     return None
 

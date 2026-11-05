@@ -6,20 +6,23 @@ Three append-only records, local to this workspace (runtime is gitignored):
                          UserPromptSubmit hook (agent/scripts/ceo_prompt_hook.py), i.e. by the
                          harness, never by the model, so a model cannot invent an order.
     order-grants.json    an order the orchestrator lifted from one of those messages: what it
-                         allows (create | merge-alpha), the CEO's exact words, and how much is left.
-    action-ledger.jsonl  one line per act that changes the board or Alpha: who, what, which
+                         allows (create | promote-alpha), the CEO's exact words, and how much is left.
+    action-ledger.jsonl  one line per act that changes the board, staging or Alpha: who, what, which
                          ticket, and the order or the rule that allowed it.
 
 A grant is accepted only when its quote is a literal part of a CEO message from the last
 MESSAGE_WINDOW. D-046 narrowed what needs one: an Epic, or a ticket that serves no existing ticket
 (new scope), needs an open `create` grant; a ticket that SUPPORTS existing work — a child of a KAN
 ticket, or one naming the KAN ticket it serves in its summary or blockers — is created without
-one and ledgered as `supports-KAN-N` (supports()). Merging review-passed work into Alpha needs no
-grant at all (integrate.ordered_items); a direct push outside an integration dispatch still does.
+one and ledgered as `supports-KAN-N` (supports()). Merging review-passed work into staging needs
+no grant at all (integrate.ordered_items), only an open integration dispatch (order_gate).
+
+D-052: Alpha is the customer trial. It moves only as a promotion of staging that the CEO chose,
+so a push to Alpha / alpha-ds needs an open `promote-alpha` grant, one push per unit (--count).
+It replaced D-044's per-ticket `merge-alpha`, which is no longer accepted.
 
     python3 -m agent.execution.orders grant --what create --quote "<CEO words>" [--count 3]
-    python3 -m agent.execution.orders grant --what merge-alpha --quote "<CEO words>" --keys KAN-1,KAN-2
-    python3 -m agent.execution.orders grant --what merge-alpha --quote "<CEO words>" --keys all-reviewed
+    python3 -m agent.execution.orders grant --what promote-alpha --quote "<CEO words>" [--count 1]
     python3 -m agent.execution.orders open | log [--last 30] | messages [--last 10]
 """
 import argparse
@@ -36,7 +39,8 @@ sys.path.insert(0, ROOT)
 
 from agent.state import store                                        # noqa: E402
 
-WHATS = ("create", "merge-alpha")
+WHATS = ("create", "promote-alpha")
+COUNTED = ("create", "promote-alpha")      # grants spent one unit per act
 ALL_REVIEWED = "all-reviewed"
 MESSAGE_WINDOW = 24 * 3600
 GRANT_TTL = 2 * 3600
@@ -213,7 +217,7 @@ def _write_grants(grants, state_store):
 def _live(g, now):
     if _epoch(g.get("expires_at")) <= now:
         return False
-    if g["what"] == "create":
+    if g["what"] in COUNTED:
         return (g.get("remaining") or 0) > 0
     return g.get("keys") == ALL_REVIEWED or bool(g.get("keys"))
 
@@ -232,20 +236,9 @@ def grant(what, quote, *, keys=None, count=1, by="orchestrator", state_store=sto
     rec = {"what": what, "quote": _norm(quote)[:500], "message_ref": msg["id"],
            "message_at": msg["at"], "by": by, "created_at": _stamp(now),
            "expires_at": _stamp(now + GRANT_TTL)}
-    if what == "create":
-        if not 1 <= int(count) <= MAX_COUNT:
-            raise OrderRefused("bad-count", "count is 1..%d" % MAX_COUNT)
-        rec["remaining"] = rec["count"] = int(count)
-    else:
-        if keys == ALL_REVIEWED or keys == [ALL_REVIEWED]:
-            rec["keys"] = ALL_REVIEWED
-        else:
-            ks = sorted({k.strip().upper() for k in (keys or []) if k.strip()})
-            bad = [k for k in ks if not KEY.match(k)]
-            if not ks or bad:
-                raise OrderRefused("bad-keys", "merge-alpha needs --keys KAN-1,KAN-2 or %s"
-                                   % ALL_REVIEWED)
-            rec["keys"] = ks
+    if not 1 <= int(count) <= MAX_COUNT:
+        raise OrderRefused("bad-count", "count is 1..%d" % MAX_COUNT)
+    rec["remaining"] = rec["count"] = int(count)
     with store._Lock("orders"):
         grants = _read_grants(state_store)
         gid = "grant-%s-%s" % (time.strftime("%Y%m%d%H%M%S", time.gmtime(now)),
@@ -253,7 +246,7 @@ def grant(what, quote, *, keys=None, count=1, by="orchestrator", state_store=sto
         rec["id"] = gid
         grants[gid] = rec
         _write_grants(grants, state_store)
-    log("grant", by, keys=rec.get("keys") if what != "create" else None, order_ref=gid,
+    log("grant", by, order_ref=gid,
         detail="%s: %s" % (what, rec["quote"][:160]), state_store=state_store, now=now)
     return rec
 
@@ -265,11 +258,10 @@ def open_grants(what=None, *, state_store=store, now=None):
 
 
 def covering(what, key=None, *, state_store=store, now=None):
-    """An open grant that allows this act (for merge-alpha, this key), without consuming it."""
+    """An open grant that allows this act, without consuming it. `key` is kept for callers."""
     for g in sorted(open_grants(what, state_store=state_store, now=now),
                     key=lambda g: g["created_at"]):
-        if what == "create" or key is None or g["keys"] == ALL_REVIEWED or key in g["keys"]:
-            return g
+        return g
     return None
 
 
@@ -282,10 +274,7 @@ def consume(what, key=None, *, state_store=store, now=None):
         if g is None:
             return None
         cur = grants[g["id"]]
-        if what == "create":
-            cur["remaining"] = cur["remaining"] - 1
-        elif key and cur["keys"] != ALL_REVIEWED:
-            cur["keys"] = [k for k in cur["keys"] if k != key]
+        cur["remaining"] = cur["remaining"] - 1
         _write_grants(grants, state_store)
         return g
 
@@ -299,12 +288,12 @@ def require(what, key=None, *, state_store=store, now=None):
 
 def refusal(what, key=None):
     act = {"create": "Creating a Jira ticket or Epic",
-           "merge-alpha": "Merging%s into Alpha" % (" " + key if key else "")}[what]
+           "promote-alpha": "Promoting staging to Alpha (the customer trial)"}[what]
     return ("%s needs the CEO's explicit order (D-044), and there is no open one. If the CEO "
             "ordered it, lift his exact words first: python3 -m agent.execution.orders grant "
             "--what %s --quote \"<his words>\"%s. If he did not, do not do it and do not ask him "
             "to approve it: propose it in one line and carry on with ordered work."
-            % (act, what, " --keys %s" % (key or "KAN-N") if what == "merge-alpha" else ""))
+            % (act, what, ""))
 
 
 SUPPORT_REF = re.compile(r"\bKAN-\d+\b")
@@ -348,7 +337,7 @@ def fmt_action(r):
         why = "order %s" % r["order_ref"]
     elif r.get("rule"):
         why = "rule %s" % r["rule"]
-    elif r["action"] in ("created", "pushed-alpha", "integration-dispatched"):
+    elif r["action"] in ("created", "pushed-alpha", "pushed-staging", "integration-dispatched"):
         why = "NO ORDER"
     else:
         why = "own call"

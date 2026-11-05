@@ -229,7 +229,7 @@ _FILES = {}
 
 def ticket_files(repo, sha, key, runner=None):
     """Files this ticket's own commits (subject `KAN-n:`) in `sha`'s history change, or None.
-    A team branch carries several tickets, and once integrated the commit is already in Alpha
+    A team branch carries several tickets, and once integrated the commit is already in the base
     (live 2026-10-21: the diff against Alpha was empty and every ticket looked screen-less)."""
     import subprocess
     run = runner or subprocess.run
@@ -258,7 +258,7 @@ def changed_paths(branch, sha, runner=None, key=None):
         try:
             from agent.execution import integrate
             t = integrate.target_for(branch or "", sha, runner)
-            if t is None and sha:        # a branch outside alpha-/canary- (KAN-710): the commit still names its repo
+            if t is None and sha:        # a branch outside staging-/alpha- (KAN-710): the commit still names its repo
                 t = next((x for x in integrate._targets() if integrate.has_commit(x["repo"], sha, runner)), None)
             files = ticket_files(t["repo"], sha, key, runner) if (t and key) else None
             if not files and t:
@@ -414,7 +414,7 @@ _HEADS = {}
 
 
 def team_branch(key, state_store=store):
-    """The branch this ticket's dispatches name, newest first, else the team's own `alpha-<seat>`
+    """The branch this ticket's dispatches name, newest first, else the team's own `staging-<seat>`
     (live 2026-10-22: KAN-622's newest dispatch carried no branch and no verified sha)."""
     recs = sorted((r for r in state_store.read_all("conversation_dispatch") if r.get("jira_key") == key),
                   key=lambda r: r.get("outcome_at") or r.get("created_at") or "", reverse=True)
@@ -422,7 +422,7 @@ def team_branch(key, state_store=store):
         named = rec.get("branch") or (rec.get("verification") or {}).get("branch")
         if named:
             return named
-    return "alpha-%s" % recs[0]["target_seat_id"] if recs and recs[0].get("target_seat_id") else None
+    return "staging-%s" % recs[0]["target_seat_id"] if recs and recs[0].get("target_seat_id") else None
 
 
 def branch_head(branch, runner=None, clock=time.time):
@@ -734,11 +734,12 @@ def close_passed(ticket, jira, state_store):
 
 # ------------------------------------------------------------------ Done = live (D-043 section 6)
 # The CEO's part resumes when he SEES the work live, so a PASS is Done only once the reviewed
-# commit is on Alpha and alpha.dabbler.pro serves it. Until then the ticket stays in review,
-# recorded under awaiting-live/, out of the reviewer's queue; the dispatcher's sweep closes it.
-LIVE_LATE_SECONDS = 15 * 60          # on Alpha this long and still not deployed: ops problem
-INTEGRATE_LATE_SECONDS = 24 * 3600   # passed this long and still not on Alpha: integration stuck
-SITE_URL = re.compile(r"https?://alpha\.dabbler\.pro(/[^\s)\]|>\"']*)?")
+# commit is on staging and staging.dabbler.pro serves it (D-052). Until then the ticket stays in
+# review, recorded under awaiting-live/, out of the reviewer's queue; the dispatcher's sweep
+# closes it. (`on_alpha` / `on-alpha` names are kept from before D-052: records persist them.)
+LIVE_LATE_SECONDS = 15 * 60          # on staging this long and still not deployed: ops problem
+INTEGRATE_LATE_SECONDS = 24 * 3600   # passed this long and still not on staging: integration stuck
+SITE_URL = re.compile(r"https?://(?:alpha|staging)\.dabbler\.pro(/[^\s)\]|>\"']*)?")
 
 
 def _awaiting_path(ticket):
@@ -759,18 +760,19 @@ def is_awaiting(ticket):
 
 
 def live_link(description):
-    """The alpha.dabbler.pro address the ticket's test scenarios name, else the site itself."""
+    """The address the ticket's test scenarios name, on staging.dabbler.pro (an older ticket's
+    alpha.dabbler.pro path is read as the same path on staging), else the site itself."""
     from agent.execution import live_check
     if not isinstance(description, str):                    # ADF or missing
         description = json.dumps(description) if isinstance(description, (dict, list)) else ""
     m = SITE_URL.search(description)
-    return m.group(0).rstrip(".,;") if m else live_check.SITE
+    return (live_check.SITE + (m.group(1) or "")).rstrip(".,;") if m else live_check.SITE
 
 
 def live_comment(ticket, summary, reason, link, verified, sha):
     """The one Arabic Done comment the CEO reads: what was done, where to open it."""
-    lines = ["خلصت ✅ وشغالة لايف على Alpha." if verified else
-             "خلصت ✅ ووصلت Alpha (الموقع ما بيقولش رقم البيلد، فاللايف متأكدش منه بالكود).",
+    lines = ["خلصت ✅ وشغالة لايف على staging." if verified else
+             "خلصت ✅ ووصلت staging (الموقع ما بيقولش رقم البيلد، فاللايف متأكدش منه بالكود).",
              "اتعمل إيه: %s" % (summary or ticket)]
     if (reason or "").strip():
         lines.append("نتيجة المراجعة: %s" % reason.strip()[:300])
@@ -804,7 +806,7 @@ def _close_live(ticket, rec, live, jira, state_store):
 
 
 def close_or_await(ticket, meta, reason, jira, state_store, *, now=None, check=None):
-    """PASS: Done now if the commit is live (or on Alpha and the site cannot say), else wait."""
+    """PASS: Done now if the commit is live (or on staging and the site cannot say), else wait."""
     from agent.execution import live_check
     sha = (meta or {}).get("sha")
     live = (check or live_check.status)(sha) if sha else "no-commit"
@@ -818,7 +820,7 @@ def close_or_await(ticket, meta, reason, jira, state_store, *, now=None, check=N
     with open(_awaiting_path(ticket), "w", encoding="utf-8") as fh:
         json.dump(rec, fh)
     jira.add_comment(ticket, "Thebes: PASS — waiting to go live (%s). It moves to Done by itself "
-                     "once %s is on Alpha and alpha.dabbler.pro serves it." % (live, (sha or "")[:12]))
+                     "once %s is on staging and staging.dabbler.pro serves it." % (live, (sha or "")[:12]))
     return live
 
 

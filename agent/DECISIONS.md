@@ -1029,3 +1029,22 @@ binds the session that was not there before it ran, then sweeps that team's copi
 **Decision.** `ORCHESTRATOR.md` §5a: speak to the CEO only for a direct answer, a step only he can do (`action`), or a finished task (`update`); everything else is silence. `agent/execution/ceo_notice.py check <kind> <key>` is the gate: an `action` repeats at most every 12 hours, an `update` never repeats, identical text is held for 12 hours, and any other kind is skipped. State lives in `agent/state/runtime/ceo-notices.json`.
 
 **Not done.** Delivery of notifications to his phone is a separate question (Remote Control push); this gate only cuts what is sent.
+
+## D-052 — staging integrates and tests; Alpha is the customer trial
+**Date:** 2026-11-05 · **By:** CEO (order msg-20261105084204-831ccacb, "نفّذ التنظيف")
+
+**Context.** Alpha did two jobs: Memphis integrated every verified team branch into it, and it was the build the CEO and trial customers saw at alpha.dabbler.pro. Integration churn therefore reached customers directly, and there was no place to test integrated work before they saw it.
+
+**Decision.** Four branches, four jobs:
+- **`staging`** (both repos) is internal integrate and test. Memphis merges verified team branches into it, and dabbler-code `staging` deploys to staging.dabbler.pro (Pages project `dabbler-staging`, production branch `staging`). A reviewed ticket is Done when its commit is on staging and staging.dabbler.pro serves it (`live_check`). `order_gate` refuses a push to `staging` unless an integration dispatch is open.
+- **`Alpha`** is the customer trial. It moves only as a promotion of staging that the CEO chose. `order_gate` refuses a push to `Alpha` or `alpha-ds` unless a `promote-alpha` grant is open, and each push spends one unit. The `promote-alpha` grant replaced D-044's per-ticket `merge-alpha` grant, which is no longer accepted.
+- **`main`** is production, frozen under P-030.
+- **Team branches** are `staging-<team>` in dabbler-code and `staging-ds-<team>` in the design system. Older `alpha-<team>` and `alpha-ds-<team>` names still map to staging in `integrate.py` and `ready_dispatcher.fill_branch`, but no new branch takes them.
+
+**Code.** The decision is implemented in:
+- `integrate.BASES`: targets are keyed `staging` and `staging-ds`, and the worktrees are `integrate-staging` and `integrate-staging-ds`.
+- `conversation_dispatch` (lane text), `ready_dispatcher.fill_branch`, `intake` (BRANCH template), `ops_guard` (team pushes and the integration refspecs), `orders` and `order_gate`.
+- `live_check` and `review_queue`, which now mean staging when they say Done = live.
+- `sql_hook.MIGRATIONS_REF` (`origin/staging`), `cloud_lane` and `cloud_prompt` (`staging-cloud-<key>`), `cut_plan`, `teams.json` and `autonomy.json`.
+
+**Not done here.** The fixed push rules `Bash(git -C * push origin integrate-staging:staging)` and `…integrate-staging-ds:staging` must be added to the permission allow list by the CEO; an agent adding a permission rule is refused as self-modification. Until they exist, `integrate.dispatch_for` waits with `push-rule-missing`.

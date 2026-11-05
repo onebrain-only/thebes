@@ -23,7 +23,8 @@ RECENT_HOURS = 8
 RULE = ("RULE (D-044/D-046): every claim about who holds a ticket, what a team is doing, or a "
         "ticket's state comes from THIS block or a command you run now — never from memory or an "
         "earlier turn. If it is not here, say ما أعرفش and check. Review-passed work merges into "
-        "Alpha on its own, and a ticket that supports existing work (parent or KAN key in its "
+        "staging on its own (Alpha moves only on a CEO promotion order, D-052), and a ticket "
+        "that supports existing work (parent or KAN key in its "
         "summary) needs no order. Only an Epic or new scope nobody asked for needs a CEO order "
         "lifted from his own words (python3 -m agent.execution.orders grant). Never poll: no "
         "cron, no wakeup — the watchdog wakes you through the inbox.")
@@ -93,7 +94,7 @@ def _recent(dispatches, now):
     for r in sorted(done, key=lambda r: r.get("outcome_at"))[-12:]:
         v = r.get("verification") or {}
         review = v.get("verdict") or ("needs-judge" if r.get("needs_judge") else "-")
-        live = "on-Alpha" if r["jira_key"] in on_alpha else "not-on-Alpha"
+        live = "on-staging" if r["jira_key"] in on_alpha else "not-on-staging"
         rows.append("  %s %-8s %-9s by %-14s review:%-11s %s" % (
             _hm(r.get("outcome_at")), r["jira_key"], r.get("outcome"), r.get("target_seat_id"),
             review, live))
@@ -102,7 +103,7 @@ def _recent(dispatches, now):
 
 def _awaiting_merge(dispatches, now):
     """Passed review, not integrated. Older than 3 days is counted, not listed: those predate
-    the integration record and may already be on Alpha by another path."""
+    the integration record and may already be on staging by another path."""
     since = now - 3 * 86400
     fresh, old = set(), set()
     on_alpha = {r["jira_key"] for r in dispatches if r.get("jira_key") and r.get("integrated_at")}
@@ -117,7 +118,7 @@ def _awaiting_merge(dispatches, now):
         rows.append("  " + ", ".join(sorted(fresh, key=lambda k: int(k.split("-")[1]))))
     if old - fresh:
         rows.append("  + %d older than 3 days (not tracked by integration; check git before "
-                    "claiming they are or are not on Alpha)" % len(old - fresh))
+                    "claiming they are or are not on staging)" % len(old - fresh))
     return rows
 
 
@@ -198,7 +199,7 @@ def build(now=None):
                     lambda: __import__("agent.execution.liveness", fromlist=["x"]).fact_rows(now))
     out += _section("TICKETS WITH NO TEAM (working column, nobody holds it; D-047):",
                     lambda: __import__("agent.execution.liveness", fromlist=["x"]).ticket_rows())
-    out += _section("FINISHED, last %dh (time ticket outcome by-team review Alpha):" % RECENT_HOURS,
+    out += _section("FINISHED, last %dh (time ticket outcome by-team review staging):" % RECENT_HOURS,
                     lambda: _recent(dispatches, now))
     out += _section("REVIEW PASSED, NOT ON ALPHA (integrates on its own, D-046):",
                     lambda: _awaiting_merge(dispatches, now))

@@ -1,11 +1,13 @@
 """Is it live? (autonomy constitution, D-043 section 6, 2026-10-27.)
 
 The CEO's part ends at the task and resumes when he SEES it live. So a ticket that passed review
-is Done only when the reviewed commit is on Alpha AND alpha.dabbler.pro is serving a build that
-contains it. This module answers both, by code:
+is Done only when the reviewed commit is on staging AND staging.dabbler.pro is serving a build that
+contains it (D-052: staging is where integrated work is tested; Alpha, the customer trial, only
+moves on a CEO-chosen promotion, so it is not the Done line). This module answers both, by code.
+The `alpha` in the function and status names is kept from before D-052 (records persist them).
 
-    on_alpha(sha)        the commit is an ancestor of origin/Alpha (Dabbler/dabbler-code)
-    deployed_sha()       the commit alpha.dabbler.pro says it was built from, read from its
+    on_alpha(sha)        the commit is an ancestor of origin/staging (Dabbler/dabbler-code)
+    deployed_sha()       the commit staging.dabbler.pro says it was built from, read from its
                          /version.json (`git_sha`/`commit`/`sha`, written by
                          scripts/cloudflare-build.sh from CF_PAGES_COMMIT_SHA); None when the
                          build does not carry one yet
@@ -25,8 +27,8 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 REPO = "Dabbler/dabbler-code"
-BASE = "Alpha"
-SITE = "https://alpha.dabbler.pro"
+BASE = "staging"
+SITE = "https://staging.dabbler.pro"
 SHA_FIELDS = ("git_sha", "commit", "sha", "commit_sha")
 
 
@@ -44,7 +46,7 @@ def is_ancestor(sha, ref, runner=None):
 
 
 def on_alpha(sha, runner=None, fetch=True):
-    """The reviewed commit is contained in origin/Alpha."""
+    """The reviewed commit is contained in origin/staging (BASE)."""
     if not sha:
         return False
     if fetch:
@@ -54,7 +56,7 @@ def on_alpha(sha, runner=None, fetch=True):
 
 
 def deployed_sha(fetch_json=None):
-    """The commit alpha.dabbler.pro was built from, or None when it does not say."""
+    """The commit staging.dabbler.pro (SITE) was built from, or None when it does not say."""
     try:
         body = (fetch_json or _fetch_json)(SITE + "/version.json")
     except Exception:                                      # noqa: BLE001

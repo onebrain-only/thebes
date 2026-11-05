@@ -102,7 +102,7 @@ def stack_source(key, state_store=store):
 
 def blockers(raw_links, jira, state_store=store, stacks=None):
     """Keys of tickets that really block this one. Malfunction #20/#26 used to hold a dependent
-    until its blocker was on Alpha; D-049 replaces that: a blocker whose work passed its checks
+    until its blocker was integrated; D-049 replaces that: a blocker whose work passed its checks
     (in review, Done, or verified but not merged) no longer blocks. It goes into `stacks` and the
     dependent merges that sha first. Only a blocker with no checked commit still blocks."""
     out = []
@@ -125,26 +125,32 @@ def stack_lines(stacks):
     out = []
     for s in stacks or ():
         out.append("STACKED ON %(key)s (D-049): this ticket builds on %(key)s's commit, which passed "
-                   "its checks but is not on Alpha yet. Before you write anything, in your "
+                   "its checks but is not on staging yet. Before you write anything, in your "
                    "worktree: `git fetch origin %(branch)s && git merge --no-edit %(sha)s`. Do not "
                    "rework %(key)s's code beyond what this ticket needs; Thebes holds this "
                    "ticket's integration until %(key)s lands." % s)
     return out
 
 
-BASES = ("alpha", "canary", "main")
+BASES = ("staging", "canary", "main")
+LEGACY_BASES = {"alpha": "staging"}      # D-052: team branches moved from alpha-<team> to staging-<team>
 
 
 def fill_branch(text, team_id):
-    """A team branch is always `<base>-<team>` (D-041): `BRANCH: alpha-<team>`,
-    `alpha-karnak` or a stray `alpha-frontend-1` all become `alpha-<this team>`, so a
-    dispatch never works on another team's (or a seat's) branch. `none` stays `none`."""
+    """A team branch is always `<base>-<team>` (D-041): `BRANCH: staging-<team>`,
+    `staging-karnak` or a stray `staging-frontend-1` all become `staging-<this team>`, so a
+    dispatch never works on another team's (or a seat's) branch; the design-system form
+    `staging-ds-<team>` keeps its `ds`. A pre-D-052 `alpha-…` names staging. `none` stays `none`."""
     def repl(m):
         branch = m.group(2).strip().split()[0] if m.group(2).strip() else ""
         if not branch or branch.lower() == "none":
             return m.group(0)
-        head = branch.split("-")[0]
-        base = head if head.lower() in BASES else branch.replace("<team>", "").rstrip("-")
+        parts = branch.split("-")
+        head = LEGACY_BASES.get(parts[0].lower(), parts[0])
+        if head.lower() in BASES:
+            base = head + ("-ds" if len(parts) > 1 and parts[1].lower() == "ds" else "")
+        else:
+            base = branch.replace("<team>", "").rstrip("-")
         return "%s%s-%s" % (m.group(1), base.lower(), team_id)   # B8: one case on macOS
     return re.sub(r"(?im)^(BRANCH:\s*)(\S.*)$", repl, text)
 
@@ -630,7 +636,7 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None, liveness_tick
     except Exception as exc:                            # noqa: BLE001
         done.append({"action": "review-nudge-failed", "error": str(exc)[:200]})
 
-    # Verified work reaches Alpha by itself (D-042): settle finished integrations, then open the
+    # Verified work reaches staging by itself (D-042, D-052): settle finished integrations, then open the
     # next one. Never raises into the dispatch loop.
     try:
         from agent.execution import integrate
@@ -639,7 +645,7 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None, liveness_tick
     except Exception as exc:                            # noqa: BLE001
         done.append({"action": "integrate-failed", "error": str(exc)[:200]})
 
-    # A passed ticket is Done once it is live on alpha.dabbler.pro (D-043 section 6).
+    # A passed ticket is Done once it is live on staging.dabbler.pro (D-043 section 6, D-052).
     try:
         from agent.execution import review_queue
         done.extend(review_queue.sweep_live(state_store=state_store, jira=jira))

@@ -59,7 +59,7 @@ SHELL_DENY = (
     (re.compile(r"\bgit(\s+-C\s+\S+)*\s+push\b[^;&|]*(\s--force\S*|\s-f\b|\s--mirror\b|\s\+\S+)"),
      "No force push (never-list): push a new commit."),
     (re.compile(r"\bgh\s+pr\s+merge\b"),
-     "Merging a PR into main is the CEO's (P-030). Integrate into Alpha with git; leave the PR open."),
+     "Merging a PR into main is the CEO's (P-030). Integrate into staging with git; leave the PR open."),
     (re.compile(r"\bgh\s+release\b|\bnpm\s+publish\b|\bfastlane\b[^;&|]*\b(deliver|supply|pilot|upload_to_\w+)\b|"
                 r"\bxcrun\s+altool\b|\btransporter\b"),
      "Publishing to users or stores is sending outside the company — the CEO's (D-043). Report "
@@ -157,8 +157,8 @@ def judge(payload, state_store=None, teams_mod=None):
                                                         command):
             if lane != "orchestrator" or "dabbler" in command.lower() or "/.claude/jobs/" in cwd \
                     or os.path.realpath(cwd) != os.path.realpath(ROOT):
-                return "deny", ("Pushing main is on the never-list for the product (P-030): Alpha "
-                                "is the release branch." + NOT_CEO)
+                return "deny", ("Pushing main is on the never-list for the product (P-030): staging "
+                                "is the integration branch and Alpha the customer trial (D-052)." + NOT_CEO)
         return "allow", "policy hook: shell command within %s's lane (D-043)." % seat
 
     if tool in ("Write", "Edit", "MultiEdit", "NotebookEdit"):

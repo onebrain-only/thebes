@@ -242,12 +242,12 @@ def pending(session_id, *, state_store=store, now=None):
         for r in review_queue.not_live_for_inbox():
             out.append({"kind": "not_live", "ticket": r["ticket"], "sha": r.get("sha"),
                         "branch": r.get("branch"), "on_alpha": bool(r.get("on_alpha_at")),
-                        "how": (("%s passed review and its commit %s is on Alpha, but "
-                                 "alpha.dabbler.pro has not served it for 15+ minutes. Dispatch ONE "
-                                 "ops item to Memphis: check the Cloudflare Pages build for Alpha "
+                        "how": (("%s passed review and its commit %s is on staging, but "
+                                 "staging.dabbler.pro has not served it for 15+ minutes. Dispatch ONE "
+                                 "ops item to Memphis: check the Cloudflare Pages build for staging "
                                  "and redeploy it. Never the CEO (D-043).")
                                 if r.get("on_alpha_at") else
-                                ("%s passed review 24+ hours ago and %s is still not on Alpha. "
+                                ("%s passed review 24+ hours ago and %s is still not on staging. "
                                  "Check `python3 -m agent.execution.integrate` state for it and "
                                  "have Memphis integrate the branch. Never the CEO (D-043)."))
                                % (r["ticket"], (r.get("sha") or "?")[:12])})

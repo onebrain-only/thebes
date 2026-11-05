@@ -336,12 +336,12 @@ def registry(path=None):
 
 # ---------------------------------------------------- integrated migrations (auto-decision)
 # CEO 2026-10-14: a technical approval is the CTO's, not the CEO's. By the time Memphis applies a
-# migration it has passed the CTO's review, the team's checks, QA and integration into Alpha, so
+# migration it has passed the CTO's review, the team's checks, QA and integration into staging, so
 # the proof of approval is that the SQL IS, byte for byte, a statement of a migration file
-# committed on origin/Alpha. That is what the hook checks, instead of asking a human. Only
+# committed on origin/staging. That is what the hook checks, instead of asking a human. Only
 # additive/ACL statement classes qualify; anything else keeps the normal prompt.
 APP_REPO = os.path.join(ROOT, "Dabbler", "dabbler-code")
-MIGRATIONS_REF, MIGRATIONS_DIR, RECENT_FILES = "origin/Alpha", "supabase/migrations", 80
+MIGRATIONS_REF, MIGRATIONS_DIR, RECENT_FILES = "origin/staging", "supabase/migrations", 80
 AUTO_CLASSES = re.compile(
     r"^(create\s+(or\s+replace\s+)?function\b|alter\s+function\b|revoke\b|grant\b|"
     r"comment\s+on\b|do\b|begin\b|start\s+transaction\b|commit\b|end\b|"
@@ -399,7 +399,7 @@ def _skeleton(stmt):
 
 
 def integrated_migrations(runner=None):
-    """[(file, text)] for the most recent migration files committed on origin/Alpha (local ref)."""
+    """[(file, text)] for the most recent migration files committed on origin/staging (local ref)."""
     import subprocess
     run = runner or subprocess.run
     ls = run(["git", "-C", APP_REPO, "ls-tree", "--name-only", MIGRATIONS_REF, MIGRATIONS_DIR + "/"],

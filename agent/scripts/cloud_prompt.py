@@ -3,7 +3,7 @@
 credit). Prints text to paste into claude.ai/code (environment `dabbler-flutter`, repo
 `dabblersport/webapp`).
 
-    python3 agent/scripts/cloud_prompt.py KAN-606 [--base alpha-deir-el-bahari]
+    python3 agent/scripts/cloud_prompt.py KAN-606 [--base staging-deir-el-bahari]
     python3 agent/scripts/cloud_prompt.py KAN-606 --continue --paths "lib/features/social/**, test/**" \\
             --note "Games/Venues/Meetups are done; do the feed and search parts"
 
@@ -28,8 +28,8 @@ cloud sandbox with no database and no secrets.
 
 START: {start}
 BRANCH: your branch is `{branch}`. Ignore the `BRANCH:` line inside the ticket. Push ONLY this branch,
-  with `git push origin {branch}`. Never push, merge or open a pull request into Alpha, alpha-*, main,
-  master or Canary. Never force-push. Do not touch any other branch.
+  with `git push origin {branch}`. Never push, merge or open a pull request into staging, staging-*,
+  Alpha, main, master or Canary. Never force-push. Do not touch any other branch.
 COMMITS: every commit message starts with `{key}:`.
 SCOPE: stay inside the ticket's ALLOWED PATHS; if the ticket needs a file outside them, stop and say so.
   No secrets, no .env, no new paid service, no database change, no unrelated refactor or restyle.
@@ -82,7 +82,7 @@ def build(key, base, jira=None, paths=None, continue_branch=False, note=None):
     desc = (issue.get("description") or "").strip()
     if not desc:
         raise SystemExit("%s has no description" % key)
-    branch = "alpha-cloud-%s" % re.sub(r"[^a-z0-9]+", "-", key.lower()).strip("-")
+    branch = "staging-cloud-%s" % re.sub(r"[^a-z0-9]+", "-", key.lower()).strip("-")
     if paths:
         desc = (re.sub(r"^ALLOWED PATHS:.*$", "ALLOWED PATHS: %s" % paths, desc, count=1, flags=re.M)
                 if allowed_paths(desc) else desc + "\nALLOWED PATHS: %s" % paths)
@@ -97,10 +97,10 @@ def build(key, base, jira=None, paths=None, continue_branch=False, note=None):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("key")
-    ap.add_argument("--base", default="Alpha", help="the branch to start from (default Alpha)")
+    ap.add_argument("--base", default="staging", help="the branch to start from (default staging)")
     ap.add_argument("--paths", help="replaces the ticket's ALLOWED PATHS")
     ap.add_argument("--continue", dest="cont", action="store_true",
-                    help="continue on the existing alpha-cloud-<key> branch instead of creating it")
+                    help="continue on the existing staging-cloud-<key> branch instead of creating it")
     ap.add_argument("--note", help="what is already done / what to do now")
     ap.add_argument("--check-ref", help="the ref the paths are checked against (default origin/<base>)")
     ns = ap.parse_args(argv)

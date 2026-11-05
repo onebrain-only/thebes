@@ -23,7 +23,7 @@ HABU = "0ccccccc-6666-7000-8000-00000000000c"
 HOME = "/stable/home"
 
 BRIEF = """GOAL: tests for the formatter
-BRANCH: alpha-<team>
+BRANCH: staging-<team>
 ALLOWED PATHS: test/
 FORBIDDEN: lib/
 DECISIONS MADE: none
@@ -155,7 +155,7 @@ class ReadyDispatcherTests(unittest.TestCase):
         sent = self.sent[0]
         self.assertEqual((sent["ticket"], sent["cap"], sent["origin"]),
                          ("KAN-500", "frontend", ORCH), "results reach the orchestrator inbox")
-        self.assertIn("BRANCH: alpha-karnak", sent["text"])
+        self.assertIn("BRANCH: staging-karnak", sent["text"])
         self.assertIn("Every commit message starts with `KAN-500:`", sent["text"])
         self.assertIn("Expected effort: not estimated.", sent["text"])
         self.assertIn("Expected effort (PM's Original estimate): 3h.", rd.effort_line(10800))
@@ -283,32 +283,32 @@ class ReadyDispatcherTests(unittest.TestCase):
 
     def test_a_checked_blocker_stacks_instead_of_blocking(self):
         """D-049 replaces malfunction #20's wait: a blocker whose commit passed its checks (in
-        review or verified, not on Alpha yet) no longer blocks; the dependent merges that sha."""
+        review or verified, not on staging yet) no longer blocks; the dependent merges that sha."""
         def link(cat):
             return {"type": {"name": "Blocks"}, "inwardIssue": {"key": "KAN-464", "fields": {
                 "status": {"statusCategory": {"key": cat}}}}}
         self.assertEqual(rd.blockers([link("done")], None, store), [])         # nothing verified
         self.assertEqual(rd.blockers([link("indeterminate")], None, store), ["KAN-464"])
         recs = [{"jira_key": "KAN-464", "root_dispatch_id": None,
-                 "verification": {"verdict": "needs_judge", "branch": "alpha-luxor",
+                 "verification": {"verdict": "needs_judge", "branch": "staging-luxor",
                                   "sha": "a" * 40}}]
         fake = mock.Mock()
         fake.read_all.return_value = recs
         for cat in ("indeterminate", "done"):
             stacks = []
             self.assertEqual(rd.blockers([link(cat)], None, fake, stacks), [])
-            self.assertEqual(stacks, [{"key": "KAN-464", "branch": "alpha-luxor", "sha": "a" * 40}])
+            self.assertEqual(stacks, [{"key": "KAN-464", "branch": "staging-luxor", "sha": "a" * 40}])
         recs[0]["verification"]["verdict"] = "retry"                          # checks failed
         self.assertEqual(rd.blockers([link("indeterminate")], None, fake, []), ["KAN-464"])
         recs[0]["verification"]["verdict"] = "pass"
-        recs[0]["integrated_at"] = "2026-10-10T00:00:00Z"                     # on Alpha already
+        recs[0]["integrated_at"] = "2026-10-10T00:00:00Z"                     # on staging already
         stacks = []
         self.assertEqual(rd.blockers([link("done")], None, fake, stacks), [])
         self.assertEqual(stacks, [])
 
     def test_the_brief_tells_the_team_to_merge_the_stacked_sha(self):
-        text = rd.prompt_for({"key": "KAN-714", "summary": "s", "description": "BRANCH: alpha-<team>"},
-                             "habu", [{"key": "KAN-713", "branch": "alpha-luxor", "sha": "b" * 40}])
+        text = rd.prompt_for({"key": "KAN-714", "summary": "s", "description": "BRANCH: staging-<team>"},
+                             "habu", [{"key": "KAN-713", "branch": "staging-luxor", "sha": "b" * 40}])
         self.assertIn("STACKED ON KAN-713", text)
         self.assertIn("git merge --no-edit %s" % ("b" * 40), text)
 
@@ -351,7 +351,7 @@ class ReadyDispatcherTests(unittest.TestCase):
         self.assertIn("capability", out[0]["problems"][0])
 
     def test_ask_and_non_code_capabilities_go_to_ops_only(self):
-        j = FakeJira([issue("KAN-510", description=BRIEF.replace("alpha-<team>", "none"),
+        j = FakeJira([issue("KAN-510", description=BRIEF.replace("staging-<team>", "none"),
                             labels=["cap:analyst"])])
         out = self.tick(j)
         self.assertEqual(out[0]["reason"], "no-free-ops-team", "never to a code team")
@@ -369,14 +369,18 @@ class ReadyDispatcherTests(unittest.TestCase):
         self.assertEqual(self.sent, [])
 
     def test_fill_branch_replaces_the_team_and_keeps_the_base(self):
-        self.assertIn("BRANCH: alpha-luxor", rd.fill_branch("BRANCH: alpha-<team>", "luxor"))
-        self.assertIn("BRANCH: alpha-luxor", rd.fill_branch("BRANCH: alpha-karnak", "luxor"))
+        self.assertIn("BRANCH: staging-luxor", rd.fill_branch("BRANCH: staging-<team>", "luxor"))
+        self.assertIn("BRANCH: staging-luxor", rd.fill_branch("BRANCH: staging-karnak", "luxor"))
         self.assertIn("BRANCH: none", rd.fill_branch("BRANCH: none", "luxor"))
-        self.assertIn("BRANCH: alpha-karnak", rd.fill_branch("BRANCH: alpha-frontend-1", "karnak"),
+        self.assertIn("BRANCH: staging-karnak", rd.fill_branch("BRANCH: staging-frontend-1", "karnak"),
                       "live 2026-10-09: a seat name in the branch became alpha-frontend-1-karnak")
-        self.assertIn("BRANCH: alpha-luxor", rd.fill_branch("BRANCH: Alpha-<team> (team branch)",
+        self.assertIn("BRANCH: staging-luxor", rd.fill_branch("BRANCH: Staging-<team> (team branch)",
                                                             "luxor"),
                       "B8: one case everywhere; Alpha-memphis and alpha-memphis collide on macOS")
+        self.assertIn("BRANCH: staging-ds-luxor", rd.fill_branch("BRANCH: staging-ds-<team>", "luxor"))
+        self.assertIn("BRANCH: staging-luxor", rd.fill_branch("BRANCH: alpha-<team>", "luxor"),
+                      "D-052: an old alpha-<team> brief lands on the team's staging branch")
+        self.assertIn("BRANCH: staging-ds-luxor", rd.fill_branch("BRANCH: alpha-ds-<team>", "luxor"))
 
 
 class ParkAfterBlocksTests(ReadyDispatcherTests):

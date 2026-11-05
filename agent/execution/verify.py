@@ -22,9 +22,9 @@ module settles the claim:
 The team's report carries, anywhere in the result file:
 
     VERIFY
-    branch: alpha-karnak
+    branch: staging-karnak
     sha: <40 hex>
-    worktree: /Users/…/worktrees/alpha-karnak
+    worktree: /Users/…/worktrees/staging-karnak
     C1: PASS — flutter test test/forms/select_test.dart, 12 passed
     C3: PASS — screenshot /path/home.png vs frame "Home Feed"
 

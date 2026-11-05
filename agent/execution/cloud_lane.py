@@ -2,7 +2,7 @@
 """The cloud lane (CEO 2026-10-20): a ticket labelled `cloud` is built by a Claude CLOUD session the CEO
 starts (the cloud credit), and nobody copies anything back by hand.
 
-The cloud session pushes its work to the branch `alpha-cloud-<key>` on GitHub (see
+The cloud session pushes its work to the branch `staging-cloud-<key>` on GitHub (see
 agent/scripts/cloud_prompt.py). From there Thebes does the rest, at zero tokens:
 
     1. DETECT    every tick, a `cloud` ticket whose branch exists on origin. A branch that is still
@@ -10,12 +10,12 @@ agent/scripts/cloud_prompt.py). From there Thebes does the rest, at zero tokens:
     2. VERIFY    a fresh clone of that exact commit under agent/state/runtime/cloud-wt (never the CEO's
                  folders): `flutter pub get`, `flutter analyze --no-pub --no-fatal-infos`,
                  `flutter test --no-pub`. The cloud's own claim is never taken on trust.
-    3. REPORT    one Jira comment: branch, commit, files changed against Alpha, the checks, and what failed.
+    3. REPORT    one Jira comment: branch, commit, files changed against staging, the checks, and what failed.
     4. HAND OFF  all checks green -> the ticket moves to QA-Test, where the Codex reviewer looks.
                  A failure -> the comment carries the failing tests AND a ready prompt for the next cloud
                  session on the same branch; the ticket stays where it is.
 
-Integration into Alpha is the ops team's (Memphis) and waits for the ticket's blockers to be integrated.
+Integration into staging is the ops team's (Memphis) and waits for the ticket's blockers to be integrated.
 
     python3 -m agent.execution.cloud_lane scan            # one pass (the dispatcher runs it every tick)
     python3 -m agent.execution.cloud_lane verify KAN-606 <sha>
@@ -70,7 +70,7 @@ def write_state(key, st):
 
 
 def branch_name(key):
-    return "alpha-cloud-%s" % re.sub(r"[^a-z0-9]+", "-", key.lower()).strip("-")
+    return "staging-cloud-%s" % re.sub(r"[^a-z0-9]+", "-", key.lower()).strip("-")
 
 
 def remote_branch(key, runner=None):
@@ -177,12 +177,12 @@ def verify(key, sha, *, runner=None, jira=None, now=None):
         os.makedirs(os.path.dirname(wt), exist_ok=True)
         steps = [("clone", ["git", "clone", "--filter=blob:none", "--single-branch", "--branch", name, url, wt], ROOT, 900),
                  ("checkout", ["git", "-C", wt, "checkout", "-q", sha], ROOT, 120),
-                 ("fetch Alpha", ["git", "-C", wt, "fetch", "-q", "origin", "Alpha"], ROOT, 300)]
+                 ("fetch staging", ["git", "-C", wt, "fetch", "-q", "origin", "staging"], ROOT, 300)]
         for label, argv, cwd, timeout in steps:
             code, tail = _sh(argv, cwd, timeout, runner)
             if code != 0:
                 return _finish(key, sha, name, {"setup": ("fail", "%s: %s" % (label, tail[-300:]))}, [], jira, now)
-        _, files = _sh(["git", "-C", wt, "diff", "--name-only", "origin/Alpha...HEAD"], wt, 120, runner)
+        _, files = _sh(["git", "-C", wt, "diff", "--name-only", "origin/staging...HEAD"], wt, 120, runner)
         changed = [f for f in files.splitlines() if f.strip()]
         checks = {}
         for label, argv in (("pub get", ["flutter", "pub", "get"]),
@@ -225,7 +225,7 @@ def report(key, sha, name, checks, changed, ok, *, jira=None):
         return
     lines = ["Thebes verified the cloud branch (zero tokens, a fresh clone, never the CEO's folders).",
              "Branch: %s   Commit: %s" % (name, sha[:12]),
-             "Files changed against Alpha: %d%s" % (len(changed), (" - " + ", ".join(changed[:12]) +
+             "Files changed against staging: %d%s" % (len(changed), (" - " + ", ".join(changed[:12]) +
                                                                   (" ..." if len(changed) > 12 else "")) if changed else "")]
     for label, (verdict, tail) in checks.items():
         lines.append("%s: %s" % (label.upper(), verdict.upper()))
@@ -240,7 +240,7 @@ def report(key, sha, name, checks, changed, ok, *, jira=None):
         sha[:8], "; ".join("%s%s" % (l, (" (" + ", ".join(failing_tests(t)[:6]) + ")") if failing_tests(t) else "")
                            for l, t in failed))
     import cloud_prompt
-    prompt = cloud_prompt.build(key, "Alpha", jira=jira, continue_branch=True, note=note)
+    prompt = cloud_prompt.build(key, "staging", jira=jira, continue_branch=True, note=note)
     lines.append("")
     lines.append("What failed:")
     for l, t in failed:

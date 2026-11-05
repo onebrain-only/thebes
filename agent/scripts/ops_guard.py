@@ -11,7 +11,8 @@ finds which team that session is bound to in Persistent State, and decides.
                            it reads the refusal and reports `blocked: needs-ops`.
     Project lifecycle      (pause/restore/create project) refused for everyone: never needed
     and money tools        for product work. confirm_cost is money, the CEO's (D-043).
-    git push               code teams push only their own branch; the ops team pushes Alpha.
+    git push               code teams push only their own branch; the ops team pushes staging
+                           (and Alpha only on the CEO's promotion order, order_gate, D-052).
 
 Autonomy constitution (D-043, 2026-10-27): a permitted act is ANSWERED, not left to a prompt.
 The hook prints an explicit allow for an ops-team Supabase write on the approved project
@@ -191,19 +192,22 @@ def decide(payload, state_store=None, teams_mod=None):
     return None
 
 
-BASES = ("alpha", "canary", "main")
-INTEGRATION_REFS = ("integrate-alpha:Alpha", "integrate-alpha-ds:alpha-ds")
+BASES = ("staging", "canary", "main")
+INTEGRATION_REFS = ("integrate-staging:staging", "integrate-staging-ds:staging")
 PUSH_ARGS = re.compile(r"git(?:\s+-C\s+\S+)*\s+push\b(?P<rest>[^;&|]*)")
 
 
 PROTECTED = ("main", "master", "canary")
+# D-052: team branches are staging-<team>; a merged legacy alpha-<…> branch may still be deleted.
+# staging, Alpha and every staging-<team> are kept (the CEO's keep list), so never deletable here.
 ALPHA_BRANCH = re.compile(r"^alpha(-ds)?-[a-z0-9][a-z0-9-]*$", re.I)
 
 
 def ops_push_problem(command):
-    """The ops team (Memphis) integrates into Alpha and deletes merged team branches, nothing
-    else: no force, no tags, nothing to main, master or Canary, and a branch delete only for an
-    `alpha-*` team branch (CEO 2026-10-14: refuse the dangerous automatically; allow the routine)."""
+    """The ops team (Memphis) integrates into staging and deletes merged legacy team branches,
+    nothing else: no force, no tags, nothing to main, master or Canary, and a branch delete only
+    for a legacy `alpha-*` team branch (CEO 2026-10-14: refuse the dangerous automatically; allow
+    the routine). A push to Alpha is judged by order_gate (the CEO's promotion order, D-052)."""
     for m in PUSH_ARGS.finditer(command):
         words = m.group("rest").split()
         flags = [w for w in words if w.startswith("-")]
@@ -215,11 +219,12 @@ def ops_push_problem(command):
         for ref in args[1:]:
             dst = ref.split(":")[-1].replace("refs/heads/", "").lstrip("+")
             if dst.lower() in PROTECTED or dst.lower().startswith(("main-", "master-")):
-                return ("Memphis pushes Alpha and alpha-ds only, not %r: Canary is the "
-                        "orchestrator's release step and main is merged only by the CEO (P-030). "
-                        "Push the work to Alpha." % dst + NOT_CEO)
+                return ("Memphis pushes staging only, not %r: Canary is the orchestrator's "
+                        "release step and main is merged only by the CEO (P-030). Push the work "
+                        "to staging." % dst + NOT_CEO)
             if deleting and not ALPHA_BRANCH.match(dst):
-                return "A branch delete is only for a merged `alpha-*` team branch, not %r." % dst
+                return ("A branch delete is only for a merged legacy `alpha-*` team branch, not "
+                        "%r; staging, Alpha and staging-<team> branches are kept (D-052)." % dst)
             if not deleting and ref.startswith(":"):
                 return "A refspec that deletes (%r) must use --delete." % ref
     return None
@@ -227,7 +232,7 @@ def ops_push_problem(command):
 
 def push_problem(command, team_id):
     """A code team pushes ITS OWN branch, `<base>-<team>`, and nothing else (CEO 2026-10-09):
-    branches keep teams apart; merging into Alpha, Canary or main is the operations team's.
+    branches keep teams apart; merging into staging, Alpha, Canary or main is the operations team's.
     Explicit refspecs only, no force, no tags. None = allowed."""
     for m in PUSH_ARGS.finditer(command):
         words = m.group("rest").split()
@@ -250,9 +255,9 @@ def push_problem(command, team_id):
             # system; team ids may contain hyphens themselves (deir-el-bahari)
             if base not in BASES or dst.lower() not in ("%s-%s" % (base, team_id),
                                                        "%s-ds-%s" % (base, team_id)):
-                return ("Teams push only their own branch, <base>-%s (e.g. alpha-%s); %r is "
-                        "not yours. Merging into Alpha, Canary or main is done by the operations "
-                        "team (Memphis)." % (team_id, team_id, dst))
+                return ("Teams push only their own branch, <base>-%s (e.g. staging-%s); %r is "
+                        "not yours. Merging into staging, Alpha, Canary or main is done by the "
+                        "operations team (Memphis)." % (team_id, team_id, dst))
     return None
 
 

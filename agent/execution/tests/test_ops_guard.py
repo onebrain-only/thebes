@@ -82,27 +82,27 @@ class OpsGuardTests(unittest.TestCase):
     def test_hyphenated_team_ids_push_their_own_branch(self):
         """Malfunction #27: `deir-el-bahari` has hyphens of its own."""
         pg = ops_guard.push_problem
-        for ok in ("git push origin alpha-deir-el-bahari",
-                   "git push origin alpha-ds-deir-el-bahari"):
+        for ok in ("git push origin staging-deir-el-bahari",
+                   "git push origin staging-ds-deir-el-bahari"):
             self.assertIsNone(pg(ok, "deir-el-bahari"), ok)
-        for bad in ("git push origin alpha-luxor", "git push origin alpha-deir-el-bahari-x",
-                    "git push origin alpha-ds-luxor"):
+        for bad in ("git push origin staging-luxor", "git push origin staging-deir-el-bahari-x",
+                    "git push origin staging-ds-luxor"):
             self.assertIsNotNone(pg(bad, "deir-el-bahari"), bad)
 
     def test_a_code_team_may_push_only_the_two_integration_refspecs(self):
         """Fast lane, CEO 2026-10-10."""
         pg = ops_guard.push_problem
-        for ok in ("git -C /w push origin integrate-alpha:Alpha",
-                   "git -C /w push origin integrate-alpha-ds:alpha-ds"):
+        for ok in ("git -C /w push origin integrate-staging:staging",
+                   "git -C /w push origin integrate-staging-ds:staging"):
             self.assertIsNone(pg(ok, "karnak"), ok)
-        for bad in ("git push origin alpha-karnak:Alpha", "git push origin integrate-alpha:main",
-                    "git push origin HEAD:Alpha", "git push origin integrate-alpha:Canary"):
+        for bad in ("git push origin staging-karnak:staging", "git push origin integrate-staging:main",
+                    "git push origin HEAD:Alpha", "git push origin HEAD:staging", "git push origin integrate-staging:Canary"):
             self.assertIsNotNone(pg(bad, "karnak"), bad)
 
     def test_teams_never_write_git_in_the_ceo_folders(self):
         """B15: Ramesseum ran a task inside Dabbler/dabbler-code."""
         code = os.path.join(ops_guard.ROOT, "Dabbler", "dabbler-code")
-        for bad in ("git -C Dabbler/dabbler-code checkout alpha-karnak",
+        for bad in ("git -C Dabbler/dabbler-code checkout staging-karnak",
                     "cd Dabbler/dabbler-code && git commit -m x"):
             self.assertIsNotNone(self.decide(KARNAK, "Bash", command=bad), bad)
         self.assertIsNotNone(ops_guard.decide({"tool_name": "Bash", "session_id": KARNAK,
@@ -115,17 +115,17 @@ class OpsGuardTests(unittest.TestCase):
     def test_the_ops_team_may_integrate_and_delete_merged_team_branches_and_nothing_dangerous(self):
         """CEO 2026-10-14: refuse the dangerous automatically, allow the routine without a prompt."""
         pg = ops_guard.ops_push_problem
-        for ok in ("git -C /w push origin integrate-alpha:Alpha",
-                   "git -C /w push origin integrate-alpha-ds:alpha-ds",
+        for ok in ("git -C /w push origin integrate-staging:staging",
+                   "git -C /w push origin integrate-staging-ds:staging",
                    "git -C /w push origin --delete alpha-karnak",
-                   "git push origin --delete Alpha-karnak alpha-ds-habu", "git push origin alpha-memphis"):
+                   "git push origin --delete Alpha-karnak alpha-ds-habu", "git push origin staging-memphis"):
             self.assertIsNone(pg(ok), ok)
-        for bad in ("git push --force origin integrate-alpha:Alpha", "git push -f origin Alpha",
+        for bad in ("git push --force origin integrate-staging:staging", "git push -f origin Alpha",
                     "git push --force-with-lease origin Alpha", "git push origin main",
-                    "git push origin integrate-alpha:main", "git push origin HEAD:Canary",
+                    "git push origin integrate-staging:main", "git push origin HEAD:Canary",
                     "git push origin master", "git push --tags origin Alpha", "git push --mirror",
                     "git push origin --delete Alpha", "git push origin --delete main",
-                    "git push origin --delete feature-x", "git push origin :alpha-karnak"):
+                    "git push origin --delete feature-x", "git push origin :staging-karnak"):
             self.assertIsNotNone(pg(bad), bad)
         self.assertIsNone(self.decide(MEMPHIS, "Bash", command="git push origin Alpha"))
         self.assertIsNotNone(self.decide(MEMPHIS, "Bash", command="git push --force origin Alpha"))
@@ -156,28 +156,28 @@ class OpsGuardTests(unittest.TestCase):
             self.assertIsNotNone(self.allow(sid, SB + "list_tables", project_id=ops_guard.PROJECT))
 
     def test_a_plain_permitted_push_is_allowed_and_anything_else_is_left_alone(self):
-        self.assertIsNotNone(self.allow(MEMPHIS, "Bash", command="git -C Dabbler/dabbler-code push origin integrate-alpha:Alpha"))
-        self.assertIsNotNone(self.allow(KARNAK, "Bash", command="cd x && git push origin alpha-karnak"))
+        self.assertIsNotNone(self.allow(MEMPHIS, "Bash", command="git -C Dabbler/dabbler-code push origin integrate-staging:staging"))
+        self.assertIsNotNone(self.allow(KARNAK, "Bash", command="cd x && git push origin staging-karnak"))
         self.assertIsNone(self.allow(KARNAK, "Bash", command="git push origin main"), "refused")
         self.assertIsNone(self.allow(MEMPHIS, "Bash", command="git push origin Canary"), "refused")
-        self.assertIsNone(self.allow(KARNAK, "Bash", command="rm -rf x; git push origin alpha-karnak"))
-        self.assertIsNone(self.allow(KARNAK, "Bash", command="git push origin alpha-karnak $(evil)"))
-        self.assertIsNone(self.allow(ORCH, "Bash", command="git push origin alpha-karnak"), "not a team")
+        self.assertIsNone(self.allow(KARNAK, "Bash", command="rm -rf x; git push origin staging-karnak"))
+        self.assertIsNone(self.allow(KARNAK, "Bash", command="git push origin staging-karnak $(evil)"))
+        self.assertIsNone(self.allow(ORCH, "Bash", command="git push origin staging-karnak"), "not a team")
 
     def test_code_teams_push_only_their_own_branch(self):
         """CEO 2026-10-09: a team pushes its branch normally; it never pushes a base branch,
         another team's branch, or with force."""
-        for ok in ("git push origin alpha-karnak", "git push -u origin alpha-karnak",
-                   "git -C Dabbler/dabbler-code push origin alpha-karnak",
-                   "git push origin HEAD:alpha-karnak", "cd x && git push origin canary-karnak",
-                   "git -C Dabbler/dabbler-design-system push origin alpha-ds-karnak"):
+        for ok in ("git push origin staging-karnak", "git push -u origin staging-karnak",
+                   "git -C Dabbler/dabbler-code push origin staging-karnak",
+                   "git push origin HEAD:staging-karnak", "cd x && git push origin canary-karnak",
+                   "git -C Dabbler/dabbler-design-system push origin staging-ds-karnak"):
             self.assertIsNone(self.decide(KARNAK, "Bash", command=ok), ok)
         for bad in ("git push origin Alpha", "git push origin main", "git push origin Canary",
-                    "git push origin alpha-luxor", "git push", "git push origin",
-                    "git push -f origin alpha-karnak", "git push --force-with-lease origin alpha-karnak",
-                    "git push origin alpha-karnak:Alpha", "git push --tags origin alpha-karnak",
-                    "git push origin --delete alpha-karnak", "git push origin alpha-ds",
-                    "git push origin alpha-ds-luxor"):
+                    "git push origin staging-luxor", "git push", "git push origin",
+                    "git push -f origin staging-karnak", "git push --force-with-lease origin staging-karnak",
+                    "git push origin staging-karnak:staging", "git push --tags origin staging-karnak",
+                    "git push origin --delete staging-karnak", "git push origin staging-ds", "git push origin staging",
+                    "git push origin staging-ds-luxor"):
             self.assertIsNotNone(self.decide(KARNAK, "Bash", command=bad), bad)
         for cmd in ("git push origin Alpha", "git push"):
             self.assertIsNone(self.decide(MEMPHIS, "Bash", command=cmd), "Memphis integrates")

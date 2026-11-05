@@ -1,6 +1,6 @@
 """How deep a review goes, and on which platform (CEO 2026-10-21).
 
-Review happens on the team's branch, locally, before the work reaches Alpha, on ONE platform (one
+Review happens on the team's branch, locally, before the work reaches staging, on ONE platform (one
 codebase): a web build in the Codex internal browser (CEO 2026-10-22: no simulators). Depth follows
 risk so review never becomes the bottleneck:
 

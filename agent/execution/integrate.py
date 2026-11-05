@@ -1,11 +1,17 @@
-"""Automatic integration into Alpha (D-042): verified work reaches Alpha without waiting on the CEO.
+"""Automatic integration into staging (D-042, D-052): verified work reaches staging without the CEO.
 
 When a team's ticket has passed verification (D-041) and its branch is pushed, the Ready
-dispatcher asks Memphis, the operations team, to merge it into the base. The CEO delegated
-Alpha; Canary and main are never touched here (a branch named canary-* or main-* is ignored).
+dispatcher asks Memphis, the operations team, to merge it into the base. staging is the internal
+integrate-and-test branch (staging.dabbler.pro). Alpha is the customer trial and moves only when
+the CEO orders a promotion of staging (orders `promote-alpha`), never from here. Canary and main
+are never touched here (a branch named canary-* or main-* is ignored).
 
-    app             alpha-<team>      → Alpha        in Dabbler/dabbler-code
-    design system   alpha-ds-<team>   → alpha-ds     in Dabbler/dabbler-design-system
+    app             staging-<team>      → staging   in Dabbler/dabbler-code
+    design system   staging-ds-<team>   → staging   in Dabbler/dabbler-design-system
+
+Both repos call their base `staging`, so a target is keyed by `key` (`staging`, `staging-ds`),
+which is what an integration dispatch records as `integrates_base`. Team branches still named
+alpha-<team> / alpha-ds-<team> from before D-052 integrate into staging the same way.
 
 One integration per base at a time (Memphis is one session, and the dispatcher never opens a
 second while one is open), batching everything pending for that base. Memphis merges in its OWN
@@ -31,24 +37,33 @@ from agent.execution import orders                                    # noqa: E4
 MAX_BATCH = 5
 MAX_ATTEMPTS = 2
 BASES = (
-    # (branch prefix, repo path, base branch, worktree/branch name for the integrator)
-    ("alpha-ds-", "Dabbler/dabbler-design-system", "alpha-ds", "integrate-alpha-ds"),
-    ("alpha-", "Dabbler/dabbler-code", "Alpha", "integrate-alpha"),
+    # (branch prefix, repo path, base branch, worktree/branch name for the integrator, key)
+    ("staging-ds-", "Dabbler/dabbler-design-system", "staging", "integrate-staging-ds", "staging-ds"),
+    ("staging-", "Dabbler/dabbler-code", "staging", "integrate-staging", "staging"),
+    ("alpha-ds-", "Dabbler/dabbler-design-system", "staging", "integrate-staging-ds", "staging-ds"),
+    ("alpha-", "Dabbler/dabbler-code", "staging", "integrate-staging", "staging"),
 )
+DS_PREFIXES = ("staging-ds-", "alpha-ds-")
 INTEGRATED = re.compile(r"^INTEGRATED:\s*(KAN-\d+)\s+(\S+)\s+([0-9a-f]{7,40})", re.M)
 FINAL_SHA = re.compile(r"^BASE_SHA:\s*([0-9a-f]{7,40})", re.M)
 
 
 def base_for(branch):
-    for prefix, repo, base, worktree in BASES:
+    for prefix, repo, base, worktree, key in BASES:
         if branch.lower().startswith(prefix):        # "Alpha-karnak" from before B8 too
-            return {"repo": repo, "base": base, "worktree": worktree, "prefix": prefix}
+            return {"repo": repo, "base": base, "worktree": worktree, "prefix": prefix, "key": key}
     return None
 
 
 def _targets():
-    return [{"repo": repo, "base": base, "worktree": worktree, "prefix": prefix}
-            for prefix, repo, base, worktree in BASES]
+    """One target per repo (the legacy alpha prefixes share their repo's target)."""
+    out, seen = [], set()
+    for prefix, repo, base, worktree, key in BASES:
+        if key not in seen:
+            seen.add(key)
+            out.append({"repo": repo, "base": base, "worktree": worktree, "prefix": prefix,
+                        "key": key})
+    return out
 
 
 def has_commit(repo, sha, runner=None):
@@ -67,15 +82,15 @@ def target_for(branch, sha=None, runner=None):
 
     A branch name alone cannot say: `Alpha-deir-el-bahari` exists in the app and in the design
     system (KAN-508 lived in the design system and was never seen as integrated). An explicit
-    `alpha-ds-` name is the design system; otherwise the repo that has the sha, the name's own
-    repo first."""
+    `staging-ds-` (or legacy `alpha-ds-`) name is the design system; otherwise the repo that has
+    the sha, the name's own repo first."""
     named = base_for(branch or "")
     if named is None:                      # canary-*, main, anything else: never auto-integrated
         return None
-    if named["prefix"] == "alpha-ds-":
+    if named["prefix"] in DS_PREFIXES:
         return named
     if sha:
-        order = [named] + [t for t in _targets() if t != named]
+        order = [named] + [t for t in _targets() if t["key"] != named["key"]]
         for t in order:
             if has_commit(t["repo"], sha, runner):
                 return t
@@ -240,8 +255,8 @@ def reconcile(state_store=store, runner=None, fetch=True):
                 cur = state_store.read("conversation_dispatch", rec["dispatch_id"])
                 state_store.update("conversation_dispatch", cur["dispatch_id"], cur["revision"],
                                    {"integrated_at": state_store.now(), "integrated_sha": v["sha"],
-                                    "integrated_via": "ancestor-of-%s" % t["base"]})
-                done.append({"reconciled": rec["jira_key"], "base": t["base"], "sha": v["sha"][:12]})
+                                    "integrated_via": "ancestor-of-%s" % t["key"]})
+                done.append({"reconciled": rec["jira_key"], "base": t["key"], "sha": v["sha"][:12]})
     except Exception:                                      # noqa: BLE001
         pass
     return done
@@ -262,9 +277,9 @@ def mark_integrated(dispatch_id, base, sha, evidence, *, state_store=store, runn
     v = rec.get("verification") or {}
     if rec.get("root_dispatch_id") or v.get("verdict") != "pass" or not v.get("sha"):
         raise ValueError("%s is not a verified (pass) root dispatch" % rec["dispatch_id"])
-    target = next((t for t in _targets() if t["base"].lower() == (base or "").lower()), None)
+    target = next((t for t in _targets() if t["key"].lower() == (base or "").lower()), None)
     if target is None:
-        raise ValueError("base must be one of: %s" % ", ".join(t["base"] for t in _targets()))
+        raise ValueError("base must be one of: %s" % ", ".join(t["key"] for t in _targets()))
     if fetch:
         _FETCHED.pop((target["repo"], target["base"]), None)
         _fetch_base(target["repo"], target["base"], runner)
@@ -352,7 +367,7 @@ def pending(state_store=store, runner=None, skipped=None):
             _skipped(skipped, state_store, "stacked on %s: not reviewed yet" % held,
                      rec.get("jira_key"))
             continue
-        groups.setdefault(target["base"], {"target": target, "items": []})["items"].append(
+        groups.setdefault(target["key"], {"target": target, "items": []})["items"].append(
             {"dispatch_id": rec["dispatch_id"], "key": rec["jira_key"], "branch": branch,
              "sha": latest[lkey], "at": rec.get("verified_at") or rec.get("outcome_at") or ""})
     for g in groups.values():
@@ -392,7 +407,7 @@ def open_integration(base, state_store=store):
 
 def brief(group):
     t, items = group["target"], group["items"]
-    lines = ["THEBES_INTEGRATION %s" % t["base"],
+    lines = ["THEBES_INTEGRATION %s" % t["key"],
              "Merge the verified branches below into %s in %s, in this order. This is routine and "
              "delegated (D-042): do not ask the CEO." % (t["base"], t["repo"]), ""]
     by_branch = {}
@@ -413,13 +428,14 @@ def brief(group):
               "3. Run `flutter analyze --no-pub --no-fatal-infos` and `flutter test --no-pub` on the "
               "UNMERGED origin/%s first, then on the merged result. `analyze` must exit 0. A "
               "red base does not stop delivery (live 2026-10-09: 59 render tests were already "
-              "failing on Alpha): compare the failing tests BY NAME, not by count. Any test that "
+              "failing on the base): compare the failing tests BY NAME, not by count. Any test that "
               "fails only on the merged result blocks the integration." % t["base"],
               "4. Push only if analyze exits 0 and no test fails only on the merged result: "
               "git -C <worktree> push origin %s:%s. Otherwise push NOTHING, reset the worktree to "
               "origin/%s and report the new failures. Save both failing lists in your report." % (
                   t["worktree"], t["base"], t["base"]),
-              "5. Never push or merge Canary or main, never force-push, never touch the database.",
+              "5. Never push or merge Alpha, Canary or main (Alpha moves only on the CEO's "
+              "promotion order), never force-push, never touch the database.",
               "",
               "Report ONE result. For every TICKET whose branch is now in %s write exactly one line:" % t["base"],
               "  INTEGRATED: <KEY> <branch> <merge-commit-sha>",
@@ -496,13 +512,8 @@ def dispatch_for(state_store=store, jira=None, dispatch=None, runner=None, setti
             root = state_store.read("conversation_dispatch", item["dispatch_id"])
             state_store.update("conversation_dispatch", item["dispatch_id"], root["revision"],
                                {"integration_dispatch_id": did})
-        refs = set()
-        for item in group["items"]:
-            g = orders.consume("merge-alpha", item["key"], state_store=state_store)
-            refs.add(g["id"] if g else None)
         orders.log("integration-dispatched", "ready-dispatcher",
-                   keys=[i["key"] for i in group["items"]],
-                   order_ref=",".join(sorted(r for r in refs if r)) or None, rule="review-passed",
+                   keys=[i["key"] for i in group["items"]], rule="review-passed",
                    detail="%s -> %s via %s" % (base, executor[:8], lane), state_store=state_store)
         busy.add(executor)
         done.append({"integrate": base, "action": "dispatched", "dispatch_id": did, "lane": lane,

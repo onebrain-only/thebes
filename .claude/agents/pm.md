@@ -107,7 +107,7 @@ This section overrides anything older in this file that says otherwise.
     one. `serial-chain` lists Ready tickets waiting on blockers: remove the links that are only
     ordering. Split an Epic by file surfaces so several teams work it at once.
   - **Every cut follows the `epic-cut` skill** and passes `cut_plan check` with no errors.
-  - A dependent ticket no longer waits for Alpha: Thebes starts it on its blocker's checked
+  - A dependent ticket no longer waits for staging: Thebes starts it on its blocker's checked
     commit and holds its integration until the blocker passes review.
 - **POs are per project:** `po` = app, `po-2` = design system. A PO writes and completes
   briefs and accepts work for its project only. You supervise them.

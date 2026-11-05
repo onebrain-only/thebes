@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Automatic integration of verified work into Alpha (D-042). Fakes only."""
+"""Automatic integration of verified work into staging (D-042, D-052). Fakes only."""
 import os
 import shutil
 import subprocess
@@ -59,9 +59,6 @@ class IntegrateTests(unittest.TestCase):
         for p in self.patches:
             p.start()
         self.sent = []
-        from agent.execution import orders
-        orders.record_message(ORCH, "ادمج كل اللي عدّى الريفيو على Alpha")
-        orders.grant("merge-alpha", "ادمج كل اللي عدّى الريفيو", keys=orders.ALL_REVIEWED)
 
     def tearDown(self):
         for p in self.patches:
@@ -69,7 +66,7 @@ class IntegrateTests(unittest.TestCase):
         store.RUNTIME, store.LOCKS, validate.RUNTIME = self.old
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def root(self, key="KAN-1", branch="alpha-luxor", sha=SHA, verdict="pass", **extra):
+    def root(self, key="KAN-1", branch="staging-luxor", sha=SHA, verdict="pass", **extra):
         did = store.new_id("conversation_dispatch")
         store.create("conversation_dispatch", dict({
             "dispatch_id": did, "origin_provider": "claude", "origin_thread_id": ORCH,
@@ -95,7 +92,7 @@ class IntegrateTests(unittest.TestCase):
     def run_dispatch(self, remote, allowed=True):
         import json
         rules = [integrate.push_rule(t) for t in
-                 (integrate.base_for("alpha-x"), integrate.base_for("alpha-ds-x"))] if allowed else []
+                 (integrate.base_for("staging-x"), integrate.base_for("staging-ds-x"))] if allowed else []
         path = os.path.join(self.tmp, "settings.json")
         with open(path, "w") as fh:
             json.dump({"permissions": {"allow": rules}}, fh)
@@ -103,35 +100,34 @@ class IntegrateTests(unittest.TestCase):
                                       runner=fake_git(remote), settings_files=[path])
 
     def test_without_the_push_rule_nothing_is_sent_that_would_block_memphis(self):
-        self.root("KAN-1", "alpha-luxor", SHA)
-        out = self.run_dispatch({"alpha-luxor": SHA}, allowed=False)
+        self.root("KAN-1", "staging-luxor", SHA)
+        out = self.run_dispatch({"staging-luxor": SHA}, allowed=False)
         self.assertEqual(out[0]["action"], "waiting")
-        self.assertIn("Bash(git -C * push origin integrate-alpha:Alpha)", out[0]["reason"])
+        self.assertIn("Bash(git -C * push origin integrate-staging:staging)", out[0]["reason"])
         self.assertEqual(self.sent, [])
-        self.assertEqual(self.run_dispatch({"alpha-luxor": SHA})[0]["action"], "dispatched",
+        self.assertEqual(self.run_dispatch({"staging-luxor": SHA})[0]["action"], "dispatched",
                          "the moment the CEO adds the rule, it goes")
 
     def test_verified_pushed_work_is_sent_to_memphis_once_with_the_whole_recipe(self):
-        a = self.root("KAN-1", "alpha-luxor", SHA)
-        out = self.run_dispatch({"alpha-luxor": SHA})
+        a = self.root("KAN-1", "staging-luxor", SHA)
+        out = self.run_dispatch({"staging-luxor": SHA})
         self.assertEqual((out[0]["action"], out[0]["tickets"]), ("dispatched", ["KAN-1"]))
         sent = self.sent[0]
         self.assertEqual((sent["sid"], sent["ticket"]), (MEMPHIS, None))
-        for part in ("INTEGRATE", "alpha-luxor @ aaaaaaaaaaaa  (tickets: KAN-1)", "OWN worktree",
+        for part in ("INTEGRATE", "staging-luxor @ aaaaaaaaaaaa  (tickets: KAN-1)", "OWN worktree",
                      "flutter analyze --no-pub --no-fatal-infos", "flutter test --no-pub",
                      "BY NAME, not by count", "fails only on the merged result",
-                     "Never push or merge Canary or main",
+                     "Never push or merge Alpha, Canary or main",
                      "INTEGRATED: <KEY> <branch> <merge-commit-sha>", "do not ask the CEO"):
             self.assertIn(part, sent["text"], part)
-        self.assertIn("integrate-alpha:Alpha", sent["text"])
-        self.assertEqual(self.run_dispatch({"alpha-luxor": SHA}), [], "never twice")
+        self.assertIn("integrate-staging:staging", sent["text"])
+        self.assertEqual(self.run_dispatch({"staging-luxor": SHA}), [], "never twice")
         self.assertTrue(store.read("conversation_dispatch", a)["integration_dispatch_id"])
 
     def test_review_passed_work_integrates_without_any_ceo_order_d046(self):
         from agent.execution import orders
-        os.remove(orders.path("grants"))
-        self.root("KAN-1", "alpha-luxor", SHA)
-        out = self.run_dispatch({"alpha-luxor": SHA})
+        self.root("KAN-1", "staging-luxor", SHA)
+        out = self.run_dispatch({"staging-luxor": SHA})
         self.assertEqual([(o["action"], o["tickets"]) for o in out], [("dispatched", ["KAN-1"])])
         last = orders.recent(1)[0]
         self.assertEqual((last["action"], last.get("rule")),
@@ -153,29 +149,29 @@ class IntegrateTests(unittest.TestCase):
 
     def fast(self, files):
         import json
-        rules = [integrate.push_rule(integrate.base_for("alpha-x"))]
+        rules = [integrate.push_rule(integrate.base_for("staging-x"))]
         path = os.path.join(self.tmp, "settings.json")
         with open(path, "w") as fh:
             json.dump({"permissions": {"allow": rules}}, fh)
         return integrate.dispatch_for(state_store=store, dispatch=self.send, settings_files=[path],
-                                      runner=self.fast_runner({"alpha-luxor": SHA}, files))
+                                      runner=self.fast_runner({"staging-luxor": SHA}, files))
 
     def test_integration_goes_to_memphis_only_even_for_a_small_ticket(self):
         """2026-10-14: a code team may not work in the CEO's folders; the fast lane is off."""
-        self.root("KAN-1", "alpha-luxor", SHA)
+        self.root("KAN-1", "staging-luxor", SHA)
         out = self.fast(["lib/a.dart", "test/a_test.dart"])
         self.assertEqual((out[0]["action"], out[0]["lane"]), ("dispatched", "ops"))
         self.assertEqual(self.sent[0]["sid"], MEMPHIS)
 
     def test_the_fast_lane_still_works_when_it_is_switched_on(self):
-        self.root("KAN-1", "alpha-luxor", SHA)
+        self.root("KAN-1", "staging-luxor", SHA)
         with mock.patch.object(integrate, "FAST_LANE", True):
             out = self.fast(["lib/a.dart", "test/a_test.dart"])
         self.assertEqual((out[0]["action"], out[0]["lane"]), ("dispatched", "team"))
         self.assertEqual(self.sent[0]["sid"], LUXOR)
 
     def test_big_or_risky_tickets_stay_with_memphis(self):
-        self.root("KAN-1", "alpha-luxor", SHA)
+        self.root("KAN-1", "staging-luxor", SHA)
         self.assertEqual(self.fast(["f%d.dart" % i for i in range(6)])[0]["lane"], "ops")
         self.assertEqual(self.sent[0]["sid"], MEMPHIS)
 
@@ -188,8 +184,8 @@ class IntegrateTests(unittest.TestCase):
 
     def test_a_tip_already_on_the_base_is_marked_integrated_not_sent_again(self):
         """B5: an automatic integration re-merged what the orchestrator had already merged."""
-        a = self.root("KAN-1", "alpha-luxor", SHA)
-        out = self.run_dispatch({"alpha-luxor": SHA, "_on_base": (SHA,)})
+        a = self.root("KAN-1", "staging-luxor", SHA)
+        out = self.run_dispatch({"staging-luxor": SHA, "_on_base": (SHA,)})
         self.assertEqual((out, self.sent), ([], []))
         self.assertTrue(store.read("conversation_dispatch", a)["integrated_at"])
 
@@ -206,46 +202,49 @@ class IntegrateTests(unittest.TestCase):
             return Done("")
         return run
 
-    def test_a_design_system_commit_on_an_Alpha_named_branch_is_checked_against_alpha_ds(self):
-        """KAN-508: Alpha-deir-el-bahari lived in the design system, merged as alpha-ds 280c53ca."""
+    def test_a_design_system_commit_on_an_app_named_branch_is_checked_against_staging_ds(self):
+        """KAN-508: Alpha-deir-el-bahari lived in the design system (legacy name, still mapped)."""
         did = self.root("KAN-508", "Alpha-deir-el-bahari", SHA2)
         run = self.repo_runner(on_base={("design-system", SHA2)}, in_ds={SHA2})
-        self.assertEqual(integrate.target_for("Alpha-deir-el-bahari", SHA2, run)["base"], "alpha-ds")
-        self.assertEqual(integrate.target_for("Alpha-deir-el-bahari", SHA, run)["base"], "Alpha")
+        self.assertEqual(integrate.target_for("Alpha-deir-el-bahari", SHA2, run)["key"], "staging-ds")
+        self.assertEqual(integrate.target_for("staging-deir-el-bahari", SHA2, run)["key"], "staging-ds")
+        self.assertEqual(integrate.target_for("Alpha-deir-el-bahari", SHA, run)["key"], "staging")
+        self.assertEqual(integrate.target_for("staging-deir-el-bahari", SHA, run)["base"], "staging")
         out = integrate.reconcile(state_store=store, runner=run, fetch=False)
         self.assertEqual([o["reconciled"] for o in out], ["KAN-508"])
         rec = store.read("conversation_dispatch", did)
-        self.assertEqual((rec["integrated_sha"], rec["integrated_via"]), (SHA2, "ancestor-of-alpha-ds"))
+        self.assertEqual((rec["integrated_sha"], rec["integrated_via"]), (SHA2, "ancestor-of-staging-ds"))
 
-    def test_an_app_tip_that_is_an_ancestor_of_Alpha_is_integrated_whoever_merged_it(self):
+    def test_an_app_tip_that_is_an_ancestor_of_staging_is_integrated_whoever_merged_it(self):
         """KAN-497: merged by hand (3879a977), integrated_at stayed None for hours."""
-        did = self.root("KAN-497", "Alpha-deir-el-bahari", SHA)
+        did = self.root("KAN-497", "staging-deir-el-bahari", SHA)
         out = integrate.reconcile(state_store=store, fetch=False,
                                   runner=self.repo_runner(on_base={("app", SHA)}))
-        self.assertEqual([o["base"] for o in out], ["Alpha"])
+        self.assertEqual([o["base"] for o in out], ["staging"])
         self.assertTrue(store.read("conversation_dispatch", did)["integrated_at"])
         self.assertEqual(integrate.reconcile(state_store=store, fetch=False,
                                              runner=self.repo_runner(on_base={("app", SHA)})), [],
                          "once")
 
     def test_not_yet_on_the_base_stays_pending_and_canary_is_never_touched(self):
-        self.root("KAN-1", "alpha-luxor", SHA)
+        self.root("KAN-1", "staging-luxor", SHA)
         self.root("KAN-2", "canary-luxor", SHA)
         self.assertEqual(integrate.reconcile(state_store=store, fetch=False,
                                              runner=self.repo_runner()), [])
 
     def test_mark_integrated_needs_evidence_and_git_must_agree(self):
-        did = self.root("KAN-497", "Alpha-deir-el-bahari", SHA)
+        did = self.root("KAN-497", "staging-deir-el-bahari", SHA)
         run = self.repo_runner(on_base={("app", SHA), ("app", SHA2)})
-        for args in (("Alpha", SHA2, " "), ("nope", SHA2, "x"), ("alpha-ds", SHA2, "x")):
+        for args in (("staging", SHA2, " "), ("nope", SHA2, "x"), ("Alpha", SHA2, "x"),
+                     ("staging-ds", SHA2, "x")):
             with self.assertRaises(ValueError):
                 integrate.mark_integrated(did[:14], args[0], args[1], args[2], state_store=store,
                                           runner=run, fetch=False, jira=mock.Mock())
         self.assertFalse(store.read("conversation_dispatch", did).get("integrated_at"))
         with self.assertRaises(ValueError):          # the --sha is not in the base
-            integrate.mark_integrated(did, "Alpha", "c" * 40, "merge 3879a977", state_store=store,
+            integrate.mark_integrated(did, "staging", "c" * 40, "merge 3879a977", state_store=store,
                                       runner=run, fetch=False, jira=mock.Mock())
-        out = integrate.mark_integrated(did[:14], "Alpha", SHA2, "merge 3879a977 on Alpha",
+        out = integrate.mark_integrated(did[:14], "staging", SHA2, "merge 3879a977 on staging",
                                         state_store=store, runner=run, fetch=False, jira=mock.Mock())
         self.assertEqual(out["status"], "marked")
         rec = store.read("conversation_dispatch", did)
@@ -253,14 +252,14 @@ class IntegrateTests(unittest.TestCase):
         self.assertIn("3879a977", rec["integration_evidence"])
 
     def test_a_branch_pushed_with_another_letter_case_is_found(self):
-        """2026-10-16: Karnak pushes Alpha-karnak, the verified name was alpha-karnak."""
-        self.root("KAN-561", "alpha-karnak", SHA)
-        out = self.run_dispatch({"Alpha-karnak": SHA})
+        """2026-10-16: Karnak pushes Staging-karnak, the verified name was staging-karnak."""
+        self.root("KAN-561", "staging-karnak", SHA)
+        out = self.run_dispatch({"Staging-karnak": SHA})
         self.assertEqual([o["action"] for o in out if "action" in o and o.get("integrate") != "skipped"],
                          ["dispatched"])
 
     def test_verified_work_that_is_skipped_says_why_instead_of_vanishing(self):
-        self.root("KAN-562", "alpha-luxor", SHA)
+        self.root("KAN-562", "staging-luxor", SHA)
         out = self.run_dispatch({})
         self.assertEqual((out[0]["integrate"], out[0]["key"]), ("skipped", "KAN-562"))
         self.assertIn("branch-not-found-on-origin", out[0]["reason"])
@@ -284,58 +283,62 @@ class IntegrateTests(unittest.TestCase):
         """2026-10-14, KAN-505: another ticket's commits stayed out, the ticket's own went in."""
         run = self.cherry_runner("- aaa111\n+ bbb222\n",
                                  "bbb222 KAN-506: other work\naaa111 KAN-505: the migration\n")
-        self.assertTrue(integrate.ticket_commits_on_base("Dabbler/dabbler-code", "Alpha", SHA, "KAN-505", run))
-        self.assertFalse(integrate.ticket_commits_on_base("Dabbler/dabbler-code", "Alpha", SHA, "KAN-506", run),
+        self.assertTrue(integrate.ticket_commits_on_base("Dabbler/dabbler-code", "staging", SHA, "KAN-505", run))
+        self.assertFalse(integrate.ticket_commits_on_base("Dabbler/dabbler-code", "staging", SHA, "KAN-506", run),
                          "its own commit is still missing")
-        self.assertFalse(integrate.ticket_commits_on_base("Dabbler/dabbler-code", "Alpha", SHA, "KAN-999", run),
+        self.assertFalse(integrate.ticket_commits_on_base("Dabbler/dabbler-code", "staging", SHA, "KAN-999", run),
                          "no commit of that ticket at all")
-        self.assertFalse(integrate.ticket_commits_on_base("Dabbler/dabbler-code", "Alpha", SHA, None, run))
+        self.assertFalse(integrate.ticket_commits_on_base("Dabbler/dabbler-code", "staging", SHA, None, run))
 
     def test_mark_integrated_accepts_a_cherry_pick_with_evidence(self):
-        did = self.root("KAN-505", "Alpha-deir-el-bahari", SHA)
+        did = self.root("KAN-505", "staging-deir-el-bahari", SHA)
         run = self.cherry_runner("- aaa111\n+ bbb222\n",
                                  "bbb222 KAN-506: other\naaa111 KAN-505: the migration\n")
-        out = integrate.mark_integrated(did, "Alpha", SHA2, "cherry-picked as 5a2264a0 from 20db6a4e",
+        out = integrate.mark_integrated(did, "staging", SHA2, "cherry-picked as 5a2264a0 from 20db6a4e",
                                         state_store=store, runner=run, fetch=False, jira=mock.Mock())
         self.assertEqual(out["status"], "marked")
 
     def test_only_what_thebes_verified_and_the_team_pushed_is_integrated(self):
-        self.root("KAN-1", "alpha-luxor", SHA)
+        self.root("KAN-1", "staging-luxor", SHA)
         acts = lambda out: [o for o in out if o.get("integrate") != "skipped"]
         self.assertEqual(acts(self.run_dispatch({})), [], "not pushed")
-        self.assertEqual(acts(self.run_dispatch({"alpha-luxor": SHA2})), [],
+        self.assertEqual(acts(self.run_dispatch({"staging-luxor": SHA2})), [],
                          "the branch moved on past what was verified")
         self.root("KAN-2", "canary-luxor", SHA)
-        self.root("KAN-3", "alpha-luxor", SHA, verdict="exhausted")
-        self.assertEqual(acts(self.run_dispatch({"canary-luxor": SHA, "alpha-luxor": SHA2})), [],
+        self.root("KAN-3", "staging-luxor", SHA, verdict="exhausted")
+        self.assertEqual(acts(self.run_dispatch({"canary-luxor": SHA, "staging-luxor": SHA2})), [],
                          "Canary and main are never auto-integrated; failed work is never merged")
 
-    def test_the_design_system_goes_to_alpha_ds_and_each_base_has_its_own_integration(self):
-        self.root("KAN-1", "alpha-luxor", SHA)
-        self.root("KAN-2", "alpha-ds-luxor", SHA2)
-        out = self.run_dispatch({"alpha-luxor": SHA, "alpha-ds-luxor": SHA2})
+    def test_the_design_system_goes_to_its_staging_and_each_base_has_its_own_integration(self):
+        self.root("KAN-1", "staging-luxor", SHA)
+        self.root("KAN-2", "staging-ds-luxor", SHA2)
+        out = self.run_dispatch({"staging-luxor": SHA, "staging-ds-luxor": SHA2})
         self.assertEqual([o["action"] for o in out], ["dispatched", "waiting"],
                          "Memphis is one session: the second base waits")
         waiting_base = out[1]["integrate"]
-        out2 = self.run_dispatch({"alpha-luxor": SHA, "alpha-ds-luxor": SHA2})
+        self.assertEqual(sorted(o["integrate"] for o in out), ["staging", "staging-ds"])
+        out2 = self.run_dispatch({"staging-luxor": SHA, "staging-ds-luxor": SHA2})
         self.assertEqual(out2, [{"integrate": waiting_base, "action": "waiting",
                                  "reason": "ops-team-busy"}])
-        self.assertIn("integrate-alpha-ds:alpha-ds", " ".join(s["text"] for s in self.sent) +
-                      integrate.brief({"target": integrate.base_for("alpha-ds-x"), "items": [
-                          {"key": "KAN-9", "branch": "alpha-ds-x", "sha": SHA}]}))
+        ds_brief = integrate.brief({"target": integrate.base_for("staging-ds-x"), "items": [
+            {"key": "KAN-9", "branch": "staging-ds-x", "sha": SHA}]})
+        self.assertIn("integrate-staging-ds:staging", ds_brief)
+        self.assertIn("Dabbler/dabbler-design-system", ds_brief)
+        self.assertEqual(integrate.base_for("alpha-ds-x")["key"], "staging-ds",
+                         "a legacy alpha-ds-<team> name integrates into staging too")
 
     def test_a_finished_integration_marks_tickets_and_comments_a_blocked_one_counts_an_attempt(self):
-        a = self.root("KAN-1", "alpha-luxor", SHA, verified_at="2026-10-09T05:00:00Z")
-        b = self.root("KAN-2", "alpha-luxor", SHA2, verified_at="2026-10-09T05:10:00Z")
-        self.run_dispatch({"alpha-luxor": SHA2})
+        a = self.root("KAN-1", "staging-luxor", SHA, verified_at="2026-10-09T05:00:00Z")
+        b = self.root("KAN-2", "staging-luxor", SHA2, verified_at="2026-10-09T05:10:00Z")
+        self.run_dispatch({"staging-luxor": SHA2})
         self.assertIn("(tickets: KAN-1, KAN-2)", self.sent[0]["text"])
-        self.assertIn("alpha-luxor @ bbbbbbbbbbbb", self.sent[0]["text"],
+        self.assertIn("staging-luxor @ bbbbbbbbbbbb", self.sent[0]["text"],
                       "one merge of the head covers the earlier ticket on the branch")
         did = self.sent[0] and [r for r in store.read_all("conversation_dispatch")
                                 if r.get("integrates_base")][0]["dispatch_id"]
         ref = os.path.join(self.tmp, "result.txt")
         with open(ref, "w") as fh:
-            fh.write("Done.\nINTEGRATED: KAN-1 alpha-luxor 1234567890abcdef\nBASE_SHA: fedcba0987654321\n"
+            fh.write("Done.\nINTEGRATED: KAN-1 staging-luxor 1234567890abcdef\nBASE_SHA: fedcba0987654321\n"
                      "Skipped KAN-2: conflict in venues_screen.dart\n")
         rec = store.read("conversation_dispatch", did)
         store.update("conversation_dispatch", did, rec["revision"],
@@ -348,10 +351,10 @@ class IntegrateTests(unittest.TestCase):
             def add_comment(self, k, t):
                 comments.append((k, t))
         out = integrate.settle(state_store=store, jira=J())
-        self.assertIn({"integrated": "KAN-1", "branch": "alpha-luxor", "base_sha": "fedcba0987654321"},
+        self.assertIn({"integrated": "KAN-1", "branch": "staging-luxor", "base_sha": "fedcba0987654321"},
                       out)
         self.assertTrue(store.read("conversation_dispatch", a)["integrated_at"])
-        self.assertIn("Integrated into Alpha", comments[0][1])
+        self.assertIn("Integrated into staging", comments[0][1])
         self.assertIn("1234567890ab", comments[0][1])
         skipped = store.read("conversation_dispatch", b)
         self.assertEqual((skipped.get("integrated_at"), skipped["integration_attempts"]), (None, 1))
@@ -359,13 +362,13 @@ class IntegrateTests(unittest.TestCase):
         self.assertEqual(integrate.settle(state_store=store, jira=J()), [], "settled once")
 
     def test_a_ticket_is_left_alone_after_two_failed_attempts(self):
-        self.root("KAN-1", "alpha-luxor", SHA, integration_attempts=integrate.MAX_ATTEMPTS)
-        self.assertEqual(self.run_dispatch({"alpha-luxor": SHA}), [])
+        self.root("KAN-1", "staging-luxor", SHA, integration_attempts=integrate.MAX_ATTEMPTS)
+        self.assertEqual(self.run_dispatch({"staging-luxor": SHA}), [])
 
     def test_the_orchestrator_hears_a_blocked_integration_as_a_plain_result(self):
         from agent.execution import inbox
-        self.root("KAN-1", "alpha-luxor", SHA)
-        self.run_dispatch({"alpha-luxor": SHA})
+        self.root("KAN-1", "staging-luxor", SHA)
+        self.run_dispatch({"staging-luxor": SHA})
         did = [r for r in store.read_all("conversation_dispatch") if r.get("integrates_base")][0]
         ref = os.path.join(self.tmp, "r.txt")
         open(ref, "w").write("Skipped KAN-1: conflict")
