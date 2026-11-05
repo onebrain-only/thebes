@@ -184,7 +184,7 @@ def decide(payload, state_store=None, teams_mod=None):
         except Exception:                                 # noqa: BLE001
             return None
         if lane == "ops":
-            return ops_push_problem(command)
+            return ops_push_problem(command, payload.get("cwd"))
         if lane == "qa":
             return "The QA lane (%s) reviews; it never pushes (D-043)." % tid
         if lane == "code":
@@ -201,13 +201,61 @@ PROTECTED = ("main", "master", "canary")
 # D-052: team branches are staging-<team>; a merged legacy alpha-<…> branch may still be deleted.
 # staging, Alpha and every staging-<team> are kept (the CEO's keep list), so never deletable here.
 ALPHA_BRANCH = re.compile(r"^alpha(-ds)?-[a-z0-9][a-z0-9-]*$", re.I)
+KEPT_BRANCH = re.compile(r"^(main|master|canary|staging|alpha|alpha-ds|staging-.+)$", re.I)
+# Any other merged branch may go too (CEO order 2026-11-05), but only once a live check finds
+# none of its work missing from every base: git cherry, then a content comparison for work that
+# was squash-merged or re-applied under other commits.
+INTEGRATED_BASES = ("staging", "Alpha", "alpha-ds")
+GIT_C = re.compile(r"git\s+-C\s+(\S+)")
 
 
-def ops_push_problem(command):
-    """The ops team (Memphis) integrates into staging and deletes merged legacy team branches,
-    nothing else: no force, no tags, nothing to main, master or Canary, and a branch delete only
-    for a legacy `alpha-*` team branch (CEO 2026-10-14: refuse the dangerous automatically; allow
-    the routine). A push to Alpha is judged by order_gate (the CEO's promotion order, D-052)."""
+def _git(repo, *args):
+    import subprocess
+    out = subprocess.run(["git", "-C", repo] + list(args), capture_output=True, text=True,
+                         timeout=60)
+    return out.returncode, out.stdout
+
+
+def unintegrated_work(repo, branch, git=None):
+    """Why `origin/<branch>` still holds work no base has, or None when every base check passes.
+    A commit counts as integrated when git cherry finds it in any base; failing that, the
+    branch counts as integrated when every file it changed is identical in some base."""
+    git = git or _git
+    if git(repo, "rev-parse", "--verify", "-q", "origin/%s" % branch)[0] != 0:
+        return "origin/%s not found in %s (fetch first)" % (branch, repo)
+    bases = [b for b in INTEGRATED_BASES
+             if git(repo, "rev-parse", "--verify", "-q", "origin/%s" % b)[0] == 0]
+    if not bases:
+        return "no base (staging, Alpha, alpha-ds) found in %s" % repo
+    missing = None
+    for base in bases:
+        rc, out = git(repo, "cherry", "origin/%s" % base, "origin/%s" % branch)
+        if rc != 0:
+            return "git cherry failed against origin/%s" % base
+        plus = {line.split()[1] for line in out.splitlines() if line.startswith("+")}
+        missing = plus if missing is None else missing & plus
+    if not missing:
+        return None
+    for base in bases:
+        rc, mb = git(repo, "merge-base", "origin/%s" % base, "origin/%s" % branch)
+        if rc != 0:
+            continue
+        rc, names = git(repo, "diff", "--name-only", mb.strip(), "origin/%s" % branch)
+        files = [n for n in names.splitlines() if n]
+        if rc == 0 and files and git(repo, "diff", "--quiet", "origin/%s" % base,
+                                     "origin/%s" % branch, "--", *files)[0] == 0:
+            return None
+    return "%d commit(s) on %s are in no base: %s" % (
+        len(missing), branch, ", ".join(sorted(c[:8] for c in missing)))
+
+
+def ops_push_problem(command, cwd=None, git=None):
+    """The ops team (Memphis) integrates into staging and deletes merged branches, nothing else:
+    no force, no tags, nothing to main, master or Canary, and never a delete of a kept branch
+    (main, Canary, staging, Alpha, alpha-ds, any staging-<team>). A legacy `alpha-*` team branch
+    may be deleted as before; any other branch only after unintegrated_work() finds nothing
+    (CEO 2026-10-14: refuse the dangerous automatically; allow the routine). A push to Alpha is
+    judged by order_gate (the CEO's promotion order, D-052)."""
     for m in PUSH_ARGS.finditer(command):
         words = m.group("rest").split()
         flags = [w for w in words if w.startswith("-")]
@@ -216,15 +264,22 @@ def ops_push_problem(command):
                or f.startswith("--force") or f.startswith("--force-with-lease") for f in flags):
             return "No force push, mirror, --all or tags (CEO 2026-10-14): push plainly."
         deleting = any(f in ("--delete", "-d") for f in flags)
+        c = GIT_C.match(m.group(0))
+        repo = os.path.join(cwd or ROOT, c.group(1)) if c else (cwd or ROOT)
         for ref in args[1:]:
             dst = ref.split(":")[-1].replace("refs/heads/", "").lstrip("+")
             if dst.lower() in PROTECTED or dst.lower().startswith(("main-", "master-")):
                 return ("Memphis pushes staging only, not %r: Canary is the orchestrator's "
                         "release step and main is merged only by the CEO (P-030). Push the work "
                         "to staging." % dst + NOT_CEO)
+            if deleting and KEPT_BRANCH.match(dst):
+                return ("%r is kept: main, Canary, staging, Alpha, alpha-ds and every "
+                        "staging-<team> are never deleted (D-052)." % dst + NOT_CEO)
             if deleting and not ALPHA_BRANCH.match(dst):
-                return ("A branch delete is only for a merged legacy `alpha-*` team branch, not "
-                        "%r; staging, Alpha and staging-<team> branches are kept (D-052)." % dst)
+                why = unintegrated_work(repo, dst, git)
+                if why:
+                    return ("A branch is deleted only when all its work is on staging or Alpha; "
+                            "%s. Integrate it first, or keep it and list it." % why + NOT_CEO)
             if not deleting and ref.startswith(":"):
                 return "A refspec that deletes (%r) must use --delete." % ref
     return None

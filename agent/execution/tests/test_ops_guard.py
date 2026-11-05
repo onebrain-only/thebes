@@ -130,6 +130,40 @@ class OpsGuardTests(unittest.TestCase):
         self.assertIsNone(self.decide(MEMPHIS, "Bash", command="git push origin Alpha"))
         self.assertIsNotNone(self.decide(MEMPHIS, "Bash", command="git push --force origin Alpha"))
 
+    def test_a_merged_non_alpha_branch_may_be_deleted_only_when_no_base_misses_its_work(self):
+        """CEO order 2026-11-05: merged branches outside alpha-* go too, after the live check."""
+        refs = {"staging", "Alpha", "merged", "squashed", "unmerged"}
+        cherry = {"merged": "- aaaa\n", "squashed": "+ bbbb\n", "unmerged": "+ cccc\n"}
+        calls = []
+
+        def git(repo, *args):
+            calls.append((repo,) + args)
+            if args[0] == "rev-parse":
+                return (0, "") if args[-1].split("/", 1)[1] in refs else (1, "")
+            if args[0] == "cherry":
+                return 0, cherry[args[2].split("/", 1)[1]]
+            if args[0] == "merge-base":
+                return 0, "base\n"
+            if args[:2] == ("diff", "--name-only"):
+                return 0, "lib/a.dart\n"
+            if args[:2] == ("diff", "--quiet"):                  # squashed content is on staging
+                return (0, "") if args[3] == "origin/squashed" else (1, "")
+            raise AssertionError(args)
+
+        pg = ops_guard.ops_push_problem
+        self.assertIsNone(pg("git -C /w push origin --delete merged", git=git))
+        self.assertEqual(calls[0][0], "/w", "the check runs in the -C repository")
+        self.assertIsNone(pg("git -C /w push origin --delete squashed", git=git),
+                          "squash-merged work passes the content comparison")
+        why = pg("git -C /w push origin --delete unmerged", git=git)
+        self.assertIn("cccc", why)
+        self.assertIn("not found", pg("git -C /w push origin --delete gone", git=git))
+        for kept in ("staging", "Alpha", "alpha-ds", "staging-luxor", "staging-ds-habu", "Canary"):
+            self.assertIsNotNone(pg("git -C /w push origin --delete %s" % kept, git=git), kept)
+        calls.clear()
+        self.assertIsNone(pg("git -C /w push origin --delete alpha-luxor", git=git))
+        self.assertEqual(calls, [], "a legacy alpha-* branch needs no live check, as before")
+
     def test_project_lifecycle_is_refused_for_everyone_and_money_names_the_ceo(self):
         for tool in ("pause_project", "restore_project", "create_project"):
             why = self.decide(MEMPHIS, SB + tool)
