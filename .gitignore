@@ -19,7 +19,9 @@
 
 # Auto-written session state, not knowledge. Contains live test credentials.
 # Same category as .claude-flow/, which /* already excludes.
-/.claude/agent-memory/
+/.claude/agent-memory
+/agent/memory/
+/agent/claude-flow/
 
 # macOS finder droppings at any depth (the /* rule only shields the root copy).
 .DS_Store

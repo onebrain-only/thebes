@@ -25,8 +25,8 @@ THE MODEL
 
     canonical repository / integration branch (Canary)
         |
-        +-- .claude/worktrees/product/<seat>/<work-item>/   [exec/<seat>/<item>]
-        +-- .claude/worktrees/product/<seat>/<work-item>/   [exec/<seat>/<item>]
+        +-- agent/state/runtime/worktrees/product/<seat>/<work-item>/   [exec/<seat>/<item>]
+        +-- agent/state/runtime/worktrees/product/<seat>/<work-item>/   [exec/<seat>/<item>]
 
 Native `git worktree`, not clones: a clone would need fetching to integrate and
 would let a seat's history diverge invisibly. Worktrees share the object database
@@ -55,10 +55,11 @@ ROOT = os.path.dirname(os.path.dirname(STATE))
 # must stop being a six-agent scratchpad: executors get worktrees, not this.
 PRODUCT_REPO = os.path.join(ROOT, "Dabbler", "dabbler-code")
 
-# Under the existing `.claude/worktrees/` location, which already holds a Thebes
+# Under agent/state/runtime/worktrees/ (CEO 2026-11-10: the only place a checkout lives;
+# formerly .claude/worktrees/, which held a Thebes
 # worktree (`wave7-agentview`). Product worktrees are namespaced beneath `product/`
 # so the two can never collide and neither cleanup can reach the other.
-WORKTREE_ROOT = os.path.join(ROOT, ".claude", "worktrees", "product")
+WORKTREE_ROOT = os.path.join(ROOT, "agent", "state", "runtime", "worktrees", "product")
 
 INTEGRATION_BRANCH = "Canary"
 # Not a warning. Every entry point below refuses these outright.

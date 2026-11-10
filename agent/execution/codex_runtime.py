@@ -594,7 +594,7 @@ def auto_register(thread_id, *, state_store=store, factory=None, alive=None, cre
                 raise RuntimeError_("thread-not-on-daemon", str(exc)[:200])
     finally:
         client.close()
-    agents_md = os.path.join(ROOT, "AGENTS.md")
+    agents_md = os.path.join(ROOT, "agent", "AGENTS_DESK.md")
     try:
         with open(agents_md, "rb") as fh:
             digest = hashlib.sha256(fh.read()).hexdigest()

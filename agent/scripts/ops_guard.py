@@ -190,7 +190,7 @@ def decide(payload, state_store=None, teams_mod=None):
                 is_team = False
             if is_team:
                 return ("CEO 2026-11-10: nothing is created on the Desktop outside the Thebes repo "
-                        "(%s). Work in your branch's worktree under .claude/worktrees/ and put "
+                        "(%s). Work in your branch's worktree under agent/state/runtime/worktrees/ and put "
                         "documents in Dabbler/dabbler-docs/." % stray)
         if GIT_WRITE.search(command):
             try:
