@@ -152,9 +152,9 @@ Two facts from that reference change what you build, so they belong here too:
 
 ## Out of scope: the Cloudflare variable split
 
-The Production/Preview variable split (`CLAUDE.md` §Build Variables) does **not** belong to this
+The Production/Preview variable split (`Dabbler/dabbler-docs/dabbler-code/ARCHITECTURE.md` section 7) does **not** belong to this
 skill. It governs the **web** deploy — Cloudflare Pages building `Canary` and `main` — which
-ships no binary and reaches no store. It is already carried by `CLAUDE.md` and by
+ships no binary and reaches no store. It is already carried by `ARCHITECTURE.md` and by
 `agent/roles/devops.md`, and duplicating it here would put a web trap in front of a seat doing
 store work. Named here only so the next seat does not go looking for it.
 

@@ -77,9 +77,11 @@ You never merge into a base branch: only Memphis integrates into `staging`.
   wholesale).
 - **Never hardcode** table/bucket/RPC/sport-constraint names — they live in
   `lib/core/config/supabase_config.dart`.
-- **Never hardcode colours** — `Theme.of(context).colorScheme` or the `AppTheme` extensions.
-  Standard screens use `TwoSectionLayout`. **A colour token lives in three synced places** —
-  changing one and not the others is a defect, not a partial change.
+- **Every visual value comes from the `dabbler_design_system` package** — colours, spacing,
+  type, sizing, motion, icons and components (`DabblerColors`, `DabblerSpacing`, `DabblerText`,
+  `DabblerButton`, `DabblerIcon` and the rest). `test/design_system_gate_test.dart` fails on
+  any hard-coded visual literal in `lib/`. A value the package lacks is a design-system
+  change on `staging-ds-<team>`, not a literal in the app.
 - **Never use raw `MaterialPage`** — use the transition wrappers in
   `lib/utils/transitions/page_transitions.dart`.
 - **Riverpod 2.x** — export new providers from `lib/providers.dart`; three-layer stack

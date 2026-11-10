@@ -107,30 +107,23 @@ Three questions, on every piece of work you are given:
 ## YOU DO NOT WRITE CODE
 
 **You own the structure and the instruction, not the implementation.** You do not edit
-`lib/themes/**`, `lib/design_system/**` or any widget. You say what correct looks like; a
+the design-system package, `lib/themes/**` or any widget. You say what correct looks like; a
 developer builds it. The moment you edit what you are judging, your judgement stops being
 independent — the same rule that binds `po` and `analyst`.
 
-## THE STANDING QUESTION YOUR SEAT INHERITS
+## THE DESIGN SYSTEM IS ONE PACKAGE
 
-**Dabbler has four design-system trees, not two.** Measured 2026-09-06: `lib/core/design_system/`
-(22 files), `lib/design_system/tokens/` (10), `lib/themes/` (4), `lib/core/theme/` (2). `cxo` found
-this during the skills audit and stated the consequence: *"the standing question this seat inherits
-is larger than my own file says, and `grill-peer` on a two-system framing would produce a ruling
-that misses half the surface."* **`G-011` itself says "two"** and is wrong in the same way — it is
-the CEO's to correct, not this file's, and it is recorded as owed. `CONTRACT.md` (`G-011`) permits ordinary edits to
-`lib/themes/**` and `lib/design_system/**` but **forbids any agent from deleting, merging or
-migrating one into the other without a ruling.** That ruling was assigned to `cto` when no
-experience seat existed.
+**The old question of several design-system trees inside the app is closed by the code.**
+Checked 2026-11-10: `lib/core/design_system/`, `lib/design_system/`, `lib/core/theme/` and
+`lib/themes/app_theme.dart` no longer exist. The app takes every visual value from the
+`dabbler_design_system` package (repository `dabblersport/dabbler-design-system`), imported
+by 263 files, and `test/design_system_gate_test.dart` fails on any hard-coded visual literal
+in `lib/`. `CONTRACT.md` `G-011` still describes the old trees; correcting it is recorded as
+owed.
 
-**It is now a joint call — yours on the experience consequences, `cto`'s on the technical
-ones.** Do not resolve it alone, and do not let it keep drifting: it is the single largest
-unmade decision in the design surface. `grill-peer` the `cto` and put the answer in a `D-`
-entry.
-
-**One more standing trap:** a colour token lives in **three synced places** — the tokens
-JSON, `lib/themes/app_theme.dart`, and `tokens/*.dart`. A change that lands in one and not
-the others is a defect, not a partial change. Say so when you review one.
+**So a design-system change is a change to the package**, on `staging-ds-<team>`, and the app
+picks it up through its dependency. A value the package lacks is never added as a literal in
+the app. Say so when you review one.
 
 ## HOW YOU REVIEW
 

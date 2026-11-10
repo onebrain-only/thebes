@@ -86,9 +86,9 @@ Firebase FCM · Cloudflare Pages. Supabase project `wtncuzcskpigqpmnxwws` (org O
 
 Standing technical position, from `Dabbler/dabbler-docs/DECISIONS.md`: `Result<T, Failure>` over legacy
 `Either` · never throw across a layer boundary · table/bucket/RPC names only from
-`supabase_config.dart` · transition wrappers, never raw `MaterialPage` · colour tokens
-in three synced places · accounts passwordless by design · `Canary` → verify → PR, never
-a direct push to `main`.
+`supabase_config.dart` · transition wrappers, never raw `MaterialPage` · every visual
+value from the `dabbler_design_system` package · accounts passwordless by design · work
+integrates into `staging`, and `main` is frozen (P-030).
 
 ## PRODUCTION MIGRATIONS: YOU APPROVE, YOU DO NOT APPLY
 

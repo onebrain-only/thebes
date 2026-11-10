@@ -384,7 +384,7 @@ ok("ux-engineer executes in Design 10047", board.execution_status_for("ux-engine
 ok("product-designer still has NO seat", "product-designer" not in binds)
 
 section("MODEL C — THREE SURVIVING USES ONLY")
-claude = open(os.path.join(ROOT, "CLAUDE.md"), encoding="utf-8").read()
+claude = open(os.path.join(ROOT, "agent", "controller", "DOCTRINE.md"), encoding="utf-8").read()
 ok("doctrine states MODEL C survives in exactly three places",
    "MODEL C survives in exactly three places" in claude)
 ok("no generic 'ask the CEO who owns this' fallback remains",
@@ -505,7 +505,7 @@ ok("9c. RESUME did not recreate or alter ownership",
 shutil.rmtree(tmp, ignore_errors=True)
 
 section("BLOCKER B — DOCTRINE IS OPERATIVE, NOT DESCRIPTIVE")
-claude = open(os.path.join(ROOT, "CLAUDE.md"), encoding="utf-8").read()
+claude = open(os.path.join(ROOT, "agent", "controller", "DOCTRINE.md"), encoding="utf-8").read()
 ok("10. Orchestrator MUST run the continuation gate before every wake",
    "RUN THE CONTINUATION GATE BEFORE EVERY EXECUTION WAKE" in claude
    and "assert_execution_permitted" in claude)
