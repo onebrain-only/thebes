@@ -84,6 +84,9 @@ def _alert(dispatch, kind, text, *, state_store=store, launcher=None):
 
 WAKE_AFTER_SECONDS = 300       # something waited this long for an orchestrator that is not listening
 WAKE_EVERY_SECONDS = 900       # and the orchestrator is woken at most this often
+WAKE_MAX_PER_ITEM = 2          # and about the same waiting set at most this many times
+_ITEM_IDS = ("decision_request_id", "priority_request_id", "question_id", "key", "_key",
+             "dispatch_id", "ticket")
 WAKE_MESSAGE = ("THEBES_WAKE: your inbox waiter was not running and %s has waited %d minutes "
                 "uncollected (your last turn probably ended on an error while the Mac slept). "
                 "Re-read agent/ORCHESTRATOR.md section 1, start your inbox waiter now (background), "
@@ -140,17 +143,26 @@ def wake_orchestrator(*, state_store=store, cli=None, now=None, waiter=None, pro
     marker = os.path.join(state_store.RUNTIME, "orchestrator-wake.json")
     try:
         with open(marker, encoding="utf-8") as fh:
-            last = json.load(fh).get("at", 0)
+            prev = json.load(fh)
     except (OSError, ValueError):
-        last = 0
+        prev = {}
+    last = prev.get("at", 0)
     if now - last < WAKE_EVERY_SECONDS:
+        return None
+    # Loop breaker (CEO 2026-11-10: one stale dreq woke the orchestrator 46 times). A wake that
+    # did not get the waiting set collected will not the next time either; a NEW item resets it.
+    items = inbox.pending(sid, state_store=state_store, now=now)
+    signature = sorted({str(i.get(k)) for i in items for k in _ITEM_IDS if i.get(k)})
+    count = prev.get("count", 1) + 1 if prev.get("signature") == signature else 1
+    if count > WAKE_MAX_PER_ITEM:
         return None
     cli = cli or ClaudeCli()
     row = cli.find_by_sid(cli.agents(), sid)
     if row is None or row.get("state") == "working":
         return None                     # not running (thebes-up's job) or mid-turn: leave it
     with open(marker, "w", encoding="utf-8") as fh:
-        json.dump({"at": now, "what": what, "waited": int(age)}, fh)
+        json.dump({"at": now, "what": what, "waited": int(age), "count": count,
+                   "signature": signature}, fh)
     try:
         cli.stop(sid[:8])
         if not cli.wait_stopped(sid, 30, pid=row.get("pid")):

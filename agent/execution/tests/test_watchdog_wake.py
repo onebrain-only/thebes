@@ -102,6 +102,20 @@ class WakeTests(unittest.TestCase):
         self.assertIsNone(self.wake(cli, 10), "too soon after the last wake")
         self.assertIsNotNone(self.wake(cli, 25))
 
+    def test_the_same_waiting_item_wakes_at_most_twice(self):
+        cli = FakeCli(self.rows())
+        self.assertIsNotNone(self.wake(cli, 6))
+        self.assertIsNotNone(self.wake(cli, 25))
+        self.assertIsNone(self.wake(cli, 45), "a third wake for the same item is a loop")
+        self.assertIsNone(self.wake(cli, 300))
+        self.assertEqual([c[0] for c in cli.calls].count("resume"), 2)
+        store.update("priority_request", self.req["priority_request_id"], self.req["revision"],
+                     {"status": "collected"})
+        store.create("priority_request", {
+            "reasons": [{"kind": "new-in-backlog", "keys": ["KAN-2"]}], "status": "open",
+            "backlog_signature": "KAN-2@u", "collected_at": None})
+        self.assertIsNotNone(self.wake(cli, 320), "a different item wakes again")
+
     def test_nothing_waiting_or_session_not_running_means_no_wake(self):
         store.update("priority_request", self.req["priority_request_id"], self.req["revision"],
                      {"status": "collected"})
