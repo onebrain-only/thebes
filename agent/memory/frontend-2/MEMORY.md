@@ -1,0 +1,5 @@
+- [Compose, do not duplicate chrome](compose-do-not-duplicate-chrome.md) — my component composes a peer's rather than sitting beside it; never improve theirs under them.
+- [Design source outranks peer guidance](design-source-outranks-peer-guidance.md) — when the brief and the design source disagree, the source wins; cite it and keep going.
+- [Oversized DS files split by part](oversized-ds-files-split-by-part.md) — over 500 lines is a po ticket using part/part-of, never a file I invent or a component I delete.
+- [Read the design source, not just screenshots](design-source-is-readable-not-just-viewable.md) — .card.html inline CSS gives exact values; transcribe rather than estimate.
+- [Shared gallery files get clobbered](shared-gallery-files-get-clobbered.md) — main.dart and the barrel are overwritten mid-wave; re-check before reporting done.

@@ -1,0 +1,2 @@
+- [Docs voice and source audit](docs_voice_and_sources.md) — voice principles for component docs + where usable prose lives across .prompt.md/dartdoc/DECISIONS.md
+- [Bilingual docs recommendation](bilingual_docs_recommendation.md) — recommended English-only docs for the bilingual system; what every page's RTL section must say regardless

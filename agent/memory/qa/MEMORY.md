@@ -1,0 +1,2 @@
+- [Chrome second-tab contention](chrome-second-tab-contention.md) — a second concurrent `flutter run -d chrome` can hang a manually-navigated tab forever with no error signal; fall back to log+code+test, don't wait it out.
+- [Close-ticket procedure](close-ticket-procedure.md) — on PASS, the Done transition + observe_lifecycle is mine to do, not the Orchestrator's

@@ -1,0 +1,1 @@
+- [Repo topology](repo-topology.md) — pushed to GitHub 2026-09-18 (public, Canary=default, no main/CI/deploy yet); font-licence gap ruled, no LICENSE file open

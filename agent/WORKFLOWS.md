@@ -358,6 +358,24 @@ same-capability seat may revise the number at its own Preflight.
 | Project key | `KAN` — "Dabbler Team", **team-managed** |
 | Columns | See §1's table — do not restate the list here; a second copy is exactly how `Development` went missing from this section before. |
 
+### Two labels and three moves (CEO orders, `agent/DECISIONS.md` TH-062 and TH-064)
+
+- **`need-input`.** There is no Need Input column. A ticket that waits on the CEO stays in its
+  own column, takes the `need-input` label, and gets one comment of numbered Arabic steps:
+  what to open, what to click or type, what happens next. Only two kinds qualify: something
+  only he can type or do, and an order only he can give (money, `main`, or something outside
+  the company). A board move, work a team can do, and manual testing never qualify.
+- **`returned`.** There is no Returned column. Work that fails review goes back to its own
+  working status with the `returned` label and a comment giving the reason. The label comes
+  off when the ticket passes.
+- **Operations never jumps to Review.** A ticket in `Design`, `Content` or `Operations` that
+  is not code goes to Done from there. If it is code, it moves to a Front-end or Back-end
+  status first, is built, and only then goes to Review.
+- **Design tickets close like any other.** A design-ready ticket takes the normal build and
+  review path, and Thebes closes it on a review pass.
+- **Keep the ticket current.** Every dispatch, finish and wait moves the status (and the
+  parent's) and leaves a short comment: who, which branch, what is next (TH-063).
+
 **Epics do not render as cards on a team-managed board. Tasks do.**
 
 This is the rule that was got wrong once, and it is why every trackable unit is filed as

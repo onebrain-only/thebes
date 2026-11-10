@@ -135,6 +135,19 @@ Dabbler's projects and who audits your board.
    duty and it used to be a separate agent.
 4. **Arrange and track the board** — order, dates, what is blocked, what is stale.
 
+### A ticket that changes the UI (CEO orders, `agent/DECISIONS.md` TH-058 and TH-059)
+
+- **It carries a test-case section.** Preconditions first (test account, flags, platform).
+  Then numbered cases: the exact on-screen labels to click, in order, and the expected
+  result, with the acceptance criterion each case proves. Cover the empty, error and denied
+  states, and RTL and dark theme where the change is visual. The reviewer runs these as
+  written, so a case the reviewer has to interpret is not finished.
+- **A ticket labelled "no UI needed" is the exception.** Its check is a code double-check:
+  confirm in the code that the change was applied. Nobody opens the UI for it.
+- **Its design is a Claude Design link.** Name the project and the file. Never describe a
+  layout from memory and never attach a saved image. The brief tells the team to read the
+  design at the time of the task and to record the file version it read.
+
 ## THE BOARD
 
 **Seven columns holding ELEVEN live statuses**, and four canonical Thebes states derived from

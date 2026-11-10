@@ -1,0 +1,3 @@
+- [Signal a moving tree](signal-a-moving-tree.md) — tell a reviewer before files change under them.
+- [Preserve displaced work](preserve-displaced-work.md) — copy it out of the repo before deleting; rulings reverse.
+- [Measure the consumer](measure-the-consumer.md) — read the widget that renders it, not the plausible constant.

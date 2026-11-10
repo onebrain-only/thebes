@@ -1,0 +1,48 @@
+- [Three islands vision](thebes-three-islands-vision.md) — CEO's target workflow shape (Listener / Jev decision group / execution), ChatGPT wake limit
+- [Orchestrator delegates, never executes](orchestrator-delegate-not-execute.md) — CEO: all code/git/push/DB work goes to teams; orchestrator only dispatches and decides
+- [DB brief rules](briefs-no-drop-no-prod-test-writes.md) — no DROP, no apply_migration, no test writes on live Supabase (DROP now Memphis's, see autonomy-constitution)
+- [Run only PM/PO](orchestrator-runs-only-pm-po.md) — rulings and design/behaviour judges go to Memphis as one dispatch
+- [Cleanup after integration](cleanup-after-integration.md) — work lives only on Alpha + Dabbler/dabbler-code; remove temp branches/worktrees once integrated
+- [Claude builds, Codex QAs](dev-claude-qa-codex-flow.md) — CEO 2026-10-13: Claude Code does the work, Codex runs QA in review, defects return to Development
+- [Location permission rule](location-permission-rule.md) — CEO 2026-10-13: ask the OS once; if denied, every location surface opens a manual 'Set location' drawer; no re-prompts
+- [UI tickets carry test scenarios](ui-tickets-test-scenarios.md) — CEO 2026-10-14: click-by-click TCs + expected result in every UI ticket, for Codex QA
+- [CEO delegates decisions](ceo-delegates-decisions.md) — CEO 2026-10-14: I decide; routing choices to him is riskier (he approves unread, even DROP); safety must be auto-deny rules
+- [Designs = Claude Design](designs-from-claude-design.md) — CEO 2026-10-15: all design refs go to the Claude Design project; Messaging is 60c6ce9d
+- [No PO tickets during Messaging launch](messaging-no-po-tickets.md) — CEO 2026-10-15: I propose, CEO creates via Codex gate; current work only
+- [CEO actions in Arabic](ceo-actions-in-arabic.md) — CEO 2026-10-18: every action asked of him is written in Arabic, step by step
+- [Offline mode / on-device cache](offline-mode-cache-decision.md) — CEO 2026-10-20: cache feeds+listings on device, open on cached feed, offline banner, offline settings sync
+- [Don't nag on stalled review](review-stalled-dont-nag.md) — CEO 2026-10-21: silent on review_stalled, keep working
+- [Design tickets: no special rule](never-close-design-tickets.md) — CEO 2026-10-22: design-ready → normal FE/BE flow → Thebes closes on review pass
+- [Files to CEO: full path + command](ceo-files-full-path-command.md) — give /private/tmp path plus open -e / pbcopy command
+- [No board edits to CEO](ceo-dont-hand-board-edits.md) — Jira edits go to PO with retries, never to the CEO
+- [PO makes no follow-up tickets](po-no-followup-tickets.md) — CEO 2026-10-21: PO finishes or returns; new tickets via PM or CEO-through-Codex only
+- [PM runs the board; PO in teams](pm-runs-board-po-in-teams.md) — CEO 2026-10-21: run PM not PO; cross-team blockers only; Need Input column + instruction comment
+- [Need Input eligibility](need-input-eligibility.md) — CEO 2026-10-21: only CEO-typed commands or CEO orders to a waiting team; column REMOVED, label + Arabic steps only
+- [CEO approves in chat](ceo-approves-in-chat.md) — CEO 2026-10-22: he replies "موافق <ticket>" here; I write the Jira comment myself (SUPERSEDED by autonomy-constitution)
+- [CEO standing approvals](ceo-standing-approvals.md) — 2026-10-22: additive migrations, QA test data, Worker/Alpha deploy, free Cloudflare; no per-action ask (SUPERSEDED by autonomy-constitution)
+- [Exhausted review: no CEO approval](exhausted-review-no-ceo-approval.md) — CEO 2026-10-22: Thebes accepts coverage-limit failures by code; defects are the orchestrator's; refusals are Thebes fixes
+- [Keep Jira current](keep-jira-status-current.md) — CEO 2026-10-23: transition + comment on every dispatch/finish so he can track
+- [Codex only reviewer](ceo-reviews-himself.md) — CEO 2026-10-26: default path again; Codex reviews, not CEO nor orchestrator (supersedes localhost-first and chat approvals)
+- [Status from Jira, complete](status-from-jira.md) — CEO 2026-10-24: read Jira before every status; full status, never "no result yet"
+- [Operations never jumps to Review](operations-never-to-review.md) — CEO 2026-10-24: Design/Content/Operations → never Review/Done directly; code work goes FE/BE first, then Review
+- [Returned column removed](returned-column-removed.md) — CEO 2026-10-24: returned work goes back to its own column + `returned` label
+- [Design link = re-read now](design-link-means-reread.md) — CEO 2026-10-24: a design link in a task means read it fresh and implement as is; never an old copy
+- [Localhost first](ceo-tests-localhost-first.md) — CEO 2026-10-30 REINSTATED: app/UI changes tested on localhost by team/Edfu before Alpha; no hosted-site password typing ever
+- [Order = approval](order-is-approval.md) — CEO 2026-10-25: once he orders, never ask him to approve it again
+- [Edfu is QA](edfu-is-qa-never-build.md) — CEO 2026-10-25: never dispatch build work to Edfu; check lane in teams.json
+- [Never stop, never hand steps](never-stop-never-hand-steps.md) — CEO 2026-10-26: work never stops; I and teams do everything, no steps/permission asks to him
+- [Status words = board column](status-words-board-column.md) — CEO 2026-10-27: شغال=FE/BE/Ops, خلصت=Review/Done; never "done but still in X"
+- [Autonomy constitution](autonomy-constitution.md) — CEO 2026-10-27: only money / main / outside reach him; all technical is Thebes's (autonomy.json, D-043)
+- [No-UI-review tickets](no-ui-review-tickets.md) — CEO 2026-10-29: "no UI needed" tickets = code double-check only, no UI opening
+- [No tickets without CEO approval](no-tickets-without-ceo-approval.md) — CEO 2026-10-30: no new-scope tickets unasked; D-046: supporting tickets are fine
+- [Facts + orders gate](orchestrator-facts-and-orders.md) — D-044/D-046: fact block; reviewed work auto-merges; only Epics/new scope need his order; never poll
+- [Liveness every team, every 5 min](liveness-every-team.md) — CEO 2026-11-01 D-045: probe ALL teams incl. idle; LIVENESS rows are the truth; revive silent teams
+- [One orchestrator conversation](one-orchestrator-conversation.md) — CEO 2026-11-02 D-048: rotation off; retired chats block + relay to the live one
+- [D-049 parallel throughput](d049-parallel-throughput.md) — CEO 2026-11-02: stack on checked commits, tier-1 auto pass, Ready ≥10, same Epic ≠ dependency
+- [Code DoD: review PASS = Done](code-dod-review-pass-done.md) — CEO 2026-11-04: integration is a separate Memphis ticket created straight in Operations
+- [Focus: finish, not create](focus-finish-not-create.md) — CEO 2026-11-04: PM cuts fewer tickets; finish current work end to end
+- [Batch Alpha merges](batch-alpha-merges.md) — CEO 2026-11-04: defer integration/migrations; batch when needed or end of day (terminal prompts interrupt him)
+- [Where things live](where-things-live.md) — CEO 2026-11-05: plans only in dabbler-docs; no PNGs; live test before screenshot; branch per team not story
+- [CEO work rules 11-05](ceo-work-rules-1105.md) — no per-task folders, plans in dabbler-docs, design from link not PNG, live test before screenshots, one branch per team
+- [Rescue = ack only](memphis-rescue-ack-only.md) — devops 2026-11-05: KAN-833/827/848 rescues get a single "ack", no dreq
+- [Jira sole task reference](jira-sole-task-reference.md) — CEO 2026-11-10: Jira board is the only task reference; old 'To Do' backlog to be deleted

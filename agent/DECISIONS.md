@@ -1,6 +1,8 @@
 # Thebes durable decisions and invariants
 
-Current as of 2026-09-12. Append or supersede; do not silently rewrite history.
+Current as of 2026-11-10. Append or supersede; do not silently rewrite history.
+Entries up to `D-052` keep their `D-` prefix; new entries are `TH-053` onward (see the
+numbering note above `TH-053`).
 
 This log owns durable cross-program decisions and their rationale. Exact mechanics remain
 in the governing workflow/state source. Historical ticket decisions and Product technical
@@ -1056,3 +1058,270 @@ binds the session that was not there before it ran, then sweeps that team's copi
 - `sql_hook.MIGRATIONS_REF` (`origin/staging`), `cloud_lane` and `cloud_prompt` (`staging-cloud-<key>`), `cut_plan`, `teams.json` and `autonomy.json`.
 
 **Not done here.** The fixed push rules `Bash(git -C * push origin integrate-staging:staging)` and `…integrate-staging-ds:staging` must be added to the permission allow list by the CEO; an agent adding a permission rule is refused as self-modification. Until they exist, `integrate.dispatch_for` waits with `push-rule-missing`.
+
+---
+
+# Standing CEO orders moved in from session memory (2026-11-10)
+
+Until 2026-11-10 the orders below lived only in the orchestrator's private session memory
+on one machine. They are recorded here so that a fresh clone carries them. Each entry gives
+the date and the CEO's words where they were kept, the rule as it stands today, and the
+order that narrowed or replaced any part of it. The original memory files are kept unchanged
+in `agent/archive/2026-11-10/user-memory/`.
+
+**Numbering.** From this point new Thebes entries use the prefix `TH-` and continue the
+number series (`TH-053` follows `D-052`). `D-` is the prefix of the experience decisions in
+`Dabbler/dabbler-docs/DECISIONS.md`; the two logs no longer share a prefix for new entries.
+
+## TH-053 — The orchestrator delegates and never executes
+**Date:** 2026-10-07 · **By:** CEO · **Status:** ACTIVE
+
+**Rule.** The orchestrator is a dispatcher. Every execution step goes to a team as a
+dispatch: code, git merges, pushes, pulls into a checkout, database applies. The
+orchestrator keeps discussion, decisions, review of results and the conversation with the
+CEO.
+**Why.** The orchestrator had been merging, pushing and applying migrations by hand. That
+caused faults and kept it busy when new work arrived.
+**Where.** `agent/ORCHESTRATOR.md`; `CLAUDE.md` "Which session you are".
+
+## TH-054 — Database work in a team session
+**Date:** 2026-10-08, amended 2026-10-13, 2026-10-14 and 2026-10-27 · **By:** CEO · **Status:** ACTIVE
+
+**Rule.**
+- A team never runs `DROP` and never calls `apply_migration`. A replacement is done by
+  `RENAME` to `*_legacy_vN` plus `REVOKE`. A change is applied as ordered `execute_sql`
+  steps, each run once.
+- Destructive SQL is Memphis's. Memphis takes a `thebes_backup` snapshot first and records
+  the action in the ledger (D-043). It is not a CEO stop.
+- Only Memphis applies migrations (CEO 2026-11-10, knowledge inventory Q8).
+- Tests do not sweep or scan real tables. They use specific test rows.
+- Only the Supabase project `wtncuzcskpigqpmnxwws` is used. The other project on the same
+  account is never touched.
+
+**Amendment 2026-10-13 (CEO).** All accounts and data in `wtncuzcskpigqpmnxwws` are test
+data; there are no real users yet. Reviewed migrations in a ticket's scope may be applied
+there, and write and Realtime tests may run there, in dependency order, with the current
+state checked first and a rollback written down. Stop if real user data appears. A test that
+was written and not run is never counted as passed.
+**Amendment 2026-10-14 (CEO, ledger ref `cloudflare-messaging-approval`).** The Messaging
+Worker and D1 on the Cloudflare free tier are approved. Not approved: R2, any paid plan, a
+custom domain or DNS change, any change to the Pages project `webapp` or to dabbler.pro.
+Agents never write a secret value anywhere; the CEO sets secrets himself.
+**Why.** On 2026-10-08 teams lost about three hours to sessions that hung on `DROP` and
+`apply_migration`, and one team inserted test rows into live tables.
+**Where.** `agent/state/registry/autonomy.json`; `agent/scripts/sql_hook.py`; the dispatch
+envelope in `agent/execution/conversation_dispatch.py`.
+
+## TH-055 — The orchestrator runs only `pm` and `po`
+**Date:** 2026-10-09, amended 2026-10-21 and 2026-11-10 · **By:** CEO · **Status:** ACTIVE
+
+**Rule.** The orchestrator runs two seats itself, `pm` and `po` (`po-2` for the design
+system), in the background. A ruling from `cto`, `cpo` or `cxo` is one question dispatch to
+Memphis that names every seat needed; Memphis returns one answer. A design-fidelity judge
+goes to Memphis (`cxo`) and a behaviour judge goes to Memphis (`qa`). The orchestrator never
+starts those seats as its own subagents.
+**History.** On 2026-10-21 the CEO moved the PO into the teams. On 2026-11-10 (knowledge
+inventory Q6) that was reversed: the PO runs only under the orchestrator, and a team that
+needs a scope or acceptance answer ends its turn with one `decision_required` question.
+**Where.** `agent/ORCHESTRATOR.md`; `agent/state/registry/teams.json`.
+
+## TH-056 — Cleanup after integration
+**Date:** 2026-10-11 · **By:** CEO · **Status:** ACTIVE (target branch changed by D-052)
+
+**Rule.** Finished work ends in one place: the integration branch on origin (`staging`
+since D-052) and the local folder `Dabbler/dabbler-code`. A temporary branch, scratch copy
+or worktree is removed once its work is integrated. A branch is deleted only when an
+ancestor check proves it is merged, or when it is an explicitly abandoned duplicate. Never
+delete `main`, `Canary`, `Alpha`, `alpha-ds`, `staging`, `staging-ds` or anything in flight.
+A refusal from `ops_guard` is reported, never bypassed.
+**Why.** The CEO runs the app from `Dabbler/dabbler-code` and wants one place, with no
+leftover branches or folders.
+**Where.** `agent/WORKFLOWS.md` (branches); `agent/execution/integrate.py`.
+
+## TH-057 — Claude builds, Codex reviews
+**Date:** 2026-10-13, reaffirmed 2026-10-26 · **By:** CEO ("back to the default path, codex review not me or you, codex only reviewer now") · **Status:** ACTIVE
+
+**Rule.** Claude Code teams build. Work that changes the product (code, design system,
+migrations) stops in Review, and Codex carries the review. A defect sends the ticket back to
+Development for the same team. The orchestrator never reviews product work and never starts
+a judge for it. The CEO does not test or approve individual tickets. Text deliverables
+(reports, plans, answers) are judged by the orchestrator in one pass.
+The review channel is Codex by default; the orchestrator may switch it to Edfu
+(`review_queue channel`).
+**Where.** `agent/REVIEWER.md`; `agent/execution/review_queue.py`.
+
+## TH-058 — UI tickets carry click-by-click test cases
+**Date:** 2026-10-14, exception added 2026-10-29 · **By:** CEO · **Status:** ACTIVE
+
+**Rule.** Every ticket that changes the UI has a test-case section: preconditions (account,
+flags, platform), then numbered cases with the exact on-screen labels to click, the expected
+result, and the acceptance criterion each case proves. It covers empty, error and denied
+states, and RTL and dark theme where the change is visual.
+**Exception (2026-10-29).** A ticket labelled "no UI needed" is a code double-check only:
+confirm in the code that the change was applied, then pass it. Nobody opens the UI for it.
+**Why.** Review slows down when the reviewer has to work out what to press.
+**Where.** `agent/roles/po.md` "A ticket that changes the UI".
+
+## TH-059 — A design is read from its Claude Design link, at task time
+**Date:** 2026-10-15 ("In all designs just refer to Claude design"), 2026-10-24, 2026-11-05 · **By:** CEO · **Status:** ACTIVE
+
+**Rule.** Any ticket or brief that needs a design points to the Claude Design project
+(DesignSync, read-only). No invented layouts and no saved PNG copies. When a task carries a
+design link, the team opens the design at that moment, records the file version and the read
+time in its report, and implements it as it is. If the design cannot be read, the team
+reports BLOCKED; it never builds from memory or from old code.
+The Messaging project is `60c6ce9d-7bc1-48b0-855b-550493932c60`.
+**Why.** KAN-640 was built from an old version of a design file. The CEO called it "the
+biggest mistake".
+**Where.** `CLAUDE.md` "Where things live"; `agent/roles/po.md` "A ticket that changes the UI".
+
+## TH-060 — What is asked of the CEO is written in Arabic, with full paths
+**Date:** 2026-10-18 ("بعتلي الاكشنز اللي انت محتاجها مني دايما بالعربي"), 2026-10-21 · **By:** CEO · **Status:** ACTIVE
+
+**Rule.** Anything the CEO is asked to do is written in Arabic as one numbered list: where
+to go, what to click or type, what to accept. Commands, paths and button labels stay as they
+appear on screen. A file handed to him is given with its full real path and a ready command
+(`open -e <path>` to read it, `pbcopy < <path>` to copy it).
+**Where.** `CLAUDE.md` "Two ways of speaking"; `agent/ORCHESTRATOR.md`.
+
+## TH-061 — Who creates tickets
+**Date:** 2026-10-21, 2026-10-30, 2026-11-04 · **By:** CEO · **Status:** ACTIVE (narrowed by D-046, D-049)
+
+**Rule.**
+- `pm` runs the board: order, what goes first, what waits, and ticket cutting.
+- `po` never creates a follow-up ticket from an existing one. A gap found inside a ticket is
+  finished inside that ticket or returned to the orchestrator ("i didn't allow PO to make
+  you create infinity tasks").
+- A new ticket for a blocker is cut only when the blocker needs a different team. The same
+  team does both inside the one ticket and leaves a comment.
+- No ticket for new scope without the CEO's order ("متعملش تذاكر تاني من غير موافقتي").
+  D-046 narrowed this: a child, a blocker or a defect on work already in flight is created
+  without asking.
+- Finish before creating (2026-11-04: "ask PM to decrease tasks creation, and let's focus on
+  finishing current tasks end-to-end"). A Ready shortfall is answered by pushing open
+  tickets to Done, not by cutting more.
+- Jira edits (descriptions, labels, moves) are done by `pm` or `po`, with retries. They are
+  never handed to the CEO.
+**Where.** `agent/roles/pm.md`; `agent/roles/po.md`; `agent/ORCHESTRATOR.md`.
+
+## TH-062 — A ticket that waits on the CEO
+**Date:** 2026-10-21 · **By:** CEO ("needs-input column is useless now") · **Status:** ACTIVE
+
+**Rule.** There is no Need Input column. A ticket that waits on the CEO stays in its own
+column with the `need-input` label and a comment of numbered Arabic steps, and he is told in
+chat. Only two kinds qualify: something only he can type or do, and an order he must give
+(under D-043 that means money, `main` or something outside the company). A board move, work
+a team can do, and manual testing never qualify. The CEO is never given a `claude attach`
+command or a session id.
+**Where.** `agent/WORKFLOWS.md` section 2 "Two labels and three moves"; `agent/state/board.py`.
+
+## TH-063 — The board is the truth
+**Date:** 2026-10-23, 2026-10-24, 2026-10-27, 2026-11-10 · **By:** CEO · **Status:** ACTIVE
+
+**Rule.**
+- Jira is the only task reference, for the orchestrator and every team ("المرجع الوحيد في
+  التاسكات ليك وللتيم هو جيرا"). No plan or document is cited as the state of a task. Open
+  work is counted from the board statuses.
+- The ticket is kept current: on every dispatch, finish and wait, its status is moved (and
+  its parent's) and a short comment says who, which branch and what is next.
+- Before any status is given to the CEO, the ticket's Jira status and latest comments are
+  read, and the full picture is reported: column, commit and branch, what was found, what is
+  next. Never "no result yet".
+- Status words follow the column. A ticket is "working" only in Front-end, Back-end or
+  Operations. It is "finished" only in Review or Done. If the column is wrong against the
+  evidence, fix the column and report the new one; do not explain the gap to him.
+**Where.** `agent/WORKFLOWS.md`; `agent/execution/jira_sync.py`.
+
+## TH-064 — Board moves
+**Date:** 2026-10-22, 2026-10-24 · **By:** CEO · **Status:** ACTIVE
+
+**Rule.**
+- A ticket in the Operations column (Design, Content, Operations) never jumps to Review.
+  Work that is not code goes to Done from there. Code work moves to a Front-end or Back-end
+  status first, is built, and only then goes to Review.
+- There is no Returned column. Returned work goes back to its own working column with the
+  `returned` label and a comment giving the reason. The label is removed when the ticket
+  passes.
+- Design tickets have no special closing rule. A design-ready ticket takes the normal build
+  and review path, and Thebes closes it on a review pass.
+**Where.** `agent/WORKFLOWS.md` section 2 "Two labels and three moves"; `agent/execution/review_queue.py`.
+
+## TH-065 — Local test first; no password typed on a hosted site
+**Date:** 2026-10-23, reinstated 2026-10-30 · **By:** CEO · **Status:** ACTIVE (integration target changed by D-052)
+
+**Rule.** App and UI changes are run and checked on localhost, by the team or by Edfu,
+before the commit is integrated. The CEO does not test by hand. No agent types a password or
+reads the keychain on a hosted site. Localhost with seed or test values is allowed. For a
+check on a hosted site, the CEO signs in once in his own Chrome and the agent drives that
+open session.
+**Why.** KAN-640 was pushed first and tested after; the test showed the old screen and a
+cycle was lost.
+**Where.** `agent/WORKFLOWS.md` (Done); `agent/REVIEWER.md`.
+
+## TH-066 — An order is an approval; work never stops
+**Date:** 2026-10-25 ("اديتك امر، يعني انا موافق"), 2026-10-26 · **By:** CEO · **Status:** ACTIVE (bounded by D-043, D-044, D-046)
+
+**Rule.** Once the CEO orders something, it is approved; nobody returns to ask him to
+approve the same thing. Work never stops to wait for him, and he is not handed steps or
+permission requests. Thebes decides and acts. The limits: money, `main` and anything outside
+the company stay his (D-043), and "do everything" never means inventing new scope (D-044,
+D-046). Those few items are batched into one short ask that blocks nothing else. A newer CEO
+order overrides an older Jira comment. A classifier denial is never worked around.
+**Where.** `agent/state/registry/autonomy.json`; `agent/state/registry/decision_gate.json`;
+`agent/ORCHESTRATOR.md`.
+
+## TH-067 — Edfu is QA and never builds
+**Date:** 2026-10-25 · **By:** CEO ("edfu is our QA right why working on front end task?") · **Status:** ACTIVE
+
+**Rule.** Edfu never builds, fixes, pushes or writes to the database. No frontend or backend
+work is dispatched to it. The lane of a team is read from
+`agent/state/registry/teams.json` before a dispatch.
+**Where.** `agent/state/registry/teams.json`; `agent/execution/conversation_dispatch.py`.
+
+## TH-068 — Review that cannot finish never reaches the CEO
+**Date:** 2026-10-21, 2026-10-22, 2026-10-27 · **By:** CEO · **Status:** ACTIVE
+
+**Rule.** When a review runs out of cycles and the only failing check is a coverage limit of
+the reviewer (no defect wording, every other check passing), Thebes accepts the ticket by
+code and writes the unverified part on it. A defect, or a doubt, goes to the orchestrator. A
+refusal, or a brief the linter rejects, is a Thebes fix. A `review_stalled` alert is handled
+silently: the reviewer is woken by code and work continues. A reviewer's question is
+answered within 15 minutes.
+**Why.** The CEO approves such items unread, so the approval protects nothing and costs his
+attention.
+**Where.** `agent/execution/exhaustion.py`; `agent/execution/review_queue.py`.
+
+## TH-069 — Where things live
+**Date:** 2026-11-05 · **By:** CEO (msg-20261105060822-79366836) · **Status:** ACTIVE
+
+**Rule.** Plans, briefs and reports live only in `Dabbler/dabbler-docs/`. No folder or
+worktree per task. One branch per team. No design PNGs. A live test comes before a
+screenshot, and a screenshot taken is deleted when the task ends. Documents are moved, never
+deleted on an agent's judgment.
+**Where.** `CLAUDE.md` "Where things live" is the full text of this order.
+
+## Session-memory orders that are no longer live
+
+| Memory file | Dated | What it said | Replaced by |
+|---|---|---|---|
+| `ceo-decide-dont-wait` | 2026-10-03 | The orchestrator decides without waiting, inside hard stops | D-035, then D-043 |
+| `ceo-delegates-decisions` | 2026-10-14 | Routing choices to the CEO is the riskier path | D-035, then D-043 |
+| `messaging-no-po-tickets` | 2026-10-15 | During the Messaging launch the PO creates no tickets | D-046 and TH-061 |
+| `ceo-approves-in-chat` | 2026-10-22 | The CEO replies "موافق <ticket>" in chat | D-043 |
+| `ceo-standing-approvals` | 2026-10-22 | A list of standing approvals | D-043 (`autonomy.json`) |
+| `pm-runs-board-po-in-teams`, PO part | 2026-10-21 | The PO runs inside the teams | TH-055 (2026-11-10) |
+| `need-input-eligibility`, column part | 2026-10-21 | A Need Input column and its Jira statuses | TH-062 |
+| `ceo-tests-localhost-first`, CEO part | 2026-10-23 | The CEO tests the localhost URL and says "موافق" | TH-057 and TH-065 |
+| `autonomy-constitution`, one line | 2026-10-27 | Done means the commit is on Alpha | D-052 |
+| `code-dod-review-pass-done` | 2026-11-04 | A review PASS is Done; integration is a separate ticket | D-052 |
+| `batch-alpha-merges` | 2026-11-04 | Alpha merges are batched to the end of the day | D-052 |
+| `memphis-rescue-ack-only` | 2026-11-05 | Three named rescue tickets get a single "ack" | Expired with those tickets |
+| `thebes-three-islands-vision` | 2026-10-01 | A target shape of three groups | History; see D-031 to D-039 |
+
+These session-memory files repeat an entry that already exists above and add nothing:
+`one-orchestrator-conversation` (D-048), `liveness-every-team` (D-045),
+`d049-parallel-throughput` (D-049), `orchestrator-facts-and-orders` (D-044, D-046),
+`autonomy-constitution` (D-043).
+
+Two product rules were moved to `Dabbler/dabbler-docs/DECISIONS.md`: the location permission
+rule (P-045) and offline mode (P-046).

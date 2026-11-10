@@ -1,0 +1,1 @@
+- [Jira Done transition: attempt it](jira-done-transition-blocked.md) — blocked via mcp__atlassian__, worked via Rovo; plus the release→review-context ordering.

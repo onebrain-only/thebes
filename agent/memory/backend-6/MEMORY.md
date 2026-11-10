@@ -1,0 +1,2 @@
+- [Denied write tool has no substitute](feedback_denied_tool_no_substitute.md) — apply_migration denied never means fall back to execute_sql; confirmed by team-lead and backend-4.
+- [DB writes blocked since 2026-09-10](project_db_writes_blocked.md) — apply_migration blocked unevenly: KAN-173 landed, KAN-170 denied 3x. A fresh session does not lift it; attempt, don't assume.

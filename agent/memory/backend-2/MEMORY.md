@@ -1,0 +1,2 @@
+- [Overload dispatch defeats catalogue sweeps](pg-overload-dispatch-defeats-catalogue-sweeps.md) — "zero callers" is not provable from pg_proc/pg_depend; prove reachability by behaviour.
+- [anon EXECUTE needs effective privilege](anon-execute-needs-effective-privilege.md) — bare `=X` PUBLIC grant means anon can execute functions whose proacl never names it.

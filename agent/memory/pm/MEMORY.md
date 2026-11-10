@@ -1,0 +1,4 @@
+- [Rulings KAN-437](rulings_kan437.md) - CEO/CTO rulings on listings, favourites, price, skill, sorting (2026-10-08)
+- [Board state 2026-10-09](board_state_2026-10-09.md) - only KAN-437 and KAN-438 open; Backlog/Ready empty
+- [Lanes and process](lanes_and_process.md) - rewritten 2026-11-10: lanes, staging branches, PM/PO split, what reaches the CEO, with the D-/TH- entry for each
+- [Open items](open_items.md) - D-042 draft status, unapplied migrations, deferred scope, owners

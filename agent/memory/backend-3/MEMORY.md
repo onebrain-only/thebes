@@ -1,0 +1,1 @@
+- [Verifying recompute, not increment](verifying-recompute-not-increment.md) — a balance equality assertion is decorative if the buggy path reaches the same number; delete a ledger row instead.

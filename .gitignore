@@ -17,10 +17,13 @@
 # otherwise pull in machine-local settings. Last matching rule wins.
 /.claude/settings.local.json
 
-# Auto-written session state, not knowledge. Contains live test credentials.
-# Same category as .claude-flow/, which /* already excludes.
-/.claude/agent-memory
-/agent/memory/
+# Seat memory (`agent/memory/`, linked from `.claude/agent-memory`) is tracked since
+# 2026-11-10 so a fresh clone carries what each seat learned. Seats write it during a
+# session: run `python3 agent/scripts/secret_scan.py` before committing it.
+# A seat that must keep a test credential writes it to `credentials.local.md`, which
+# stays out of git.
+/agent/memory/*/credentials.local.md
+/agent/memory/*/*.local.md
 /agent/claude-flow/
 /agent/archive/2026-11-10/claude-flow-state/
 

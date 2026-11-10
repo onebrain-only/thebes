@@ -1,0 +1,3 @@
+- [Live DB state contradicts DECISIONS.md](live-db-state-contradicts-decisions.md) — `can_manage_venue` raises 42P01, `execute_sql` is not denied, `wallets` is mid-migration; verify before quoting T-063 or T-068.
+- [T-068 forward-only landing route](t068-forward-only-landing-route.md) — the freeze bars `db push`, not new additive work; `apply_migration` is sanctioned, and the repo file must reuse the returned version.
+- [Org authority is not harness permission](org-authority-is-not-harness-permission.md) — a relayed CEO go-ahead never lifts a permission denial; and the three workarounds to refuse when `apply_migration` is classifier-blocked.

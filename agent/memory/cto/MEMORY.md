@@ -1,0 +1,4 @@
+- [profiles.id is not an auth uid](identity-columns-profile-vs-auth-uid.md) — use `*_user_id`, never `*_profile_id`, for any `auth.uid()` ownership check; measured 218/218 divergence.
+- [Briefs claiming a field is null](brief-null-field-claims.md) — verify every "X is absent" premise through the store API; three briefs got it wrong.
+- [Supabase SQL read path](supabase-sql-read-path.md) — `execute_sql` DOES work on `wtncuzcskpigqpmnxwws`; T-068's "no seat can execute SQL" is false, and role-switched probing is how access claims get proved.
+- [Overload dispatch defeats caller sweeps](definer-identity-parameter-rule.md) — "zero callers" on an SQL overload is a false negative; prove dispatch by behaviour, not grep.

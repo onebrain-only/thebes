@@ -1,0 +1,1 @@
+- [Re-read ACs before recording a verdict](feedback_reread_acs_before_verdict.md) — ACs move mid-review; a settled verdict is hard to retract, and `stop` is the fallback.

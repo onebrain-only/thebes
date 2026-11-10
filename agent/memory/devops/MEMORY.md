@@ -1,0 +1,3 @@
+- [Thebes worktree allocator hardcodes Canary as base branch](thebes-worktree-base-branch.md) — bootstrapping any new Project repo needs a Canary branch, not main, or allocation fails
+- [dabbler-design-system CI](dabbler-design-system-ci.md) — pinned Flutter 3.44.1; 4/1382 tests structurally cannot pass in a clean checkout (depend on a gitignored local-only sibling dir), escalated not fixed
+- [Repo topology](repo-topology.md) — pushed to GitHub 2026-09-18 (public, Canary=default, no main/CI/deploy yet); font-licence gap ruled, no LICENSE file open

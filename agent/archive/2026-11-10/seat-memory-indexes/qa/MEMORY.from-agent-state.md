@@ -1,0 +1,1 @@
+- [Close-ticket procedure](close-ticket-procedure.md) — on PASS, the Done transition + observe_lifecycle is mine to do, not the Orchestrator's

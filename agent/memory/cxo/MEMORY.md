@@ -1,0 +1,19 @@
+- [Ruling from a stale snapshot](ruling-from-stale-snapshot.md) — twice in one day I ruled on what a tree must contain instead of reading it.
+- [Token source of truth](token-source-of-truth.md) — colors.css only; fig-tokens.css is an export diagnostic, never authoritative.
+- [Measure before ruling on contrast](measure-before-ruling-on-contrast.md) — a failing pairing is usually a role/structure defect, not a wrong hex.
+- [DECISIONS.md identifier collision](decisions-md-identifier-collision.md) — no reservation step; two concurrent cxo sessions both wrote D-006. How to resolve one.
+- [Preserve the wrong reason when correcting](preserve-the-wrong-reason-when-correcting.md) — a revised ruling states the argument it abandoned, not just the new one.
+- [Source precedence: .jsx vs prose](source-precedence-jsx-vs-prose.md) — when the implementation and the prose disagree, and which wins (D-005/D-013).
+- [Design source authority map](design-source-authority-map.md) — figma-header vs invention vs ui_kit demo vs export artefact; classify before ruling.
+- [A touch target is not the painted mark](touch-target-is-not-the-painted-mark.md) — grow into the pitch, don't inflate the drawing (D-032).
+- [Documentation prose already exists](documentation-prose-already-exists.md) — 64 prompt.md + FOUNDATIONS.md + dartdoc; documenting is assembly, not authoring.
+- [RTL is asserted but never rendered](rtl-is-asserted-but-never-rendered.md) — no direction switcher in the gallery; every RTL contract is unverified prose.
+- [Figure classes: ruled / declared / measured](figure-classes-ruled-declared-measured.md) — D-037(c) forbids only the measured class; classify before calling a number a defect.
+- [@specimen confirms, never replaces](specimen-confirms-never-replaces.md) — swapping a figure for a specimen leaves the reader measuring a screenshot.
+- [Foundations are not a purpose group](foundations-are-not-a-purpose-group.md) — D-033(b)'s nine subdivide Components only; read (b) with (a).
+- [Authored values are read, never copied](authored-values-are-read-never-copied.md) — D-043's fourth class; and check what you cannot eliminate, eliminate what you can.
+- [D-047(e) is about object sets, not reads](d047e-is-about-object-sets-not-reads.md) — "neither calls the other" forbids merging 58-vs-45, not a second read of _order.md.
+- [The doc corpus markdown is barely parsed](doc-corpus-markdown-is-barely-parsed.md) — '# ' and '## ' only; anything else renders literally. Check parsed-at-all before styling.
+- [Ask what else the mechanism predicts](ask-what-else-the-mechanism-predicts.md) — finding one instance of a structural gap and stopping there is how D-050 named the wrong defect as largest.
+- [A ruling says what should be](a-ruling-says-what-should-be-only-the-tree-says-what-is.md) — never infer corpus contents from a ruling; grep first. Cost me D-051(c)'s whole premise.
+- [Governance citations are not links](governance-citations-are-not-links.md) — the identifier is the address; and why removing them doesn't reopen D-051(b).

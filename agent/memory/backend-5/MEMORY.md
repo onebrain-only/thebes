@@ -1,0 +1,2 @@
+- [Jira transitions are classifier-blocked](feedback_denied_jira_transition_no_workaround.md) — own the transition, still can't run it; report as owed, never delegate or fabricate.
+- [Re-read ACs before recording a verdict](feedback_reread_acs_before_verdict.md) — ACs move mid-review; a settled verdict is hard to retract, and `stop` is the fallback.

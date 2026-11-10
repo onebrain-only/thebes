@@ -1,0 +1,5 @@
+- [Ticket beats brief on contradiction](feedback_ticket_over_brief.md) — when a brief contradicts the ticket's ACs, do the undisputed part and hold the rest until po rules.
+- [Jira Done transition: attempt it](jira-done-transition-blocked.md) — blocked via mcp__atlassian__, worked via Rovo; plus the release→review-context ordering.
+- [Signal a moving tree](signal-a-moving-tree.md) — tell a reviewer before files change under them.
+- [Preserve displaced work](preserve-displaced-work.md) — copy it out of the repo before deleting; rulings reverse.
+- [Measure the consumer](measure-the-consumer.md) — read the widget that renders it, not the plausible constant.

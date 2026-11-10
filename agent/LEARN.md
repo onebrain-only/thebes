@@ -1,6 +1,6 @@
 # Thebes durable operational lessons
 
-Current as of 2026-09-12. This is an evidence-led learning source, not a live work queue,
+Current as of 2026-11-10. This is an evidence-led learning source, not a live work queue,
 ticket history or authority. Decisions derived from lessons belong in `DECISIONS.md`;
 mechanics belong in `WORKFLOWS.md` or `state/README.md`.
 
@@ -250,3 +250,52 @@ sentences rather than by reading the regex again.
 own. Probe a rule with the words someone would really use, especially the ones that add a
 harmless-looking modifier, and do it from outside the file that defines it. The same applies to
 every enumeration in this repository — L-015 was the surface list, this is the grammar.
+
+## L-021 — A denied tool has no substitute
+
+**Classification:** LESSON
+**Observation:** On 2026-09-10 three backend seats were each denied a production write by the
+permission system (KAN-170, KAN-171, and a Jira transition on KAN-175). Each one stopped
+instead of running the same write through a differently named tool, and none asked another
+seat to run it. Four seats recorded the same lesson separately:
+`agent/memory/backend-4/org-authority-is-not-harness-permission.md`,
+`agent/memory/backend-5/feedback_denied_jira_transition_no_workaround.md`,
+`agent/memory/backend-6/feedback_denied_tool_no_substitute.md` and
+`agent/memory/frontend-1/jira-done-transition-blocked.md`.
+**Lesson:** Authority in the organisation and permission in the harness are two systems, and
+the harness wins. The same write through another tool is the same write. A relayed go-ahead
+does not lift a denial, and asking another session to run the denied action is laundering
+it. Stop, confirm nothing was changed, keep the authored work in the repo marked NOT
+APPLIED, and report the action as owed and blocked.
+**Applied decision:** D-043 (permissions are Thebes's, never worked around); TH-054 (who
+applies migrations).
+
+## L-022 — A name sweep cannot see an overload
+
+**Classification:** LESSON
+**Observation:** On KAN-174 (2026-09-10) a seat swept Dart, edge functions, 2,954 catalogue
+bodies, `pg_depend`, triggers, cron and 24 hours of logs, and concluded that the 7-argument
+`rpc_potential_vibes` had no callers. Its 6-argument wrapper was calling it. The same sprint
+found two more functions that a name-based security sweep had missed. `cto` and `po`
+recorded it separately (`agent/memory/cto/definer-identity-parameter-rule.md`,
+`agent/memory/po/dabbler-function-overload-security-blind-spot.md`).
+**Lesson:** A text search finds a function's name and cannot resolve which overload a call
+reaches. `pg_depend` does not record function-to-function calls. "Zero callers" and "all
+`can_*` functions are safe" are claims about names. Prove a dispatch by behaviour: call the
+wrapper and observe which body runs, and check every overload's own body and security mode.
+
+## L-023 — Measure a reported absence before building around it
+
+**Classification:** LESSON
+**Observation:** Three briefs in a row (2026-09-20 and 2026-09-21) said a Persistent State
+field was null when it was set. One cause was a hand-written JSON scan. Another was
+`queue.eligibility_reasons`, which adds `unverified-jira` whenever the caller passes no live
+Jira facts, so a bare `claimable(t)` is false for every task. `cto` and `po` recorded it
+separately (`agent/memory/cto/brief-null-field-claims.md`,
+`agent/memory/po/feedback_read_the_predicate.md`).
+**Lesson:** When the premise of a request is "this is missing, so work around it", the
+absence is the first thing to check. Read the field through `store.py`, and read the
+function that produced a reason code before trusting the code. A reason caused by the
+caller's own omitted argument is not a fact about the data.
+**Applied decision:** `CLAUDE.md` "Persistent State is read and written through
+`agent/state/store.py`".

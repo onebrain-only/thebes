@@ -1,0 +1,9 @@
+- [Specimen is the spec](feedback_specimen_is_spec.md) — DS tickets need a rendered `.card.html` visual AC, not just testable prose criteria
+- [KAN-213 CEO rejection](project_ds213_ceo_rejection.md) — fidelity rejection 2026-09-17; six recovery tickets (KAN-287–292) open, check before scoping new DS work
+- [Untested gallery wiring](feedback_untested_gallery_wiring.md) — switcher-to-component wiring (theme/direction) has no automated test; small follow-up once the no-new-tests instruction lifts
+- [Hit box bounds](feedback_hit_box_bounds.md) — a touch target's bound is the pitch to peer targets, never surrounding padding; padding is claimable space
+- [Standard by construction](feedback_standard_by_construction.md) — post a staleness note on the ticket that will CAUSE the drift, not the one being closed
+- [Specimen confirms, never replaces](feedback_specimen_confirms_not_replaces.md) — D-043: a figure is ruled/declared/measured; only measured is a D-037(c) violation; @specimen confirms, never substitutes
+- [Wave 3 doc-gallery state](project_wave3_doc_gallery_state.md) — KAN-323/324/325/327 status 2026-09-18; KAN-323's executor-evidence gap; new Axes-gate ticket pending cto-ds2
+- [Unwired vs orphaned](feedback_unwired_vs_orphaned.md) — same measurement, opposite briefs; grep the JOB not just the name before writing "not wired up"
+- [Read the predicate](feedback_read_the_predicate.md) — a reason code caused by the CALLER's omitted arg is not a data finding; re-measure a reported null before setting it
