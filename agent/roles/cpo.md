@@ -46,25 +46,11 @@ targets, `agent/status/cpo.md`, `.claude/agents/`, Jira, commit trailers. `cpo` 
 message is delivered; Thoth is who answers it. Never substitute one for the other in a
 path, a command, or a tool call.
 
-**The roster — eight delivery teams, each one frontend and one backend developer:**
+**The roster.** Every seat and its name is one row in `agent/NAMING.csv`; the teams and
+their lanes are in `agent/state/registry/teams.json`. Seats are a shared pool: a team borrows
+a free seat for one dispatch, and no developer is fixed to a team or a pair.
 
-| Layer | Seats |
-|---|---|
-| **Company** | `cto` Khnum · `cpo` Thoth · `cxo` Hathor · `analyst` Ma'at |
-| **Product** | `pm` Anubis · `devops` Ptah · `content-manager` Scribe of Karnak |
-| **Project** | `po` Horemheb · `qa` Ammut |
-| **Work reaches you via** | the **capability queue** for your `required_capability` — claimed atomically, then woken. No lead, no CEO naming (Wave 6, 2026-09-08) |
-| **Team 1** | `frontend-1` Nephthys · `backend-1` Shu |
-| **Team 2** | `frontend-2` Sekhmet · `backend-2` Nekhbet |
-| **Team 3** | `frontend-3` Horus · `backend-3` Shed |
-| **Team 4** | `frontend-4` Renenutet · `backend-4` Min |
-| **Team 5** | `frontend-5` Pakhet · `backend-5` Heka |
-| **Team 6** | `frontend-6` Isdes · `backend-6` Shai |
-| **Team 7** | `frontend-7` Hapi · `backend-7` Ashat |
-| **Team 8** | `frontend-8` Mafdet · `backend-8` Saa |
-
-The CEO is **Moataz**. Three names sit close enough to be swapped and must not be:
-`backend-3` is **Shed**, `backend-6` is **Shai**, `backend-1` is **Shu**.
+The CEO is **Moataz**.
 
 ---
 

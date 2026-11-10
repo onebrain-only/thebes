@@ -1,4 +1,7 @@
-"""Read-only composition of Seat, Role, employee profile, and authority registries."""
+"""Read-only composition of Seat, Role, and authority registries.
+
+An employee profile is derived: a seat's primary_scope is its role's (roles.json).
+"""
 
 import json
 import os
@@ -9,7 +12,6 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 REGISTRY = os.path.join(ROOT, "agent", "state", "registry")
 SEATS = os.path.join(REGISTRY, "seats.json")
 ROLES = os.path.join(REGISTRY, "roles.json")
-PROFILES = os.path.join(REGISTRY, "employee_profiles.json")
 AUTHORITY = os.path.join(REGISTRY, "authority.json")
 CORE_CAPABILITIES = (
     "understand_and_plan", "perform_role_work", "self_review_and_audit",
@@ -34,7 +36,6 @@ def documents():
     return {
         "seats": _read(SEATS),
         "roles": _read(ROLES),
-        "profiles": _read(PROFILES),
         "authority": _read(AUTHORITY),
     }
 
@@ -47,7 +48,7 @@ def validate_registries():
         return [str(exc)]
     expected = {
         "seats": "seat_registry", "roles": "role_registry",
-        "profiles": "employee_profile_registry", "authority": "authority_registry",
+        "authority": "authority_registry",
     }
     for name, record_type in expected.items():
         doc = docs[name]
@@ -60,21 +61,18 @@ def validate_registries():
     if required != CORE_CAPABILITIES:
         errors.append("role registry must declare the four core employee capabilities in order")
     seats = docs["seats"].get("seats") or {}
-    profiles = docs["profiles"].get("profiles") or {}
-    if set(seats) != set(profiles):
-        errors.append("employee profiles must cover exactly the declared seats")
     for seat_id, seat in sorted(seats.items()):
         role_id = (seat or {}).get("role")
         if role_id not in roles:
             errors.append("seat %r names unknown role %r" % (seat_id, role_id))
         if not _ID.match(str(seat_id)):
             errors.append("invalid seat id %r" % seat_id)
-        if not str((profiles.get(seat_id) or {}).get("primary_scope") or "").strip():
-            errors.append("employee %r needs a primary_scope" % seat_id)
     for role_id, role in sorted(roles.items()):
         outputs = (role or {}).get("work_outputs") or []
         if not isinstance(outputs, list) or not outputs:
             errors.append("role %r needs at least one work_output" % role_id)
+        if not str((role or {}).get("primary_scope") or "").strip():
+            errors.append("role %r needs a primary_scope" % role_id)
     decisions = docs["authority"].get("decision_classes") or {}
     for decision_class, rule in sorted(decisions.items()):
         owner = (rule or {}).get("accountable_role")
@@ -94,7 +92,6 @@ def employees():
         raise OrganizationError("; ".join(errors))
     docs = documents()
     roles = docs["roles"]["roles"]
-    profiles = docs["profiles"]["profiles"]
     out = {}
     for seat_id, seat in sorted(docs["seats"]["seats"].items()):
         role_id = seat["role"]
@@ -103,7 +100,7 @@ def employees():
             "employee_id": seat_id,
             "role": role_id,
             "role_family": role["family"],
-            "primary_scope": profiles[seat_id]["primary_scope"],
+            "primary_scope": role["primary_scope"],
             "core_capabilities": list(CORE_CAPABILITIES),
             "accountability": role["accountability"],
             "routine_scope": list(role.get("routine_scope") or []),

@@ -1,6 +1,7 @@
 {
   "record_type": "authority_registry",
   "schema_version": 1,
+  "note": "accountable_role is a role from roles.json, or one of two actors that are not seats and have no binding: `ceo` (the human owner, Moataz) and `task_owner` (whichever seat currently owns the work item in Persistent State). organization/registry.py accepts exactly these two.",
   "decision_classes": {
     "company_direction": {"accountable_role": "ceo", "consulted_roles": ["cpo", "cto", "cxo", "analyst"], "owner_decision": true},
     "company_investment": {"accountable_role": "ceo", "consulted_roles": ["cpo", "pm", "analyst"], "owner_decision": true},

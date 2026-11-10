@@ -110,6 +110,27 @@ class ClaudeRendererTests(unittest.TestCase):
         self.assertEqual(1, renderer.run(True, self.registry, self.bindings,
                                          self.roles, self.agents))
 
+    def test_seat_context_names_the_seat_from_the_naming_table(self):
+        self.write_registry({"backend-1": "backend", "backend-2": "backend"})
+        self.write_role("backend")
+        self.write_binding("backend-1")
+        self.write_binding("backend-2")
+        naming = os.path.join(os.path.dirname(self.registry), "NAMING.csv")
+        with open(naming, "w", encoding="utf-8") as fh:
+            fh.write("Seat,Code Name,Given Name (Arabic),Hieroglyphs,Ancient Pharaonic Lore\n"
+                     "backend-1,Backend 1,\u0634\u0648 (Shu),x,lore\n")
+        with self.assertRaises(renderer.RenderError) as raised:
+            renderer.expected_outputs(self.registry, self.bindings, self.roles, naming)
+        self.assertIn("'backend-2' has no named row", str(raised.exception))
+        with open(naming, "a", encoding="utf-8") as fh:
+            fh.write("backend-2,Backend 2,\u0646\u062e\u0628\u062b (Nekhbet),x,lore\n")
+        outputs = renderer.expected_outputs(self.registry, self.bindings, self.roles, naming)
+        self.assertIn(b"## SEAT CONTEXT", outputs["backend-1"])
+        self.assertIn(b"You are **Shu**.", outputs["backend-1"])
+        self.assertIn(b"You are **Nekhbet**.", outputs["backend-2"])
+        self.assertIn(b"`agent/status/backend-2.md`", outputs["backend-2"])
+        self.assertNotIn(b"Shu", outputs["backend-2"])
+
     def test_check_rejects_generated_output_for_unknown_seat(self):
         self.write_registry({"backend-1": "backend"})
         self.write_role("backend")

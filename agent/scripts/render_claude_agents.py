@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Render Claude agent definitions from neutral Seats and Claude configuration."""
 import argparse
+import csv
 import os
+import re
 import sys
 import tempfile
 
@@ -18,6 +20,7 @@ SEATS_JSON = os.path.join(ROOT, "agent", "state", "registry", "seats.json")
 BINDINGS_DIR = os.path.join(ROOT, ".claude", "bindings")
 ROLES_DIR = os.path.join(ROOT, "agent", "roles")
 AGENTS_DIR = os.path.join(ROOT, ".claude", "agents")
+NAMING_CSV = os.path.join(ROOT, "agent", "NAMING.csv")
 
 
 class RenderError(ValueError):
@@ -100,7 +103,32 @@ def validation_errors(registry_path=SEATS_JSON, bindings_dir=BINDINGS_DIR,
     return errors
 
 
-def render_content(seat, role_id, configuration, role_contract):
+def seat_names(naming_path=NAMING_CSV):
+    """Seat -> Egyptian name, from the one naming table (agent/NAMING.csv)."""
+    names = {}
+    with open(naming_path, encoding="utf-8", newline="") as fh:
+        for row in csv.DictReader(fh):
+            match = re.search(r"\(([^)]+)\)\s*$", row.get("Given Name (Arabic)") or "")
+            if match:
+                names[(row.get("Seat") or "").strip()] = match.group(1)
+    return names
+
+
+def seat_context(seat, name):
+    """The generated block a shared Role contract points at: what makes it this seat's."""
+    return (
+        "\n## SEAT CONTEXT\n\n"
+        "Generated from `agent/state/registry/seats.json` and `agent/NAMING.csv`. "
+        "Not part of the shared Role contract above.\n\n"
+        "- **Seat:** `%s`\n"
+        "- **Name:** You are **%s**.\n"
+        "- **Status file:** `agent/status/%s.md`\n"
+        "- **Memory:** `.claude/agent-memory/%s/`\n"
+        % (seat, name, seat, seat)
+    ).encode("utf-8")
+
+
+def render_content(seat, role_id, configuration, role_contract, context=b""):
     """Combine a neutral Seat/Role with opaque Claude-only configuration bytes."""
     provider_lines = [
         line for line in configuration.splitlines(keepends=True)
@@ -116,15 +144,27 @@ def render_content(seat, role_id, configuration, role_contract):
         b"<!-- Rebuild: agent/scripts/build-agents.sh -->\n",
         b"\n",
         role_contract,
+        context,
     ])
 
 
 def expected_outputs(registry_path=SEATS_JSON, bindings_dir=BINDINGS_DIR,
-                     roles_dir=ROLES_DIR):
+                     roles_dir=ROLES_DIR, naming_path=None):
+    # the real registry always carries a SEAT CONTEXT; a caller's own registry
+    # gets one only when it names a naming table
+    if naming_path is None and registry_path == SEATS_JSON:
+        naming_path = NAMING_CSV
     errors = validation_errors(registry_path, bindings_dir, roles_dir)
     if errors:
         raise RenderError("; ".join(errors))
     neutral = roster.read(registry_path)
+    names = seat_names(naming_path) if naming_path else None
+    if names is not None:
+        unnamed = sorted(set(neutral) - set(names))
+        if unnamed:
+            raise RenderError("; ".join(
+                "seat %r has no named row in %s" % (seat, naming_path)
+                for seat in unnamed))
     outputs = {}
     for seat, entry in sorted(neutral.items()):
         with open(os.path.join(bindings_dir, seat + ".yml"), "rb") as fh:
@@ -132,15 +172,16 @@ def expected_outputs(registry_path=SEATS_JSON, bindings_dir=BINDINGS_DIR,
         with open(os.path.join(roles_dir, entry["role"] + ".md"), "rb") as fh:
             role_contract = fh.read()
         outputs[seat] = render_content(
-            seat, entry["role"], configuration, role_contract
+            seat, entry["role"], configuration, role_contract,
+            seat_context(seat, names[seat]) if names is not None else b"",
         )
     return outputs
 
 
 def run(check=False, registry_path=SEATS_JSON, bindings_dir=BINDINGS_DIR,
-        roles_dir=ROLES_DIR, agents_dir=AGENTS_DIR):
+        roles_dir=ROLES_DIR, agents_dir=AGENTS_DIR, naming_path=None):
     try:
-        outputs = expected_outputs(registry_path, bindings_dir, roles_dir)
+        outputs = expected_outputs(registry_path, bindings_dir, roles_dir, naming_path)
     except RenderError as exc:
         for error in str(exc).split("; "):
             print("ERROR: " + error)

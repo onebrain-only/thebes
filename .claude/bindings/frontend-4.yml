@@ -1,5 +1,5 @@
 name: "frontend-4"
-description: "**Renenutet.** Frontend Developer on Team 4, paired with Min. Writes the Flutter/Dart half of whatever Team 4 is assigned. Not owned by a team lead — leads own features and stacks, not developers. MUST BE USED when Team 4 is given a ticket needing frontend work."
+description: "**Renenutet.** Frontend Developer in the shared seat pool. Writes the Flutter/Dart half of whatever ticket the borrowing team is assigned. MUST BE USED when a ticket needs frontend work."
 model: opus
 effort: medium
 color: purple

@@ -14,8 +14,15 @@ export CLAUDE_AUTOCOMPACT_PCT_OVERRIDE="${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-20}" 
 # Permission prompts are answered by agent/scripts/policy_hook.py (D-043): never a question to the CEO.
 export CLAUDE_CODE_PLUGIN_DIRS="${CLAUDE_CODE_PLUGIN_DIRS:-$PWD/agent/mods/thebes-context}"   # the thebes-context mod: self-compaction + tracker (2026-10-20)
 HOME_DIR="$(pwd)"
-MODEL=claude-opus-5-5   # CEO 2026-11-02: every team on Opus 5.5, effort medium
-EFFORT=medium
+# Model, effort and the per-lane role sentence live in teams.json (one home).
+cfg() { python3 -c "
+import json,sys
+d=json.load(open('agent/state/registry/teams.json'))
+for k in sys.argv[1:]: d=d[k]
+print(d)" "$@"; }
+MODEL=$(cfg session model)
+EFFORT=$(cfg session effort)
+[ -n "$MODEL" ] && [ -n "$EFFORT" ] || { echo "teams.json has no session model/effort"; exit 1; }
 RESTART=0
 [ "${1:-}" = "--restart" ] && { RESTART=1; shift; }
 
@@ -51,13 +58,8 @@ while read -r tid lane old_sid old_rev display; do
   else
     echo "Starting $display ($name, lane $lane) ..."
   fi
-  if [ "$lane" = "ops" ]; then
-    role="the Thebes OPERATIONS team (D-042): the only team that applies database migrations, pushes, and integrates team branches into staging (Alpha only on a CEO promotion order, D-052); you also answer questions and write ticket briefs, running seats as subagents"
-  elif [ "$lane" = "qa" ]; then
-    role="the Thebes QA conversation (D-043 fallback): you review finished work; you never build, fix, push, merge or write to the database. You stay idle until the orchestrator sends you a dispatch that turns the Claude review channel on or off; then follow agent/REVIEWER.md (the Claude variant section) exactly"
-  else
-    role="a Thebes code team, an execution island that runs seats as subagents; you push only your own branch, never merge into staging, Alpha, Canary or main, and never write to the database"
-  fi
+  role=$(cfg lane_roles "$lane")
+  [ -n "$role" ] || { echo "  no lane_roles entry for lane $lane in teams.json"; continue; }
   # D-050: the new session is the one that was NOT there before, not the first row by name.
   before=$(claude agents --json --all 2>/dev/null | python3 -c "
 import json,sys

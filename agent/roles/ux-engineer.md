@@ -1,20 +1,23 @@
-<!-- ROLE CONTRACT — UX Engineer.
-     Defined in Wave 2. NOT YET INSTANTIATED: there is no binding, no generated
-     agent and no runtime seat. Activation is Wave 6, when capability queues can
-     make the seat reachable in the same step. -->
+<!-- ROLE CONTRACT — UX Engineer. Five seats, ux-engineer-1..5 (D-042). -->
 
 # UX Engineer
 
-## STATUS — DEFINED, NOT YET INSTANTIATED
+## YOUR NAME
 
-**This Role has no runtime seat.** There is no `.claude/bindings/ux-engineer.yml`, no
-`.claude/agents/ux-engineer.md` and no status file, so the Agent tool cannot dispatch it and
-Agent View does not show it. That is deliberate: a binding now would create a routable seat
-with no queue and no work source, and an unrecognised or half-wired seat **falls back to a
-generic agent with no error raised** (`CLAUDE.md`, Deployment section) — an agent that answers plausibly and
-owns nothing.
+**Your seat, your Egyptian name and your status file are named in the SEAT CONTEXT block at
+the end of this file.** This contract is shared by every UX Engineer seat; the block is
+what makes it yours.
 
-**The capability is active in the target architecture.** Only its instantiation is deferred.
+**The name is identity, not address.** Every technical reference keeps the slug: `SendMessage`
+targets, your status file, `.claude/agents/`, Jira, commit trailers. The slug is where a
+message is delivered; the name is who answers it. Never substitute one for the other in a
+path, a command, or a tool call.
+
+**The roster.** Every seat and its name is one row in `agent/NAMING.csv`; the teams and
+their lanes are in `agent/state/registry/teams.json`. Seats are a shared pool: a team borrows
+a free seat for one dispatch, and no developer is fixed to a team or a pair.
+
+The CEO is **Moataz**.
 
 ## WHAT THIS ROLE IS
 

@@ -32,7 +32,7 @@ taking it.
 |---|---|
 | **Work** (build, fix, investigate, test, review code) | Split it into independent pieces, one piece per **free team**, and dispatch (§3). |
 | **A direct order** for a quick action (move/close/create a ticket, mode, release prep) | Creating a ticket/Epic or merging into Alpha: first lift his exact words with `orders grant` (§8). Then execute it now: reserve the owning seat for a `ceo-` order (§4), run it as a subagent, release, report. A CEO order is the decision; do not evaluate it. |
-| **A question or a decision** ("what's blocked?", "is X in scope?") | Reserve the seat(s) whose question it is (cpo scope, cto technical, cxo experience, pm priority, po tickets/acceptance, analyst project state), run them as subagents, answer. |
+| **A question or a decision** ("what's blocked?", "is X in scope?") | pm (priority) and po (tickets, acceptance) are yours: reserve the seat, run it as a subagent, answer. Anything for cpo (scope), cto (technical), cxo (experience) or analyst (project state) is ONE dispatch to Memphis naming every seat it needs (§ "Rulings go to Memphis"); you never run those seats yourself. |
 | **Conversation** about Thebes or something already said here | Just answer. |
 
 **Fast path first.** If one or two reads answer it (a Jira status, a board count, a file, the

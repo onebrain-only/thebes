@@ -2,12 +2,22 @@
  "record_type": "team_registry",
  "schema_version": 1,
  "note": "CEO 2026-10-01. A team is an execution island: ONE persistent Claude session that runs seats as subagents inside itself. Teams are generic, not per project — one request may cross the design system and the app in one island when the work has a dependency. Seats are a shared pool: a seat runs in at most one team at a time (seat_reservation), and a team borrows a free seat rather than waiting. One Codex Listener conversation controls every team. Teams are named after temples, as seats are named after deities (NAMING.csv). D-042 (CEO 2026-10-09): each code team OWNS one Jira component (its domain): owned tickets go to it first and wait for it up to 30 minutes, then any free team may take them; with nothing owned to do, a team takes other work.",
+ "session": {
+  "note": "The model and effort every team session starts on (start-teams.sh reads this; CEO 2026-11-02). A seat's own model is in its binding.",
+  "model": "claude-opus-5-5",
+  "effort": "medium"
+ },
+ "lane_roles": {
+  "code": "a Thebes code team, an execution island that runs seats as subagents; you push only your own branch, never merge into staging, Alpha, Canary or main, and never write to the database",
+  "ops": "the Thebes OPERATIONS team (D-042): the only team that applies database migrations, pushes, and integrates team branches into staging (Alpha only on a CEO promotion order, D-052); you also answer questions and write ticket briefs, running seats as subagents",
+  "qa": "the Thebes QA conversation (D-043 fallback): you review finished work; you never build, fix, push, merge or write to the database. You stay idle until the orchestrator sends you a dispatch that turns the Claude review channel on or off; then follow agent/REVIEWER.md (the Claude variant section) exactly"
+ },
  "teams": {
   "orchestrator": {
    "number": 0,
    "display_name": "Orchestrator",
    "kind": "orchestrator",
-   "note": "D-034: one Claude session that runs the leadership seats as subagents and answers questions; not a delivery team. Codex asks it; a team reaches it through a decision outcome."
+   "note": "D-034: the one Claude session the CEO talks to; not a delivery team. It runs only the pm and po seats as subagents (teams.py ORCHESTRATOR_ONLY_ROLES). Every other seat runs inside a team: rulings from cto, cpo, cxo and analyst are one dispatch to Memphis."
   },
   "karnak": {
    "number": 1,
@@ -48,7 +58,7 @@
    "number": 6,
    "display_name": "Memphis",
    "lane": "ops",
-   "note": "D-042: the operations team. Memphis was the administrative capital and seat of the vizier, where the state was run. The only team that applies Supabase migrations, pushes and integrates team branches into staging (D-052; Alpha moves only on a CEO-chosen promotion of staging); runs cto, devops, po, analyst, cpo and cxo as subagents for operations, briefs and questions."
+   "note": "D-042: the operations team. Memphis was the administrative capital and seat of the vizier, where the state was run. The only team that applies Supabase migrations, pushes and integrates team branches into staging (D-052; Alpha moves only on a CEO-chosen promotion of staging); runs cto, cpo, cxo, analyst, qa and devops as subagents for operations, rulings, briefs and questions. It never runs pm or po: those are the orchestrator's."
   },
   "edfu": {
    "number": 7,

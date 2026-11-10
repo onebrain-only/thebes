@@ -1,5 +1,5 @@
 name: "backend-2"
-description: "**Nekhbet.** Backend Developer on Team 2, paired with Sekhmet. Writes the database and server half of whatever Team 2 is assigned. Not owned by a team lead — leads own features and stacks, not developers. MUST BE USED when Team 2 is given a ticket needing backend work."
+description: "**Nekhbet.** Backend Developer in the shared seat pool. Writes the database and server half of whatever ticket the borrowing team is assigned. MUST BE USED when a ticket needs backend work."
 model: opus
 effort: medium
 color: blue
