@@ -803,8 +803,9 @@ def build(now=None):
             "is_seat": False,
             "owns_work": False,
             "excluded_from_roster": True,
-            "note": "Coordination only. Never a task owner, Product executor, CTO or "
-                    "Team Lead. Excluded from roster, seat counts, queues, capacity "
+            "note": "Coordination only. "
+                    "Never a task owner, Product executor, CTO or Team Lead. "
+                    "Excluded from roster, seat counts, queues, capacity "
                     "and ownership.",
             # System scope belongs here, not on any seat.
             "system_freeze": ({"intervention_id": freeze.get("intervention_id"),

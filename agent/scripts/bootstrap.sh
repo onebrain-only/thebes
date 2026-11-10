@@ -57,6 +57,11 @@ say "== generated files"
 stale="$(python3 agent/scripts/render_claude_agents.py --check | grep -vc '^ok' || true)"
 [ "$stale" = "0" ] && say "ok       .claude/agents matches its sources" || { say "STALE    $stale agent definition(s): run python3 agent/scripts/render_claude_agents.py"; problems=$((problems + 1)); }
 python3 agent/scripts/render_skills_index.py --check || problems=$((problems + 1))
+python3 agent/scripts/knowledge_lint.py || problems=$((problems + 1))
+
+say "== commit checks"
+git config core.hooksPath agent/scripts/git-hooks
+say "ok       pre-commit hook: agent/scripts/git-hooks/pre-commit"
 
 say "== left for you (agent/SETUP.md, section 3)"
 say "  1. Jira: JIRA_API_TOKEN, JIRA_ACCOUNT_EMAIL and JIRA_CLOUD_ID, in the environment or the macOS keychain."

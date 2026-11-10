@@ -74,5 +74,22 @@ machine it is wherever the clone is, and exactly one checkout is the live one.
 bash agent/scripts/bootstrap.sh                       # ends with "bootstrap finished"
 python3 agent/scripts/render_claude_agents.py --check # every line starts with ok
 python3 agent/scripts/apply_settings.py --check       # every line starts with ok
+python3 agent/scripts/knowledge_lint.py               # ends with "0 finding(s)"
 sh agent/scripts/run-tests.sh                         # the test suites
 ```
+
+## 7. What runs on every commit
+
+`bootstrap.sh` points git at the tracked hook folder
+(`git config core.hooksPath agent/scripts/git-hooks`). The `pre-commit` hook there runs four
+checks and refuses the commit when one fails:
+
+| Check | What it guards |
+|---|---|
+| `python3 agent/scripts/knowledge_lint.py` | One seat definition, counts, retired terms, home paths, links, decision IDs |
+| `python3 agent/scripts/secret_scan.py` | No token in the tracked memory folders |
+| `python3 agent/scripts/render_claude_agents.py --check` | `.claude/agents/` matches its sources |
+| `python3 agent/scripts/render_skills_index.py --check` | `agent/skills/AVAILABLE.md` matches the skills |
+
+A retired term is added to `STALE_TERMS` in `knowledge_lint.py` when a rule is replaced. A
+line may still say that a retired thing is gone ("there are no team leads").

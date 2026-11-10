@@ -142,7 +142,7 @@ Consequences: [What becomes easier? What becomes harder?]
 **Step 3 — Validation checkpoint (before finalizing)**
 - [ ] All options include a 3-year TCO estimate
 - [ ] At least one "do nothing" or "buy" alternative is documented
-- [ ] Affected team leads have reviewed and signed off
+- [ ] Affected teams have reviewed and signed off
 - [ ] Consequences section addresses reversibility and migration path
 - [ ] ADR is committed to the repository (not left in a doc or Slack thread)
 

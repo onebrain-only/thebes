@@ -1,0 +1,22 @@
+#!/bin/sh
+# Thebes pre-commit: the checks that keep the knowledge files in one piece.
+# Installed by agent/scripts/bootstrap.sh with
+#   git config core.hooksPath agent/scripts/git-hooks
+# Each check reads the working tree and is quick. A failure prints what to fix.
+set -u
+ROOT=$(git rev-parse --show-toplevel) || exit 1
+cd "$ROOT" || exit 1
+fail=0
+run() {
+  label=$1; shift
+  if ! out=$("$@" 2>&1); then
+    echo "pre-commit: $label failed"
+    printf '%s\n' "$out" | tail -40
+    fail=1
+  fi
+}
+run "knowledge lint (python3 agent/scripts/knowledge_lint.py)" python3 agent/scripts/knowledge_lint.py
+run "secret scan (python3 agent/scripts/secret_scan.py)" python3 agent/scripts/secret_scan.py
+run "agent render (python3 agent/scripts/render_claude_agents.py)" python3 agent/scripts/render_claude_agents.py --check
+run "skills index (python3 agent/scripts/render_skills_index.py)" python3 agent/scripts/render_skills_index.py --check
+exit $fail

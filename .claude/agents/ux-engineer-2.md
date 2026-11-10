@@ -67,9 +67,9 @@ holds.
 
 ## WHEN THIS ROLE ACTIVATES
 
-Wave 6. Activation means adding `.claude/bindings/ux-engineer.yml` with `role: ux-engineer`
-and regenerating — one line and one command. Until then this contract is the definition, not a
-dispatchable seat.
+Five seats carry this contract: `ux-engineer-1` to `ux-engineer-5`, one for each code team
+(D-042). A seat is its row in `agent/state/registry/seats.json` plus its binding in
+`.claude/bindings/`; a seat with no queued work is dormant, not undefined.
 
 ## SEAT CONTEXT
 
