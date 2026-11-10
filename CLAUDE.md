@@ -136,7 +136,7 @@ workspace.
 | Canonical repository | `https://github.com/dabblersport/dabbler-docs.git` |
 | Expected local path | `Dabbler/dabbler-docs/` (relative to this workspace root) |
 | Branch | `master` |
-| **Compatible governance baseline** | **`9624bb23ad34e01b06c8fa2167319bf496d3b9b5`** |
+| **Compatible governance baseline** | **`1cca8c9c72bd9d1e7b7fa1f6cc4f0029942c8a76`** |
 
 A fresh workspace clones it separately. This repository's `.gitignore` excludes it and
 nothing here rebuilds it:
@@ -144,7 +144,7 @@ nothing here rebuilds it:
 ```bash
 git clone <this repository> thebes && cd thebes
 git clone https://github.com/dabblersport/dabbler-docs.git Dabbler/dabbler-docs
-git -C Dabbler/dabbler-docs checkout 9624bb23ad34e01b06c8fa2167319bf496d3b9b5
+git -C Dabbler/dabbler-docs checkout 1cca8c9c72bd9d1e7b7fa1f6cc4f0029942c8a76
 ```
 
 **Branch versus baseline.** `master` says where governance work continues. The pinned commit

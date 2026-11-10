@@ -1,6 +1,6 @@
 # Thebes durable decisions and invariants
 
-Current as of 2026-11-10. Append or supersede; do not silently rewrite history.
+Current as of 2026-11-11. Append or supersede; do not silently rewrite history.
 Entries up to `D-052` keep their `D-` prefix; new entries are `TH-053` onward (see the
 numbering note above `TH-053`).
 
@@ -8,10 +8,13 @@ This log owns durable cross-program decisions and their rationale. Exact mechani
 in the governing workflow/state source. Historical ticket decisions and Product technical
 decisions remain in their Product authorities and are not copied here.
 
-References elsewhere in the repository to numbered `G-`, `T-`, `P-` or `D-` decisions in
-an older `DECISIONS.md` refer to the frozen predecessor/Product governance history, not to
-the `D-001` series in this file. The canonical Thebes repository began at Wave 5 without
-importing those legacy logs; see `agent/history/program-chronology.md`.
+**Two logs, two subjects (`TH-070`).** This log decides how Thebes runs.
+`Dabbler/dabbler-docs/DECISIONS.md` is the live log for Product, technical and experience
+decisions about Dabbler (`P-`, `T-`, `D-`, `G-`). A `G-`, `T-` or `P-` number anywhere in this
+repository means an entry in that log. A `D-` number written under `agent/` or in `CLAUDE.md`
+means the `D-001` to `D-052` series in this file, which may also be cited as `TH-001` to
+`TH-052` (table at the end of this file). The canonical Thebes repository began at Wave 5
+without importing the older logs; see `agent/history/program-chronology.md`.
 
 **Archived files (2026-11-10).** Entries below name `AGENTS.md`, `AGENTS_DESK.md`,
 `PROGRAM_MEMORY.md` and `MASTER_ROADMAP.md` as they stood when the decision was taken. Those
@@ -1300,6 +1303,37 @@ screenshot, and a screenshot taken is deleted when the task ends. Documents are 
 deleted on an agent's judgment.
 **Where.** `CLAUDE.md` "Where things live" is the full text of this order.
 
+## TH-070 — Operating rules live in Thebes; dabbler-docs is Product only
+**Date:** 2026-11-11 · **By:** CEO (approval of the knowledge cleanup plan, inventory questions 14, 15 and 21) · **Status:** ACTIVE
+
+**Rule.** How Thebes runs is written under `agent/` and nowhere else. `Dabbler/dabbler-docs/`
+holds Product knowledge: what Dabbler is, how the app is built, and the Product, technical
+and experience decisions. When the two logs seem to disagree, this log wins on how agents
+work and that log wins on the Product.
+
+**What moved.** Operating text that was written in dabbler-docs is copied word for word into
+`agent/history/dabbler-docs-operating-rules-2026-11-11.md`. That copy is history. The live
+home of each rule is:
+
+| Was in dabbler-docs | Live home in Thebes |
+|---|---|
+| `CONTRACT.md` section 3: execution ownership, claim, STOP / HOLD / FREEZE, ACCELERATE, Agent View, one work item = one capability | `agent/ORCHESTRATOR.md` for today's dispatch path; `agent/controller/DOCTRINE.md` for the kept Controller path |
+| `MIGRATION.md` (the 2026-09-02 repository split) | `CLAUDE.md` and `agent/SETUP.md` say where things live today |
+| `G-013` (17 seats, no orchestrator) | Superseded: `agent/state/registry/seats.json`, `agent/ORCHESTRATOR.md` |
+| `G-018` (the board is six columns) | Superseded: `agent/WORKFLOWS.md` |
+| `G-022` (who writes which rule file) | The table "Where each rule lives" in `CLAUDE.md` |
+| `G-029` (`po` owns Jira) | Narrowed by `TH-061` and `D-049`; `agent/roles/po.md`, `agent/roles/pm.md` |
+| `T-088` to `T-095` (executor evidence, validation dispatch, review recovery, surfaces, validation workspaces) | `agent/controller/DOCTRINE.md` and the code it describes |
+| `T-096` (integration lands a range in order) | `agent/WORKFLOWS.md`, `agent/execution/integrate.py` |
+
+**In dabbler-docs.** The `CONTRACT.md` section and `MIGRATION.md` are replaced by a pointer.
+The decision entries keep their text, because that log is append-only, and each carries a
+note that names its live home. The IDs stay defined there and are not redefined here.
+
+**Not moved.** Reports stay in `Dabbler/dabbler-docs/` under `TH-069`, including the two
+reports about Thebes itself (`thebes-knowledge-inventory-ar.md`,
+`thebes-problems-report-ar.md`).
+
 ## Session-memory orders that are no longer live
 
 | Memory file | Dated | What it said | Replaced by |
@@ -1325,3 +1359,71 @@ These session-memory files repeat an entry that already exists above and add not
 
 Two product rules were moved to `Dabbler/dabbler-docs/DECISIONS.md`: the location permission
 rule (P-045) and offline mode (P-046).
+
+---
+
+# Conversion table: Thebes `D-` numbers and their `TH-` names
+
+`D-` is also the prefix of the experience decisions in `Dabbler/dabbler-docs/DECISIONS.md`.
+To name a Thebes decision without that doubt, write `TH-` with the same number. The headings
+above keep `D-`, because code, tests and older entries cite them that way; both spellings
+name the same entry. New entries are `TH-053` onward.
+
+| Written as | Same as | Title |
+|---|---|---|
+| `D-001` | `TH-001` | Repository memory is canonical |
+| `D-002` | `TH-002` | Reject autonomous swarm management as the default |
+| `D-003` | `TH-003` | No autonomous first or next Product ticket |
+| `D-004` | `TH-004` | Role is not Seat |
+| `D-005` | `TH-005` | Direct routing, no relay |
+| `D-006` | `TH-006` | SELF / QA / PEER are derived routes |
+| `D-007` | `TH-007` | PEER failure transfers remediation to the reviewer |
+| `D-008` | `TH-008` | Implementation complete is not Product authorization |
+| `D-009` | `TH-009` | Reported observation begins investigation |
+| `D-010` | `TH-010` | Reported environment is authoritative |
+| `D-011` | `TH-011` | Browser under test is not browser automation |
+| `D-012` | `TH-012` | Validation follows causal and changed surfaces |
+| `D-013` | `TH-013` | Dependencies are enforced state, not prose |
+| `D-014` | `TH-014` | Providers sit behind Thebes |
+| `D-016` | `TH-016` | Claude is the Product-code primary provider |
+| `D-015` | `TH-015` | Retrieval is deferred until measured need |
+| `D-017` | `TH-017` | The Listener is a communication boundary, never a second Controller |
+| `D-018` | `TH-018` | Listener records are communication evidence, not a source of truth |
+| `D-019` | `TH-019` | Durable intake and idempotent dispatch, not exactly-once |
+| `D-020` | `TH-020` | The Listener is the operational front door; the Controller is internal |
+| `D-021` | `TH-021` | The front-door gate is a misuse guard, not authentication |
+| `D-022` | `TH-022` | The intent lifecycle is derived from canonical truth, never stored beside it |
+| `D-023` | `TH-023` | An unobserved outcome is reported with evidence, never guessed |
+| `D-024` | `TH-024` | The Product executor has a standing tool set; production mutation is never in it |
+| `D-025` | `TH-025` | Thebes pins the executor toolchain per process, never machine-wide |
+| `D-026` | `TH-026` | The infrastructure programme is closed; Thebes changes are evidence-driven |
+| `D-027` | `TH-027` | Deterministic tests run before the reviewer; retest is bounded; a red run has four meanings |
+| `D-028` | `TH-028` | Seats are human-like employees; Roles own accountability, not model ability |
+| `D-029` | `TH-029` | The four employee capabilities operate on Role Work, not code by default |
+| `D-030` | `TH-030` | The infrastructure freeze of D-026 is lifted for one evidence-backed milestone |
+| `D-031` | `TH-031` | Jev is a decision gate, never a seat; a provider never replaces a Role |
+| `D-032` | `TH-032` | Teams are execution islands; seats are a shared pool, exclusive in time |
+| `D-033` | `TH-033` | Routine actions Jev may approve alone; actions that are always the CEO's |
+| `D-034` | `TH-034` | The orchestrator is one Claude session, called only when a side chooses to ask |
+| `D-035` | `TH-035` | Every decision is delegated to the orchestrator; four hard stops remain the CEO's |
+| `D-036` | `TH-036` | Any Codex conversation on this machine is a Listener; reply mode is probed, not chosen |
+| `D-037` | `TH-037` | Three kinds of session only; CEO orders are executed; more than one PO |
+| `D-038` | `TH-038` | One Codex conversation, three Claude sessions |
+| `D-039` | `TH-039` | Claude-only Thebes: the orchestrator is the CEO's front door |
+| `D-040` | `TH-040` | Jira follows a team dispatch; the PO records Ready facts by command |
+| `D-041` | `TH-041` | Review verifies the claim; it never redoes the work |
+| `D-043` | `TH-043` | Autonomy constitution: only money, `main` and outside reach the CEO |
+| `D-044` | `TH-044` | The orchestrator speaks from state and acts only on the CEO's own words |
+| `D-045` | `TH-045` | Liveness: every team is probed every 5 minutes, busy or not |
+| `D-046` | `TH-046` | The order rule stops invented work, never needed work (refines D-044) |
+| `D-047` | `TH-047` | Liveness sees tickets with no team, not only idle sessions (extends D-045) |
+| `D-048` | `TH-048` | One orchestrator conversation, never rotated (supersedes D-044's rotation) |
+| `D-049` | `TH-049` | A ticket every 10 minutes: work runs in parallel, review only where an eye is needed |
+| `D-050` | `TH-050` | One live session per team; same-named leftovers are retired |
+| `D-051` | `TH-051` | The CEO hears a thing once: a gate on every orchestrator message |
+| `D-052` | `TH-052` | staging integrates and tests; Alpha is the customer trial |
+
+`D-042` has no entry in this file: it was written as a draft (the Ready dispatcher, domain
+teams, one `ux-engineer` for each code team, the PM running the board's priorities) and was
+never promoted. The parts that were built are cited as `D-042` across this repository; the
+draft text is `agent/archive/2026-11-10/D-042-desk-dispatcher-operations.md`.
