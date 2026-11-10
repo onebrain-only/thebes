@@ -64,6 +64,7 @@ A switch changes only that record.
 | The Controller path: claim, wake, leases, interventions | [agent/controller/DOCTRINE.md](agent/controller/DOCTRINE.md) (kept code, not how tickets move today) |
 | Product conventions, architecture, schema, product decisions | `Dabbler/dabbler-docs/` (see below) |
 | What to work on | The Jira board. It is the only task reference (CEO 2026-11-10) |
+| Setting up a machine, settings, secrets | [agent/SETUP.md](agent/SETUP.md), `agent/scripts/bootstrap.sh` |
 | Checkpoint history | [agent/history/program-chronology.md](agent/history/program-chronology.md) |
 | Retired material | `agent/archive/` (history, authority for nothing) |
 

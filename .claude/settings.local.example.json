@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(flutter pub *)",
+      "Bash(flutter analyze *)",
+      "Bash(flutter test *)"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "autoMode": {
+    "soft_deny": [
+      "$defaults",
+      "Bash(git push*main*): main is production and is merged only by the CEO (P-030)"
+    ],
+    "environment": [
+      "**Trusted repos**: this Thebes workspace, Dabbler/dabbler-code (github dabblersport/*) and Dabbler/dabbler-design-system. Teams work on their own branches; Memphis (ops lane) integrates verified work.",
+      "**Routine, trusted**: pushing integrate-staging:staging (dabbler-code) and integrate-staging-ds:staging (design system) during an open integration dispatch, pushing staging-<team> and staging-ds-<team> team branches, merging verified team branches into staging, and running analyze and tests in integration worktrees. staging is the internal integrate-and-test branch (staging.dabbler.pro). Alpha is the customer trial: it moves only as a promotion of staging on an open promote-alpha order (D-052); a push to Alpha without that order is not routine. main is production, frozen under P-030.",
+      "**Protected**: main is never pushed or merged by an agent; no force-push. Supabase project wtncuzcskpigqpmnxwws is the only database; destructive SQL goes through agent/scripts/sql_hook.py with a thebes_backup snapshot.",
+      "**Source control**: this workspace and its origin remotes only."
+    ]
+  }
+}

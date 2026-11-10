@@ -224,7 +224,11 @@ section("WORKSPACE PATH — the status log must point at the canonical checkout"
 ROLES = os.path.join(ROOT, "agent", "roles")
 AGENTS = os.path.join(ROOT, ".claude", "agents")
 WRONG = "Desktop/Thebes/agent/status"
-RIGHT = "Desktop/Thebes-Canonical/agent/status"
+# 2026-11-10: the path is no longer absolute. A role names `agent/status/<seat>.md` relative
+# to the workspace root and tells the seat to build the absolute path from that root, so the
+# same file works on another machine (agent/SETUP.md section 5).
+RIGHT = "relative to the Thebes workspace root"
+HOME = "/Users/"
 
 
 def sweep(d):
@@ -252,7 +256,10 @@ ok("[19] the canonical path is actually present in the roles that log",
    len(good_roles) >= 9)
 ok("[19] and survived generation into the agents", len(good_agents) >= 9)
 ok("[19] the correction is recorded rather than silently swapped",
-   any("Corrected 2026-09-09" in read(ROLES, f) for f in good_roles))
+   any("2026-09-09" in read(ROLES, f) for f in good_roles))
+ok("[19] no role and no generated agent names a home folder",
+   not [f for d in (ROLES, AGENTS) if os.path.isdir(d) for f in sorted(os.listdir(d))
+        if f.endswith(".md") and HOME in read(d, f)])
 # The roles cite WORKFLOWS §1 rule 5 as their authority. Fixing the roles while the
 # RULE still named the wrong workspace would leave the defect at its source, ready to
 # be copied back into the next role file written from it.
