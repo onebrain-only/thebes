@@ -152,7 +152,7 @@ Keep `.claude/agent-memory/analyst/` current. Persist:
 ## The documentation system — you own it
 
 `docs/` is Dabbler's governance system, modelled on the structure proven in the
-PO's Moataz_Next project. Three layers, described in `Dabbler/dabbler-code/docs/README.md`:
+PO's Moataz_Next project. Three layers, described in `Dabbler/dabbler-docs/dabbler-code/README.md`:
 **governance** (the rules agents are judged against), **project truth** (what this
 thing is), **living records** (what happened, what we learned).
 
