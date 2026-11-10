@@ -137,10 +137,10 @@ def team_block(record):
         return [
             "orchestrator: you are the Thebes ORCHESTRATOR (D-034), one session that answers "
             "questions and makes routed decisions. You do not do Product work. Decide who owns "
-            "the question with the route-to-seat skill and run that leadership seat as a "
-            "subagent in THIS session (Agent tool, subagent_type=cpo|cto|cxo|analyst|pm|po|qa|"
-            "devops|content-manager); a question may need several seats — run each, combine "
-            "into ONE answer. A data question you can settle by reading a file, Persistent "
+            "the question with the route-to-seat skill. The only seats you run as subagents in "
+            "THIS session are pm and po (Agent tool, subagent_type=pm|po|po-2); anything for "
+            "cto, cpo, cxo, analyst, qa or devops is ONE dispatch to Memphis naming every seat it "
+            "needs. A data question you can settle by reading a file, Persistent "
             "State (agent/state/store.py) or a read-only query, answer yourself without a seat.",
             "seat_pool: BEFORE spawning a seat run exactly: cd %s && python3 -m "
             "agent.execution.team_pool reserve <seat> --dispatch %s ; a 'seat-held' refusal "
@@ -148,8 +148,9 @@ def team_block(record):
             "Only a role with no free alternative waits, and you say so in the answer."
             % (ROOT, record["dispatch_id"]),
             "ceo_orders: a prompt that starts with 'CEO ORDER — execute, do not evaluate:' is "
-            "already decided. Run the owning seat (po for Jira and the board, devops for "
-            "release prep, …), do exactly that, verify it, and report the result. Do not ask "
+            "already decided. Run the owning seat (po for Jira and the board; a release or "
+            "deploy step is a dispatch to Memphis), do exactly that, verify it, and report the "
+            "result. Do not ask "
             "whether to do it, do not route it to a review, do not return it as 'not "
             "confirmed'. Stop only for one of the CEO's three (money, merging into main, sending "
             "outside the company) and name it.",
@@ -158,7 +159,8 @@ def team_block(record):
             "delegation (D-035): the CEO has delegated EVERY decision to you — scope, priority, "
             "the next ticket, acceptance, architecture, dependencies. Never return 'needs the "
             "CEO's decision' or a list of items awaiting the CEO: decide them through the "
-            "accountable seats (cpo/pm/po/cto/cxo) and report what was decided and by whom. "
+            "accountable seats (pm and po here; cpo, cto and cxo through Memphis) and report "
+            "what was decided and by whom. "
             "Production data, migrations, DROPs, deploys and secrets are Memphis's or yours. The "
             "only things the CEO hears are enforced by Thebes before anything reaches you: "
             "spending money, merging into main, sending outside the company "
@@ -169,7 +171,9 @@ def team_block(record):
     return [
         "team: you are team %s (%s), an execution island. You do the work by running Thebes "
         "seats as subagents inside THIS session (the Agent tool, subagent_type=<seat>, e.g. "
-        "frontend-3, backend-3, po, qa, cto); route with the route-to-seat skill." % (name, team_id),
+        "frontend-3, backend-3, content-manager); route with the route-to-seat skill. The PM and "
+        "the POs run only in the orchestrator, and cto, cpo, cxo, analyst, qa and devops only in "
+        "Memphis: a question for one of them is `decision_required`." % (name, team_id),
         "seat_pool: seats are shared across teams, one team at a time. BEFORE spawning a seat run "
         "exactly: cd %s && python3 -m agent.execution.team_pool reserve <seat> --dispatch %s . "
         "A refusal 'seat-held' names the holder and free_alternatives of the same capability: pick "
@@ -190,22 +194,20 @@ def team_block(record):
         "file>` and the operations team applies it.",
         "review (D-043, CEO 2026-10-13): you do NOT review your own work and you do not run a "
         "judge or a qa seat on it. The Codex reviewer checks design and behaviour in the running "
-        "app (check QA). Your part is evidence: name the screens, attach screenshots (English and "
-        "Arabic, light and dark when it is visual) and the steps to reach them. Leave check QA "
+        "app (check QA). Your part is evidence: name the screens and the steps to reach them, "
+        "and what you read in the running app (DOM, console, network). Save no screenshots. "
+        "Leave check QA "
         "out of your VERIFY block. A QA failure comes back to you as a fix of the same ticket. "
         "If a check needs the signed-in app and you have no signed-in session, never type a "
         "password and never report blocked for it: write `Cn: PASS — SKIPPED (environment: needs "
         "a signed-in reviewer)` and report completed.",
-        ("integration: THIS dispatch is the fast lane (CEO 2026-10-10): your small verified "
-         "ticket is yours to merge. Follow the integration steps in the brief exactly, in your "
-         "own worktree, and push ONLY `git -C <worktree> push origin integrate-staging:staging` (or "
-         "`integrate-staging-ds:staging` in the design system); the push rule for exactly that command is the only "
-         "exception to \"never merge into a base\".") if record.get("integrate_base") else
-        "no integration: this dispatch does not merge anything into a base branch.",
+        "no integration: you never merge into a base branch. Only Memphis integrates into "
+        "staging and applies migrations.",
         "phone: when your diff touches ios/, android/, lib/features/app_boot/, "
         "lib/core/services/theme_service.dart or pubspec.yaml (or the ticket says visual:native), "
         "run `python3 -m agent.execution.phone_check run ios --app <repo> --out ios.png` on the "
-        "already-booted simulator and attach the screenshot. It is timeboxed: if it reports "
+        "already-booted simulator and report its result line; delete the image when the task "
+        "ends. It is timeboxed: if it reports "
         "skipped, say so in your report and carry on with the web evidence.",
         "small work: a change of one screen and at most about 5 strings is ONE ticket: your "
         "content seat writes the ARB keys and your frontend seat wires them on the same branch, "
@@ -227,8 +229,8 @@ def ops_block():
     return [
         "lane: you are the OPERATIONS team (Memphis, D-042): the only team allowed to apply "
         "Supabase migrations, push, and integrate team branches into staging (D-052). You run seats as "
-        "subagents: cto for migrations and schema, devops for integration and push, po for "
-        "briefs and acceptance, analyst / cpo / cxo for questions and analysis.",
+        "subagents: cto for migrations and schema, devops for integration and push, qa for "
+        "test interpretation, analyst / cpo / cxo for questions and analysis.",
         "migrations: before applying, cto reviews the SQL and classifies it. A: additive or "
         "CREATE OR REPLACE. B: DROP of a function, view or policy, only after checking that "
         "origin/main and origin/Canary do not use the object (git grep). C: DROP TABLE/COLUMN, "
@@ -242,7 +244,8 @@ def ops_block():
         "verification passed (staging = internal integrate and test, staging.dabbler.pro). "
         "Alpha is the customer trial: it moves only as a promotion of staging that the CEO "
         "chose (an open `promote-alpha` order), never on your own initiative. Never push or "
-        "merge Canary (the orchestrator's release step) or main (merged only by the CEO, P-030).",
+        "merge Canary (a legacy branch, no longer pushed to) or main (merged only by the CEO, "
+        "P-030).",
         "pushing a base: the permission system only pre-approves two exact command shapes, so "
         "any other shape stops on a prompt nobody can answer. Put the commit on a local branch "
         "named exactly `integrate-staging` (app) or `integrate-staging-ds` (design system) and push "
@@ -260,7 +263,7 @@ def ops_block():
 QA_CHECK = {"id": "QA", "kind": "judge",
             "what": "QA: the ticket's acceptance criteria hold in the running app "
                     "(both languages and themes where it is visual)",
-            "pass": "the reviewer's evidence; the team hands over screenshots and steps"}
+            "pass": "the reviewer's evidence; the team hands over the screens and the steps"}
 # CEO 2026-10-29: a ticket marked "no UI" is simple; nobody opens the app for it. Its review is a
 # code double-check, so the brief carries no QA running-app check and the reviewer takes tier 1.
 NO_UI = re.compile(r"\bno[ _-](?:new[ _-])?ui\b", re.I)   # "no UI" and "No new UI" (KAN-753)
@@ -401,6 +404,12 @@ def dispatch(prompt, target_session_id, *, env=None, state_store=store, cli=None
                                  jira_sync.ticket_for(prompt, ticket))
     except ValueError as exc:
         raise Refused("ticket-invalid", str(exc))
+    if jira_key and state_store.current_operating_mode() != "PRODUCT_EXECUTION":
+        # A ticket dispatch is Product work: refused while Thebes itself is being changed.
+        raise Refused("system-maintenance-active",
+                      "%s is Product work and the operating mode is %s; a question with no "
+                      "--ticket may still be dispatched"
+                      % (jira_key, state_store.current_operating_mode()))
     # D-041: a ticket dispatch carries a brief with the agreed checks for "done". Refused,
     # naming everything missing, rather than discovered by the team mid-work.
     from agent.execution import dispatch_brief as brief_mod

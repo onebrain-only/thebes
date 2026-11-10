@@ -155,6 +155,16 @@ class ConversationDispatchTests(unittest.TestCase):
         return [e for e in validate.check(store.RUNTIME)
                 if any(k in e for k in ("conversation", "session_deliver", "codex"))]
 
+    def test_a_ticket_dispatch_is_refused_in_system_maintenance(self):
+        store.set_operating_mode("SYSTEM_MAINTENANCE", "ceo", "test")
+        fake = FakeClaude(live=[row(SID_X, pid=4242)])
+        self.refused(lambda: cd.dispatch("Do the work.", SID_X, env={"CODEX_THREAD_ID": THREAD_A},
+                                         state_store=store, cli=ClaudeCli(runner=fake),
+                                         stop_timeout_seconds=1, ticket="KAN-1"),
+                     "system-maintenance-active")
+        out, _ = self.send(THREAD_A, SID_X)
+        self.assertTrue(out["dispatch_id"], "a question with no ticket still goes")
+
     def test_a_stopped_session_is_reported_stalled_and_resumed_at_most_twice(self):
         """Live 2026-10-02: Luxor hit its usage limit and held three seats for nine hours."""
         out, fake = self.send(THREAD_A, SID_X)

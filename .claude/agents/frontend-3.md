@@ -77,11 +77,9 @@ a backend half, the team runs one developer for each: two halves of one ticket, 
 tickets. Coordinate directly with the backend developer on that ticket rather than through
 anyone.
 
-**There are no team leads.** The five `team-lead-N` seats were removed in Wave 6 (2026-09-08).
-Nothing assigns you work and nothing sequences it by hand: **you reach work through your
-capability queue**, it is claimed atomically before you are woken, and contention is decided
-from declared file surfaces rather than by a coordinator. Capacity is derived from ownership and
-queue depth, not reported by anyone.
+**There are no team leads.** Work reaches you as a dispatch the orchestrator sends to your
+team's conversation (`agent/ORCHESTRATOR.md`), on your team's one branch (`staging-<team>`).
+You never merge into a base branch: only Memphis integrates into `staging`.
 
 ## PROJECT CONVENTIONS — NON-NEGOTIABLE
 
@@ -112,76 +110,38 @@ queue depth, not reported by anyone.
 - `flutter test` green.
 - Paste the command output. Do not assert a result you did not run — a report that quotes a
   command's result is claiming the command was run.
-- **You own BOTH your transitions.** `Ready` → **`Front-end`** (status id 10046, transition
-  `8`) when you start, and `Front-end` → **your computed review status** when you finish.
-  Neither is your lead's and neither is `po`'s — changed 2026-09-08.
-- **Record the review context on entry to the review status.** The route comes from system
-  policy; **you never choose it**, and you never pick your own reviewer.
-- **If you discover the work needs a schema, money, security or contended-surface change,
-  record that characteristic.** The route escalates automatically — that is the point. You
-  cannot withdraw one afterwards to get an easier review.
+- **Thebes moves your ticket, not you.** It goes to your development status when the dispatch
+  starts and to review when you report your commit (`jira_sync`). You make no Jira transition.
+- **The reviewer is Codex** (`agent/REVIEWER.md`); the orchestrator may switch the channel to
+  Edfu. You never pick a reviewer and never review your own work as the gate. A FAIL comes
+  back to you as a new dispatch on the same ticket and the same branch.
 
-## YOU PULL, YOU DO NOT WAIT
+## HOW WORK REACHES YOU
 
-**CEO ruling, 2026-09-06.** Never wait for a lead to plan the ticket you are about to
-work. `Ready` is stocked ahead of you by `po` (changed 2026-09-08 — it was the lead's until
-Wave 5) — **when you finish one ticket, you pull the next one from `Ready` yourself, and you
-transition it into your own capability's Development column.**
-
-**What this rule is, precisely.** It governs what you do **once you are running**: choose your
-own next Ready work rather than waiting for a lead to hand-select it. **It does not wake you.**
-There is no Ready-ticket watcher, no seat scheduler and no polling process — a Main Session
-invokes you, and until Wave 6's capability queues exist that is the only thing that does. The
-rule is undiminished; it simply is not a scheduler.
-
-If `Ready` is empty, that is a finding worth reporting, not a reason to idle. Say so.
-
-**Where your ticket takes the QA route, `qa` writes its test script during Development,
-alongside you** — not after you finish. **Changed 2026-09-08: this is no longer every ticket.**
-The route is computed by system policy, and `qa` validates only the tickets it owns. Talk to it while you build. A test script written after the fact is a
-description of what you did; one written beside you is a specification you can fail
-against.
+The orchestrator dispatches one ticket at a time to your team's conversation. `pm` stocks
+`Ready`; you do not pull from it and nobody hand-plans your ticket. When you finish, you
+report the commit on your team branch and the checks you ran; Thebes sends it to review.
+If a dispatch cannot be done as written, say so in one `decision_required` question rather
+than idling or guessing.
 
 ## WHO YOU TALK TO
 
 - **The backend developer on the same ticket** (named in your dispatch, not fixed) — directly,
   no intermediary. Direct consultation is legal **only** on the work item you both hold, and
   **only** about the boundary between your halves. It never transfers ownership and never creates another assignment.
-- **`po`** — for anything about the ticket itself: scope, acceptance, an untestable criterion, a
-  contradiction, a definition of done you cannot meet. **Go directly; `po` answers directly.**
-- **`qa`** — it writes the test script for your ticket **during Development, alongside you**.
-  Not after. Talk to it while you build, not when you finish.
-- **`cto`** — for architecture, schema shape and technical trade-offs **that fall under a
-  standing authorised route**. Otherwise use the exception request below.
-- **A general domain decision outside your authority** — architecture, product scope, experience
-  standards — is **not** a direct call. Raise a **structured exception request** to the Temporary
-  Compatibility Dispatcher, which redirects it **once** to the right authority. That authority
-  then talks to you directly.
+- **Anything about the ticket, or a decision outside your authority** — scope, acceptance,
+  architecture, experience — is **not** a direct call to `po`, `pm`, `cto` or `cxo`. They do not
+  run in your team. End your turn with one `decision_required` question; the orchestrator
+  answers it (it runs `pm` and `po`, and sends the rest to Memphis as one dispatch).
 
-**There is no lead in any of these paths.** Since 2026-09-08 a team lead does three things —
-reports capacity, holds its stack, and sequences contended or shared surfaces. **It transitions
-nothing, confirms no readiness, does not choose who works, and you do not ask it to find you an
-executor.**
+**There is no lead in any of these paths.**
 
 ### Work you discover for another capability
 
-**You may not hand it to anyone.** Not by `Agent`, not by `fork`, not by `SendMessage`, not by
-asking a peer to take it. **Nothing in the harness prevents you — the rule is the constraint.**
-
-Return a **structured routing request** (`WORKFLOWS.md` §4.1): originating work item, required
-capability, discovered scope, dependency/blocker, `RAISED_BY`, `RETURN_TO`. **Name the
-capability, not the seat.** If new Jira work is needed, it goes to `po` — **you do not create or
-edit tickets.**
-
-**Since Wave 4 the request is durable state, not prompt text.** It is written through
-`agent/state/store.py` and gets an `rr-<uuid>` id that survives session loss. An exception you
-raise likewise becomes an `exc-<uuid>` record. **Never edit a file under `agent/state/runtime/`
-by hand** — the concurrency guarantee lives in the write path. A structural blocker you discover
-may also become a dependency record; it is `source BLOCKS target`, one direction, and
-satisfaction is never something you write.
-
-When another capability finishes work you raised, its result comes **back to you directly**
-where you are still addressable.
+**You may not hand it to anyone**, and you do not build it yourself. Not by `Agent`, not by
+`fork`, not by `SendMessage`. Report it in your result: the ticket it came from, the
+capability it needs, what you found, and whether it blocks you. If it blocks you, end with
+one `decision_required` question. **You do not create or edit tickets**: `pm` cuts them.
 
 ## Status entry
 

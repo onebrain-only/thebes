@@ -9,6 +9,14 @@ Previously: 2026-09-05, W6 added (regeneration), W1 amended to match.
 **Purpose:** The procedure. `agent/state/registry/seats.json` carries the shape of the roster; this carries how
 a task that crosses two or three agents actually moves, end to end.
 
+> **Which path is live (2026-11-10).** Team work moves by **conversation dispatch**: the
+> orchestrator dispatches a ticket to a team's conversation, the team commits on
+> `staging-<team>`, Codex reviews (`agent/REVIEWER.md`), Memphis integrates into `staging`,
+> and Thebes closes the ticket (D-052). That path is described in `agent/ORCHESTRATOR.md` and
+> it wins wherever this file says otherwise. The capability-queue, claim and
+> SELF/PEER/QA-route sections below describe the Controller path (Phases 2-4). Its code and
+> tests are kept, and it is not how ordinary tickets move today.
+
 ---
 
 ## 1. THE TASK LIFECYCLE
@@ -37,14 +45,15 @@ exactly one of them and returns to the same one after a review failure. Nothing 
 | `frontend` | **`Front-end`** (10046) | Frontend Development |
 | `backend` | **`Back-end`** (10043) | Backend Development |
 | `content` | **`Content`** (10048) | Operations |
-| `product-designer` · `ux-engineer` | **`Design`** (10047) | Operations |
+| `product-designer` · `ux-engineer` | **`Design`** (10047) | Frontend Development |
 | `devops` · `analyst` · any other shared specialist | **`Operations`** (10049) | Operations |
 | `qa` | **none** — QA is a **validation route**, not an execution lane | — |
 
-**`Design`, `Content` and `Operations` are three separate statuses grouped into one column.**
-They are specialist lanes, not stages: nothing flows `Design → Content → Operations`. Content
-work goes to `Content` and design work to `Design` — **they are not collapsed into a generic
-status**, because the board now names them separately.
+**`Content` and `Operations` are two separate statuses grouped into the Operations column, and
+`Design` sits with `Front-end` in Frontend Development** (CEO 2026-11-02: UX is UI work per
+team). They are specialist lanes, not stages: nothing flows `Design → Content → Operations`.
+Content work goes to `Content` and design work to `Design` — **they are not collapsed into a
+generic status**, because the board names them separately.
 
 Work that genuinely needs two capabilities is **split into two executable children under a
 non-executable parent**, each with its own capability-scoped acceptance criteria, Work Effort,
@@ -126,10 +135,11 @@ canonical path above. A queue shown there is a report, not a control.
 
 ### A COLUMN IS NOT A STATUS
 
-**This is the single most important thing to understand about the current board.** Two columns
+**This is the single most important thing to understand about the current board.** Three columns
 deliberately group several statuses, so one Jira column no longer means one Jira status:
 
-- **`Operations`** holds `Design`, `Content` and `Operations` — three execution lanes.
+- **`Operations`** holds `Content` and `Operations` — two execution lanes.
+- **`Frontend Development`** holds `Design` and `Front-end` — two execution lanes.
 - **`Review`** holds `QA-Test`, `Self-review` and `Peer-review` — three validation routes.
 
 A lifecycle observation therefore records **three separate facts**, and none of them derives
@@ -152,7 +162,7 @@ that file is the single source, and this table describes it.**
 |---|---|---|---|---|
 | **Backlog** | `To Do` | 10004 | `11` | **READY** |
 | **Ready** | `Ready` | 10008 | `2` | **READY** |
-| **Operations** | `Design` | 10047 | `9` | **DEVELOPMENT** |
+| **Frontend Development** | `Design` | 10047 | `9` | **DEVELOPMENT** |
 | **Operations** | `Content` | 10048 | `10` | **DEVELOPMENT** |
 | **Operations** | `Operations` | 10049 | `12` | **DEVELOPMENT** |
 | **Frontend Development** | `Front-end` | 10046 | `8` | **DEVELOPMENT** |
@@ -195,15 +205,15 @@ A transition made by the wrong seat is a process failure, not a shortcut.
 
 | Into | Moved by |
 |---|---|
-| `Backlog` | `po` |
-| `Ready` | `po` — selection is Sprint preparation, and requires the five facts below |
+| `Backlog` | `pm` cuts approved Epics into tickets (D-049); a ticket that supports existing work needs no order (D-046) |
+| `Ready` | `pm` — selection is Sprint preparation, and requires the five facts below |
 | its **execution status** (`Front-end` / `Back-end` / `Design` / `Content` / `Operations`) | **the executing worker** |
 | its **review status** (`QA-Test` / `Self-review` / `Peer-review`) | **the executing worker** — the status is chosen by system policy, not by the worker |
 | back to its **same** execution status (review FAIL) | **the review owner** |
 | **back to `Ready` from an execution status, when the item has NO owner and the work is INCOMPLETE** | **`po`** — execution recovery, added 2026-09-09. See below |
 | **forward to the derived review status from an execution status, when the item has NO owner and the work is COMPLETE** | **`po`** — completed-execution reconciliation, added 2026-09-09. See below |
 | **back to `Ready` from `Peer-review`, when the PEER review recorded FAIL and the item has NO owner and NO evidenced executor** | **`po`** — failed-review recovery, `store.recover_failed_review_to_ready`, added 2026-09-21 (`T-092`). The PEER-fail transfer cannot apply where there is nobody to transfer from; the reviewer's findings become the rework brief, the failed context is closed under `execution_recovery.closed_review`, the route returns to the policy floor, and the item is won by an ordinary claim |
-| `Done` | **the review owner** — SELF: the worker · PEER: the reviewer · QA: `qa` |
+| `Done` | **Thebes**, by code, once the review passed and the commit is on `staging` and staging.dabbler.pro serves it (D-052). The reviewer is Codex; the orchestrator may switch the channel to Edfu (`agent/REVIEWER.md`) |
 
 **EXECUTION RECOVERY — the orphaned-execution row above.** An executable item can end up
 in a capability execution status with **no owner**: `release` clears ownership without
@@ -302,10 +312,9 @@ same-capability seat may revise the number at its own Preflight.
    above open CRITICAL children is a lie the board tells.
 5. **No task is complete until the agent has appended to its own
    `agent/status/<name>.md`.** **The path is resolved from the One Brain workspace
-   root, never from the project tree the agent happens to be standing in** — today
-   that root is `/Users/moatazmustapha/Desktop/Thebes-Canonical`, so the entry goes to
-   `/Users/moatazmustapha/Desktop/Thebes-Canonical/agent/status/<name>.md` and the role
-   files carry it absolute for exactly this reason. **Corrected 2026-09-09: this rule,
+   root, never from the project tree the agent happens to be standing in** — the root
+   is the folder that holds `CLAUDE.md` and `agent/`, so the entry goes to
+   `<workspace root>/agent/status/<name>.md` whatever the working directory is. **Corrected 2026-09-09: this rule,
    and the nine role files that cite it, named `Desktop/Thebes` — a real SECOND
    checkout that is not canonical. The rule written to prevent an unread status log was
    itself specifying one.** Four entries were lost that way in a single day before
@@ -330,8 +339,8 @@ same-capability seat may revise the number at its own Preflight.
    consuming ~16.5G, one carrying a live plaintext credential. None were created by a script;
    they were ad-hoc `git clone`/`mkdir` actions with no rule against them. **Any temporary or
    scratch checkout — a governance draft, a comparison clone, isolated executor work — goes
-   under `Thebes-Canonical/.claude/worktrees/` as a `git worktree` (the mechanism already used
-   for `wave7-agentview` and `product`), never as a new top-level Desktop directory.**
+   under `Thebes-Canonical/agent/state/runtime/worktrees/` as a `git worktree` (CEO 2026-11-10:
+   the only place a checkout lives), never as a new top-level Desktop directory.**
    `agent/scripts/desktop-scope-guard.sh` (a `PreToolUse`/`Bash` hook in `.claude/settings.json`,
    independent of `branch-guard.sh` and Product main protection) refuses a `git clone` or a new
    directory created directly under `~/Desktop` outside this checkout. It is workspace-local,
@@ -363,7 +372,7 @@ back from `getTransitionsForJiraIssue` with `includeUnavailableTransitions: true
 |---|---|---|---|---|
 | `To Do` | 10004 | `11` | Backlog | To Do |
 | `Ready` | 10008 | `2` | Ready | To Do |
-| `Design` | 10047 | `9` | Operations | In Progress |
+| `Design` | 10047 | `9` | Frontend Development | In Progress |
 | `Content` | 10048 | `10` | Operations | In Progress |
 | `Operations` | 10049 | `12` | Operations | In Progress |
 | `Front-end` | 10046 | `8` | Frontend Development | In Progress |
@@ -380,7 +389,7 @@ back from `getTransitionsForJiraIssue` with `includeUnavailableTransitions: true
 `Back-end` is `5`, `Operations` is `12`. Anyone extrapolating from `11/21/31/41` guesses wrong,
 which is exactly why the next rule exists.
 
-**Two columns hold three statuses each** (`Operations`, `Review`), so a column name is not a
+**Three columns hold more than one status** (`Operations` two, `Frontend Development` two, `Review` three), so a column name is not a
 status name and cannot be sent to the API. **Match on the id, never on the name**, and treat
 `agent/state/board.py` as the machine-readable source this table describes.
 
@@ -717,9 +726,9 @@ it**, because the shared surface was never the files.
 Git worktrees (`agent/state/worktrees.py`):
 
 ```
-canonical repository / integration branch (Canary)
-    +-- .claude/worktrees/product/<seat>/<work-item>/   [exec/<seat>/<work-item>]
-    +-- .claude/worktrees/product/<seat>/<work-item>/   [exec/<seat>/<work-item>]
+canonical repository / integration branch (staging)
+    +-- agent/state/runtime/worktrees/product/<seat>/<work-item>/   [exec/<seat>/<work-item>]
+    +-- agent/state/runtime/worktrees/product/<seat>/<work-item>/   [exec/<seat>/<work-item>]
 ```
 
 Native `git worktree`, never a clone — a clone would let a seat's history diverge invisibly and
@@ -896,11 +905,9 @@ Use the **`route-to-seat`** skill to decide who is concerned and to write the pr
   no error raised. An agent-to-agent handoff can therefore land in a generic agent that
   answers plausibly and owns nothing.
 - **A worker does not decide who executes next.** That is a routing decision, and after
-  Wave 3 it belongs to the Dispatcher — on evidence, or not at all. **`po` owns task analysis,
-  acceptance criteria and `Ready` selection; the executing worker owns its own transitions; the
-  review owner owns the verdict.** **A team lead owns capacity, its stack and contention
-  sequencing only — it transitions nothing and confirms no readiness** (2026-09-08), and it
-  does not choose or assign the developer (`YOU PULL`, §1).
+  Wave 3 it belongs to the Dispatcher — on evidence, or not at all. **`po` owns task analysis and
+  acceptance criteria, `pm` owns `Ready` selection; the executing worker owns its own transitions; the
+  review owner owns the verdict.**
 
 **The channels, corrected 2026-09-07 (Wave 3):**
 
@@ -909,13 +916,10 @@ Use the **`route-to-seat`** skill to decide who is concerned and to write the pr
 | **Down — a brief** | the **Orchestrator** (the Main Session), and only it | dispatching work from the CEO's word |
 | **Up — scope, acceptance, work definition, criteria** | **`po`**, directly. `po` answers directly | "this acceptance criterion cannot be met" · "this needs a second sitting" |
 | **Up — a general domain decision outside your authority** | a **structured exception request** to the Dispatcher, which redirects **once** | "this needs an architecture call nobody has made" |
-| **Standing authorised direct routes** | the named authority, directly | `backend-N` → `cto` for `G-028` confirmation |
 | **Sideways — a factual question** | the **peer**, directly (`grill-peer`) | "does the notification schema already have a `read_at` column?" |
 | **Cross-capability work you discovered** | a **structured routing request** to the Dispatcher (§4.1) | frontend finds the RPC does not exist |
 
-**The team lead is no longer an escalation target for finding an executor.** It never chose
-the developer (`YOU PULL`), and after Wave 3 it does not appear in any routing path. It keeps
-its readiness, transition, capacity and contention duties — see §1 and §7.
+**There are no team leads** (Wave 6, 2026-09-08). No lead appears in any routing path.
 
 **One redirect, then the Dispatcher exits.** After a redirect the authority talks to the
 original worker directly. **Forbidden:** `Authority → Dispatcher → po → developer`, or any

@@ -26,11 +26,11 @@ class ReviewTierTests(unittest.TestCase):
         self.assertEqual(rt.tier([SCREEN], ["tier:1"]), 1)
         self.assertEqual(rt.tier(["test/a_test.dart"], ["tier:3"]), 3)
 
-    def test_describe_names_the_screenshots_a_pass_needs(self):
+    def test_describe_asks_for_no_saved_screenshot(self):
         self.assertEqual(rt.describe(["test/a_test.dart"]),
-                         {"tier": 1, "platform": None, "min_screenshots": 0,
+                         {"tier": 1, "platform": None,
                           "coverage": "diff and tests only", "auto_pass": True})
-        self.assertEqual(rt.describe([SCREEN])["min_screenshots"], 1)
+        self.assertNotIn("min_screenshots", rt.describe([SCREEN]))
         self.assertEqual(rt.describe([SCREEN])["platform"], "web")
         self.assertEqual(rt.describe(["ios/Runner/Info.plist"])["platform"], "web")
 

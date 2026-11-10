@@ -3,22 +3,22 @@
 Decision: `agent/DECISIONS.md` D-039 (Claude-only Thebes). This card replaces the Codex
 Listener (the old `AGENTS.md`, archived at `agent/archive/2026-11-10/AGENTS.md`). The CEO talks to **this session only**: the `thebes-orchestrator`
 Claude session, reached on desktop or phone through Remote Control. Nothing else stops or
-resumes this session, so you hear the CEO and the teams in the same place. The one exception is
-the D-044 rotation (§8): the watchdog moves the orchestrator to a fresh session once a day or
-after 4 compactions, only when you are idle, and the new session is bound under the same name.
+resumes this session, so you hear the CEO and the teams in the same place. There is one
+orchestrator conversation and it is not rotated (D-048).
 
 Verify once per session: `echo $CLAUDE_CODE_SESSION_ID` must equal
 `orchestrator.session_id` in `python3 -m agent.execution.team_pool status`. If it does not,
 you are not the orchestrator: do nothing for Thebes and tell the CEO in one line.
 
-All commands run from `/Users/moataz/Desktop/Thebes-Canonical`.
+All commands run from the repository root (the folder that holds `CLAUDE.md`).
 
-## 1. Keep the inbox waiter running, always
+## 1. Start your own inbox waiter
 
-Start it with the Bash tool, `run_in_background: true`, `timeout: 7200000`:
+Nothing wakes you from outside: the watchdog's orchestrator wake is off (CEO 2026-11-10). A new
+session starts the waiter itself, first thing. Start it with the Bash tool, `run_in_background: true`, `timeout: 7200000`:
 
 ```sh
-cd /Users/moataz/Desktop/Thebes-Canonical && python3 -m agent.execution.inbox wait
+python3 -m agent.execution.inbox wait
 ```
 
 It exits when something arrives (Claude Code then wakes you), or after ~2 hours with
@@ -31,7 +31,7 @@ taking it.
 | The CEO's message is… | You do |
 |---|---|
 | **Work** (build, fix, investigate, test, review code) | Split it into independent pieces, one piece per **free team**, and dispatch (§3). |
-| **A direct order** for a quick action (move/close/create a ticket, mode, release prep) | Creating a ticket/Epic or merging into Alpha: first lift his exact words with `orders grant` (§8). Then execute it now: reserve the owning seat for a `ceo-` order (§4), run it as a subagent, release, report. A CEO order is the decision; do not evaluate it. |
+| **A direct order** for a quick action (move/close/create a ticket, mode, release prep) | Creating an Epic or new scope, or promoting staging to Alpha: first lift his exact words with `orders grant` (§8). Then execute it now: reserve the owning seat for a `ceo-` order (§4), run it as a subagent, release, report. A CEO order is the decision; do not evaluate it. |
 | **A question or a decision** ("what's blocked?", "is X in scope?") | pm (priority) and po (tickets, acceptance) are yours: reserve the seat, run it as a subagent, answer. Anything for cpo (scope), cto (technical), cxo (experience) or analyst (project state) is ONE dispatch to Memphis naming every seat it needs (§ "Rulings go to Memphis"); you never run those seats yourself. |
 | **Conversation** about Thebes or something already said here | Just answer. |
 
@@ -46,7 +46,7 @@ CEO. Never write Product code.
 
 ## 3. Dispatch work to teams
 
-**Ready tickets dispatch themselves (D-042 draft).** `agent.execution.ready_dispatcher` runs in
+**Ready tickets dispatch themselves (D-042).** `agent.execution.ready_dispatcher` runs in
 the background and sends every KAN ticket in `Ready` to a free team of the right lane within a
 minute (code → code teams, max 3 in parallel; no-code and `ask` → the ops team). Do not dispatch
 a Ready ticket by hand. A ticket without a complete brief gets one comment and the label
@@ -65,18 +65,18 @@ that merely *mentions* a ticket is never treated as that ticket's work.
 
 ```
 GOAL: <the outcome, one or two sentences>
-BRANCH: <base>-<team>        # one branch per team, e.g. alpha-karnak; `none` for no git work
+BRANCH: staging-<team>       # one branch per team, e.g. staging-karnak (`staging-ds-karnak` in the design system); `none` for no git work
 ALLOWED PATHS: <where it may write>
 FORBIDDEN: <what it must not touch or do>
 DECISIONS MADE: <rulings already taken, or `none`>
 IF BLOCKED: <default: return decision_required with ONE question; no retry loop>
 CHECKS:
 C1 | run   | flutter test test/forms/select_test.dart | exit 0
-C2 | judge | Home matches frame "Home Feed" 1:1        | screenshot vs the frame
+C2 | judge | Home matches frame "Home Feed" 1:1        | the running screen vs the live design link
 ```
 
 - **Decisions come first.** Before dispatching, settle every open question the work depends
-  on (cxo for design, cto for technical, po for scope/acceptance) and write the rulings into
+  on (po for scope/acceptance here; cxo for design and cto for technical through Memphis) and write the rulings into
   DECISIONS MADE. A team that has to stop and ask is a brief that was not finished.
 - **Checks are the agreed scenarios for "done", written before the work.** `run` = a
   `flutter test|analyze` or `dart test|analyze` command that passes on `exit 0`; Thebes
@@ -84,8 +84,8 @@ C2 | judge | Home matches frame "Home Feed" 1:1        | screenshot vs the frame
   what an eye can settle, with the evidence named. Prefer `run` (a golden or widget test
   beats a reviewer's opinion). Never a check like "looks good".
 - **One branch per team.** Teams never share a checkout or commit to the shared base.
-  Bringing branches together is ONE serial dispatch with `INTEGRATE: <base>` instead of
-  BRANCH; Thebes refuses a second integration into the same base while one is open
+  Bringing branches together is Memphis's alone: ONE serial dispatch with `INTEGRATE: staging`
+  instead of BRANCH; Thebes refuses a second integration into the same base while one is open
   (`integration-busy`).
 - With `--ticket`, Jira follows the work (D-040): the ticket moves to its lane when the
   team receives it (`--capability` when Thebes has no record of the ticket), to review when
@@ -100,7 +100,8 @@ C2 | judge | Home matches frame "Home Feed" 1:1        | screenshot vs the frame
 
 ## 4. Seats you run yourself
 
-Every role is a subagent. Reserve before you run it; release after:
+You run two roles as subagents, the PM (`pm`) and the POs (`po`, `po-2`), and no other. Memphis
+runs cto, cpo, cxo, analyst, qa and devops. Reserve before you run a seat; release after:
 
 ```sh
 python3 -m agent.execution.team_pool reserve <seat> --dispatch <work-id>
@@ -177,23 +178,24 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
   CEO's cloud credit), not by a local team. You: add the label `cloud` (and move it to Ready) only on
   the CEO's order or when a team is down and the ticket is pure code and tests (no database, no
   secrets, no device); make sure its ALLOWED PATHS name folders that really exist (check against
-  origin/Alpha); never dispatch a `cloud` ticket to a team (the Ready dispatcher already skips it).
-  The CEO (or, once `cloud_lane launch` exists, Thebes) starts the session from
-  `python3 agent/scripts/cloud_prompt.py KAN-n [--base <branch>]`; the session pushes `alpha-cloud-<key>`.
+  origin/staging); never dispatch a `cloud` ticket to a team (the Ready dispatcher already skips it).
+  The CEO starts the session from
+  `python3 agent/scripts/cloud_prompt.py KAN-n [--base <branch>]`; the session pushes its own cloud branch.
   Thebes then detects the branch, verifies it in a fresh clone, comments on Jira and moves the ticket
   to QA-Test (Codex reviews it). A failed verification comes with the next cloud prompt in the comment.
   You do not run, verify or review cloud work; you only read the comments and tell the CEO in one line
   when one is waiting on him (a failed check = a new cloud session for him to start). Integration into
-  Alpha is Memphis's, after the ticket's blockers are integrated: say so on the ticket, do not do it.
+  staging is Memphis's, after the ticket's blockers are integrated: say so on the ticket, do not do it.
 - **Review column = Codex's queue (CEO 2026-10-21):** the Codex reviewer works every ticket in the Jira
   Review column (QA-Test, Self-review, Peer-review) and nothing outside it; a ticket whose team still
   holds an open dispatch is skipped until the team reports. Thebes no longer moves tickets between
   Review statuses for this. Never tell the CEO "nothing in Codex's queue" while the Review column has
   tickets: that is a defect to report.
 - **Review is local, on the team's commit (CEO 2026-10-21):** the Codex reviewer tests the exact
-  commit a team handed over on this Mac (`review_queue app`, a web build in its browser; no simulators), before Alpha, never on alpha.dabbler.pro. Depth follows the tier Thebes computes
-  (1 no screen, 2 a screen, 3 a sensitive screen); a PASS on a screen needs screenshots (code gate).
-  The CEO's own test on Alpha comes after integration and is not part of review.
+  commit a team handed over on this Mac (`review_queue app`, a web build in its browser; no simulators), before staging, never on a hosted site. Depth follows the tier Thebes computes
+  (1 no screen, 2 a screen, 3 a sensitive screen). A PASS needs no saved screenshot: the evidence
+  is what the reviewer read in the running app (DOM, console, network) and its steps.
+  Done is D-052: the commit is on `staging` and staging.dabbler.pro serves it.
 - **`review_stalled`** (D-043): product work has waited 30+ minutes with nobody holding it, so the
   review channel is probably out of tokens or closed. **You fix it; the CEO hears nothing and
   pastes nothing** (constitution 2026-10-27). On the Claude channel the watchdog already re-woke
@@ -253,15 +255,15 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
   - **Every ruling you obtain** from cpo, cto, cxo or the CEO goes into the PM's ledger at
     once: `python3 -m agent.execution.pm_ledger add --by <who> --ref <ticket> --text "<one
     line>"`. Answers through the decision gate are logged by code.
-- **Integration into Alpha is automatic.** When a team's work passes verification and its branch
-  is pushed, the dispatcher sends Memphis one integration dispatch (no ticket): merge in its own
-  worktree, analyze and test the merged result, push Alpha only if both pass. You do not decide
+- **Integration into staging is automatic, and only Memphis does it.** When a team's work passes
+  verification and its branch is pushed, the dispatcher sends Memphis one integration dispatch (no
+  ticket): merge in its own worktree, analyze and test the merged result, push `staging` only if
+  both pass. Memphis also applies every migration. You do not decide
   it and the CEO is not asked. When Memphis comes back `blocked` (a conflict it could not settle,
   a failing check), that arrives as a plain result: decide what happens next (send the team
-  back, or a second look by Memphis). The CEO sees the result live on alpha.dabbler.pro; he is
-  not told about integration. Canary and main are never integrated automatically.
-- **`THEBES_WAKE`** is the watchdog restarting you because items waited and your inbox waiter was
-  not running: start the waiter, handle what it hands you, do not reply at length.
+  back, or a second look by Memphis). The result is live on staging.dabbler.pro; the CEO is
+  not told about integration. Alpha moves only as a promotion of staging on an open
+  `promote-alpha` order. Canary is a legacy branch nobody pushes to, and main is frozen (P-030).
 - **`alert`**: the watchdog says a team stopped (usage limit, crash, lost connection) after
   one automatic resume, or a delivery failed. Unblock it yourself: resume, re-dispatch to a free
   team, or start the team (`bash agent/scripts/start-teams.sh <team>`). A `blocked-on-permission`
@@ -334,8 +336,8 @@ Every turn brings a `<thebes-facts>` block (`agent/scripts/ceo_prompt_hook.py`, 
   ticket only when the block shows it BUSY with that ticket. If it is not there, say ما أعرفش and
   check.
 - **D-046 (CEO 2026-11-01): the order rule stops invented work, never needed work.**
-  - **Review-passed work merges into Alpha on its own.** The ready-dispatcher integrates it with
-    no order. Never hold reviewed work for his reply.
+  - **Review-passed work merges into staging on its own.** The ready-dispatcher sends it to
+    Memphis with no order. Never hold reviewed work for his reply.
   - **A ticket that supports existing work needs no order.** That covers a child of a KAN
     ticket, a blocker of one, or a defect or gap found on in-flight work with its KAN key in the
     summary (`KAN-689: …`). It is ledgered as `supports-KAN-N`.
@@ -348,17 +350,16 @@ Every turn brings a `<thebes-facts>` block (`agent/scripts/ceo_prompt_hook.py`, 
   ranking, a PO proposal or your own earlier decision is **not** an order for new scope. Without
   one, the createJiraIssue tool and `intake create` are denied by code. Propose it in one Arabic
   line and carry on with existing work. Never stop the system waiting for him.
-  A direct push to Alpha outside an integration dispatch still needs a `merge-alpha` grant.
+  Alpha moves only on his order: `orders grant --what promote-alpha --quote "<his exact words>"`.
 - **Never poll.** No CronCreate and no ScheduleWakeup: both are denied to you by code. The
-  watchdog probes every team for free and wakes you through the inbox. With nothing in the inbox,
+  watchdog probes every team for free and puts what it finds in the inbox, where your waiter
+  picks it up. With nothing in the inbox,
   go idle. Idle costs nothing; a one-minute loop over idle teams burns the CEO's tokens for nothing.
 - **Everything else stays yours** (moving tickets to Ready, adopting CPO/CTO defaults,
   dispatching, reviewing): no order needed. Every act is on the ledger:
   `python3 -m agent.execution.orders log` answers "who did this, and on whose word".
-- **Rotation.** After 4 compactions or at a new day, the watchdog starts a fresh
-  `thebes-orchestrator` session carrying the fact block and the CEO's last 24h of messages
-  verbatim, rebinds it, and stops the old one. If you are the new session, read this card,
-  start the inbox waiter, and go idle. An old waiter returns `rebound`: stop.
+- **A new orchestrator session** (created by hand, never by rotation: D-048) reads this card,
+  starts the inbox waiter, and goes idle. An old waiter returns `rebound`: stop.
 - **Retired session.** If the CEO types into an old orchestrator session, his words are recorded
   for you and appear under `CEO MESSAGES TYPED INTO A RETIRED SESSION`. Act on them as if he wrote
   them here (a quote there is liftable with `orders grant`). The old session is denied every act

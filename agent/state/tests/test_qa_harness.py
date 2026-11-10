@@ -259,6 +259,7 @@ ok("[19] the correction is recorded rather than silently swapped",
 WF = read(ROOT, "agent", "WORKFLOWS.md")
 ok("[19] the governing rule the roles cite does not name the wrong workspace either",
    WRONG not in WF)
-ok("[19] and it names the canonical one", RIGHT in WF)
+ok("[19] and it names the workspace root, not a path on one machine",
+   "<workspace root>/agent/status/<name>.md" in WF and "/Users/" not in WF)
 
 sys.exit(summary())

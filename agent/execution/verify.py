@@ -26,7 +26,7 @@ The team's report carries, anywhere in the result file:
     sha: <40 hex>
     worktree: /Users/…/worktrees/staging-karnak
     C1: PASS — flutter test test/forms/select_test.dart, 12 passed
-    C3: PASS — screenshot /path/home.png vs frame "Home Feed"
+    C3: PASS — running Home screen read against the live design link, frame "Home Feed"
 
     python3 -m agent.execution.verify run <dispatch_id>
     python3 -m agent.execution.verify verdict <dispatch_id> --pass C3 --fail C5:"reason"

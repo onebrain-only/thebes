@@ -131,15 +131,15 @@ def _wake_edfu(channel, state_store, dispatch=None):
     sid = (state_store.active_role_session(edfu) or {}).get("session_id") if edfu else None
     if not sid:
         return {"status": "not-started",
-                "next": "Edfu has no session: the CEO runs `bash agent/scripts/start-teams.sh edfu`"}
+                "next": "Edfu has no session: the orchestrator runs `bash agent/scripts/start-teams.sh edfu`"}
     if channel == "claude":
-        text = ("THEBES REVIEW CHANNEL: CLAUDE. The CEO ordered QA to run from Claude Code. Follow "
+        text = ("THEBES REVIEW CHANNEL: CLAUDE. QA now runs from Claude Code. Follow "
                 "agent/REVIEWER.md (Claude variant) now: start `python3 -m agent.execution."
                 "review_queue wait --timeout 3600` with run_in_background, handle every item it "
                 "returns, submit verdicts, and start the wait again each time. Report in one line "
                 "that the loop is running, then end your turn.")
     else:
-        text = ("THEBES REVIEW CHANNEL: CODEX. The CEO sent QA back to Codex. Stop your review "
+        text = ("THEBES REVIEW CHANNEL: CODEX. QA is back with Codex. Stop your review "
                 "loop now: do not start another `review_queue wait`, finish any item you have "
                 "already submitted, report in one line that you stood down, and go idle.")
     from agent.execution import conversation_dispatch as cd
@@ -275,7 +275,7 @@ def needs_browser(branch, sha, runner=None, labels=(), key=None):
 
 
 def depth(branch, sha, labels=(), runner=None, key=None):
-    """tier, platform and the screenshots a PASS needs (agent/execution/review_tier.py)."""
+    """tier, platform and coverage of a review item (agent/execution/review_tier.py)."""
     paths = changed_paths(branch, sha, runner, key) if sha else None
     out = review_tier.describe(paths, labels)
     out["needs_browser"] = out["tier"] >= 2
@@ -546,7 +546,7 @@ def next_item(state_store=store, jira=None, with_qa=True):
     for item in candidates(state_store, jira, with_qa):
         if headless and item.get("needs_browser"):
             continue                       # it has no browser: that item is the Desktop reviewer's
-        meta = {k: item.get(k) for k in ("ticket", "tier", "platform", "min_screenshots", "branch", "sha")}
+        meta = {k: item.get(k) for k in ("ticket", "tier", "platform", "branch", "sha")}
         if claim(item["item_id"], meta=meta):
             return item
     return None
@@ -579,37 +579,15 @@ def _owner_check(item_id):
         raise Refused("not-your-claim", "%s is claimed by another reviewer thread" % item_id)
 
 
-SHOT_EXT = (".png", ".jpg", ".jpeg")
-
-
 def evidence_dir(ticket):
     return os.path.join(store.RUNTIME, "review-evidence", ticket)
 
 
-def screenshots(ticket, since=0):
-    d = evidence_dir(ticket)
-    try:
-        return sorted(os.path.join(d, f) for f in os.listdir(d)
-                      if f.lower().endswith(SHOT_EXT) and os.path.getmtime(os.path.join(d, f)) >= since)
-    except OSError:
-        return []
-
-
 def evidence_gate(item_id, ticket):
-    """A PASS on a tier-2/3 item needs screenshots taken during this review (CEO 2026-10-21: the
-    reviewer looks at the running app of the team's branch, and shows it). Returns the meta."""
-    rec = claim_record(item_id)
-    meta = rec.get("meta") or {}
-    need = int(meta.get("min_screenshots") or 0)
-    since = (rec.get("at") or 0) - CLAIM_SECONDS
-    shots = screenshots(ticket, since)
-    if len(shots) < need:
-        raise Refused("evidence-missing",
-                      "tier %s needs %d screenshot(s) of the running app in %s taken during this "
-                      "review; found %d. Run `review_queue app %s`, test, save screenshots there, "
-                      "then submit again." % (meta.get("tier"), need, evidence_dir(ticket),
-                                              len(shots), item_id))
-    return dict(meta, screenshots=shots)
+    """The claim's meta for a PASS. No saved screenshot is required (CEO 2026-11-05): the reviewer
+    drives the running app of the team's branch and its evidence is what it read there (DOM,
+    console, network) and the steps it took, written in the verdict."""
+    return dict(claim_record(item_id).get("meta") or {})
 
 
 def render_gate(item_id, ticket):
@@ -623,7 +601,7 @@ def render_gate(item_id, ticket):
     if rec and same and not rec.get("rendered"):
         raise Refused("build-not-ready", "%s: %s. Report the build as not ready; do not record PASS or "
                       "FAIL on it." % (ticket, rec.get("reason") or "the app never drew"))
-    if meta.get("platform") == "web" and int(meta.get("min_screenshots") or 0) > 0 \
+    if meta.get("platform") == "web" and int(meta.get("tier") or 0) >= 2 \
             and not (rec and same and rec.get("rendered")):
         raise Refused("build-not-ready", "%s is a screen change on web: run `review_queue app %s` and "
                       "wait until the app has drawn before any verdict." % (ticket, item_id))
@@ -633,10 +611,9 @@ def tested_line(meta):
     """What was tested, for the Jira comment."""
     if not meta.get("tier"):
         return ""
-    return "Tested: %s at %s, tier %s, %s.%s\n" % (
+    return "Tested: %s at %s, tier %s, %s.\n" % (
         meta.get("branch") or "branch head", (meta.get("sha") or "?")[:12], meta.get("tier"),
-        "app on %s" % meta["platform"] if meta.get("platform") else "diff and tests (no screen)",
-        " Screenshots: %d." % len(meta.get("screenshots") or []) if meta.get("screenshots") else "")
+        "app on %s" % meta["platform"] if meta.get("platform") else "diff and tests (no screen)")
 
 
 def _evidence_file(ticket, evidence):

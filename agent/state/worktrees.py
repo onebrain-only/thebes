@@ -55,12 +55,14 @@ ROOT = os.path.dirname(os.path.dirname(STATE))
 # must stop being a six-agent scratchpad: executors get worktrees, not this.
 PRODUCT_REPO = os.path.join(ROOT, "Dabbler", "dabbler-code")
 
-# Under agent/state/runtime/worktrees/ (CEO 2026-11-10: the only place a checkout lives;
-# formerly .claude/worktrees/, which held a Thebes
-# worktree (`wave7-agentview`). Product worktrees are namespaced beneath `product/`
-# so the two can never collide and neither cleanup can reach the other.
+# Under agent/state/runtime/worktrees/ (CEO 2026-11-10: the only place a checkout lives).
+# Product worktrees are namespaced beneath `product/` so a team checkout beside them can
+# never collide with one and neither cleanup can reach the other.
 WORKTREE_ROOT = os.path.join(ROOT, "agent", "state", "runtime", "worktrees", "product")
 
+# The Controller path (Phase 2-4) still integrates into Canary, and its tests pin that.
+# Team work does not use this path: it integrates into `staging` through
+# agent/execution/integrate.py (D-052).
 INTEGRATION_BRANCH = "Canary"
 # Not a warning. Every entry point below refuses these outright.
 PROTECTED_BRANCHES = ("main", "master", "origin/main", "origin/master")

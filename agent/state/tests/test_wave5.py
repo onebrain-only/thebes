@@ -20,12 +20,14 @@ TZ = ZoneInfo("Asia/Dubai")
 section("LIVE BOARD MODEL")
 ok("Backlog column holds To Do 10004", board.statuses_in_column("Backlog") == ("10004",))
 ok("Ready column holds Ready 10008",   board.statuses_in_column("Ready") == ("10008",))
-ok("OPERATIONS column holds THREE statuses",
-   set(board.statuses_in_column("Operations")) == {"10047","10048","10049"})
+ok("OPERATIONS column holds Content and Operations",
+   set(board.statuses_in_column("Operations")) == {"10048","10049"})
 ok("REVIEW column holds THREE statuses",
    set(board.statuses_in_column("Review")) == {"10009","10044","10045"})
-ok("Frontend Development holds Front-end 10046",
-   board.statuses_in_column("Frontend Development") == ("10046",))
+ok("Frontend Development holds Design 10047 and Front-end 10046 (CEO 2026-11-02)",
+   set(board.statuses_in_column("Frontend Development")) == {"10047","10046"})
+ok("the Needs-input column is gone and Open is legacy (CEO 2026-10-21)",
+   "Needs-input" not in board.COLUMNS and board.is_legacy("1"))
 ok("Backend Development holds Back-end 10043",
    board.statuses_in_column("Backend Development") == ("10043",))
 ok("live spelling Self-review (lowercase r)", board.name_for("10044") == "Self-review")

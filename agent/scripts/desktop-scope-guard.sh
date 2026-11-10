@@ -11,8 +11,8 @@
 # SCOPE. Only blocks commands that would create a NEW top-level entry under
 # ~/Desktop outside this canonical checkout: `git clone` targeting Desktop,
 # and `mkdir`/`cp -r`/`rsync` creating a directory directly under Desktop.
-# Temporary work belongs under Thebes-Canonical/.worktrees/ (git worktrees)
-# or Thebes-Canonical/.claude/worktrees/ (harness-managed worktrees) instead.
+# Temporary work belongs under Thebes-Canonical/agent/state/runtime/worktrees/
+# (git worktrees) instead.
 #
 # It does NOT police paths inside Thebes-Canonical itself, does not touch
 # Product code, Jira, databases, or global git config, and fails OPEN on any

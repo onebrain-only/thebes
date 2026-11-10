@@ -12,7 +12,13 @@ Every step below is marked. **[M]** = measured, with the date it was last run.
 **[U]** = untested here; inherited or documented but not executed. Do not present a `[U]`
 step's outcome as fact — run it and upgrade it, or say it is untested in your report.
 
-Repo root throughout: `/Users/moatazmustapha/Desktop/Thebes/Dabbler/dabbler-code`.
+Repo root throughout: `Dabbler/dabbler-code`, relative to the Thebes workspace root (the folder
+that holds `CLAUDE.md`).
+
+**Images are a tool, never evidence (CEO 2026-11-05).** Read the running app first: DOM,
+console, network, logs. Take an image only where the surface gives you nothing else to read
+(a canvas-drawn screen, a simulator), write it under your job's temp folder, and delete it when
+the task ends. Never attach one to a ticket, a verdict or a report.
 **Use absolute paths.** A relative `agent/status/` resolves against the project tree and
 silently creates a second, unread log.
 
@@ -40,7 +46,7 @@ see Step 2c.
 ## Step 1 — See what is actually connected
 
 ```bash
-cd "/Users/moatazmustapha/Desktop/Thebes/Dabbler/dabbler-code"
+cd "Dabbler/dabbler-code"
 flutter devices
 ```
 
@@ -70,7 +76,7 @@ asserts a `MaterialApp` mounted. It is a launch smoke test, not a feature test.
 **[M] 2026-09-06 — this is the command that works:**
 
 ```bash
-cd "/Users/moatazmustapha/Desktop/Thebes/Dabbler/dabbler-code"
+cd "Dabbler/dabbler-code"
 flutter test integration_test/app_test.dart -d emulator-5554 --dart-define-from-file=.env
 ```
 
@@ -143,7 +149,7 @@ size. If a screenshot came back scaled, convert first:
 ## Step 2c — Drive the app by hand (iOS simulator) **[M] 2026-09-06**
 
 ```bash
-cd "/Users/moatazmustapha/Desktop/Thebes/Dabbler/dabbler-code"
+cd "Dabbler/dabbler-code"
 xcrun simctl list devices booted                       # get the UDID
 flutter run -d <udid> --dart-define-from-file=.env
 ```
@@ -288,7 +294,7 @@ percent-encoded twice (`One%20Brain` in `NSFilePath` vs `One%2520Brain` in `NSUR
 resolver looked for a directory literally named `One%20Brain`.
 
 **The `One Brain` → `Thebes` rename removed the space and the bug with it.** Measured today from
-`/Users/moatazmustapha/Desktop/Thebes/Dabbler/dabbler-code`: SwiftPM resolved all ~20 packages,
+`Dabbler/dabbler-code`: SwiftPM resolved all ~20 packages,
 `Running pod install... 810ms`, `Xcode build done. 162.1s`, app launched and ran on
 iPhone 16 Pro / iOS 18.5.
 

@@ -38,7 +38,7 @@ CANONICAL_STATES = (READY, DEVELOPMENT, REVIEW, DONE)
 
 # Board columns, left to right as configured.
 COLUMNS = ("Backlog", "Ready", "Operations", "Frontend Development",
-           "Backend Development", "Needs-input", "Review", "Done")
+           "Backend Development", "Review", "Done")
 
 # status id -> (name, column, canonical, transition id)
 # `column` is None for a legacy status that is no longer a board target.
@@ -55,9 +55,10 @@ STATUSES = {
     "10044": ("Self-review", "Review",               REVIEW,      "6"),
     "10045": ("Peer-review", "Review",               REVIEW,      "7"),
     "10007": ("Done",        "Done",                 DONE,        "41"),
-    # ---- CEO 2026-10-21: two new columns, each holding an old status ----
-    "1":     ("Open",        "Needs-input",          DEVELOPMENT, "13"),   # waits on the CEO
     # ---- legacy: historical only, never a target for new work ----
+    # CEO 2026-10-21: the Needs-input column was removed. Work that waits on the CEO stays in
+    # its own column with the `need-input` label; Open stays mapped only because history names it.
+    "1":     ("Open",        None,                   DEVELOPMENT, "13"),
     "10005": ("In Progress", None,                   DEVELOPMENT, "21"),
     "10010": ("Development", None,                   DEVELOPMENT, "4"),
     "10006": ("In Review",   None,                   REVIEW,      "31"),

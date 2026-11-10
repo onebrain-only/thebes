@@ -594,7 +594,7 @@ ok("    and cannot escalate authority — the policy operations write only polic
 
 ok("50. Jira lifecycle semantics unchanged — the board table is untouched",
    board.STATUSES["10008"][0] == "Ready" and board.STATUSES["10007"][0] == "Done"
-   and len(board.STATUSES) == 16)        # +Open (Needs-input), +Reopened (Returned), CEO 2026-10-21
+   and len(board.STATUSES) == 16)        # Open and Reopened are legacy rows, their columns were removed
 ok("    ACCELERATE writes no Jira status and holds no transition id",
    "transition" not in capsrc.lower())
 ok("40. the selector opens no channel to any agent — no chatter is possible from it",

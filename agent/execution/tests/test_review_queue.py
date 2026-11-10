@@ -414,32 +414,28 @@ class ReviewQueueTests(unittest.TestCase):
     def _claimed_qa(self, tier):
         item_id = "qa-KAN-9@2026-10-21T10:00:00.000+0000"
         self.assertTrue(rq.claim(item_id, meta={"ticket": "KAN-9", "tier": tier, "platform": "web",
-                                                "min_screenshots": {1: 0, 2: 1, 3: 2}[tier],
                                                 "branch": "staging-luxor", "sha": SHA}))
         return item_id
 
-    def test_a_pass_on_a_screen_needs_a_screenshot_of_the_running_app(self):
+    def test_a_pass_on_a_screen_needs_no_saved_screenshot(self):
         item_id = self._claimed_qa(2)
         jira = mock.Mock()
         review_app._record_render("KAN-9", SHA, True)
         with mock.patch.object(jira_sync, "_move"):
-            with self.assertRaises(rq.Refused) as ctx:
-                rq.submit_qa(item_id, "pass", "ok", "steps", state_store=store, jira=jira)
-            self.assertEqual(ctx.exception.code, "evidence-missing")
-            os.makedirs(rq.evidence_dir("KAN-9"), exist_ok=True)
-            open(os.path.join(rq.evidence_dir("KAN-9"), "tc1-en-light.png"), "wb").close()
             rq.submit_qa(item_id, "pass", "ok", "steps", state_store=store, jira=jira)
+        self.assertFalse(os.path.isdir(rq.evidence_dir("KAN-9"))
+                         and [f for f in os.listdir(rq.evidence_dir("KAN-9")) if f.endswith(".png")])
         comment = " ".join(c.args[1] for c in jira.add_comment.call_args_list)
         self.assertIn("staging-luxor at %s" % SHA[:12], comment)
         self.assertIn("app on web", comment)
 
-    def test_a_fail_or_a_light_item_needs_no_screenshot(self):
+    def test_a_fail_and_a_light_item_report_what_was_tested(self):
         jira = mock.Mock()
         review_app._record_render("KAN-9", SHA, True)
         with mock.patch.object(jira_sync, "_move"):
             rq.submit_qa(self._claimed_qa(2), "fail", "button missing", "steps", state_store=store, jira=jira)
         item_id = "qa-KAN-7@x"
-        rq.claim(item_id, meta={"ticket": "KAN-7", "tier": 1, "min_screenshots": 0, "sha": SHA})
+        rq.claim(item_id, meta={"ticket": "KAN-7", "tier": 1, "sha": SHA})
         with mock.patch.object(jira_sync, "_move"):
             rq.submit_qa(item_id, "pass", "ok", "diff and tests", state_store=store, jira=jira)
         self.assertIn("diff and tests (no screen)",
@@ -626,10 +622,10 @@ class LiveGateTests(unittest.TestCase):
     setUp, tearDown = ReviewQueueTests.setUp, ReviewQueueTests.tearDown
 
     def test_a_pass_is_done_only_once_it_is_live(self):
-        """D-043 section 6: the CEO sees it live, so Done waits for alpha.dabbler.pro."""
+        """D-052: Done waits until staging.dabbler.pro serves the commit."""
         jira = mock.Mock()
         jira.get_issue.return_value = {"summary": "Venue chips", "labels": [],
-                                       "description": "TC1: open https://alpha.dabbler.pro/venues and tap a chip."}
+                                       "description": "TC1: open https://staging.dabbler.pro/venues and tap a chip."}
         moves = []
         with mock.patch.object(jira_sync, "_move", side_effect=lambda k, s, *a: moves.append((k, s))):
             self.live = "not-on-alpha"
@@ -652,7 +648,7 @@ class LiveGateTests(unittest.TestCase):
         self.assertFalse(rq.is_awaiting("KAN-9"))
         done = jira.add_comment.call_args.args[1]
         self.assertIn("شغالة لايف", done)
-        self.assertIn("https://alpha.dabbler.pro/venues", done)
+        self.assertIn("https://staging.dabbler.pro/venues", done)
         self.assertIn("Venue chips", done)
 
     def test_an_awaiting_ticket_is_not_offered_to_the_reviewer_again(self):

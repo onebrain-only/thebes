@@ -573,7 +573,9 @@ unbound, a decision falls back to the accountable seat's own session, then to th
 
 ## D-035 — Every decision is delegated to the orchestrator; four hard stops remain the CEO's
 
-**Status:** ACTIVE (2026-10-01, CEO: option (أ) — "أقلل الرجوع ليا بأكبر شكل ممكن")
+**Status:** ACTIVE for the delegation; **its four hard stops are SUPERSEDED by D-043
+(2026-10-27)**: only money, `main` and sending outside reach the CEO.
+(2026-10-01, CEO: option (أ) — "أقلل الرجوع ليا بأكبر شكل ممكن")
 **Decision:** The CEO delegates every decision to the orchestrator and the roles it runs:
 scope, priority, **the next ticket to start**, acceptance, architecture, **adding a
 dependency or changing a schema design**, experience, content, releases to Canary
@@ -899,6 +901,8 @@ CEO: *"احنا كده بنقول له خليك غبي… مش هو ده ابد�
 1. **Review-passed work integrates into Alpha automatically.** `integrate.ordered_items` lets
    every verified item through, ledgered with rule `review-passed`. A direct push to Alpha outside
    an integration dispatch still needs a `merge-alpha` grant.
+   *(Superseded by D-052: review-passed work integrates into `staging`; Alpha moves only on a
+   `promote-alpha` order.)*
 2. **A ticket that supports existing work needs no order.** That means a non-Epic whose parent
    or blocker is a KAN key, or whose summary names the KAN ticket it serves (`orders.supports`).
    It is ledgered as `supports-KAN-N`, and is enforced in both `order_gate.pre` and

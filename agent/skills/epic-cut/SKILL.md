@@ -32,7 +32,7 @@ tickets inside an approved Epic need no order (D-046).
    - `app_router.dart`: 25 commits.
    - The big screens: home, profile, games, the composers.
 
-   A hotspot edited by two parallel tickets is a merge conflict on Alpha.
+   A hotspot edited by two parallel tickets is a merge conflict on `staging`.
 
 ## 2. The four shapes that make an Epic parallel
 

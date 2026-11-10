@@ -20,14 +20,10 @@ UI_PATH = re.compile(r"(^|/)(presentation|widgets|screens|app_boot)/|^lib/core/d
 SENSITIVE_PATH = re.compile(r"^lib/features/(auth|authentication|payments?|wallet|money)/|"
                             r"^supabase/|/migrations?/")
 SENSITIVE_LABELS = {"money", "auth", "db", "migration", "payments"}
-# screenshots a PASS must carry, per tier (evidence gate in review_queue.submit_*)
-MIN_SCREENSHOTS = {1: 0, 2: 1, 3: 2}
-
-
 def tier(paths, labels=()):
     """1, 2 or 3. Unknown paths (None) are treated as a screen change: look rather than guess.
     Sensitivity only deepens a review that has a screen to look at: a migration or a repository
-    change with no screen is read in the diff and its tests (tier 1), never photographed."""
+    change with no screen is read in the diff and its tests (tier 1), never opened in the app."""
     labels = {str(l).lower() for l in labels or ()}
     if "tier:1" in labels:
         return 1
@@ -70,5 +66,5 @@ def coverage(paths, labels=()):
 
 def describe(paths, labels=()):
     t = tier(paths, labels)
-    return {"tier": t, "platform": "web" if t >= 2 else None, "min_screenshots": MIN_SCREENSHOTS[t],
+    return {"tier": t, "platform": "web" if t >= 2 else None,
             "coverage": coverage(paths, labels), "auto_pass": auto_pass(paths, labels)}

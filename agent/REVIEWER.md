@@ -11,7 +11,7 @@ A `qa` item that carries `cloud_branch` and `sha` was built by a Claude cloud se
 cloned that exact commit and ran `flutter analyze` and `flutter test` (they passed, or the ticket would not
 be in QA-Test). Review THAT commit against the ticket's acceptance criteria, from the diff and its tests
 (and, for tier 2-3, the running app: `review_queue app <item_id>`, below): `git -C Dabbler/dabbler-code fetch origin <cloud_branch>` then
-`git -C Dabbler/dabbler-code diff origin/Alpha...<sha>`. Judge what the tests do not prove; do not re-run
+`git -C Dabbler/dabbler-code diff origin/staging...<sha>`. Judge what the tests do not prove; do not re-run
 the whole suite. A FAIL goes back to a new cloud session, so write the reason as an instruction.
 
 ## Two kinds of Codex reviewer (CEO 2026-10-17)
@@ -26,15 +26,15 @@ the whole suite. A FAIL goes back to a new cloud session, so write the reason as
   headless turn: it would hold the thread. If `next` is empty, say so and end the turn.
   If your sandbox lacks something an item needs (the Keychain, the browser, a folder outside the
   workspace), do not guess a verdict: `--skip` the check with the reason `needs-desktop` and say
-  exactly what was missing, so the CEO can decide which reviewer takes that kind of item.
+  exactly what was missing, so the orchestrator can decide which reviewer takes that kind of item.
 
 ## Two channels, one card (CEO 2026-10-13)
 
 Review has two channels: **Codex** (this card's default reader, the normal channel) and **Claude
-QA** (the conversation named Edfu), which only works when the CEO orders it through the
-orchestrator (`review_queue channel claude`), for instance when Codex has no tokens. `wait` tells you
+QA** (the conversation named Edfu), which only works when the orchestrator switches the channel
+(`review_queue channel claude`), for instance when Codex has no tokens or has stalled (D-043). `wait` tells you
 which is active: the channel that is not active gets `{"standby": true}` and must NOT start another
-wait. Never switch the channel yourself.
+wait. A reviewer never switches the channel; the orchestrator does.
 
 ### If you are Edfu (a Claude session)
 - You are idle (zero tokens) until the orchestrator dispatches "REVIEW CHANNEL: CLAUDE". Then:
@@ -85,9 +85,9 @@ Never poll in a quick loop.
 - You only get product work (a code team's branch). Text, reports and answers are judged by
   the orchestrator, not you.
 - `ticket`, `summary`, `branch`, `sha` — what to look at
-- `tier`, `platform`, `min_screenshots` — how deep, where, and what a PASS must carry
+- `tier`, `platform`, `coverage` — how deep, where, and which language and theme
 - `checks` — for `judge`: the lines `C2 | judge | <what to confirm> | <evidence the team named>`
-- `evidence` — files and notes the team handed over (screenshots, commands)
+- `evidence` — files and notes the team handed over (steps, commands, output)
 - `ticket_status`, `latest_comments` — where the ticket stands in Jira and the last comments
   (PO acceptance, rulings). READ THEM FIRST: a check may already be settled there with evidence you
   cannot see in the diff. If the ticket is already Done, say so and submit nothing.
@@ -95,8 +95,8 @@ Never poll in a quick loop.
 
 ## How to look (CEO 2026-10-21: on the team's branch, locally, one platform)
 
-You test the exact commit the team handed over, on this Mac, BEFORE it reaches Alpha. Never on
-alpha.dabbler.pro or any public URL. Every item carries `branch`, `sha`, `tier` and `platform`
+You test the exact commit the team handed over, on this Mac, BEFORE it reaches staging. Never on
+staging.dabbler.pro, alpha.dabbler.pro or any public URL. Every item carries `branch`, `sha`, `tier` and `platform`
 (an item with `sha: null` says why in `note`; review the branch head and say so).
 
 | tier | what it is | what you do |
@@ -106,9 +106,9 @@ alpha.dabbler.pro or any public URL. Every item carries `branch`, `sha`, `tier` 
 | 3 | a screen in money / sign-in / database work | every TC, both languages and themes, then the 10-minute exploratory pass below |
 
 **Stacked tickets (D-049).** An item with `stacked_on: [KAN-x]` was built on top of KAN-x's checked
-commit before KAN-x reached Alpha, so its diff against Alpha also carries KAN-x's commits. Judge only
+commit before KAN-x reached staging, so its diff against staging also carries KAN-x's commits. Judge only
 the commits whose message starts with this item's ticket key; KAN-x is reviewed on its own item.
-Thebes keeps this ticket off Alpha until KAN-x passes.
+Thebes keeps this ticket off staging until KAN-x passes.
 
 One codebase, ONE platform: the **web** build in your internal browser. No simulators, no
 emulators (CEO 2026-10-22). A change that only a phone shows (native code, permissions, push) is
@@ -120,12 +120,13 @@ evidence; Thebes treats that as a coverage limit, not a defect.
    `python3 -m agent.execution.review_queue app <item_id>` (about 1-2 minutes) prints a `url`
    (http://localhost:81xx) and the `evidence_dir`. Open the URL in your internal browser. Flutter
    draws on a canvas: press Enter (or "Enable accessibility") so the semantics tree appears, then
-   read and tap. Save your screenshots (`.png`) in `evidence_dir`, named by TC, e.g.
-   `tc1-en-light.png`.
+   read and tap. Your evidence is what you read there: the semantics tree (DOM), the browser
+   console and the network requests. Save no screenshots (CEO 2026-11-05); take one only when
+   nothing else can show the defect, and delete it when the item is submitted.
 3. **Run the ticket's TESTING SCENARIOS** for your tier. A TC you could not run is written in your
    evidence as `skipped: <reason>`; skipping never blocks, it is just visible.
-4. **Submit** (below). A tier-2 PASS needs at least 1 screenshot taken during this review, tier 3
-   at least 2; Thebes refuses a PASS without them. A FAIL never needs a screenshot, but one helps.
+4. **Submit** (below). A PASS needs no screenshot: write the steps you took and what the DOM,
+   console and network showed.
 5. **Stop it:** `python3 -m agent.execution.review_queue app <item_id> --stop` (frees the port and
    removes the folder). `review_queue app --list` shows what is running.
 
@@ -135,7 +136,7 @@ browser console for errors a screen does not show.
 
 3. **Signing in.** Test account: `dabbler.pro@proton.me`. Take the password at the moment you
    type it: `security find-generic-password -s dabbler-test-user -w`. Never echo it, write it
-   in a file, a screenshot, a comment or your reply. If the keychain asks, it is the CEO's to allow.
+   in a file, a screenshot, a comment or your reply. If the keychain asks, do not answer for it: `--skip` the check with the reason `needs-desktop`.
 4. Database writes. Additive test rows are allowed ONLY as the Codex QA test account (dabbler.pro@proton.me), under the CEO standing approval of 2026-10-22 (Codex test data on the QA account). Never another account. Never DROP. Never delete rows you did not create. Never read auth.users. Never mint or read user tokens.
 5. If a check cannot run because of the review environment (blank canvas, no browser, no simulator, no clipboard, a missing build define), submit it with `review_queue submit --env C<n>:"why"` instead of failing it. It is not charged to the team.
 6. **Languages and themes:** what the item's `coverage` names (tier 2: one; tier 3: both).
@@ -148,13 +149,12 @@ browser console for errors a screen does not show.
 python3 -m agent.execution.review_queue submit <item_id> \
     --pass C2 --pass C3 --fail C4:"what you saw, where, how to reproduce" \
     --skip C5:"needs-write" \
-    --evidence "<screenshot paths under agent/state/runtime/review-evidence/<ticket>/ and the steps you took>"
+    --evidence "<the steps you took and what the DOM, console and network showed>"
 ```
 
 - For a `qa` item: `--verdict pass` or `--verdict fail --reason "..."` instead of per-check flags.
 - Every check needs a `--pass`, `--fail` or `--skip`. A FAIL reason must let a developer fix
   it without asking you: what you did, what you expected, what happened, which screen.
-- Save screenshots to `agent/state/runtime/review-evidence/<ticket>/` first, then name the paths.
 - A FAIL sends only that check back to the team. Thebes limits the rounds; you do not.
 - **Check `QA` = the ticket's acceptance criteria hold.** With a UI, see them in the running app.
   Without a UI (an API contract, docs, a migration file, a pure domain change), verify each

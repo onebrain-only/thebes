@@ -16,7 +16,7 @@ missing, rather than let the team find out mid-work.
     CHECKS:
     C1 | run   | flutter test test/forms/select_test.dart | exit 0
     C2 | run   | flutter analyze lib/src/forms             | exit 0
-    C3 | judge | Home matches frame "Home Feed" 1:1        | named screenshot vs frame
+    C3 | judge | Home matches frame "Home Feed" 1:1        | running screen vs the live design link
 
 A check is the agreed scenario for "done". `run` checks are re-run by Thebes itself, once,
 on the commit the team reports (zero tokens). `judge` checks are things only an eye can
