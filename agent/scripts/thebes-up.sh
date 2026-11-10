@@ -8,7 +8,7 @@
 # Background loops: the watchdog and the Ready dispatcher (zero tokens).
 # Sessions: the orchestrator and every bound team are resumed with their SAME session id, so
 # no conversation, binding or memory is lost; a team with no session yet is started by
-# start-teams.sh. Run it from your own terminal: Claude Code does not let a session create
+# start-teams.sh, and an unbound orchestrator is started and bound here. Run it from your own terminal: Claude Code does not let a session create
 # background sessions itself.
 set -u
 cd "$(dirname "$0")/../.." || exit 1
@@ -50,11 +50,12 @@ for tid, t in sorted(teams.read().items(), key=lambda kv: kv[1]["number"]):
     print(tid, (b or {}).get("session_id") or "-", t["display_name"].replace(" ", "_"))
 EOF
 missing_teams=""
+missing_orchestrator=0
 while read -r tid sid display; do
   display=${display//_/ }
   if [ "$sid" = "-" ]; then
     say "UNBOUND  $display"
-    [ "$tid" != "orchestrator" ] && missing_teams="$missing_teams $tid"
+    [ "$tid" = "orchestrator" ] && missing_orchestrator=1 || missing_teams="$missing_teams $tid"
     continue
   fi
   case " $live " in
@@ -74,6 +75,41 @@ while read -r tid sid display; do
   esac
 done < "$RUNTIME/.thebes-up.sessions"
 rm -f "$RUNTIME/.thebes-up.sessions"
+
+if [ $missing_orchestrator = 1 ] && [ $CHECK = 0 ]; then
+  # No orchestrator is bound (a new machine, or the old conversation was retired): start one
+  # and bind it. The name and model have one home, agent/execution/watchdog.py.
+  say "== starting the orchestrator"
+  read -r oname omodel <<< "$(python3 -c "
+from agent.execution import watchdog as w
+print(w.ORCHESTRATOR_NAME, w.ORCHESTRATOR_MODEL)")"
+  before=$(claude agents --json --all 2>/dev/null | python3 -c "
+import json,sys
+print(' '.join(r.get('sessionId','') for r in json.load(sys.stdin)))" 2>/dev/null)
+  claude --bg --name "$oname" --model "$omodel" --permission-mode auto "You are the Thebes orchestrator, in a fresh session. Read CLAUDE.md and agent/ORCHESTRATOR.md now, start your inbox waiter (section 1), then reply in one line that you are ready and go idle." >/dev/null
+  osid=""
+  for _ in $(seq 1 30); do
+    osid=$(claude agents --json 2>/dev/null | python3 -c "
+import json,sys
+before=set('$before'.split())
+rows=[r for r in json.load(sys.stdin) if r.get('name')=='$oname' and r.get('sessionId') not in before]
+print(rows[0]['sessionId'] if rows else '')" 2>/dev/null)
+    [ -n "$osid" ] && break
+    sleep 2
+  done
+  if [ -z "$osid" ]; then
+    say "FAILED   the orchestrator session did not appear in 'claude agents'"
+  else
+    python3 - "$osid" "$PWD" "$oname" <<'EOF'
+import sys
+sys.path.insert(0, '.')
+from agent.state import store, teams
+sid, home, name = sys.argv[1:]
+store.bind_role_session(teams.ORCHESTRATOR_ID, "claude", sid, home, "ceo", session_name=name)
+print("started  Orchestrator (%s)" % sid[:8])
+EOF
+  fi
+fi
 
 if [ -n "$missing_teams" ] && [ $CHECK = 0 ]; then
   say "== starting unbound teams:$missing_teams"
