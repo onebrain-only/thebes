@@ -131,6 +131,21 @@ def team_of(session_id, state_store=None, teams_mod=None):
     return None, None
 
 
+DESKTOP = os.path.realpath(os.path.expanduser("~/Desktop"))
+MAKES = re.compile(r"\b(mkdir|git\s+(-C\s+\S+\s+)?(clone|worktree\s+add)|cp\s+-\w*r|rsync|touch|mv)\b|>\s*\S")
+
+
+def desktop_stray(command, cwd):
+    """A path this command would create on the Desktop outside the Thebes repo, else None."""
+    if not MAKES.search(command):
+        return None
+    for tok in re.findall(r"(?:~|/Users/[^/\s]+)/Desktop/[^\s;&|'\"]*", command):
+        path = os.path.realpath(os.path.expanduser(tok))
+        if path.startswith(DESKTOP + os.sep) and not (path == ROOT or path.startswith(ROOT + os.sep)):
+            return tok
+    return None
+
+
 def decide(payload, state_store=None, teams_mod=None):
     """Return None (no opinion) or a refusal reason."""
     tool = payload.get("tool_name") or ""
@@ -167,6 +182,16 @@ def decide(payload, state_store=None, teams_mod=None):
                 % (tid or "This session", name) + NOT_CEO)
     if tool == "Bash":
         command = (payload.get("tool_input") or {}).get("command") or ""
+        stray = desktop_stray(command, payload.get("cwd") or ROOT)
+        if stray:
+            try:
+                is_team = bool(team_of(sid, state_store, teams_mod)[1])
+            except Exception:                             # noqa: BLE001
+                is_team = False
+            if is_team:
+                return ("CEO 2026-11-10: nothing is created on the Desktop outside the Thebes repo "
+                        "(%s). Work in your branch's worktree under .claude/worktrees/ and put "
+                        "documents in Dabbler/dabbler-docs/." % stray)
         if GIT_WRITE.search(command):
             try:
                 tid, lane = team_of(sid, state_store, teams_mod)
