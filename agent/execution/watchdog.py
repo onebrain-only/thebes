@@ -82,7 +82,8 @@ def _alert(dispatch, kind, text, *, state_store=store, launcher=None):
     return True
 
 
-WAKE_AFTER_SECONDS = 300       # something waited this long for an orchestrator that is not listening
+WAKE_ENABLED = False           # CEO 2026-11-10: "i want to stop it, it consume tokens"
+WAKE_AFTER_SECONDS = 300      # something waited this long for an orchestrator that is not listening
 WAKE_EVERY_SECONDS = 900       # and the orchestrator is woken at most this often
 WAKE_MAX_PER_ITEM = 2          # and about the same waiting set at most this many times
 _ITEM_IDS = ("decision_request_id", "priority_request_id", "question_id", "key", "_key",
@@ -134,7 +135,7 @@ def wake_orchestrator(*, state_store=store, cli=None, now=None, waiter=None, pro
     from agent.state import teams
     now = now or _time.time()
     binding = state_store.active_role_session(teams.ORCHESTRATOR_ID)
-    if not binding:
+    if not WAKE_ENABLED or not binding:
         return None
     sid = binding["session_id"]
     age, what = inbox.oldest_waiting(sid, state_store=state_store, now=now)

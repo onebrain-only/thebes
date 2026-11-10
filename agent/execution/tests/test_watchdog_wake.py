@@ -49,6 +49,7 @@ class FakeCli:
         return "ok"
 
 
+@mock.patch.object(wd, "WAKE_ENABLED", True)
 class WakeTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
