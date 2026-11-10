@@ -19,11 +19,11 @@ control. **While Ruling 2 is live, no build is uploaded, no submission is filed,
 distribution goes out.** Building locally is fine; distributing is not.
 
 `P-030` (`DECISIONS.md:4728`) freezes merges into `main` on top of that. It governs the **web**
-release path, not this one — but it is why nobody should read "Canary is green" as permission
+release path, not this one — but it is why nobody should read "staging is green" as permission
 to submit.
 
 **Where the process resumes when the freeze lifts:** at *Sequence* below, step 1, from a clean
-`Canary`. Nothing in this skill is executed before then. If a seat is asked to submit while
+`staging` (the branch that integrates team work since D-052; `Canary` is a legacy branch). Nothing in this skill is executed before then. If a seat is asked to submit while
 Ruling 2 stands, the answer is the ruling, not a build.
 
 ## What exists here
@@ -153,7 +153,7 @@ Two facts from that reference change what you build, so they belong here too:
 ## Out of scope: the Cloudflare variable split
 
 The Production/Preview variable split (`Dabbler/dabbler-docs/dabbler-code/ARCHITECTURE.md` section 7) does **not** belong to this
-skill. It governs the **web** deploy — Cloudflare Pages building `Canary` and `main` — which
+skill. It governs the **web** deploy — Cloudflare Pages building `staging`, `Alpha` and `main` — which
 ships no binary and reaches no store. It is already carried by `ARCHITECTURE.md` and by
 `agent/roles/devops.md`, and duplicating it here would put a web trap in front of a seat doing
 store work. Named here only so the next seat does not go looking for it.

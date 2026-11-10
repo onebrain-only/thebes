@@ -4,6 +4,12 @@ description: "Turn the current conversation into a spec and publish it to the pr
 disable-model-invocation: true
 ---
 
+> **In this repository (Thebes, 2026-11-10).** The tracker is the Jira board `KAN`, not GitHub
+> issues and not local files, and it is the only task reference (`agent/DECISIONS.md` TH-063).
+> Only `pm` and `po` create tickets (TH-061, D-046, D-049). Specs, plans and reports are written
+> under `Dabbler/dabbler-docs/`, nowhere else (TH-069). There is no `/setup-matt-pocock-skills`
+> step here: this note is the setup.
+
 This skill takes the current conversation context and codebase understanding and produces a spec. Do NOT interview the user; just synthesize what you already know.
 
 The issue tracker and triage label vocabulary should have been provided to you. If not, tell the user to run `/setup-matt-pocock-skills`.

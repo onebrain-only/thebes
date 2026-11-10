@@ -1,6 +1,6 @@
 ---
 name: project-audit
-description: Use when auditing the Dabbler codebase — assessing project health, finding what is finished vs half-built, locating dead/unused/orphaned code, spotting broken or unreachable screens, checking documentation drift, or reviewing security posture. Triggers on "audit", "project status", "what's broken", "what's unused", "state of the codebase", "health report", "tech debt", "what's actually working". Produces or refreshes docs/PROJECT_STATE.md with file-cited evidence.
+description: Use when auditing the Dabbler codebase — assessing project health, finding what is finished vs half-built, locating dead/unused/orphaned code, spotting broken or unreachable screens, checking documentation drift, or reviewing security posture. Triggers on "audit", "project status", "what's broken", "what's unused", "state of the codebase", "health report", "tech debt", "what's actually working". Produces or refreshes Dabbler/dabbler-docs/PROJECT_STATE.md with file-cited evidence.
 ---
 
 # Dabbler Project Audit
@@ -86,7 +86,7 @@ Nine dimensions. Cite `file:line` on every concrete finding.
 
 ## Phase 4 — Deliverable
 
-Write / refresh **`docs/PROJECT_STATE.md`**:
+Write / refresh **`Dabbler/dabbler-docs/PROJECT_STATE.md`** (reports live only in `Dabbler/dabbler-docs/`, CEO 2026-11-05):
 
 1. **Executive summary** — max 10 bullets, ranked by impact.
 2. **Mental model** — 1–2 paragraphs.
@@ -108,7 +108,7 @@ Write / refresh **`docs/PROJECT_STATE.md`**:
 
 ## Phase 5 — Repeat-run mode
 
-If `docs/PROJECT_STATE.md` already exists, **read it first**. Then:
+If `Dabbler/dabbler-docs/PROJECT_STATE.md` already exists, **read it first**. Then:
 - mark fixed findings `RESOLVED` (with the commit if you can find it),
 - update entries whose numbers moved,
 - tag new findings `NEW`,
@@ -134,7 +134,7 @@ Facts that change how evidence should be read. Get these wrong and the report li
 | Bucket `venue-images` / `avatars` | **These do not exist.** Bucket-name mismatch is a recurring bug class. |
 | Storage upload without a SELECT policy | Broken — uploads need read-back. Recurring bug class. |
 | App hangs on launch screen | Expected without `flutter run --dart-define-from-file=.env`. Not a bug. |
-| Push to Canary looked green | Proves nothing. Cloudflare Production and Preview hold **separate** variables; Preview sat empty for months and silently broke every Canary build. |
+| Push to `staging` looked green | Proves nothing until https://staging.dabbler.pro serves the commit. Cloudflare Production and Preview hold **separate** variables; Preview sat empty for months and silently broke every preview build. |
 | `encrypted_password` NULL on new users | By design — trigger `trg_strip_signup_password`. Accounts are passwordless. |
 
 Supabase project is `wtncuzcskpigqpmnxwws` (org Onebrain). **A second, unrelated

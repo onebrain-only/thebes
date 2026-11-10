@@ -3,6 +3,12 @@ name: code-review
 description: "Review the changes since a fixed point (commit, branch, tag, or merge-base) along two axes: Standards (does the code follow this repo's documented coding standards?) and Spec (does the code match what the originating issue/spec asked for?). Runs both reviews in parallel sub-agents and reports them side by side. Use when the user wants to review a branch, a PR, work-in-progress changes, or asks to \"review since X\"."
 ---
 
+> **In this repository (Thebes, 2026-11-10).** The tracker is the Jira board `KAN`, not GitHub
+> issues and not local files, and it is the only task reference (`agent/DECISIONS.md` TH-063).
+> Only `pm` and `po` create tickets (TH-061, D-046, D-049). Specs, plans and reports are written
+> under `Dabbler/dabbler-docs/`, nowhere else (TH-069). There is no `/setup-matt-pocock-skills`
+> step here: this note is the setup.
+
 Two-axis review of the diff between `HEAD` and a fixed point the user supplies:
 
 - **Standards**: does the code conform to this repo's documented coding standards?

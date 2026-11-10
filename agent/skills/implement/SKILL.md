@@ -12,4 +12,6 @@ Run typechecking regularly, single test files regularly, and the full test suite
 
 Once done, use /code-review to review the work.
 
-Commit your work to the current branch.
+Commit your work to the current branch. In Thebes that is your team's one branch
+(`staging-<team>`); you never merge into `staging`, `Alpha` or `main` (`agent/WORKFLOWS.md`), and the
+reviewer is Codex (`agent/REVIEWER.md`), so `/code-review` here is your own check, not the gate.

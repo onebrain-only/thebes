@@ -1,6 +1,6 @@
 ---
 name: drive-the-app
-description: Get a running Dabbler app in front of you and drive it, on the surface that actually works today. Use when a ticket must be tested end to end, when a "done" claim needs checking against real running behaviour, when a bug must be reproduced, or when you need a screenshot of the real app rather than a widget test. Covers choosing a surface (Android emulator, Chrome/CanvasKit, iOS simulator, web integration_test), starting it, driving it by screenshot and coordinate — including tapping and typing on iOS, where simctl has no tap command — and the traps that make a run lie to you.
+description: Get a running Dabbler app in front of you and drive it, on the surface that actually works today. Use when a ticket must be tested end to end, when a "done" claim needs checking against real running behaviour, when a bug must be reproduced, or when you need to see the real app rather than a widget test. Covers choosing a surface (Android emulator, Chrome/CanvasKit, iOS simulator, web integration_test), starting it, driving it by screenshot and coordinate — including tapping and typing on iOS, where simctl has no tap command — and the traps that make a run lie to you.
 ---
 
 # Drive the App
@@ -103,7 +103,7 @@ as touching production data, and never point it at anything you would not want w
 When `operational_context.primary_target` names local Flutter web on Chrome, keep that localhost
 runtime authoritative. Start it through the terminal. Add browser automation only when UI
 interaction or browser inspection is needed; automation is a tool, not a replacement environment.
-Never substitute Canary for a reported localhost target.
+Never substitute a hosted site (`staging.dabbler.pro`) for a reported localhost target.
 
 **[U] — documented in `agent/roles/qa.md`, not executed in this pass.**
 
@@ -112,8 +112,8 @@ flutter run -d chrome --dart-define-from-file=.env
 ```
 
 **The `--dart-define-from-file=.env` flag is not optional** — without it the app hangs on
-the launch screen. Test the local `localhost:<port>` build, never `canary.dabbler.pro`
-(that is `devops`' release-verification surface) and **never** `app.dabbler.pro` (real
+the launch screen. Test the local `localhost:<port>` build, never `staging.dabbler.pro`
+(that is where Memphis verifies an integrated commit) and **never** `app.dabbler.pro` (real
 user data).
 
 Then drive with `mcp__claude-in-chrome__computer` — screenshot, click, type, scroll — and
