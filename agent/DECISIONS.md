@@ -11,6 +11,10 @@ an older `DECISIONS.md` refer to the frozen predecessor/Product governance histo
 the `D-001` series in this file. The canonical Thebes repository began at Wave 5 without
 importing those legacy logs; see `agent/history/program-chronology.md`.
 
+**Archived files (2026-11-10).** Entries below name `AGENTS.md`, `AGENTS_DESK.md`,
+`PROGRAM_MEMORY.md` and `MASTER_ROADMAP.md` as they stood when the decision was taken. Those
+files now live under `agent/archive/2026-11-10/`; the entries are not rewritten.
+
 ## D-001 — Repository memory is canonical
 
 **Status:** ACTIVE

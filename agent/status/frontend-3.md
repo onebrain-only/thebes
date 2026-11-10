@@ -162,3 +162,28 @@ Commit 3acc0340 (base a689f41a), not pushed. Root causes found in the real brows
 - game_view_$gameId channel now also listens to events/games (id=eq.gameId) via existing debounce; single-channel guard; dispose/load inert after dispose; GameView.fromJson tolerates null end_at; SupabaseConfig.eventsTable added.
 - Tests: test/features/games/game_view_realtime_test.dart 8/8 green; join-event regression 4/4; analyze 0 errors/0 warnings.
 - Limitation: realtime publication of events/games not verified on prod; controller file is 784 lines (was 726, already over the 500 cap).
+
+## 2026-11-04 — KAN-852 (Horus, dispatch cdispatch-afa2134a) — DONE on alpha-deir-el-bahari
+- Bell → Activity log now merges rpc_get_activity_feed + the owner's public_activities (stable identity, dedupe, per-source paging); "All" chip restores the full list; error+Retry kept separate from empty; partial failure keeps the other source's rows.
+- Owner Profile Activity tab and the All-sports → /activities entry removed; visitor Activity tab kept.
+- Commit 0ba5f48d657404d2bbc7b7a9171e5f8d95d1895a pushed. analyze exit 0 (0 err/0 warn); full flutter test 4533 green. No new ARB keys.
+- Gaps: RPC orders by time bucket but pages on happened_at (possible skipped rows, backend RPC change); mocks hand-written (build_runner stalled); notifications_screen_v2 still >500 lines (565→~521).
+
+## 2026-11-04 — KAN-715 Events P3: Flutter games reads to event-backed projections (Horus)
+- Worktree kan682-luxor, branch alpha-luxor, commit f2ca585f609106bb46e6c58f6e78373c44763858 (not pushed).
+- Converted ACTIVE reads: G1 stream removed (no listeners), G3 getGames -> v_game_card, G7 -> v_my_games, G8 -> v_game_card, G14 sport-profile hosted -> v_game_card by creator_profile_id, G17 composer search -> v_game_card (sport:sport_key).
+- GameModel.fromJson: invented fallbacks removed (title/sport/end/capacity); start/created/updated now() fallbacks kept (NOT NULL, unreachable).
+- Named exception: G15 GDPR export (projection gap: description, cancelled_at, cancelled_reason, request_id, event_id, game_roster embed). UNREACHABLE sites left unchanged.
+- D03 scan map + matrix 2a updated; stale design-gate allow entry for game_model removed.
+- flutter test full: 4526 passed. flutter analyze: exit 0, 0 errors, 0 warnings, 44 infos.
+
+## 2026-11-04 — KAN-865 (F10c, data export/retention games reads) — STOPPED, no commit
+- Worktree kan784-deir-el-bahari @ 1fcadd3a, untouched. No diff, no push.
+- Obstacle 1 (DELETE, data_retention_service.dart:317): no deletable events object on Alpha. public.events closed to API (kan710 20261101140000:98-102); kan718_games_compat is a read-only join view (d05 20261104110200:74-113, SELECT grants only :155-163); only events-aware delete is admin_cleanup_user_data (b13 20261104101300:180-215) = all games for the profile, no 2-year cutoff, plus posts/profiles — not identical.
+- Obstacle 2 (reads :647, :1782): no `events`/`events_game` view exists. Only client-readable events-backed object is kan718_games_compat (authored-for-review, header says never applied; no SupabaseConfig constant and supabase_config.dart is forbidden; game_roster!inner embed through it not demonstrated, d05 header).
+- Finding: games has no creator_id / participants columns (baseline 20260829080500:22863+); current :317 and :1782 filter on nonexistent columns, and games has RLS with zero policies (:32378), so authenticated callers get 0 rows today.
+
+## 2026-11-04 — KAN-864 (Luxor, alpha-luxor 701f338d, not pushed)
+- game_view_controller: dropped `gamesTable` realtime listener (game fields on events KAN-710; games writes route to events KAN-712). Test asserts new list + gamesTable absent.
+- post_repository_impl / sport_profile_view_provider: already on vGameCardTable (KAN-715), covered by event_backed_game_reads_test; unchanged.
+- Gap: public.events is NOT in supabase_realtime (KAN-716 header) and closed to API roles — the events listener delivers nothing today.

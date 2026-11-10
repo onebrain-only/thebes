@@ -6,7 +6,7 @@ one (see below); ownership table given its `Development` row and `Done` correcte
 §2's column line changed from restating the column list to citing §1's table, after the
 restatement went stale there while §1 was fixed — one fact, one place, from here on.
 Previously: 2026-09-05, W6 added (regeneration), W1 amended to match.
-**Purpose:** The procedure. `AGENTS.md` carries the shape of the roster; this carries how
+**Purpose:** The procedure. `agent/state/registry/seats.json` carries the shape of the roster; this carries how
 a task that crosses two or three agents actually moves, end to end.
 
 ---
@@ -873,7 +873,7 @@ re-sent on every request after it. **The hierarchy exists; use it.**
 
 **Corrected 2026-09-05.** This section used to read *"Everything routes through the master…
 reports to `master-analyst` / the orchestrating session."* That was wrong twice over:
-`AGENTS.md` §1 has said since `G-005` that **nothing routes through `analyst`** — it measures,
+`AGENTS.md` §1 (archived, `agent/archive/2026-11-10/AGENTS.md`) has said since `G-005` that **nothing routes through `analyst`** — it measures,
 it does not route — and the `orchestrator` seat that the phrase also pointed at **no longer
 exists.**
 
@@ -1250,7 +1250,7 @@ how many agents can run at once:
 practice, with three developers, that means **at most three concurrent code tasks with
 disjoint file sets, plus `devops`, plus `analyst`** — and only one of those inside a contended
 file at a time. Parallelism beyond that produces conflicts faster than it produces work, which
-is also why only two stacks are active (`AGENTS.md` §1).
+is also why only two stacks are active.
 
 **The one contended surface this section does not cover is a command, not a file.**
 `dart run build_runner build -d` rewrites the 52 generated files — 45 of them under

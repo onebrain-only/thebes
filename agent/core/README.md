@@ -1,6 +1,6 @@
 # Thebes Core
 
-`MASTER_ROADMAP.md` §36 asks Phase 5 for a clean separation between three
+`agent/archive/2026-11-10/MASTER_ROADMAP.md` §36 asks Phase 5 for a clean separation between three
 intelligences. §37 draws the middle one as a single box. This is that box.
 
 ```text

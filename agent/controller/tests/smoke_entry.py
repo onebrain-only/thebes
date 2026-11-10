@@ -62,7 +62,7 @@ def _brief(workspace):
             "or delete files. Do not call external services. Reply exactly: "
             "THEBES_CONTROLLER_SMOKE_OK."
         ),
-        "context_refs": ["agent/MASTER_ROADMAP.md"],
+        "context_refs": ["agent/ROADMAP.md"],
         "workspace": {"repository_root": workspace, "working_directory": workspace,
                       "mutation_mode": "read_only"},
         "reported_environment": {"locality": "unknown", "environment_ref": "isolated-smoke"},

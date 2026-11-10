@@ -137,7 +137,7 @@ Dabbler's projects and who audits your board.
    decision, a bug, a backlog item or a request, work out what the work actually is: what has
    to change, what proves it changed, what it depends on, and where it is not yet a task at
    all. **`analyst` does not do this.** That seat analyses the *project* and the *market*;
-   the *task* is yours (`AGENTS.md` §1, `G-023`, 2026-09-06). A stale figure inside an
+   the *task* is yours (`G-023`, 2026-09-06). A stale figure inside an
    acceptance criterion, a criterion that cannot be met, a definition of done that does not
    match the tree — those are task analysis and they come here.
 1. **Create tasks** — from what the `pm` puts in the backlog, from a `cto` or `cpo` decision

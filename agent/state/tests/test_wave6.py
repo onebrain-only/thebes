@@ -363,8 +363,10 @@ ok("zero live Team Lead bindings", not any(b.startswith("team-lead") for b in bi
 ok("zero generated Team Lead agents", not any(a.startswith("team-lead") for a in agents))
 ok("zero Team Lead Role files",
    not any(f.startswith("team-lead") for f in os.listdir(R)))
+# moved to the archive on 2026-11-10; preserved there, no longer in the live status dir
+SA = os.path.join(ROOT, "agent", "archive", "2026-11-10", "status")
 ok("Team Lead STATUS history PRESERVED (5 files)",
-   len([f for f in os.listdir(S) if f.startswith("team-lead")]) == 5)
+   len([f for f in os.listdir(SA) if f.startswith("team-lead")]) == 5)
 ok("ux-engineer-1 binding exists", "ux-engineer-1" in binds)
 ok("ux-engineer-1 generated agent exists", "ux-engineer-1" in agents)
 ok("bindings and generated agents are 1:1", binds == agents)

@@ -79,3 +79,6 @@ Authored EN/AR key table for Create Post (11 NEW_KEY, rest reuse/skip); files in
 Posted Jira comment 13845 on KAN-628: 4 new keys location_saved_set_primary/rename/rename_title/rename_hint, EN+AR, RTL notes. No existing key reused. Strings only, no code.
 
 ## 2026-10-25 content-2: dreq-f3fbf4a9 (KAN-591 R2) answered: venue placeholder missing (neutral block, cxo to choose visual); button gap = DS gap, accept DS values. No strings changed.
+
+## 2026-11-04 KAN-876 (split 3/6 of KAN-873) strings
+Added 4 keys EN+AR to app_en.arb/app_ar.arb after activity_search_hint (reused, unchanged): activity_search_no_match_title, _no_match_body ({query},{category} String; FSI/PDI isolates in AR), _loading_older, _clear. Additions only, JSON valid, not committed/regenerated (Memphis).

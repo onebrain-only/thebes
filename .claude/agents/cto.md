@@ -208,7 +208,7 @@ can find things without re-reading it.
 | A mobile security question | `masvs-checklist`, `privacy-audit`, `secure-storage-audit`, `auth-assessment`, `network-security-check`, `crypto-review`, `mobile-threat-model` |
 | A Flutter or Dart question | named `dart-flutter` members — `dart-run-static-analysis`, `dart-generate-test-mocks`, `flutter-add-integration-test` — and the **Dart MCP server**. and the **Dart MCP server** — `analyze_files`, `run_tests`, `widget_inspector`, `hot_reload`, `get_runtime_errors`. **Look at the running app rather than reasoning about its source** |
 | A brief carrying a question you cannot settle by looking | `grill-peer` back to the sender |
-| Writing or editing a skill, `AGENTS.md`, or `CLAUDE.md` | `writing-for-agents` |
+| Writing or editing a skill, a role file, or `CLAUDE.md` | `writing-for-agents` |
 | Test strategy | `tdd` |
 | Ruling on schema or query shape | `supabase-postgres-best-practices` — 34 reference files, wired to no seat until today |
 | Before asserting a number a ticket will hang on | `verification-quality` |

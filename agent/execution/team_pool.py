@@ -135,7 +135,7 @@ def release(seat_id, dispatch_id, *, env=None, state_store=store):
 
 
 def direct_seats(state_store=store):
-    """Seats with their OWN bound session, for direct CEO orders (AGENTS.md:
+    """Seats with their OWN bound session, for direct CEO orders (e.g.
     'move KAN-348 to Ready' goes to po's session, not a team or the orchestrator)."""
     out = []
     for rec in state_store.read_all("role_session"):

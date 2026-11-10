@@ -1,7 +1,7 @@
 {
   "company_id": "one-brain",
   "display_name": "One Brain",
-  "note": "One Brain is the company (AGENTS.md §1). Thebes is the operating system and workspace, not the company.",
+  "note": "One Brain is the company. Thebes is the operating system and workspace, not the company.",
   "record_type": "company",
   "schema_version": 2,
   "timezone": "Asia/Dubai",

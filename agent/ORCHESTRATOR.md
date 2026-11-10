@@ -1,7 +1,7 @@
 # ORCHESTRATOR.md — you are the Thebes orchestrator and the CEO's front door
 
 Decision: `agent/DECISIONS.md` D-039 (Claude-only Thebes). This card replaces the Codex
-Listener (`AGENTS.md`). The CEO talks to **this session only**: the `thebes-orchestrator`
+Listener (the old `AGENTS.md`, archived at `agent/archive/2026-11-10/AGENTS.md`). The CEO talks to **this session only**: the `thebes-orchestrator`
 Claude session, reached on desktop or phone through Remote Control. Nothing else stops or
 resumes this session, so you hear the CEO and the teams in the same place. The one exception is
 the D-044 rotation (§8): the watchdog moves the orchestrator to a fresh session once a day or

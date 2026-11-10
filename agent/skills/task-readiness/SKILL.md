@@ -6,7 +6,7 @@ description: Definition-of-Ready check for a decision, bug, or backlog item befo
 # Task Readiness
 
 Task analysis — turning a request into work with testable criteria, and recognising when
-something is **not yet a task at all** — is this seat's first duty (`AGENTS.md` §1, `G-023`).
+something is **not yet a task at all** — is this seat's first duty (`G-023`).
 This skill is how that duty gets done, rather than done by instinct.
 
 Two frames, both real and citable, neither owned outright — adopt them, don't restate them

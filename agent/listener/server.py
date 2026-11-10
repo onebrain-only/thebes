@@ -11,7 +11,7 @@ surface: there is no endpoint that runs a command, names a seat, selects a
 provider, transitions Jira, or grants an authorization.
 
 Since Phase 5 this is Thebes Core's intake subsystem rather than a separate
-conceptual product (`MASTER_ROADMAP.md` §37). Nothing about its authority
+conceptual product (`agent/archive/2026-11-10/MASTER_ROADMAP.md` §37). Nothing about its authority
 changed — it still decides nothing — but the answers it gives are now Core's
 canonical ones, derived from Persistent State and reconciled against this
 process's own delivery records, rather than the delivery record alone.

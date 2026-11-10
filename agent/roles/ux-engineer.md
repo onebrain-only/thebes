@@ -11,7 +11,7 @@
 `.claude/agents/ux-engineer.md` and no status file, so the Agent tool cannot dispatch it and
 Agent View does not show it. That is deliberate: a binding now would create a routable seat
 with no queue and no work source, and an unrecognised or half-wired seat **falls back to a
-generic agent with no error raised** (`AGENTS.md` §4) — an agent that answers plausibly and
+generic agent with no error raised** (`CLAUDE.md`, Deployment section) — an agent that answers plausibly and
 owns nothing.
 
 **The capability is active in the target architecture.** Only its instantiation is deferred.

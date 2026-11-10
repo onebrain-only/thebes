@@ -27,6 +27,14 @@ ROOT=$(cd "$SELF/../.." 2>/dev/null && pwd) || exit 0
 OUT="$ROOT/agent/.flow"
 mkdir -p "$OUT" 2>/dev/null || exit 0
 
+# size cap: past 20 MB the log is rotated to one compressed predecessor, so it
+# can never again grow to the 113 MB it reached on 2026-11-10
+SIZE=$(wc -c < "$OUT/events.jsonl" 2>/dev/null || echo 0)
+if [ "${SIZE:-0}" -gt 20971520 ]; then
+  gzip -c "$OUT/events.jsonl" > "$OUT/events-previous.jsonl.gz" 2>/dev/null \
+    && : > "$OUT/events.jsonl"
+fi
+
 jq -c --arg e "$EVENT" --arg t "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
   def cap: if type == "string" then .[0:300]
            elif type == "object" then with_entries(.value |= cap)

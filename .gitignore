@@ -22,6 +22,7 @@
 /.claude/agent-memory
 /agent/memory/
 /agent/claude-flow/
+/agent/archive/2026-11-10/claude-flow-state/
 
 # macOS finder droppings at any depth (the /* rule only shields the root copy).
 .DS_Store

@@ -7,8 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Every controller/session, including ChatGPT, Work, Codex, Claude Code and generated agents,
 must read [agent/ROADMAP.md](agent/ROADMAP.md) before selecting Product work, switching
 operating mode, declaring a phase complete, or deciding what comes next. Then read
-[agent/PROGRAM_MEMORY.md](agent/PROGRAM_MEMORY.md) for shared architecture and source
-boundaries; consult [agent/DECISIONS.md](agent/DECISIONS.md),
+[agent/ORCHESTRATOR.md](agent/ORCHESTRATOR.md) for how the orchestrator works; consult [agent/DECISIONS.md](agent/DECISIONS.md),
 [agent/LEARN.md](agent/LEARN.md) and
 [agent/history/program-chronology.md](agent/history/program-chronology.md) when rationale,
 operational judgment or checkpoint history affects the task. Workflow/Role/State mechanics
@@ -32,8 +31,8 @@ memory cannot substitute for repository sources.
   work is merged into `staging`, never left in a side folder (D-052).
 - **Never delete what an agent judges "not useful".** Deletion of plans/docs is the CEO's call; move, don't remove.
 - **This is the only CLAUDE.md** (CEO order 2026-11-10). Every other Claude and agent file is in `agent/`:
-  `agent/AGENTS_DESK.md` (the root AGENTS.md desk card), `agent/CONTEXT.md`, `agent/docs/github-scheme.md`,
-  agent memory (`agent/memory/`, linked from `.claude/agent-memory`) and `agent/claude-flow/`. Plans and
+  `agent/CONTEXT.md`, agent memory (`agent/memory/`, linked from `.claude/agent-memory`) and the
+  retired material under `agent/archive/` (history, authority for nothing). Plans and
   project docs live in `Dabbler/dabbler-docs/<project>/`. Team checkouts are created on demand under
   `agent/state/runtime/worktrees/`.
 

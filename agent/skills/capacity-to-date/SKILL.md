@@ -261,7 +261,7 @@ The conversion has exactly four inputs. **A lead supplies three and never the fo
 
 ### Worked example — the whole Phase 0 chain
 
-What I reported (`agent/status/team-lead-3.md`, 2026-09-05): **6 sittings, strictly serial,
+What I reported (`agent/archive/2026-11-10/status/team-lead-3.md`, 2026-09-05): **6 sittings, strictly serial,
 one seat, zero parallelism** — P0-1 `1`, P0-2 `1`, P0-3a `1`, P0-3b `2`, P0-4 `1`.
 
 What `po` did with it (`agent/status/po.md`): converted **"6 sittings + 5 acceptance gates"**
