@@ -105,7 +105,9 @@ import sys
 sys.path.insert(0, '.')
 from agent.state import store, teams
 sid, home, name = sys.argv[1:]
-store.bind_role_session(teams.ORCHESTRATOR_ID, "claude", sid, home, "ceo", session_name=name)
+cur = store.read("role_session", teams.ORCHESTRATOR_ID)   # a retired binding is replaced
+store.bind_role_session(teams.ORCHESTRATOR_ID, "claude", sid, home, "ceo", session_name=name,
+                        expected_revision=cur["revision"] if cur else None)
 print("started  Orchestrator (%s)" % sid[:8])
 EOF
   fi

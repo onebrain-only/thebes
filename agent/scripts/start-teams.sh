@@ -81,8 +81,11 @@ import sys
 sys.path.insert(0, '.')
 from agent.state import store
 tid, sid, home, name, old_rev = sys.argv[1:]
+if old_rev == "-":                       # unbound: a retired binding may still be there
+    cur = store.read("role_session", tid)
+    old_rev = cur["revision"] if cur else None
 store.bind_role_session(tid, "claude", sid, home, "ceo", session_name=name,
-                        expected_revision=None if old_rev == "-" else int(old_rev))
+                        expected_revision=None if old_rev is None else int(old_rev))
 print("  bound %s -> %s" % (tid, sid))
 EOF
   python3 -m agent.execution.team_pool sweep-duplicates "$tid" >/dev/null \
