@@ -20,6 +20,17 @@ KARNAK = "0aaaaaaa-6666-7000-8000-00000000000a"
 CODEX = "01a0f777-d0e4-7000-8000-000000000009"
 
 
+class NoSessions:
+    """A `claude` with nothing running: withdraw looks for the worker and finds no turn to stop."""
+    find_by_sid = staticmethod(lambda rows, sid: None)
+
+    def agents(self, include_completed=False):
+        return []
+
+
+NO_SESSIONS = NoSessions()
+
+
 class Base(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
@@ -53,14 +64,14 @@ class WithdrawAndReapTests(Base):
         did = self.open_dispatch()
         with self.assertRaises(cd.Refused):
             cd.withdraw(did, env={"CLAUDE_CODE_SESSION_ID": "somebody-else"}, state_store=store)
-        out = cd.withdraw(did, env={"CLAUDE_CODE_SESSION_ID": ORCH}, state_store=store)
+        out = cd.withdraw(did, env={"CLAUDE_CODE_SESSION_ID": ORCH}, state_store=store, cli=NO_SESSIONS)
         self.assertEqual(out["status"], "withdrawn")
         self.assertEqual(store.read("conversation_dispatch", did)["status"], "withdrawn")
 
     def test_a_codex_origin_still_withdraws_its_own(self):
         did = self.open_dispatch()
-        self.assertEqual(cd.withdraw(did, env={"CODEX_THREAD_ID": CODEX}, state_store=store)["status"],
-                         "withdrawn")
+        self.assertEqual(cd.withdraw(did, env={"CODEX_THREAD_ID": CODEX}, state_store=store,
+                                     cli=NO_SESSIONS)["status"], "withdrawn")
 
     def test_an_open_dispatch_for_a_done_ticket_is_reaped_after_half_an_hour(self):
         did = self.open_dispatch("KAN-9")
@@ -137,7 +148,8 @@ class GateAuthorityTests(Base):
         rec = dict(store.read("conversation_dispatch", did), result_ref=ref, outcome="decision_required",
                    status="decision_required")
         fake = mock.Mock(side_effect=lambda req, msg, state_store=None: {"sent": True})
-        out = dg.route(rec, state_store=store, deliver=fake)
+        # The keyword gate: the configured one calls the provider with the key from the home folder.
+        out = dg.route(rec, state_store=store, deliver=fake, cfg=dict(dg.config(), gate="fake"))
         self.assertEqual(out["route"], "owner")
         self.assertTrue(str(out["reason"]).startswith("orchestrator-decides:ceo-only:production"))
         self.assertEqual(store.read("decision_request", out["decision_request_id"])["status"], "open")

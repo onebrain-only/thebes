@@ -52,8 +52,13 @@ class LivenessTests(unittest.TestCase):
         self.projects = os.path.join(self.tmp, "projects")
         os.makedirs(os.path.join(self.projects, "p"))
         self.now = time.time()
+        # Hermetic: the sweep also lists working-column tickets, which read the real Jira board.
+        from agent.execution import orphans
+        self.old_scan, orphans.scan = orphans.scan, lambda **kw: []
 
     def tearDown(self):
+        from agent.execution import orphans
+        orphans.scan = self.old_scan
         store.RUNTIME, teams.read = self.old
         shutil.rmtree(self.tmp, ignore_errors=True)
 

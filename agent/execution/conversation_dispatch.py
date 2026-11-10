@@ -41,7 +41,7 @@ sys.path.insert(0, ROOT)
 
 from agent.state import store                                        # noqa: E402
 from agent.execution import claude_delivery, codex_runtime           # noqa: E402
-from agent.execution.claude_cli import ClaudeCli                     # noqa: E402
+from agent.execution.claude_cli import ClaudeCli, ClaudeCliError     # noqa: E402
 
 ENVELOPE_VERSION = "conversation-v1"
 CAPABILITY_ENV = "THEBES_DISPATCH_CAPABILITY"
@@ -828,10 +828,42 @@ def submit(dispatch_id, outcome, result_text, *, env=None, state_store=store, la
             "outcome": record["outcome"], "origin_reply": reply}
 
 
-def withdraw(dispatch_id, *, env=None, state_store=store):
+def stop_withdrawn_worker(record, *, caller_sid=None, state_store=store, cli=None,
+                          stop_timeout_seconds=30, pid_alive=None):
+    """Stop the worker turn of a dispatch that was just withdrawn. Before 2026-11-11 a withdraw
+    changed only the record: the session kept working on a ticket nobody was waiting for, and its
+    report was then refused. Only the turn ends; the session keeps its id and the next dispatch
+    resumes it. Never raises: the withdraw already happened."""
+    sid = record.get("target_session_id")
+    if not sid:
+        return {"action": "none", "reason": "no-target-session"}
+    if sid == caller_sid:
+        return {"action": "none", "reason": "caller-is-the-worker"}
+    other = [d for d in open_work_for(sid, state_store) if d != record.get("dispatch_id")]
+    if other:
+        return {"action": "none", "reason": "other-open-work", "dispatches": other}
+    try:
+        cli = cli or ClaudeCli(env={k: v for k, v in os.environ.items() if k not in SCRUBBED_ENV})
+        row = cli.find_by_sid(cli.agents(), sid)
+        # A row without a process is a blocked background session: nothing is running in it.
+        if row is None or row.get("pid") is None:
+            return {"action": "none", "reason": "not-running"}
+        cli.stop(row.get("id") or sid[:8])
+        if not cli.wait_stopped(sid, stop_timeout_seconds, pid=row.get("pid"),
+                                pid_alive=pid_alive):
+            return {"action": "stop-failed", "session_id": sid,
+                    "error": "session did not stop in %ss" % stop_timeout_seconds}
+    except (ClaudeCliError, OSError) as exc:
+        return {"action": "stop-failed", "session_id": sid, "error": str(exc)[:300]}
+    return {"action": "stopped", "session_id": sid}
+
+
+def withdraw(dispatch_id, *, env=None, state_store=store, cli=None, stop_timeout_seconds=30,
+             pid_alive=None):
     """The origin conversation withdraws its own open dispatch. The orchestrator may withdraw ANY
     open dispatch (it owns every ticket; B8, 2026-10-14: its own withdraw was refused with
-    not-origin-thread because only CODEX_THREAD_ID was read, so a stale dispatch held a slot)."""
+    not-origin-thread because only CODEX_THREAD_ID was read, so a stale dispatch held a slot).
+    The worker turn is stopped too (`stop_withdrawn_worker`); the result names what happened."""
     env = os.environ if env is None else env
     caller = env.get("CODEX_THREAD_ID")
     sid = env.get("CLAUDE_CODE_SESSION_ID")
@@ -847,7 +879,9 @@ def withdraw(dispatch_id, *, env=None, state_store=store):
         rec = state_store.withdraw_conversation_dispatch(dispatch_id, caller)
     except state_store.StateError as exc:
         raise Refused(str(exc).split(":", 1)[0], str(exc))
-    return {"status": "withdrawn", "dispatch_id": dispatch_id, "record": rec}
+    worker = stop_withdrawn_worker(rec, caller_sid=sid, state_store=state_store, cli=cli,
+                                   stop_timeout_seconds=stop_timeout_seconds, pid_alive=pid_alive)
+    return {"status": "withdrawn", "dispatch_id": dispatch_id, "record": rec, "worker": worker}
 
 
 STALE_OPEN_SECONDS = 30 * 60

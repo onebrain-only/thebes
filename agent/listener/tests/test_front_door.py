@@ -119,6 +119,12 @@ class RealControllerProcess(unittest.TestCase):
         # unhandled ValueError on a work item that does not exist. That is a
         # pre-existing rough edge, unrelated to the front door, and Phase 4 does
         # not need it and so does not opportunistically repair it.
+        from agent.integrations import jira
+        try:
+            jira.config()
+        except jira.JiraNotConfigured:
+            self.skipTest("these commands read the live board: needs the Jira credentials "
+                          "(agent/SETUP.md, section 3)")
         for args in (["plan-sprint"], ["plan-backlog"],
                      ["authority-manifest", "KAN-183"]):
             result = run_controller(args, {entry.INTENT_ENV: ""})

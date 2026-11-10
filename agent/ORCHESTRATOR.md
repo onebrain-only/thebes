@@ -223,8 +223,9 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
   old line must match exactly once) and never to resend a whole description (the permission
   classifier refuses that as Instruction Poisoning).
 - **Housekeeping you may do yourself:** `conversation_dispatch withdraw <id>` works for any open
-  dispatch from your session (a stale one holds a team and a slot; Thebes also reaps open
-  dispatches of Done tickets after 30 minutes); `intake mark-integrated` records work merged by
+  dispatch from your session and stops the turn the team was running for it, so the team is free
+  at once (the result's `worker` field says `stopped`, `none` or `stop-failed`; a stale dispatch
+  holds a team and a slot; Thebes also reaps open dispatches of Done tickets after 30 minutes); `intake mark-integrated` records work merged by
   hand or cherry-picked (git must agree); `intake unlink <id>` removes a wrong link; the label
   `ceo-action` marks a step only the CEO can do (never dispatched).
 - **`priority`** (D-042): the board needs the PM or a PO. Run them **in the background**

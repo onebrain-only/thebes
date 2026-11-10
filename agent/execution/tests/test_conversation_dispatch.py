@@ -123,6 +123,11 @@ class ConversationDispatchTests(unittest.TestCase):
         # Hermetic: no test may touch the user's real Codex daemon (D-036 auto-register).
         self.patches.append(mock.patch.object(cr, "daemon_alive", lambda alive=None: False))
         self.patches.append(mock.patch.object(cr, "sole_listener", lambda state_store=None: None))
+        # Hermetic: the decision gate is the keyword one. The configured gate reads an API key
+        # from the home folder and calls the provider, so the result depended on the machine.
+        from agent.execution import decision_gate
+        gate_cfg = dict(decision_gate.config(), gate="fake")
+        self.patches.append(mock.patch.object(decision_gate, "config", lambda path=None: gate_cfg))
         for p in self.patches:
             p.start()
 
@@ -138,10 +143,12 @@ class ConversationDispatchTests(unittest.TestCase):
                           cli=ClaudeCli(runner=fake), stop_timeout_seconds=1)
         return out, fake
 
-    def report(self, out, fake, outcome="completed", result="RESULT-TEXT", sid=None, cap=None):
+    def report(self, out, fake, outcome="completed", result="RESULT-TEXT", sid=None, cap=None,
+               router=None):
         env = {"CLAUDE_CODE_SESSION_ID": sid or out["target_session_id"],
                cd.CAPABILITY_ENV: cap if cap is not None else fake.capability()}
-        return cd.submit(out["dispatch_id"], outcome, result, env=env, state_store=store)
+        return cd.submit(out["dispatch_id"], outcome, result, env=env, state_store=store,
+                         decision_router=router)
 
     def refused(self, fn, code):
         with self.assertRaises(cd.Refused) as cm:
@@ -351,10 +358,14 @@ class ConversationDispatchTests(unittest.TestCase):
         self.refused(lambda: self.report(out, fake, cap=""), "capability-invalid")
         self.refused(lambda: self.report(out, fake, sid=SID_Y), "session-identity-mismatch")
         self.assertEqual((store.read_all("codex_turn_event"), self.launched), ([], []))
-        ok = self.report(out, fake, "decision_required", "Pick option B.\nReasons: …")
+        # The gate's answer is fixed here: this test is about the reply to the origin thread,
+        # and an escalation is the route that produces one.
+        escalate = lambda record, state_store=None: {"route": "escalate", "reason": "test"}  # noqa: E731
+        ok = self.report(out, fake, "decision_required", "Pick option B.\nReasons: …", router=escalate)
         self.assertEqual((ok["status"], ok["origin_reply"]["status"],
                           ok["origin_reply"]["thread_id"]), ("recorded", "scheduled", THREAD_A))
-        again = self.report(out, fake, "decision_required", "Pick option B.\nReasons: …")
+        again = self.report(out, fake, "decision_required", "Pick option B.\nReasons: …",
+                            router=escalate)
         self.assertEqual((again["status"], again["origin_reply"]["status"]),
                          ("already-recorded", "already-scheduled"))
         self.refused(lambda: self.report(out, fake, "completed", "different"),
@@ -383,9 +394,53 @@ class ConversationDispatchTests(unittest.TestCase):
         out2, fake2 = self.send(THREAD_A, SID_Y)
         self.refused(lambda: cd.withdraw(out2["dispatch_id"], env={"CODEX_THREAD_ID": THREAD_B},
                                          state_store=store), "not-origin-thread")
-        cd.withdraw(out2["dispatch_id"], env={"CODEX_THREAD_ID": THREAD_A}, state_store=store)
+        self.withdraw(out2, fake2)
         self.refused(lambda: self.report(out2, fake2), "dispatch-not-open")
         self.assertEqual((store.read_all("codex_turn_event"), self.launched), ([], []))
+
+    # -- withdraw stops the worker turn ------------------------------------------------
+    def withdraw(self, out, fake, env=None, alive=False):
+        return cd.withdraw(out["dispatch_id"], env=env or {"CODEX_THREAD_ID": THREAD_A},
+                           state_store=store, cli=ClaudeCli(runner=fake), stop_timeout_seconds=0,
+                           pid_alive=lambda pid: alive)
+
+    def stops(self, fake):
+        return [a[2] for a, _ in fake.calls if a[1] == "stop"]
+
+    def test_withdraw_stops_the_worker_turn_and_starts_nothing_in_its_place(self):
+        out, fake = self.send(THREAD_A, SID_Y)
+        before = len(self.stops(fake))
+        got = self.withdraw(out, fake)
+        self.assertEqual(got["worker"], {"action": "stopped", "session_id": SID_Y})
+        self.assertEqual(self.stops(fake)[before:], [SID_Y[:8]], "exactly one stop, of that session")
+        self.assertEqual(len(fake.resumes()), 1, "the delivery resume only: nothing is restarted")
+        self.assertEqual(store.read("conversation_dispatch", out["dispatch_id"])["status"],
+                         "withdrawn")
+
+    def test_withdraw_leaves_a_session_with_no_running_turn_alone(self):
+        out, fake = self.send(THREAD_A, SID_Y)
+        fake.live = [row(SID_Y)]                       # listed, no process: nothing is running
+        before = len(self.stops(fake))
+        self.assertEqual(self.withdraw(out, fake)["worker"],
+                         {"action": "none", "reason": "not-running"})
+        self.assertEqual(self.stops(fake)[before:], [])
+
+    def test_a_session_is_never_stopped_by_its_own_withdraw(self):
+        out, fake = self.send(THREAD_A, SID_Y)
+        before = len(self.stops(fake))
+        got = cd.stop_withdrawn_worker(store.read("conversation_dispatch", out["dispatch_id"]),
+                                       caller_sid=SID_Y, state_store=store,
+                                       cli=ClaudeCli(runner=fake))
+        self.assertEqual(got, {"action": "none", "reason": "caller-is-the-worker"})
+        self.assertEqual(self.stops(fake)[before:], [])
+
+    def test_a_stop_that_fails_is_reported_and_the_withdraw_still_stands(self):
+        out, fake = self.send(THREAD_A, SID_Y)
+        got = self.withdraw(out, fake, alive=True)     # the process never exits
+        self.assertEqual(got["status"], "withdrawn")
+        self.assertEqual(got["worker"]["action"], "stop-failed")
+        self.assertEqual(store.read("conversation_dispatch", out["dispatch_id"])["status"],
+                         "withdrawn")
 
     def test_a_delivered_attestation_is_required_even_with_the_right_capability(self):
         out, fake = self.send(THREAD_A, SID_X)
