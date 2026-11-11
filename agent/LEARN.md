@@ -299,3 +299,20 @@ function that produced a reason code before trusting the code. A reason caused b
 caller's own omitted argument is not a fact about the data.
 **Applied decision:** `CLAUDE.md` "Persistent State is read and written through
 `agent/state/store.py`".
+
+## L-024 — A running conversation does not read the rule you just changed
+
+**Classification:** LESSON
+**Observation:** On 2026-11-11 three layers told the orchestrator to end a handled inbox
+batch with `·` alone: the courier line, `inbox take`'s `next`, and `inbox done` as its last
+tool result. Each time it still wrote the CEO a summary (13:04, 13:10, 13:14). Claude Code
+snapshots a conversation's system prompt on its first request and resends that snapshot
+until the next compaction (`claude --help`, `--system-prompt-snapshot`). A changed
+`CLAUDE.md` or a changed `--append-system-prompt` passed on resume does not reach it. A new
+rule reaches a live session only as message or tool text, which loses to the role it was
+given at its start ("the business brain the CEO talks to").
+**Lesson:** Do not count on a rule edit to change a live session's behaviour. It takes
+effect after that session's next compaction, or in a fresh conversation. Do not keep
+stacking prompt text on the same habit: three attempts cost three batches of the CEO's
+tokens.
+**Applied decision:** `agent/DECISIONS.md` TH-076; `agent/ORCHESTRATOR.md` §1.
