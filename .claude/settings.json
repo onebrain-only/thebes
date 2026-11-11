@@ -18,6 +18,7 @@
       "Edit(agent/state/registry/sql_allow.json)",
       "Bash(python3 -m agent.listener conversation-dispatch *)",
       "Bash(python3 -m agent.listener submit *)",
+"Bash(python3 -m agent.execution.team_pool:*)",
       "Bash(python3 -m agent.execution.conversation_dispatch dispatch:*)"
     ],
     "deny": [
