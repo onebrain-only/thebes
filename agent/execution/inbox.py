@@ -137,7 +137,7 @@ def _verification_items(rec, seen, now):
             "checks": {i: {"status": r.get("status"), "what": r.get("what"),
                            "detail": r.get("detail")}
                        for i, r in sorted((ver.get("results") or {}).items())}}
-    if verdict in ("pass", "exhausted") and "verified:%s" % verdict not in seen:
+    if verdict in ("pass", "exhausted", "held") and "verified:%s" % verdict not in seen:
         return [dict(base, kind="verification", verdict=verdict,
                      jira=(rec.get("jira_sync") or {}).get("verified")
                      or (rec.get("jira_sync") or {}).get("exhausted"),

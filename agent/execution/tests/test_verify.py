@@ -375,6 +375,56 @@ class VerifyTests(unittest.TestCase):
         kinds = [(i["kind"], i.get("verdict") or i.get("alert")) for i in self.collect()]
         self.assertIn(("verification", "exhausted"), kinds)
 
+    def test_a_fix_the_team_reports_failed_on_the_same_commit_is_held_not_sent_back(self):
+        """KAN-871 (2026-11-11): a decision held the work; each close was verified on the same
+        commit and became the next fix, four times."""
+        brief_run_only = "\n".join(l for l in BRIEF.splitlines() if "| judge |" not in l)
+        did, cap = self.dispatch(brief_run_only)
+        self.submit(did, cap, report(wt=self.wt, c=(("C1", "PASS"), ("C2", "PASS"))))
+        self.verify_run(did, FakeRunner(failing={"flutter test test/home_test.dart"}))
+        fix_did, fix_cap = self.deliver_sent()
+        self.submit(fix_did, fix_cap, report(wt=self.wt, c=(("C1", "FAIL"),)))
+        runner = FakeRunner()
+        out = self.verify_run(fix_did, runner)
+        self.assertEqual((out["verdict"], out["held"]), ("held", ["C1"]))
+        self.assertEqual(runner.calls, [], "nothing is re-run")
+        self.assertEqual(len(self.sent), 1, "no second fix")
+        root = store.read("conversation_dispatch", did)
+        self.assertEqual(root["verification"]["cycle"], 1, "no cycle spent")
+        self.assertEqual(root["watchdog_alert"]["kind"], "review-held")
+        self.assertIn("review held, not sent back", self.jira.comments[-1][1])
+        self.assertEqual(verify.retry_send_backs(state_store=store), [])
+        self.assertIn(("verification", "held"),
+                      [(i["kind"], i.get("verdict")) for i in self.collect()])
+
+    def test_a_decision_answer_the_team_closes_as_failed_is_held(self):
+        did, cap = self.dispatch()
+        self.submit(did, cap, "Blocked: needs a decision.", outcome="blocked")
+        root = store.read("conversation_dispatch", did)
+        cd.dispatch("THEBES_DECISION_ANSWER decision-v1\nStay blocked; close this dispatch.",
+                    KARNAK, env={"CLAUDE_CODE_SESSION_ID": ORCH}, state_store=store, detach=True,
+                    launcher=lambda d, c: self.launched.append((d, c)), ticket="KAN-50",
+                    lane_capability="frontend", continuation=True, root_dispatch_id=did,
+                    checks=root["checks"])
+        ans_did, ans_cap = self.launched[-1]
+        self.deliver(ans_did)
+        self.submit(ans_did, ans_cap, report(wt=self.wt, c=(("C1", "FAIL"), ("C2", "FAIL"),
+                                                             ("C3", "FAIL"))))
+        out = self.verify_run(ans_did)
+        self.assertEqual(out["verdict"], "held")
+        self.assertEqual(self.sent, [], "nothing sent back")
+
+    def test_a_new_commit_with_a_failed_claim_is_still_verified(self):
+        brief_run_only = "\n".join(l for l in BRIEF.splitlines() if "| judge |" not in l)
+        did, cap = self.dispatch(brief_run_only)
+        self.submit(did, cap, report(wt=self.wt, c=(("C1", "PASS"), ("C2", "PASS"))))
+        self.verify_run(did, FakeRunner(failing={"flutter test test/home_test.dart"}))
+        fix_did, fix_cap = self.deliver_sent()
+        self.head = SHA2
+        self.submit(fix_did, fix_cap, report(sha=SHA2, wt=self.wt, c=(("C1", "FAIL"),)))
+        out = self.verify_run(fix_did, FakeRunner(failing={"flutter test test/home_test.dart"}))
+        self.assertEqual(out["verdict"], "retry", "a real fix attempt still counts")
+
     def test_a_check_thebes_could_not_run_is_not_the_teams_defect(self):
         brief_run_only = "\n".join(l for l in BRIEF.splitlines() if "| judge |" not in l)
         did, cap = self.dispatch(brief_run_only)

@@ -15,9 +15,12 @@ module settles the claim:
                   (the policy default); a PEER or QA route keeps its review status, now
                   with verified evidence, so its reviewer checks the delta, not the work.
     FAIL          the team gets ONLY the failing checks and their output, as a
-                  continuation of the same dispatch. First pass + one fix: MAX_CYCLES = 2.
+                  continuation of the same dispatch. First pass + three fixes: MAX_CYCLES = 4.
                   Still failing → the review is EXHAUSTED: the ticket stays where it is,
                   the reason is written on it, and the orchestrator is alerted. No loop.
+    HELD          the team itself reports a check FAIL and nothing changed: a decision answer,
+                  or the same commit as the last pass. That is a hold, not a fix attempt: no
+                  cycle is spent, nothing is sent back, the orchestrator is alerted once.
 
 The team's report carries, anywhere in the result file:
 
@@ -228,6 +231,9 @@ def run(dispatch_id, *, state_store=store, runner=None, git_head=None, jira=None
     cycle = rec.get("verify_cycle") or 1
     to_check = with_judge_checks(rec.get("checks") or root["checks"], root)
     results = dict((root.get("verification") or {}).get("results") or {})
+    held = held_checks(rec, root, report, to_check)
+    if held:
+        return _hold(rec, root, results, cycle, report, held, state_store=state_store, jira=jira)
 
     problem = worktree_problem(report, git_head)
     for c in to_check:
@@ -255,6 +261,70 @@ def run(dispatch_id, *, state_store=store, runner=None, git_head=None, jira=None
                             "tail": "" if ok else ran["tail"]}
     return _settle(rec, root, results, cycle, report, state_store=state_store, jira=jira,
                    dispatcher=dispatcher, launcher=launcher)
+
+
+def _is_decision_answer(rec):
+    try:
+        with open(rec.get("prompt_ref") or "", encoding="utf-8") as fh:
+            return fh.read(64).startswith("THEBES_DECISION_ANSWER")
+    except OSError:
+        return False
+
+
+def held_checks(rec, root, report, to_check):
+    """The checks the team itself reports FAIL when nothing changed since the last pass, or [].
+    KAN-871 (2026-11-11): a decision held the work, the team closed each decision answer as
+    `completed` with `C2: FAIL — not run, held by the decision`, and every close was verified
+    on the same commit and sent back as the next fix. Reporting FAIL with no new commit is not
+    a fix attempt; it is the team saying it cannot, which needs a decision, not a retry."""
+    claimed = [c["id"] for c in to_check
+               if (report["claims"].get(c["id"]) or {}).get("claim") == "FAIL"]
+    if not claimed:
+        return []
+    last = (root.get("verification") or {}).get("sha")
+    same_commit = bool(last) and report.get("sha") in (None, last)
+    return claimed if same_commit or _is_decision_answer(rec) else []
+
+
+def _hold(rec, root, results, cycle, report, held, *, state_store, jira=None):
+    """Park the review: no cycle spent, nothing sent back, the orchestrator alerted once."""
+    prior = root.get("verification") or {}
+    for cid in held:
+        what = next((c["what"] for c in root["checks"] if c["id"] == cid), "")
+        results[cid] = {"status": "held", "cycle": cycle, "by": "team", "what": what,
+                        "detail": (report["claims"].get(cid) or {}).get("evidence") or "reported FAIL"}
+    ver = dict(prior, results=results, verdict="held", at=state_store.now(),
+               cycle=prior.get("cycle") or cycle,
+               branch=report.get("branch") or prior.get("branch"),
+               sha=report.get("sha") or prior.get("sha"),
+               held={"dispatch_id": rec["dispatch_id"], "checks": held, "at": state_store.now()})
+    cur = state_store.read("conversation_dispatch", root["dispatch_id"])
+    state_store.update("conversation_dispatch", cur["dispatch_id"], cur["revision"],
+                       {"verification": ver})
+    me = state_store.read("conversation_dispatch", rec["dispatch_id"])
+    state_store.update("conversation_dispatch", me["dispatch_id"], me["revision"],
+                       {"verified_at": state_store.now()})
+    _set_pending(root, False, state_store)
+    key = root.get("jira_key") or root["dispatch_id"]
+    why = "; ".join("%s: %s" % (cid, results[cid]["detail"][:200]) for cid in held)
+    try:
+        from agent.execution import jira_sync
+        client = jira_sync._client(jira, state_store)
+        if client is not None and root.get("jira_key"):
+            client.add_comment(root["jira_key"],
+                               "Thebes: review held, not sent back. The team reports %s FAIL with "
+                               "no new commit (%s). No fix cycle was spent." % (", ".join(held), why))
+    except Exception:                                        # noqa: BLE001  never blocks the hold
+        pass
+    from agent.execution import watchdog
+    root = state_store.read("conversation_dispatch", root["dispatch_id"])
+    watchdog._alert(root, "review-held",
+                    "%s: the team reports %s FAIL and nothing changed (%s). Thebes holds the review "
+                    "instead of sending another fix. When the hold clears, dispatch it again; "
+                    "if the work is not wanted: python3 -m agent.execution.verify discard %s"
+                    % (key, ", ".join(held), why, root["dispatch_id"]), state_store=state_store)
+    return {"status": "verified", "dispatch_id": rec["dispatch_id"], "verdict": "held",
+            "cycle": ver["cycle"], "held": held}
 
 
 def _settle(rec, root, results, cycle, report, *, state_store, jira=None, dispatcher=None,
