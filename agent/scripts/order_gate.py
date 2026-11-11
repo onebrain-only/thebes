@@ -54,7 +54,9 @@ def _deny(reason):
 
 
 def _integration_open(state_store):
-    return any(r.get("integrates_base") and r.get("status") in state_store.CONVERSATION_DISPATCH_OPEN
+    # `integrates_base`: the dispatcher's integration pass; `integrate_base`: an `INTEGRATE:` line.
+    return any((r.get("integrates_base") or r.get("integrate_base"))
+               and r.get("status") in state_store.CONVERSATION_DISPATCH_OPEN
                for r in state_store.read_all("conversation_dispatch"))
 
 

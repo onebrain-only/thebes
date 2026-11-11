@@ -175,13 +175,13 @@ class OrdersTests(unittest.TestCase):
     def test_an_unbound_session_is_the_ceo_and_is_not_gated(self):
         self.assertIsNone(self.gate(CREATE, sid="someone-else"))
 
-    def open_integration(self):
+    def open_integration(self, field="integrates_base"):
         did = store.new_id("conversation_dispatch")
         store.create("conversation_dispatch", {
             "dispatch_id": did, "origin_provider": "claude", "origin_thread_id": ORCH,
             "target_provider": "claude", "target_session_id": TEAM, "target_seat_id": "memphis",
             "delivery_id": did, "capability_sha256": "0" * 64, "prompt_ref": "/x",
-            "status": "delivered", "delivery_status": "DELIVERED", "integrates_base": "staging"},
+            "status": "delivered", "delivery_status": "DELIVERED", field: "staging"},
             rid=did)
 
     def test_a_push_to_alpha_needs_the_ceos_promotion_order(self):
@@ -204,6 +204,15 @@ class OrdersTests(unittest.TestCase):
         self.assertEqual(self.gate("Bash", command=push)["hookSpecificOutput"]
                          ["permissionDecision"], "deny")
         self.open_integration()
+        self.assertIsNone(self.gate("Bash", command=push))
+
+    def test_an_integration_the_orchestrator_wrote_by_hand_opens_staging_too(self):
+        # A dispatch with an `INTEGRATE: staging` line records `integrate_base`; the dispatcher's
+        # own integration pass records `integrates_base`. Both are an open integration.
+        push = "git -C Dabbler/dabbler-code push origin integrate-staging:staging"
+        self.assertEqual(self.gate("Bash", command=push)["hookSpecificOutput"]
+                         ["permissionDecision"], "deny")
+        self.open_integration(field="integrate_base")
         self.assertIsNone(self.gate("Bash", command=push))
 
     def test_order_records_cannot_be_written_by_hand(self):
