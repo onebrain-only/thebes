@@ -301,7 +301,8 @@ ORCHESTRATOR_NAME = "thebes-orchestrator"
 ORCHESTRATOR_MODEL = "claude-opus-5-5"   # TH-074, CEO 2026-11-11
 HANDOFF = ("You are the Thebes orchestrator, in a FRESH session (D-044 rotation; the previous one "
            "was %s). Nothing from that conversation is carried over except what is below. Read "
-           "CLAUDE.md and agent/ORCHESTRATOR.md now, start the inbox waiter as section 1 says, and "
+           "CLAUDE.md and agent/ORCHESTRATOR.md now (your inbox arrives as a message, section 1: start "
+           "no waiter), and "
            "then go idle. Answer the CEO only from the <thebes-facts> block every turn brings, or a "
            "command you run; what is not there you do not know. The CEO's own words from the last "
            "%dh, verbatim and oldest first, are the only record of what he asked:\n\n%s\n\n%s")

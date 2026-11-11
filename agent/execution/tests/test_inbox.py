@@ -140,6 +140,68 @@ class InboxTests(unittest.TestCase):
         self.assertEqual(len(reloaded), 1, "the waiter replaced itself on the new code")
         self.assertLessEqual(reloaded[0], 60, "and keeps only the time left")
 
+    # -- the pusher (CEO 2026-11-11: "no wake-ups at all") -----------------------
+    def pusher(self, sent):
+        from agent.execution import inbox_push
+        self.clock = [1000.0]
+        return inbox_push.Pusher(state_store=store, clock=lambda: self.clock[0],
+                                 deliver=lambda sid, text: sent.append((sid, text)) or True)
+
+    def test_waiting_work_is_pushed_into_the_orchestrator_once_after_the_batch_settles(self):
+        sent = []
+        p = self.pusher(sent)
+        self.assertIsNone(p.step(), "nothing waiting, nothing sent")
+        _, did, cap = self.dispatched()
+        self.submit(did, cap, "completed", "728 Dart files")
+        self.assertIsNone(p.step(), "the first item opens a batch")
+        self.clock[0] += 91
+        self.assertEqual(p.step()["action"], "pushed")
+        self.assertEqual(len(sent), 1)
+        sid, text = sent[0]
+        self.assertEqual(sid, ORCH)
+        self.assertIn("inbox take", text)
+        self.assertIn("start no inbox waiter", text)
+        self.assertNotIn("728 Dart files", text, "the line carries no item")
+        self.clock[0] += 600
+        self.assertIsNone(p.step(), "an announced set is not announced again")
+        got = inbox.take(env={"CLAUDE_CODE_SESSION_ID": ORCH}, state_store=store)
+        self.assertEqual([i["result"] for i in got["items"]], ["728 Dart files"])
+        self.assertIn("Start no inbox waiter", got["next"])
+        self.assertEqual(inbox.take(env={"CLAUDE_CODE_SESSION_ID": ORCH},
+                                    state_store=store)["status"], "empty")
+        self.assertIsNone(p.step())
+        self.assertEqual(len(sent), 1)
+
+    def test_a_failed_push_is_retried_and_an_untaken_set_is_announced_again_after_an_hour(self):
+        attempts = []
+        from agent.execution import inbox_push
+        clock = [0.0]
+        p = inbox_push.Pusher(state_store=store, clock=lambda: clock[0],
+                              deliver=lambda sid, text: attempts.append(clock[0]) or
+                              len(attempts) > 1)
+        _, did, cap = self.dispatched()
+        self.submit(did, cap, "completed", "done")
+        p.step(); clock[0] += 91
+        self.assertEqual(p.step()["action"], "push-failed")
+        clock[0] += 10
+        self.assertIsNone(p.step(), "no retry inside a minute")
+        clock[0] += 60
+        self.assertEqual(p.step()["action"], "pushed")
+        clock[0] += inbox_push.RESEND_SECONDS
+        self.assertEqual(p.step(), {"action": "pushed", "count": 1, "resend": True})
+
+    def test_only_the_orchestrator_takes_and_the_waiter_steps_aside_for_the_pusher(self):
+        with self.assertRaises(inbox.Refused):
+            inbox.take(env={"CLAUDE_CODE_SESSION_ID": KARNAK}, state_store=store)
+        import fcntl
+        os.makedirs(store.RUNTIME, exist_ok=True)
+        with open(os.path.join(store.RUNTIME, inbox.PUSH_LOCK), "w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            got = self.waited()
+        self.assertEqual(got["status"], "pushed")
+        self.assertIn("never start the inbox waiter again", got["next"])
+        self.assertEqual(self.waited()["status"], "idle", "no pusher, the waiter works")
+
     def test_only_the_orchestrator_reads_its_inbox(self):
         with self.assertRaises(inbox.Refused) as ctx:
             inbox.wait(1, env={"CLAUDE_CODE_SESSION_ID": KARNAK}, state_store=store)

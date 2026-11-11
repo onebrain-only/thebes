@@ -1446,6 +1446,29 @@ Rule text: `integrate.py` (`patch_due`, `brief`), `review_queue.py`, `ready_disp
 times a day and Memphis spent its time merging single tickets. The CEO wants each team to work
 and test on its own branch, with the merge after a patch.
 
+## TH-076 — The orchestrator's inbox arrives as a message; no waiter, no wake-ups
+**Date:** 2026-11-11 · **By:** CEO ("لا مش عايز wake-up خالص … خليها تيجي ويرد عليها من غير ما
+يعمل wake-up لوحده … ولا يبعتلي") · **Status:** ACTIVE
+
+**Rule.**
+- The orchestrator runs **no** inbox waiter and no background command that wakes it.
+- The zero-token loop `agent.execution.inbox_push` watches its inbox. When items wait, it has
+  a one-shot courier deliver one fixed line into the live conversation with SendMessage. The
+  courier is `claude -p` on Haiku, with no MCP and no saved session, in the orchestrator's own
+  permission mode. Nothing is stopped or resumed.
+- The line carries no item and no capability. The orchestrator runs `inbox take`, handles
+  the items, and writes nothing to the CEO unless `ceo_notice` prints SEND (TH-072).
+- Batching is the waiter's (90 s quiet, 5 min at most). A set already announced is announced
+  again only if it is still untaken an hour later.
+- While the pusher runs, `inbox wait` refuses (`pushed`).
+
+Rule text: `inbox_push.py`, `inbox.py` (`take`, `push_running`), `agent/ORCHESTRATOR.md` §1,
+`agent/scripts/thebes-up.sh`.
+
+**Why.** Every return of the waiter was a wake: idle every two hours, a restart on each Thebes
+commit, and each batch cost a read of the output file and a restart call on top of the work.
+The CEO wants items to reach the orchestrator the way his own messages do.
+
 ## Session-memory orders that are no longer live
 
 | Memory file | Dated | What it said | Replaced by |

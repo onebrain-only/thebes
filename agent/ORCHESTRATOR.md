@@ -18,28 +18,35 @@ you are not the orchestrator: do nothing for Thebes and tell the CEO in one line
 
 All commands run from the repository root (the folder that holds `CLAUDE.md`).
 
-## 1. Start your own inbox waiter
+## 1. Your inbox arrives as a message: run no waiter
 
-Nothing wakes you from outside: the watchdog's orchestrator wake is off (CEO 2026-11-10). A new
-session starts the waiter itself, first thing. Start it with the Bash tool, `run_in_background: true`, `timeout: 7200000`:
+CEO 2026-11-11: "no wake-ups at all. Let them come, and it answers them the way it answers
+me." You run **no** inbox waiter and no background command that wakes you. The zero-token loop
+`agent.execution.inbox_push` (started by `agent/scripts/thebes-up.sh`) watches your inbox. When
+work waits, it drops one short line into this conversation, the way the CEO's messages arrive.
+The line comes as a cross-session message from a one-shot courier:
 
-```sh
-python3 -m agent.execution.inbox wait
-```
+> Thebes inbox: N items waiting (…). Run `python3 -m agent.execution.inbox take` …
 
-It exits when something arrives (Claude Code then wakes you), or after ~2 hours with
-`status: idle`. **Either way, handle what it printed, then start it again at once.** An `idle`,
-`restart` or `already-waiting` return, a session start and a resume after a reboot are not news:
-restart the waiter and end the turn **with no text at all** (§5a). Exactly one waiter at a time. `python3 -m agent.execution.inbox peek` shows what is waiting without
+When that line comes, run `python3 -m agent.execution.inbox take` (foreground), handle every
+item it prints (§2-§5), and end the turn. Write **no text** unless `ceo_notice` prints SEND
+(§5a). The line itself carries no item and no capability. Never answer the courier, and never
+SendMessage it back. `take` prints `empty` when the items were already taken: end the turn with
+no text. A session start and a resume after a reboot are not news either: read this card, then
+go idle with no text. `python3 -m agent.execution.inbox peek` shows what is waiting without
 taking it.
 
-Every wake costs your whole context several times over (CEO 2026-11-11, "it consumes my
-tokens"), so the waiter wakes you as little as it can. After the first item it keeps
-collecting until 90 s pass with nothing new (5 min at most), so one wake carries the batch.
-A Thebes code change reloads it in place, so you no longer see `restart`. Review passes and
-holds never wake you. A Ready gauge that is unchanged or better, and a Backlog that was only
-edited, are asked about at most every 4 h. In a wake, act in as few calls as you can, and start
-the waiter in the same response as your last action.
+Never start `inbox wait`. While the pusher runs, `wait` refuses with `status: pushed`: end the
+turn with no text and do not start it again. If no inbox line has reached you for hours while
+teams are working, check `pgrep -f "agent.execution.inbox_push serve"`. If it is not running,
+start it as thebes-up.sh does. Do not fall back to a waiter.
+
+Every turn costs your whole context several times over (CEO 2026-11-11, "it consumes my
+tokens"), so the pusher batches. After the first item it waits until 90 s pass with nothing new
+(5 min at most), so one message carries the batch. It reloads itself on a Thebes code change.
+It does not announce a set again unless that set is still untaken an hour later. Review passes
+and holds never reach you. A Ready gauge that is unchanged or better, and a Backlog that was
+only edited, are asked about at most every 4 h. In a turn, act in as few calls as you can.
 
 ## 2. Route every CEO message
 
@@ -130,8 +137,8 @@ C2 | judge | Home matches frame "Home Feed" 1:1        | the running screen vs t
 - One request = one team. Several pieces run in parallel on several teams. A busy team
   refuses with `target-session-busy` and names the free ones; never queue on a busy team.
 - Your session id is the origin automatically. The accepted response says `reply_mode:
-  inline`: do not block on it. Tell the CEO in one line what went where, and make sure the
-  inbox waiter is running.
+  inline`: do not block on it. Tell the CEO in one line what went where; the result reaches
+  you as an inbox message (§1).
 - If no team is free, say so and hold the piece; dispatch it when a result frees a team.
 
 ## 4. Seats you run yourself
@@ -323,7 +330,7 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
   (Thebes could not execute a check, for example Flutter was not found: not the team's
   fault, nothing was sent back; fix the cause and run `verify run <id> --force`).
 
-Then start the waiter again.
+Then end the turn (§1: no waiter to start).
 
 ## 5a. Speak to the CEO rarely (CEO 2026-11-05, permanent)
 
@@ -441,7 +448,7 @@ Every turn brings a `<thebes-facts>` block (`agent/scripts/ceo_prompt_hook.py`, 
   dispatching, reviewing): no order needed. Every act is on the ledger:
   `python3 -m agent.execution.orders log` answers "who did this, and on whose word".
 - **A new orchestrator session** (created by hand, never by rotation: D-048) reads this card,
-  starts the inbox waiter, and goes idle. An old waiter returns `rebound`: stop.
+  and goes idle; its inbox reaches it as messages (§1).
 - **Retired session.** If the CEO types into an old orchestrator session, his words are recorded
   for you and appear under `CEO MESSAGES TYPED INTO A RETIRED SESSION`. Act on them as if he wrote
   them here (a quote there is liftable with `orders grant`). The old session is denied every act

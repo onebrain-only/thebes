@@ -531,9 +531,9 @@ def dispatch(prompt, target_session_id, *, env=None, state_store=store, cli=None
                     "target_seat_id": binding["seat_id"], "delivery_id": dispatch_id,
                     "dispatch_status": "delivering", "reply_mode": mode,
                     "jira_key": jira_key, "jira_sync": jira_reason,
-                    "next": ("make sure your inbox waiter is running (run_in_background: "
-                             "cd %s && python3 -m agent.execution.inbox wait); the result "
-                             "arrives through it — do not block on this dispatch" % ROOT
+                    "next": ("end the turn; the result reaches you as an inbox message "
+                             "(ORCHESTRATOR.md section 1; run `inbox take` when it comes) — do "
+                             "not block on this dispatch and start no inbox waiter"
                              if origin_provider == "claude" else
                              "finish your turn now and go idle; the result arrives here as a "
                              "new turn" if mode == "push" else

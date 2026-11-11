@@ -11,10 +11,17 @@ reach it waits here instead, and ONE background command hands it over:
     python3 -m agent.execution.inbox wait [--timeout 6900]   # run_in_background
     python3 -m agent.execution.inbox peek                     # what is waiting, no collect
 
-`wait` blocks until at least one item is waiting, prints all of them, marks them
-collected and exits; Claude Code wakes the orchestrator when a background command
-exits. The orchestrator handles the items and starts `wait` again. Only the bound
-orchestrator session may collect: the identity is CLAUDE_CODE_SESSION_ID.
+    python3 -m agent.execution.inbox take                     # collect now (foreground)
+
+CEO 2026-11-11 ("no wake-ups at all"): the zero-token loop `agent.execution.inbox_push`
+watches this inbox and drops one short message into the orchestrator's conversation when
+items wait, the way the CEO's own messages arrive. The orchestrator runs `take` and handles
+what it prints; it runs no waiter. While the pusher runs, `wait` refuses ("pushed").
+
+`wait` (the old way) blocks until at least one item is waiting, prints all of them, marks
+them collected and exits; Claude Code wakes the orchestrator when a background command
+exits. Only the bound orchestrator session may collect: the identity is
+CLAUDE_CODE_SESSION_ID.
 """
 import argparse
 import calendar
@@ -321,10 +328,13 @@ def _collect_decision(item, state_store):
     return dict(item, envelope=dg.request_envelope(req, capability, _read(req["question_ref"])))
 
 
-def collect(session_id, *, state_store=store, now=None):
-    """Take everything waiting. An item another waiter took first is skipped."""
+def collect(session_id, *, state_store=store, now=None, quiet_only=False):
+    """Take everything waiting. An item another waiter took first is skipped. quiet_only marks
+    the quiet items seen and takes nothing else (the pusher, which never takes work)."""
     taken = []
     for item in pending(session_id, state_store=state_store, now=now):
+        if quiet_only and not item.get("_quiet"):
+            continue
         try:
             if item["kind"] == "decision":
                 taken.append(_collect_decision(item, state_store))
@@ -396,6 +406,8 @@ def wait(timeout=DEFAULT_TIMEOUT, *, env=None, state_store=store, sleep=None, re
         raise Refused("not-orchestrator", "only the orchestrator session (%s) reads its inbox"
                       % orch)
     sleep = sleep or time.sleep
+    if push_running(state_store):
+        return {"status": "pushed", "items": [], "next": PUSHED}
     # B4: one waiter at a time. Several after a restart split the items and lost wakes.
     import fcntl
     os.makedirs(state_store.RUNTIME, exist_ok=True)
@@ -441,6 +453,8 @@ def _wait_loop(session_id, timeout, state_store, sleep, reexec=None):
             # D-044 rotation: a waiter of the old session would hold the lock for two hours
             return {"status": "rebound", "items": [],
                     "next": "this session is no longer the orchestrator; stop"}
+        if push_running(state_store):
+            return {"status": "pushed", "items": [], "next": PUSHED}
         items = collect(session_id, state_store=state_store)
         if items:
             quiet = polls = 0
@@ -460,16 +474,58 @@ def _wait_loop(session_id, timeout, state_store, sleep, reexec=None):
         sleep(POLL_SECONDS)
 
 
+PUSH_LOCK = "inbox-push.lock"
+PUSHED = ("Thebes pushes your inbox to you as a message now (inbox_push); never start the "
+          "inbox waiter again. Write no text at all: end the turn.")
+TAKE_NEXT = ("Handle every item (agent/ORCHESTRATOR.md), then end the turn. Start no inbox "
+             "waiter." + SPEAK_ONLY_BY_NOTICE)
+
+
+def push_running(state_store=store):
+    """Is the inbox pusher alive? It holds PUSH_LOCK for as long as it runs."""
+    import fcntl
+    path = os.path.join(state_store.RUNTIME, PUSH_LOCK)
+    if not os.path.exists(path):
+        return False
+    with open(path, "a") as fh:
+        try:
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            return True
+        fcntl.flock(fh, fcntl.LOCK_UN)
+    return False
+
+
+def take(*, env=None, state_store=store):
+    """What the orchestrator runs when the pusher's message arrives: collect now, in the
+    foreground, and print it. Same identity rule as `wait`."""
+    env = os.environ if env is None else env
+    orch = orchestrator_session(state_store)
+    if not orch:
+        raise Refused("orchestrator-unbound", "no orchestrator session is bound")
+    if env.get("CLAUDE_CODE_SESSION_ID") != orch:
+        raise Refused("not-orchestrator", "only the orchestrator session (%s) reads its inbox"
+                      % orch)
+    items = collect(orch, state_store=state_store)
+    if not items:
+        return {"status": "empty", "items": [],
+                "next": "nothing is waiting (already taken). Write no text at all: end the turn."}
+    return {"status": "items", "count": len(items), "items": items, "next": TAKE_NEXT}
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="agent.execution.inbox", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     w = sub.add_parser("wait"); w.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT)
+    sub.add_parser("take")
     sub.add_parser("peek")
     ns = ap.parse_args(argv)
     try:
         if ns.cmd == "wait":
             out = wait(ns.timeout, reexec=_reexec)
+        elif ns.cmd == "take":
+            out = take()
         else:
             sid = os.environ.get("CLAUDE_CODE_SESSION_ID") or orchestrator_session()
             out = [{k: v for k, v in i.items() if not k.startswith("_") and k != "result"}
