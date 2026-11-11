@@ -344,6 +344,17 @@ class ReadyDispatcherTests(unittest.TestCase):
         with self.assertRaises(store.StateError):
             store.reserve_seat("pm", "luxor", "cdispatch-x")
 
+    def test_the_orchestrator_runs_only_the_business_team(self):
+        """TH-074: cpo and analyst moved to the orchestrator; cto, cxo, devops and qa did not."""
+        for seat in ("cpo", "analyst"):
+            with self.assertRaises(store.StateError) as ctx:
+                store.reserve_seat(seat, "memphis", "cdispatch-x")
+            self.assertIn("orchestrator-only-seat", str(ctx.exception))
+        for seat in ("cto", "cxo", "devops", "qa", "frontend-1"):
+            with self.assertRaises(store.StateError) as ctx:
+                store.reserve_seat(seat, "orchestrator", "cdispatch-x")
+            self.assertIn("orchestrator-business-only", str(ctx.exception), seat)
+
     def test_no_capability_means_needs_brief(self):
         j = FakeJira([issue("KAN-509")])
         out = self.tick(j)

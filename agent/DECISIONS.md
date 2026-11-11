@@ -1116,7 +1116,7 @@ Agents never write a secret value anywhere; the CEO sets secrets himself.
 envelope in `agent/execution/conversation_dispatch.py`.
 
 ## TH-055 — The orchestrator runs only `pm` and `po`
-**Date:** 2026-10-09, amended 2026-10-21 and 2026-11-10 · **By:** CEO · **Status:** ACTIVE
+**Date:** 2026-10-09, amended 2026-10-21 and 2026-11-10 · **By:** CEO · **Status:** SUPERSEDED by TH-074 (2026-11-11: the orchestrator runs pm, po, cpo and analyst; Memphis runs cto, cxo and devops; qa is Edfu's)
 
 **Rule.** The orchestrator runs two seats itself, `pm` and `po` (`po-2` for the design
 system), in the background. A ruling from `cto`, `cpo` or `cxo` is one question dispatch to
@@ -1371,13 +1371,41 @@ him one gated Arabic line asking him to switch the session back to Auto. A CEO "
 he himself says continue in that conversation, and no message from another session lifts it. To
 "remove and create" the orchestrator or a team means rewriting its definition (its rules and
 role files) and keeping the same conversation. It never means retiring the session and binding a
-new one. Rule text: `agent/ORCHESTRATOR.md` §5b.
+new one, unless he explicitly asks for a fresh session, as he did the same day (TH-074). Rule
+text: `agent/ORCHESTRATOR.md` §5b.
 
 **Why.** On 2026-11-10 and 2026-11-11 the orchestrator's session was switched to plan mode from
 the app by accident. It answered every wake with a plan and a dialog. A session keeps its mode
 on every flagless resume, and a resume that passes `--permission-mode` starts a copy, so the mode
 cannot be reset from a script. On 2026-11-10 the old orchestrator and Memphis conversations were
 retired and replaced, which was not what he asked for.
+
+## TH-074 — The orchestrator is the business brain; Memphis is the Operations team
+**Date:** 2026-11-11 · **By:** CEO · **Status:** ACTIVE
+
+**Rule.**
+- **The orchestrator** is the one conversation the CEO talks to for work and business; Thebes
+  System is opened only to repair Thebes. It runs on Opus (`watchdog.py ORCHESTRATOR_MODEL`).
+- **It runs the business team as subagents, and nothing else:** `pm`, `po`/`po-2`, `cpo` and
+  `analyst` (`teams.py ORCHESTRATOR_ONLY_ROLES`). A team reserving one is refused with
+  `orchestrator-only-seat`; the orchestrator reserving any other seat is refused with
+  `orchestrator-business-only`.
+- **When the CEO opens a topic**, it discusses in plain text, proposes and pushes back. It writes
+  the plan as a file in `Dabbler/dabbler-docs/`, and it waits for his approval in the
+  conversation. On its own wakes it never plans and never opens a dialog (TH-072, TH-073).
+- **Memphis is the Operations team**, with the same name and lane. It runs `cto`, `cxo` and
+  `devops`. It keeps migrations, CI, integration into `staging` and deploys.
+- **`qa` moves to Edfu.**
+
+The orchestrator and Memphis each got a fresh session on his order. The old conversations are
+retired and kept: f6071922 for the orchestrator, 5984b1cc for Memphis.
+
+Rule text: `agent/ORCHESTRATOR.md` §2a and §4, and `conversation_dispatch.py` (the envelope
+lanes).
+
+**Why.** The orchestrator only split tasks and relayed, and it could not discuss or plan a
+direction with him. Memphis carried six seats: business and technical rulings, QA and
+operations. The CEO wants one smart business conversation and one technical operations team.
 
 ## Session-memory orders that are no longer live
 

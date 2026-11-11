@@ -125,7 +125,7 @@ than idling or guessing.
 - **Anything about the ticket, or a decision outside your authority** — scope, acceptance,
   architecture, experience — is **not** a direct call to `po`, `pm`, `cto` or `cxo`. They do not
   run in your team. End your turn with one `decision_required` question; the orchestrator
-  answers it (it runs `pm` and `po`, and sends the rest to Memphis as one dispatch).
+  answers it (it runs `pm`, `po`, `cpo` and `analyst`, and sends `cto` and `cxo` to Memphis as one dispatch).
 
 **There is no lead in any of these paths.**
 

@@ -86,6 +86,7 @@ def owner_of(components, path=TEAMS_JSON):
 
 
 ORCHESTRATOR_ID = "orchestrator"
-# Seats only the orchestrator layer runs (D-042): the PM and every PO. A team never
-# reserves them, so they are never busy inside a team when another team needs them.
-ORCHESTRATOR_ONLY_ROLES = ("po", "pm")
+# Seats only the orchestrator runs: the business team (TH-074, CEO 2026-11-11), the PM, every
+# PO, the CPO and the analyst. A team never reserves them, and the orchestrator reserves nothing
+# else: technical seats run in a team (cto, cxo and devops in Memphis, qa in Edfu).
+ORCHESTRATOR_ONLY_ROLES = ("po", "pm", "cpo", "analyst")

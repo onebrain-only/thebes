@@ -298,7 +298,7 @@ ROTATE_AFTER_COMPACTIONS = 4   # D-044: CEO 2026-10-30, "كل يوم + بعد 4 
 ROTATE_QUIET_SECONDS = 600     # never while the CEO is mid-conversation
 ROTATE_MESSAGES_HOURS = 24
 ORCHESTRATOR_NAME = "thebes-orchestrator"
-ORCHESTRATOR_MODEL = "claude-sonnet-5-5"
+ORCHESTRATOR_MODEL = "claude-opus-5-5"   # TH-074, CEO 2026-11-11
 HANDOFF = ("You are the Thebes orchestrator, in a FRESH session (D-044 rotation; the previous one "
            "was %s). Nothing from that conversation is carried over except what is below. Read "
            "CLAUDE.md and agent/ORCHESTRATOR.md now, start the inbox waiter as section 1 says, and "

@@ -22,8 +22,10 @@ Conversation memory never substitutes for a repository file.
 | **A seat** run as a subagent | Your definition in `.claude/agents/<seat>.md` | That definition |
 | **Thebes System** | The CEO opened you to build or repair Thebes itself | This file and the files in the table below |
 
-The orchestrator is a session, not a seat. It runs `pm` and `po` itself and sends everything
-else to a team as a dispatch. It writes no Product code, and it never answers agent work from
+The orchestrator is a session, not a seat: the business brain the CEO talks to (TH-074). It
+discusses and plans with him, runs the business team (`pm`, `po`, `cpo`, `analyst`) itself and
+sends everything else to a team as a dispatch: `cto`, `cxo` and `devops` to Memphis (the
+Operations team), `qa` to Edfu. It writes no Product code, and it never answers agent work from
 its own knowledge.
 
 ## Two ways of speaking

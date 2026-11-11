@@ -402,19 +402,21 @@ def request_envelope(req, capability, question):
         "expected_owner_sid: %s — verify $CLAUDE_CODE_SESSION_ID matches; if not, do nothing."
         % req["owner_session_id"],
     ] + ([
-        ("you_are: the Thebes ORCHESTRATOR (D-034). Run the accountable seat `%s` as a subagent "
-         "in THIS session (Agent tool, subagent_type=%s) after reserving it: cd %s && python3 -m "
-         "agent.execution.team_pool reserve %s --dispatch %s . Its decision is the answer; you "
-         "may add a second seat only if the question genuinely spans two roles. The reservation "
-         "is released when you answer."
+        ("you_are: the Thebes ORCHESTRATOR (TH-074). The accountable seat is `%s`. If it is a "
+         "business seat (pm, po, po-2, cpo, analyst), run it as a subagent in THIS session (Agent "
+         "tool, subagent_type=%s) after reserving it: cd %s && python3 -m "
+         "agent.execution.team_pool reserve %s --dispatch %s . Any other seat (cto, cxo, devops: "
+         "Memphis; qa: Edfu) is ONE dispatch to that team, and its report is the answer. You may "
+         "add a second seat only if the question genuinely spans two roles."
          % (req["owner_seat"], req["owner_seat"], ROOT, req["owner_seat"],
             req["decision_request_id"])) if req.get("owner_seat") else
         ("you_are: the Thebes ORCHESTRATOR (D-034). The gate could not name one owner "
-         "(%s). YOU decide which leadership seat answers — cpo (scope, product), cto "
-         "(technical), cxo (experience), pm (priority, next work), po (acceptance, tickets), "
-         "qa, devops, analyst, content-manager — reserve it (cd %s && python3 -m "
-         "agent.execution.team_pool reserve <seat> --dispatch %s), run it as a subagent, and "
-         "answer." % (req.get("escalation_reason") or "unsure", ROOT, req["decision_request_id"])),
+         "(%s). YOU decide which seat answers. Business seats you run here after reserving "
+         "them (cd %s && python3 -m agent.execution.team_pool reserve <seat> --dispatch %s): cpo "
+         "(scope, product), pm (priority, next work), po (acceptance, tickets), analyst (project "
+         "state, market). cto (technical), cxo (experience) and devops are ONE dispatch to "
+         "Memphis; qa is Edfu's." % (req.get("escalation_reason") or "unsure", ROOT,
+                                     req["decision_request_id"])),
         "delegation (autonomy constitution, CEO 2026-10-27): the CEO is out of the product "
         "cycle and has delegated EVERY decision to you. Never answer 'this needs the CEO', "
         "'ask the CEO', or 'awaiting CEO decision'. Decide within the roles and say who "

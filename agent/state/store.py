@@ -3303,8 +3303,12 @@ def reserve_seat(seat_id, team_id, dispatch_id):
         (roster.read().get(seat_id) or {}).get("capability")
     if seat_role in teams.ORCHESTRATOR_ONLY_ROLES and team_id != teams.ORCHESTRATOR_ID:
         raise StateError("orchestrator-only-seat: %s is a %s seat; only the orchestrator runs "
-                         "the PM and the POs (D-042). Ask the orchestrator instead."
-                         % (seat_id, seat_role))
+                         "the business team: pm, po, cpo and analyst (TH-074). Ask the "
+                         "orchestrator instead." % (seat_id, seat_role))
+    if team_id == teams.ORCHESTRATOR_ID and seat_role not in teams.ORCHESTRATOR_ONLY_ROLES:
+        raise StateError("orchestrator-business-only: the orchestrator runs only pm, po, cpo and "
+                         "analyst (TH-074); %s is a %s seat. Dispatch it to a team: cto, cxo and "
+                         "devops are Memphis's, qa is Edfu's." % (seat_id, seat_role))
     if str(dispatch_id).startswith("ceo-"):
         # D-039: only the orchestrator executes CEO orders itself.
         if team_id != teams.ORCHESTRATOR_ID or not CEO_ORDER_ID.match(str(dispatch_id)):

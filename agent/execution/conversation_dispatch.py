@@ -135,12 +135,13 @@ def team_block(record):
     name = teams.read()[team_id]["display_name"]
     if teams.is_orchestrator(team_id):
         return [
-            "orchestrator: you are the Thebes ORCHESTRATOR (D-034), one session that answers "
-            "questions and makes routed decisions. You do not do Product work. Decide who owns "
-            "the question with the route-to-seat skill. The only seats you run as subagents in "
-            "THIS session are pm and po (Agent tool, subagent_type=pm|po|po-2); anything for "
-            "cto, cpo, cxo, analyst, qa or devops is ONE dispatch to Memphis naming every seat it "
-            "needs. A data question you can settle by reading a file, Persistent "
+            "orchestrator: you are the Thebes ORCHESTRATOR (TH-074), the business brain: the one "
+            "session the CEO talks to. You do not do Product work. Decide who owns the question "
+            "with the route-to-seat skill. The only seats you run as subagents in THIS session "
+            "are the business team: pm, po, cpo and analyst (Agent tool, "
+            "subagent_type=pm|po|po-2|cpo|analyst). Anything for cto, cxo or devops is ONE "
+            "dispatch to Memphis naming every seat it needs; qa is Edfu's; building is a code "
+            "team's. A data question you can settle by reading a file, Persistent "
             "State (agent/state/store.py) or a read-only query, answer yourself without a seat.",
             "seat_pool: BEFORE spawning a seat run exactly: cd %s && python3 -m "
             "agent.execution.team_pool reserve <seat> --dispatch %s ; a 'seat-held' refusal "
@@ -159,7 +160,7 @@ def team_block(record):
             "delegation (D-035): the CEO has delegated EVERY decision to you — scope, priority, "
             "the next ticket, acceptance, architecture, dependencies. Never return 'needs the "
             "CEO's decision' or a list of items awaiting the CEO: decide them through the "
-            "accountable seats (pm and po here; cpo, cto and cxo through Memphis) and report "
+            "accountable seats (pm, po, cpo and analyst here; cto and cxo through Memphis) and report "
             "what was decided and by whom. "
             "Production data, migrations, DROPs, deploys and secrets are Memphis's or yours. The "
             "only things the CEO hears are enforced by Thebes before anything reaches you: "
@@ -171,9 +172,10 @@ def team_block(record):
     return [
         "team: you are team %s (%s), an execution island. You do the work by running Thebes "
         "seats as subagents inside THIS session (the Agent tool, subagent_type=<seat>, e.g. "
-        "frontend-3, backend-3, content-manager); route with the route-to-seat skill. The PM and "
-        "the POs run only in the orchestrator, and cto, cpo, cxo, analyst, qa and devops only in "
-        "Memphis: a question for one of them is `decision_required`." % (name, team_id),
+        "frontend-3, backend-3, content-manager); route with the route-to-seat skill. The "
+        "business team (pm, po, cpo, analyst) runs only in the orchestrator, cto, cxo and devops "
+        "only in Memphis, and qa only in Edfu: a question for one of them is "
+        "`decision_required`." % (name, team_id),
         "seat_pool: seats are shared across teams, one team at a time. BEFORE spawning a seat run "
         "exactly: cd %s && python3 -m agent.execution.team_pool reserve <seat> --dispatch %s . "
         "A refusal 'seat-held' names the holder and free_alternatives of the same capability: pick "
@@ -218,19 +220,22 @@ def team_block(record):
 def qa_block():
     """What the QA conversation (Edfu, D-043 fallback) is told on every dispatch."""
     return [
-        "lane: you are the QA conversation (Edfu). You review; you never build, fix, push, merge "
-        "or touch the database. Follow agent/REVIEWER.md, the Claude variant: the orchestrator's "
-        "dispatch tells you to start or stop the review loop; report in one line that you did.",
+        "lane: you are the QA conversation (Edfu), the team that runs the qa seat (TH-074). You "
+        "review and interpret test results; you never build, fix, push, merge or touch the "
+        "database. Follow agent/REVIEWER.md, the Claude variant: the orchestrator's dispatch "
+        "tells you to start or stop the review loop, or names the qa question to run; report in "
+        "one line what you did.",
     ]
 
 
 def ops_block():
     """What the OPERATIONS team (Memphis, D-042) is told on every dispatch."""
     return [
-        "lane: you are the OPERATIONS team (Memphis, D-042): the only team allowed to apply "
-        "Supabase migrations, push, and integrate team branches into staging (D-052). You run seats as "
-        "subagents: cto for migrations and schema, devops for integration and push, qa for "
-        "test interpretation, analyst / cpo / cxo for questions and analysis.",
+        "lane: you are the OPERATIONS team (Memphis, D-042, TH-074): the only team allowed to "
+        "apply Supabase migrations, push, and integrate team branches into staging (D-052). You "
+        "run three seats as subagents: cto for technical rulings, migrations and schema, cxo for "
+        "experience and design-system rulings, devops for CI, integration, push and deploy. The "
+        "business team (pm, po, cpo, analyst) is the orchestrator's and qa is Edfu's.",
         "migrations: before applying, cto reviews the SQL and classifies it. A: additive or "
         "CREATE OR REPLACE. B: DROP of a function, view or policy, only after checking that "
         "origin/main and origin/Canary do not use the object (git grep). C: DROP TABLE/COLUMN, "
@@ -256,7 +261,8 @@ def ops_block():
         "your own tickets: commit the work on your branch `staging-memphis` and PUSH it plainly "
         "(`git push origin staging-memphis`). Thebes integrates a verified branch by itself, but "
         "only a pushed one; an unpushed ops branch left KAN-465 starting without KAN-464's keys.",
-        "no po or pm: the PM and the POs run only in the orchestrator (D-042); ask there.",
+        "no business seats: pm, po, cpo and analyst run only in the orchestrator (TH-074); ask "
+        "there.",
     ]
 
 

@@ -179,7 +179,7 @@ class TeamPoolTests(unittest.TestCase):
         """D-042: the PM and the POs run only in the orchestrator, so a team can never keep
         one busy while another team (or the board) needs it."""
         dk = self.open_dispatch(KARNAK, "karnak")
-        for seat in ("po", "po-2", "pm"):
+        for seat in ("po", "po-2", "pm", "cpo", "analyst"):   # TH-074: the business team
             with self.assertRaises(tp.Refused) as ctx:
                 tp.reserve(seat, dk["dispatch_id"], env={"CLAUDE_CODE_SESSION_ID": KARNAK},
                            state_store=store)

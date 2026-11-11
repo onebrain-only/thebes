@@ -9,15 +9,15 @@
  },
  "lane_roles": {
   "code": "a Thebes code team, an execution island that runs seats as subagents; you push only your own branch, never merge into staging, Alpha, Canary or main, and never write to the database",
-  "ops": "the Thebes OPERATIONS team (D-042): the only team that applies database migrations, pushes, and integrates team branches into staging (Alpha only on a CEO promotion order, D-052); you also answer questions and write ticket briefs, running seats as subagents",
-  "qa": "the Thebes QA conversation (D-043 fallback): you review finished work; you never build, fix, push, merge or write to the database. You stay idle until the orchestrator sends you a dispatch that turns the Claude review channel on or off; then follow agent/REVIEWER.md (the Claude variant section) exactly"
+  "ops": "the Thebes OPERATIONS team (D-042, TH-074): the only team that applies database migrations, pushes, and integrates team branches into staging (Alpha only on a CEO promotion order, D-052); you run cto, cxo and devops as subagents and answer technical and experience questions",
+  "qa": "the Thebes QA conversation (D-043 fallback, TH-074): you run the qa seat and review finished work; you never build, fix, push, merge or write to the database. You stay idle until the orchestrator sends you a dispatch: a qa question, or one that turns the Claude review channel on or off; then follow agent/REVIEWER.md (the Claude variant section) exactly"
  },
  "teams": {
   "orchestrator": {
    "number": 0,
    "display_name": "Orchestrator",
    "kind": "orchestrator",
-   "note": "D-034: the one Claude session the CEO talks to; not a delivery team. It runs only the pm and po seats as subagents (teams.py ORCHESTRATOR_ONLY_ROLES). Every other seat runs inside a team: rulings from cto, cpo, cxo and analyst are one dispatch to Memphis."
+   "note": "D-034, TH-074 (CEO 2026-11-11): the business brain and the one Claude session the CEO talks to for work; not a delivery team. It discusses and plans with the CEO, writes plans to Dabbler/dabbler-docs/ and waits for his approval, and runs only the business team as subagents: pm, po, cpo and analyst (teams.py ORCHESTRATOR_ONLY_ROLES). Every other seat runs inside a team: cto, cxo and devops in Memphis, qa in Edfu, building in the code teams. Model in watchdog.py ORCHESTRATOR_MODEL."
   },
   "karnak": {
    "number": 1,
@@ -58,13 +58,13 @@
    "number": 6,
    "display_name": "Memphis",
    "lane": "ops",
-   "note": "D-042: the operations team. Memphis was the administrative capital and seat of the vizier, where the state was run. The only team that applies Supabase migrations, pushes and integrates team branches into staging (D-052; Alpha moves only on a CEO-chosen promotion of staging); runs cto, cpo, cxo, analyst, qa and devops as subagents for operations, rulings, briefs and questions. It never runs pm or po: those are the orchestrator's."
+   "note": "D-042: the operations team. Memphis was the administrative capital and seat of the vizier, where the state was run. The only team that applies Supabase migrations, pushes and integrates team branches into staging (D-052; Alpha moves only on a CEO-chosen promotion of staging); TH-074 (CEO 2026-11-11): the Operations team; runs cto, cxo and devops as subagents for technical and experience rulings, migrations, CI, integration and deploys. It never runs pm, po, cpo or analyst (the orchestrator's) or qa (Edfu's)."
   },
   "edfu": {
    "number": 7,
    "display_name": "Edfu",
    "lane": "qa",
-   "note": "D-043 fallback: the QA conversation on Claude Code. Dormant (idle, zero tokens) while the Codex reviewer is the review channel. Only on the CEO's explicit order does the orchestrator run `review_queue channel claude`, which wakes Edfu to take the review queue; `channel codex` stands it down. Never builds, fixes, pushes or writes to the database."
+   "note": "D-043 fallback: the QA conversation on Claude Code. It runs the qa seat (TH-074). Dormant (idle, zero tokens) while the Codex reviewer is the review channel and no qa question is open. Only on the CEO's explicit order does the orchestrator run `review_queue channel claude`, which wakes Edfu to take the review queue; `channel codex` stands it down. Never builds, fixes, pushes or writes to the database."
   }
  }
 }
