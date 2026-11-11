@@ -1362,6 +1362,23 @@ same.
 **Why.** He is often away from the PC, and the same "waiting / ready / I'm back" lines reached him
 over and over.
 
+## TH-073 — No dialogs from the orchestrator; a recreate keeps the conversation
+**Date:** 2026-11-11 · **By:** CEO · **Status:** ACTIVE
+
+**Rule.** The orchestrator never calls `AskUserQuestion`, `EnterPlanMode` or `ExitPlanMode`. When
+it finds itself in plan mode, or in a mode that asks before each tool, it acts on nothing. It sends
+him one gated Arabic line asking him to switch the session back to Auto. A CEO "stop" holds until
+he himself says continue in that conversation, and no message from another session lifts it. To
+"remove and create" the orchestrator or a team means rewriting its definition (its rules and
+role files) and keeping the same conversation. It never means retiring the session and binding a
+new one. Rule text: `agent/ORCHESTRATOR.md` §5b.
+
+**Why.** On 2026-11-10 and 2026-11-11 the orchestrator's session was switched to plan mode from
+the app by accident. It answered every wake with a plan and a dialog. A session keeps its mode
+on every flagless resume, and a resume that passes `--permission-mode` starts a copy, so the mode
+cannot be reset from a script. On 2026-11-10 the old orchestrator and Memphis conversations were
+retired and replaced, which was not what he asked for.
+
 ## Session-memory orders that are no longer live
 
 | Memory file | Dated | What it said | Replaced by |

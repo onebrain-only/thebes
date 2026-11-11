@@ -72,6 +72,16 @@ class LivenessTests(unittest.TestCase):
                               now=self.now, projects=self.projects)
         return {e["team"]: e for e in snap["teams"]}
 
+    def test_the_mode_a_session_resumes_in_is_its_last_recorded_one(self):
+        # TH-073: the orchestrator went auto -> plan -> default from the app and kept it.
+        f = os.path.join(self.projects, "p", "%s.jsonl" % SIDS["karnak"])
+        with open(f, "w") as fh:
+            for m in ("auto", "plan", "default"):
+                fh.write('{"type": "permission-mode", "permissionMode": "%s"}\n' % m)
+                fh.write('{"type": "user", "message": {"content": "permission-mode"}}\n')
+        self.assertEqual(liveness.permission_mode(SIDS["karnak"], self.projects), "default")
+        self.assertIsNone(liveness.permission_mode("no-such-session", self.projects))
+
     def test_every_team_is_probed_including_idle_and_sessionless(self):
         for t in SIDS:
             self.transcript(t, 60)

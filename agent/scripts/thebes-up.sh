@@ -53,6 +53,11 @@ missing_teams=""
 missing_orchestrator=0
 while read -r tid sid display; do
   display=${display//_/ }
+  if [ "$sid" != "-" ]; then
+    # A session keeps its mode on every resume; only the CEO can switch it back (TH-073).
+    mode=$(python3 -c "from agent.execution import liveness as l; print(l.permission_mode('$sid') or 'auto')")
+    [ "$mode" = "auto" ] || say "MODE     $display is in '$mode' mode, not Auto: افتح الجلسة دي من التطبيق واختار Auto"
+  fi
   if [ "$sid" = "-" ]; then
     say "UNBOUND  $display"
     [ "$tid" = "orchestrator" ] && missing_orchestrator=1 || missing_teams="$missing_teams $tid"

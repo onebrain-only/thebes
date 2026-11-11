@@ -85,6 +85,27 @@ def last_activity(session_id, projects=None):
     return max(stamps) if stamps else None
 
 
+def permission_mode(session_id, projects=None):
+    """The mode the session will come back in: the last one its transcript recorded.
+
+    A flagless resume restores it and a resume with --permission-mode starts a copy (tested
+    2026-11-11), so a session switched to plan mode by accident stays there (TH-073)."""
+    root = projects or os.path.expanduser("~/.claude/projects")
+    mode = None
+    for f in glob.glob(os.path.join(root, "*", "%s.jsonl" % session_id)):
+        try:
+            with open(f, encoding="utf-8") as fh:
+                for line in fh:
+                    if '"permission-mode"' in line:
+                        try:
+                            mode = json.loads(line).get("permissionMode") or mode
+                        except ValueError:
+                            pass
+        except OSError:
+            pass
+    return mode
+
+
 def review_held(session_id, now):
     """Review items this session claimed in the last hour and has not finished: the review
     team's work arrives through review_queue claims, not conversation dispatches."""
