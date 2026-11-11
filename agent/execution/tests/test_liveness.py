@@ -173,6 +173,34 @@ class LivenessTests(unittest.TestCase):
         self.assertEqual(got["edfu"]["status"], "free")
         self.assertFalse([e for e in liveness.problems() if e["team"] == "edfu"])
 
+    def test_a_review_team_in_its_own_wait_script_is_neither_silent_nor_untracked(self):
+        from agent.execution import watchdog
+        TEAMS["edfu"]["lane"] = "qa"
+        orig = watchdog.pending_tool
+        try:
+            self.transcript("edfu", liveness.SILENT_SECONDS + 600)
+            watchdog.pending_tool = lambda sid, projects=None: (
+                "Bash", '{"command": "python3 /tmp/held_wait.py 3600"}')
+            self.assertEqual(self.sweep({"edfu": "working"})["edfu"]["status"], "free")
+            self.transcript("edfu", 30)          # just revived: working, in no call yet
+            watchdog.pending_tool = lambda sid, projects=None: None
+            self.assertEqual(self.sweep({"edfu": "working"})["edfu"]["status"], "free")
+            self.assertFalse([e for e in liveness.problems() if e["team"] == "edfu"])
+        finally:
+            watchdog.pending_tool = orig
+            TEAMS["edfu"]["lane"] = "code"
+
+    def test_a_code_team_silent_in_some_other_call_is_still_reported(self):
+        from agent.execution import watchdog
+        self.transcript("karnak", liveness.SILENT_SECONDS + 600)
+        orig = watchdog.pending_tool
+        watchdog.pending_tool = lambda sid, projects=None: ("Bash", '{"command": "flutter test"}')
+        try:
+            got = self.sweep({"karnak": "working"})
+        finally:
+            watchdog.pending_tool = orig
+        self.assertEqual(got["karnak"]["status"], "silent")
+
 
 if __name__ == "__main__":
     unittest.main()
