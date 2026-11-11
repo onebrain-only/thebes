@@ -1,9 +1,13 @@
 ---
 name: epic-cut
-description: Cut a CEO-approved Epic into small tickets that several teams build at the same time without touching the same files, then prove the cut with `cut_plan check` before any ticket is written. Use on every `ready-below-target` or `serial-chain` priority item, whenever an approved Epic needs tickets, whenever Ready tickets sit waiting on Blocks links, and whenever a ticket is bigger than one screen or one function plus its test. D-049, CEO 2026-11-02.
+description: Cut a CEO-approved Epic that has no tickets yet into tickets that several teams build at the same time without touching the same files, then prove the cut with `cut_plan check` before any ticket is written. Use once per approved Epic, and when Ready tickets sit waiting on Blocks links that are only an order. Never to split an existing ticket or re-cut an Epic that already has tickets (TH-077, CEO 2026-11-11).
 ---
 
 # Epic cut
+
+**You split nothing that is already split (TH-077, CEO 2026-11-11).** This skill cuts an
+approved Epic that has no tickets yet, once, at the level the Epic itself names. An existing
+ticket goes to a team as written, however big. An Epic that already has tickets is not re-cut.
 
 The CEO's target is a ticket finished every 10 minutes across five code teams (D-049). Coding
 is not the bottleneck. These are:
@@ -57,10 +61,9 @@ tickets inside an approved Epic need no order (D-046).
 - That keeps `app_router.dart` and `providers.dart` to one editor per Epic.
 
 **d. Fan out (wave 2).**
-- **One screen** = one file under `presentation/screens/`, its widgets, its widget test, and
-  click-by-click test scenarios.
-- **One function** = one repository method, use case or edge function, plus its test.
-- Each one is 30-50 minutes and touches its own files.
+- One ticket for each screen or function the Epic names, with its test (and, for a screen,
+  click-by-click test scenarios). Do not go finer than the Epic does.
+- Each ticket touches its own files.
 
 **Destructive steps go last**, in their own ticket: a column drop or a rename that breaks old
 readers. Teams never write DROP; that ticket goes to Memphis.
@@ -105,9 +108,9 @@ Write `$CLAUDE_JOB_DIR/tmp/<EPIC>-cut.json`, or the session's tmp folder:
 
 Then run `python3 -m agent.execution.cut_plan check <file>`.
 
-- **Errors exit 1.** Fix every one: a collision, an unexplained link, a ticket over 50
-  minutes, two screens in one ticket, a screen or function without a test file, a screen
-  without scenarios, missing surfaces, a cycle.
+- **Errors exit 1.** Fix every one: a collision, an unexplained link, a screen or function
+  without a test file, a screen without scenarios, missing surfaces, a cycle. There is no size
+  cap: a big ticket stays one ticket.
 - **Warnings:** fix each one, or answer it in one line in your handover. These are an
   ordering-only link, a hotspot edit, an `.arb` edit outside the strings ticket, and a first
   wave narrower than five teams.
@@ -125,23 +128,22 @@ Then run `python3 -m agent.execution.cut_plan check <file>`.
    - a `cap:<capability>` label;
    - the Original estimate.
 2. You set the Blocks links and move tickets into Ready in wave order.
-3. Keep at least **10 startable** tickets in Ready. Log the cut with `pm_ledger add`.
+3. Log the cut with `pm_ledger add`. There is no Ready target.
 
-## 5. Breaking an existing chain (`serial-chain`)
+## 5. Removing a Blocks link that is only an order
 
-1. For each waiting ticket the priority item lists, read the ticket and its blocker. Apply the
-   test in §3.
+1. For a Ready ticket waiting on a blocker, read the ticket and its blocker. Apply the test in
+   §3.
 2. Remove every link that fails it. Write a comment on the ticket naming the test and the
    reason.
-3. If a link is real but the dependent is big, cut the part that does not need the blocker
-   into its own ticket, and let it start now.
+3. A real link stays. The ticket is not split to start part of it early (TH-077).
 
 ## Anti-patterns
 
 - **Horizontal layers:** "all backend, then all frontend". The frontend waits a whole Epic.
   Put the contract first instead.
 - **Phase tickets:** "P2", "P3", "polish", "wire-up later". These are an order, not work.
-- **A ticket that says "and"** across two screens or two functions. Split it.
+- **Splitting an existing ticket**, or re-cutting an Epic that already has tickets (TH-077).
 - **Two tickets editing `lib/data/` or `lib/core/` in the same wave.** They serialize anyway,
   and the checker says so.
 - **Surfaces copied from the Epic's description** instead of read from the code.

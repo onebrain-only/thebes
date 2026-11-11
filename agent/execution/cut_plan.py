@@ -33,12 +33,10 @@ from agent.state import policy, queue                                  # noqa: E
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CODE = os.path.join(ROOT, "Dabbler", "dabbler-code")
 KINDS = ("contract", "migration", "function", "screen", "strings")
-MAX_MIN = 50
 CODE_TEAMS = 5
 # Generated from the .arb files: a conflict there is resolved by `flutter gen-l10n`, not by hand.
 REGENERATED = re.compile(r"^lib/l10n/app_localizations(_\w+)?\.dart$|^pubspec\.lock$")
 STRINGS = re.compile(r"\.arb$")
-SCREEN = re.compile(r"/presentation/screens/.+\.dart$")
 TEST = re.compile(r"(^|/)test/|_test\.dart$|(^|/)supabase/tests/")
 
 
@@ -136,13 +134,8 @@ def check(plan, hot=()):
         est = t.get("estimate_min")
         if not isinstance(est, (int, float)) or est <= 0:
             errors.append("%s: no estimate_min" % i)
-        elif est > MAX_MIN:
-            errors.append("%s: %d minutes is over %d. Split it" % (i, est, MAX_MIN))
+        # TH-077 (CEO 2026-11-11): no size cap and no one-screen rule. A ticket is not split.
         paths = _paths(t)
-        screens = sorted({p for p in paths if SCREEN.search(p)})
-        if len(screens) > 1:
-            errors.append("%s: %d screens (%s). One ticket = one screen" % (i, len(screens),
-                                                                           ", ".join(screens)))
         if kind in ("function", "screen", "migration") and not any(TEST.search(p) for p in paths):
             errors.append("%s: no test file among its surfaces. One function or screen plus its "
                           "test" % i)

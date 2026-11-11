@@ -93,8 +93,6 @@ class ReadyDispatcherTests(unittest.TestCase):
         store.set_operating_mode("PRODUCT_EXECUTION", "ceo", "test")
         self.sent = []
         self.patches = [mock.patch.object(subprocess, n, _refuse) for n in ("run", "Popen")]
-        # The D-049 Ready gauge is off here; ReadyGaugeTests turns it on.
-        self.patches.append(mock.patch.object(rd, "READY_TARGET", 0))
         real = teams.read()
         self.lanes = dict((t, dict(e)) for t, e in real.items())
         self.patches.append(mock.patch.object(teams, "read", lambda path=None: self.lanes))
@@ -468,62 +466,33 @@ if __name__ == "__main__":
     unittest.main()
 
 
-class ReadyGaugeTests(unittest.TestCase):
-    """D-049: Ready under 10 startable asks the PM every 15 minutes, Backlog or not."""
+class NoCuttingTests(unittest.TestCase):
+    """TH-077 (CEO 2026-11-11, "it splits what is already split"): Thebes never asks the PM to
+    cut. A short Ready, a Blocks chain or a big estimate is not a reason to wake anyone."""
+    setUp = ReadyDispatcherTests.setUp
     tearDown = ReadyDispatcherTests.tearDown
     dispatch = ReadyDispatcherTests.dispatch
     tick = ReadyDispatcherTests.tick
 
-    def setUp(self):
-        ReadyDispatcherTests.setUp(self)
-        gauge = [p for p in self.patches if getattr(p, "attribute", None) == "READY_TARGET"][0]
-        gauge.stop()                            # READY_TARGET back to 10
-        self.patches.remove(gauge)
-
     def asks(self, out):
         return [d for d in out if d.get("action") == "priority-request"]
 
-    def test_a_short_ready_asks_the_pm_to_cut_even_with_an_empty_backlog(self):
-        j = FakeJira([])
-        req = self.asks(self.tick(j))[0]
-        self.assertEqual(req["reasons"], ["ready-below-target"])
+    def test_a_short_ready_with_an_empty_backlog_asks_nobody(self):
+        self.assertFalse(self.asks(self.tick(FakeJira([]))))
+        later = __import__("time").time() + rd.READY_REPEAT_SECONDS + 5
+        self.assertFalse(self.asks(rd.tick(state_store=store, jira=FakeJira([]),
+                                           dispatch=self.dispatch, now=later)))
+
+    def test_the_cutting_gauges_are_gone(self):
+        for name in ("READY_TARGET", "READY_ASK_SECONDS", "GAUGES", "MAX_ESTIMATE_SECONDS"):
+            self.assertFalse(hasattr(rd, name), name)
+
+    def test_the_backlog_ask_says_never_split_a_ticket(self):
+        self.tick(FakeJira([], backlog=["KAN-600"]))
         from agent.execution import inbox
         item = [i for i in inbox.collect(ORCH, state_store=store) if i["kind"] == "priority"][0]
-        self.assertIn("one screen or one function", item["how"])
-        self.assertFalse(self.asks(self.tick(j)), "within 15 minutes: not asked again")
-        for r in store.read_all("priority_request"):
-            store.update("priority_request", r["priority_request_id"], r["revision"],
-                         {"status": "collected"})
-        now = __import__("time").time()
-        self.assertFalse(self.asks(rd.tick(state_store=store, jira=j, dispatch=self.dispatch,
-                                           now=now + rd.READY_ASK_SECONDS + 5)),
-                         "same numbers: the PM already answered it")
-        self.assertTrue(self.asks(rd.tick(state_store=store, jira=j, dispatch=self.dispatch,
-                                          now=now + rd.READY_REPEAT_SECONDS + 5)))
-
-    def test_a_changed_gauge_is_asked_after_fifteen_minutes(self):
-        first = rd.raise_priority_request(
-            [{"kind": "ready-below-target", "startable": 1, "target": 10}], "", state_store=store)
-        store.update("priority_request", first["priority_request_id"], first["revision"],
-                     {"status": "collected"})
-        later = __import__("time").time() + rd.READY_ASK_SECONDS + 5
-        self.assertTrue(rd.raise_priority_request(
-            [{"kind": "ready-below-target", "startable": 0, "target": 10}], "",
-            state_store=store, now=later))
-
-    def test_a_gauge_that_got_better_is_not_asked_again_for_hours(self):
-        # CEO 2026-11-11: Ready 0 -> 2 -> 0 woke the orchestrator twice with nothing to do.
-        first = rd.raise_priority_request(
-            [{"kind": "ready-below-target", "startable": 0, "target": 10}], "", state_store=store)
-        store.update("priority_request", first["priority_request_id"], first["revision"],
-                     {"status": "collected"})
-        later = __import__("time").time() + rd.READY_ASK_SECONDS + 5
-        self.assertIsNone(rd.raise_priority_request(
-            [{"kind": "ready-below-target", "startable": 2, "target": 10}], "",
-            state_store=store, now=later))
-        self.assertIsNone(rd.raise_priority_request(
-            [{"kind": "ready-below-target", "startable": 0, "target": 10}], "",
-            state_store=store, now=later + 60))
+        self.assertIn("Never split a ticket", item["how"])
+        self.assertNotIn("one screen or one function", item["how"])
 
     def test_an_edited_backlog_is_not_news_but_a_new_ticket_is(self):
         reasons = [{"kind": "backlog-changed", "count": 1},
@@ -538,25 +507,11 @@ class ReadyGaugeTests(unittest.TestCase):
                                                   state_store=store, now=later))
 
     def test_an_open_request_is_not_asked_twice(self):
-        j = FakeJira([])
-        self.asks(self.tick(j))
-        later = __import__("time").time() + rd.READY_ASK_SECONDS + 5
+        j = FakeJira([], backlog=["KAN-600"])
+        self.assertTrue(self.asks(self.tick(j)))
+        later = __import__("time").time() + rd.PRIORITY_MIN_SECONDS + 5
         self.assertFalse(self.asks(rd.tick(state_store=store, jira=j, dispatch=self.dispatch,
                                            now=later)), "the PM has not collected the first")
-
-    def test_ready_tickets_waiting_on_blockers_ask_for_false_links(self):
-        out = rd.raise_priority_request(
-            [{"kind": "ready-below-target", "startable": 0, "target": 10},
-             {"kind": "serial-chain", "waiting": ["KAN-715", "KAN-716"]}], "",
-            state_store=store)
-        self.assertEqual([r["kind"] for r in out["reasons"]],
-                         ["ready-below-target", "serial-chain"])
-
-
-class TooBigGaugeTest(unittest.TestCase):
-    def test_an_hours_estimate_is_a_gauge(self):
-        self.assertIn("too-big", rd.GAUGES)
-        self.assertEqual(rd.MAX_ESTIMATE_SECONDS, 3600)
 
 
 class SkillsLineTests(unittest.TestCase):

@@ -269,17 +269,10 @@ def _flag_brief(issue, problems, jira, comment=True):
 
 # ------------------------------------------------------------------ priority requests
 PRIORITY_MIN_SECONDS = 3600      # the PM re-plans at most hourly unless a brief is needed
-# D-049 (CEO 2026-11-02): at least READY_TARGET startable tickets in Ready, so a free team never
-# waits for a cut. These two are gauges, asked about every READY_ASK_SECONDS whatever the Backlog.
-READY_TARGET = 10
-READY_ASK_SECONDS = 900
-# The same gauge with the same numbers is not news: the PM already answered it (2026-11-03, "Ready
-# 1 of 10" reached the CEO a dozen times while the only fix was an Epic order).
+# CEO 2026-11-11 ("it splits what is already split"): Thebes no longer asks the PM to cut. The
+# D-049 gauges (Ready under 10, Blocks chains, an estimate over an hour) are gone; a ticket goes
+# to a team as written. An unchanged Backlog is still not news for this long:
 READY_REPEAT_SECONDS = 4 * 3600
-# Real team time per ticket, measured 2026-11-02 over 86 tickets: median 25 min, p75 62. An
-# Original estimate over an hour is a human-hours guess and the ticket needs `epic-cut`.
-MAX_ESTIMATE_SECONDS = 3600
-GAUGES = ("ready-below-target", "serial-chain", "too-big")
 DONE_JQL = 'project = KAN AND status = "Done" ORDER BY updated DESC'
 # Epics are not executable: an open epic alone used to wake the PM forever (B2, KAN-494).
 BACKLOG_JQL = 'project = KAN AND status = "To Do" AND issuetype != Epic ORDER BY rank ASC'
@@ -305,23 +298,6 @@ def _ts(stamp):
         return 0
 
 
-def _no_worse(gauge, said):
-    """True when a gauge reads the same as, or better than, what was last asked (CEO
-    2026-11-11: Ready 0 -> 2 -> 0 woke the orchestrator twice with nothing it could do)."""
-    try:
-        prev = json.loads(said)
-    except (TypeError, ValueError):
-        return False
-    kind = gauge.get("kind")
-    if kind == "ready-below-target":
-        return (gauge.get("startable") or 0) >= (prev.get("startable") or 0)
-    if kind in ("serial-chain", "too-big"):
-        field = "waiting" if kind == "serial-chain" else "keys"
-        dump = lambda xs: {json.dumps(x, sort_keys=True) for x in xs or ()}   # noqa: E731
-        return dump(gauge.get(field)) <= dump(prev.get(field))
-    return json.dumps(gauge, sort_keys=True) == said
-
-
 def _backlog_shape(signature):
     """The Backlog's keys and the recent Done list, without edit times: an edit to a ticket
     already seen is not news, a new ticket or a newly finished one is."""
@@ -335,19 +311,6 @@ def raise_priority_request(reasons, signature, *, state_store=store, now=None):
     now = now or time.time()
     reqs = sorted(state_store.read_all("priority_request"), key=lambda r: r.get("created_at") or "")
     open_req = next((r for r in reqs if r.get("status") == "open"), None)
-    # Gauges skip the Backlog rules below and keep their own clock (D-049).
-    asked, said = {}, {}
-    for r in reqs:
-        for g in r.get("reasons") or ():
-            if g.get("kind") in GAUGES:
-                asked[g["kind"]] = max(_ts(r.get("created_at")), _ts(r.get("updated_at")))
-                said[g["kind"]] = json.dumps(g, sort_keys=True)
-    gauges = [r for r in reasons if r.get("kind") in GAUGES
-              and now - asked.get(r["kind"], 0) >= (
-                  READY_REPEAT_SECONDS if _no_worse(r, said.get(r["kind"]))
-                  else READY_ASK_SECONDS)
-              and not (open_req and any(g.get("kind") == r["kind"] for g in open_req["reasons"]))]
-    reasons = [r for r in reasons if r.get("kind") not in GAUGES]
     last = reqs[-1] if reqs else None
     # created_at has one-second resolution: requests made in the same second are all "last"
     latest = {r.get("backlog_signature") for r in reqs
@@ -369,7 +332,6 @@ def raise_priority_request(reasons, signature, *, state_store=store, now=None):
         new_keys = sorted({k.split("@")[0] for k in signature.split("|") if k} - seen)
         reasons = [r for r in reasons if r.get("kind") == "needs-brief"] + (
             [{"kind": "new-in-backlog", "keys": new_keys}] if new_keys else [])
-    reasons += gauges
     if not reasons:
         return None
     if open_req:
@@ -418,15 +380,13 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None, liveness_tick
     except Exception:                                   # noqa: BLE001
         fresh = set()
 
-    candidates, too_big = [], []
+    candidates = []
     for issue_raw in jira.search_issues(JQL, fields=FIELDS, limit=50, raw=True):
         issue = jira.normalize_issue(issue_raw)
         issue["components"] = [c.get("name") for c in
                                ((issue_raw.get("fields") or {}).get("components") or [])]
         issue["estimate_seconds"] = (issue_raw.get("fields") or {}).get("timeoriginalestimate")
         key = issue["key"]
-        if (issue["estimate_seconds"] or 0) > MAX_ESTIMATE_SECONDS:
-            too_big.append(key)
         if key in open_keys:
             continue
         if CEO_ACTION in issue["labels"]:
@@ -720,17 +680,7 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None, liveness_tick
             if ready_left < free_code:
                 reasons.append({"kind": "ready-short", "ready": ready_left,
                                 "free_code_teams": free_code})
-        # D-049: keep Ready at READY_TARGET startable tickets, and break chains that are not real.
-        chained = sorted(d["key"] for d in done if d.get("action") == "waiting")
-        if ready_left < READY_TARGET:
-            reasons.append({"kind": "ready-below-target", "startable": ready_left,
-                            "target": READY_TARGET})
-            if len(chained) >= 2:
-                reasons.append({"kind": "serial-chain", "waiting": chained})
-        if too_big:
-            reasons.append({"kind": "too-big", "keys": too_big})
-        req = None if (backlog_settling and not brief_reasons
-                       and not any(r["kind"] in GAUGES for r in reasons)) else \
+        req = None if (backlog_settling and not brief_reasons) else \
             raise_priority_request(reasons, signature, state_store=state_store, now=now)
         if req:
             done.append({"action": "priority-request",

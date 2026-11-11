@@ -47,15 +47,18 @@ class CutPlanTests(unittest.TestCase):
         res = cp.check({"tickets": [t("T1"), t("T2", blocked_by={"T1": "same epic"})]})
         self.assertTrue(any("ordering-only" in w for w in res["warnings"]))
 
-    def test_size_screens_tests_and_scenarios(self):
+    def test_tests_and_scenarios_but_no_size_cap(self):
+        # TH-077 (CEO 2026-11-11): a big ticket or one with two screens is not split.
         res = cp.check({"tickets": [
             t("T1", est=90),
             t("T2", "screen", [SCREEN_A, SCREEN_B, "test/a_test.dart"], tcs=1),
             t("T3", surfaces=["lib/c.dart"]),
             t("T4", "screen", [SCREEN_A, "test/d_test.dart"])]})
         joined = " | ".join(res["errors"])
-        for needle in ("over 50", "2 screens", "T3: no test", "T4: a screen ticket needs"):
+        for needle in ("T3: no test", "T4: a screen ticket needs"):
             self.assertIn(needle, joined)
+        self.assertNotIn("T1:", joined)
+        self.assertNotIn("T2:", joined)
 
     def test_cycles_and_unassessed_surfaces(self):
         res = cp.check({"tickets": [t("T1", blocked_by={"T2": "x"}),

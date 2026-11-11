@@ -30,7 +30,7 @@ that calls `grilling`.
 | `diagnosing-bugs` | Diagnosis loop for hard bugs and performance regressions. Use when the user says "diagnose"/"debug this", or reports something broken/throwing/failin… |
 | `domain-modeling` | Build and sharpen a project's domain model. Use when discussing codebase terminology, writing or editing a CONTEXT.md, or recording or editing an ADR. |
 | `drive-the-app` | Get a running Dabbler app in front of you and drive it, on the surface that actually works today. Use when a ticket must be tested end to end, when a… |
-| `epic-cut` | Cut a CEO-approved Epic into small tickets that several teams build at the same time without touching the same files, then prove the cut with `cut_pl… |
+| `epic-cut` | Cut a CEO-approved Epic that has no tickets yet into tickets that several teams build at the same time without touching the same files, then prove th… |
 | `front-door` | The skills only you can start, and when to reach for each. |
 | `git-guardrails-claude-code` | Set up Claude Code hooks to block dangerous git commands (push, reset --hard, clean, branch -D, etc.) before they execute. Use when user wants to pre… |
 | `grill-me` | A relentless interview to sharpen a plan or design. |

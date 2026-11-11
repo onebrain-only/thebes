@@ -994,7 +994,8 @@ often held fewer tickets than there were free teams.
    analyze and tests (`review_queue.auto_pass_tier1`, reviewer `thebes-tier1-auto`). Tier 2 is one
    language and theme, AR+Dark when user-facing text changed. Tier 3 (money, sign-in, database) is
    unchanged.
-4. **Ready target.** Ready holds at least 10 startable tickets. Below that the PM gets
+4. *(Superseded by TH-077, 2026-11-11: no Ready target, no `ready-below-target`,
+   `serial-chain` or `too-big`, and no ticket is split.)* **Ready target.** Ready holds at least 10 startable tickets. Below that the PM gets
    `ready-below-target`, every 15 minutes, whatever the Backlog, and cuts Epics the CEO already
    approved. New scope still needs his order. Ready tickets waiting on blockers raise
    `serial-chain`: the PM keeps a Blocks link only for a real code or data dependency; same Epic is
@@ -1468,6 +1469,30 @@ Rule text: `inbox_push.py`, `inbox.py` (`take`, `push_running`), `agent/ORCHESTR
 **Why.** Every return of the waiter was a wake: idle every two hours, a restart on each Thebes
 commit, and each batch cost a read of the output file and a restart call on top of the work.
 The CEO wants items to reach the orchestrator the way his own messages do.
+
+## TH-077 — Thebes splits nothing that is already split
+**Date:** 2026-11-11 · **By:** CEO ("Remove cut-of"; "تقسيم التاسكات لتاسكات اصغر لان هو بيقسم
+المتقسم اصلا"; earlier the same day "Don't cut anymore") · **Status:** ACTIVE · **Supersedes:**
+D-049 item 4 and the D-049 size rules
+
+**Rule.**
+- An existing ticket is never split into smaller tickets. It goes to a team as written.
+- An Epic that already has tickets is never re-cut.
+- No Ready target. The Ready dispatcher raises no `ready-below-target`, `serial-chain` or
+  `too-big`; a short Ready, a Blocks chain or a large estimate wakes nobody.
+- `cut_plan check` has no size cap and no one-screen rule. It still catches two parallel
+  tickets on the same files, a Blocks link with no reason, and a screen or function without a
+  test.
+- An Epic the CEO approves that has no tickets yet gets them once, at the level the Epic itself
+  names (`epic-cut`). Nothing finer.
+- A Blocks link that is only an order may still be removed. That changes no ticket.
+
+Rule text: `ready_dispatcher.py`, `inbox.py` (the priority item's `how`), `cut_plan.py`,
+`agent/roles/pm.md`, `agent/skills/epic-cut/SKILL.md`.
+
+**Why.** The D-049 gauges asked the PM to cut every 15 minutes while Ready was under 10, and to
+split any ticket over an hour. The tickets on the board were already cut, so the PM kept
+splitting finished cuts, and each ask was an orchestrator turn.
 
 ## Session-memory orders that are no longer live
 

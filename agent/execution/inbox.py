@@ -237,15 +237,10 @@ def pending(session_id, *, state_store=store, now=None):
                                 "labels. board: run the PM to re-prioritise the Backlog "
                                 "(including returned work and new sub-tasks) and move what the "
                                 "free teams can take into Ready, in rank order, with an "
-                                "Original estimate and a domain component on each. D-049: "
-                                "ready-below-target: cut Epics the CEO already approved into "
-                                "tickets of one screen or one function plus its test (30-50 "
-                                "minutes) until Ready holds 10 startable; never new scope. "
-                                "serial-chain: on each waiting ticket keep a Blocks link only "
-                                "for a real code or data dependency (same Epic is not one) and "
-                                "remove the rest; split by file surfaces so one Epic runs on "
-                                "several teams at once. too-big: an Original estimate over an hour; "
-                                "real team time is a median 25 minutes, so cut it with epic-cut.")})
+                                "Original estimate and a domain component on each. Never split "
+                                "a ticket that already exists into smaller tickets, and never "
+                                "re-cut an Epic that already has tickets (CEO 2026-11-11, "
+                                "TH-077): a ticket goes to a team as written.")})
     try:
         from agent.execution import review_queue
         late = review_queue.stalled_unalerted(state_store, now)
