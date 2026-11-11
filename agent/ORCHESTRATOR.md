@@ -158,9 +158,11 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
   the full request, including the one-time answer command. Follow it: reserve the named
   seat against the `decision_request_id`, run it, write the decision to a file, run the
   answer command. Thebes resumes the team. Do not bother the CEO (D-035).
-- **`verification`**: a team's `completed` claim was checked (D-041). `verdict: pass` →
-  the ticket is closed (a PEER/QA-route ticket keeps its review status with the verified
-  evidence); tell the CEO in one line: ticket, what was verified, done. `verdict:
+- **`verification`**: a team's `completed` claim was checked (D-041). `verdict: pass` and
+  `verdict: held` never reach you (CEO 2026-11-11): a pass waits on its branch for the next
+  patch (TH-075) and is not Done, a hold needs nothing. Tell the CEO nothing about a review; he
+  hears of work once, when Memphis's INTEGRATE result says it is on staging, as one `update`
+  through `ceo_notice` listing the tickets in that patch. `verdict:
   exhausted` → the checks still fail after the allowed fixes; the ticket stays in review
   with the reason on it. **Thebes already accepts it by code** when the only failing check is
   the Codex `QA` check and its reason is a coverage limit (a locale/theme/device the reviewer

@@ -39,6 +39,11 @@ ROUTING_GRACE_SECONDS = 30
 VERIFY_GRACE_SECONDS = 1800
 # CEO 2026-11-11: every wake used to end with a line to him ("restarting the waiter", "I'm
 # back"). A wake that brings him nothing new ends with no text at all.
+# CEO 2026-11-11: 40 messages in 30 minutes, most of them "KAN-89x passed review" for tickets
+# that wait on their branch for the patch (TH-075). A pass or a hold needs nothing from the
+# orchestrator: integration and Jira follow by themselves. These are marked seen and never wake it.
+QUIET_VERDICTS = ("pass", "held")
+QUIET_ALERTS = ("review-held",)
 SILENT = " Write no text at all: start the waiter and end the turn."
 SPEAK_ONLY_BY_NOTICE = (" Speak to the CEO only after ceo_notice prints SEND (ORCHESTRATOR.md "
                         "5a); otherwise write no text at all.")
@@ -138,7 +143,7 @@ def _verification_items(rec, seen, now):
                            "detail": r.get("detail")}
                        for i, r in sorted((ver.get("results") or {}).items())}}
     if verdict in ("pass", "exhausted", "held") and "verified:%s" % verdict not in seen:
-        return [dict(base, kind="verification", verdict=verdict,
+        return [dict(base, kind="verification", verdict=verdict, _quiet=verdict in QUIET_VERDICTS,
                      jira=(rec.get("jira_sync") or {}).get("verified")
                      or (rec.get("jira_sync") or {}).get("exhausted"),
                      report=(_read(rec.get("result_ref")) or "")[:3000],
@@ -174,6 +179,7 @@ def pending(session_id, *, state_store=store, now=None):
         alert = rec.get("watchdog_alert") or {}
         if alert and "alert:%s" % alert.get("kind") not in seen:
             out.append({"kind": "alert", "dispatch_id": rec["dispatch_id"],
+                        "_quiet": alert.get("kind") in QUIET_ALERTS,
                         "team": rec.get("target_seat_id"), "alert": alert.get("kind"),
                         "text": alert.get("text"), "_key": "alert:%s" % alert.get("kind")})
         out.extend(_verification_items(rec, seen, now))
@@ -351,6 +357,8 @@ def collect(session_id, *, state_store=store, now=None):
                 continue
             state_store.update("conversation_dispatch", rec["dispatch_id"], rec["revision"],
                                {"inbox_seen": seen + [item["_key"]]})
+            if item.get("_quiet"):
+                continue                       # recorded as seen; nothing to act on, no wake
             taken.append({k: v for k, v in item.items() if not k.startswith("_")})
         except state_store.StateError:
             continue                           # changed under us: the next pass decides
@@ -416,8 +424,9 @@ def _wait_loop(session_id, timeout, state_store, sleep):
         items = collect(session_id, state_store=state_store)
         if items:
             return {"status": "items", "count": len(items), "items": items,
-                    "next": "handle every item (see agent/ORCHESTRATOR.md), then start the "
-                            "inbox waiter again." + SPEAK_ONLY_BY_NOTICE}
+                    "next": "SAY NOTHING to the CEO unless ceo_notice prints SEND. Handle "
+                            "every item (see agent/ORCHESTRATOR.md), then start the inbox "
+                            "waiter again." + SPEAK_ONLY_BY_NOTICE}
         if time.time() >= deadline:
             return {"status": "idle", "items": [],
                     "next": "nothing arrived; start the inbox waiter again." + SILENT}

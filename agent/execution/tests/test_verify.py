@@ -237,8 +237,8 @@ class VerifyTests(unittest.TestCase):
         self.assertEqual(self.jira.moves[-1], ("KAN-50", "10007"), "Done")
         self.assertIn("closed this", self.jira.comments[-1][1])
         self.assertIn("C1 PASS", self.jira.comments[-1][1])
-        final = self.collect()
-        self.assertEqual([(i["kind"], i["verdict"]) for i in final], [("verification", "pass")])
+        self.assertEqual(self.collect(), [], "a pass is recorded as seen and never wakes the "
+                                              "orchestrator (CEO 2026-11-11)")
         self.assertEqual(self.clean(), [])
 
     def test_a_check_closed_by_decision_is_waived_not_failed_and_the_rest_still_decide(self):
@@ -293,8 +293,8 @@ class VerifyTests(unittest.TestCase):
         self.assertEqual(out2["verdict"], "needs_judge", "then the Codex QA check")
         self.assertEqual(self.codex_pass(did)["verdict"], "pass")
         self.assertEqual(self.jira.moves[-1], ("KAN-50", "10007"))
-        self.assertEqual([i["kind"] for i in self.collect() if i["kind"] != "alert"],
-                         ["verification"])
+        self.assertEqual([i["kind"] for i in self.collect() if i["kind"] != "alert"], [],
+                         "a pass needs nothing from the orchestrator")
 
     def test_a_skipped_check_never_closes_the_ticket(self):
         """Malfunction B1 (KAN-493): a check that was not run must not end in Done."""
@@ -394,8 +394,10 @@ class VerifyTests(unittest.TestCase):
         self.assertEqual(root["watchdog_alert"]["kind"], "review-held")
         self.assertIn("review held, not sent back", self.jira.comments[-1][1])
         self.assertEqual(verify.retry_send_backs(state_store=store), [])
-        self.assertIn(("verification", "held"),
-                      [(i["kind"], i.get("verdict")) for i in self.collect()])
+        self.assertEqual(self.collect(), [], "a hold is quiet: no verification item, no alert")
+        root = store.read("conversation_dispatch", did)
+        self.assertIn("verified:held", root["inbox_seen"])
+        self.assertIn("alert:review-held", root["inbox_seen"])
 
     def test_a_decision_answer_the_team_closes_as_failed_is_held(self):
         did, cap = self.dispatch()
