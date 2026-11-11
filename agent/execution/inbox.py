@@ -464,6 +464,9 @@ def _wait_loop(session_id, timeout, state_store, sleep, reexec=None):
                 items += more
                 quiet = 0 if more else quiet + 1
                 polls += 1
+            if push_running(state_store):
+                return {"status": "items", "count": len(items), "items": items,
+                        "next": TAKE_NEXT + " " + PUSHED.split(";")[0] + "."}
             return {"status": "items", "count": len(items), "items": items,
                     "next": "SAY NOTHING to the CEO unless ceo_notice prints SEND. Handle "
                             "every item (see agent/ORCHESTRATOR.md), then start the inbox "
