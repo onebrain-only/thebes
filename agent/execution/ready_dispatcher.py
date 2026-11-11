@@ -181,14 +181,27 @@ def open_dispatches(state_store=store):
             if r.get("status") in store.CONVERSATION_DISPATCH_OPEN]
 
 
-def free_team(lane, state_store=store):
+def stack_teams(stacks):
+    """TH-075: the teams whose branches a stacked ticket builds on, from `staging-<team>` or
+    `staging-ds-<team>`. A dependent goes to that team first, so the chain stays on one branch
+    and the patch merges it as one."""
+    out = []
+    for s in stacks or ():
+        parts = (s.get("branch") or "").split("-")
+        if len(parts) >= 2 and parts[-1] not in out:
+            out.append(parts[-1])
+    return out
+
+
+def free_team(lane, state_store=store, prefer=()):
     from agent.execution import team_pool
     busy = {r["target_session_id"] for r in open_dispatches(state_store)}
     try:
         from agent.execution import session_weight
     except Exception:                                   # noqa: BLE001
         session_weight = None
-    for tid in sorted(teams.lane_teams(lane), key=lambda t: teams.read()[t]["number"]):
+    lane_teams = sorted(teams.lane_teams(lane), key=lambda t: teams.read()[t]["number"])
+    for tid in [t for t in prefer if t in lane_teams] + [t for t in lane_teams if t not in prefer]:
         binding = state_store.active_role_session(tid)
         if binding and session_weight and session_weight.compacting(binding["session_id"]):
             continue                                    # being compacted: try the next team
@@ -463,7 +476,7 @@ def tick(*, state_store=store, jira=None, dispatch=None, now=None, liveness_tick
                                  "reason": "owner-busy:%s" % owner})
                     continue
             if not tid:
-                tid, sid = free_team(lane, state_store)
+                tid, sid = free_team(lane, state_store, prefer=stack_teams(issue.get("stacks")))
             if not tid:
                 if pass_no == 2:
                     done.append({"key": key, "action": "waiting",

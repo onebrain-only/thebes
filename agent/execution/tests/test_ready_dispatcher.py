@@ -306,6 +306,16 @@ class ReadyDispatcherTests(unittest.TestCase):
         self.assertEqual(rd.blockers([link("done")], None, fake, stacks), [])
         self.assertEqual(stacks, [])
 
+    def test_a_stacked_ticket_goes_to_its_blockers_team_first(self):
+        """TH-075: a chain inside one patch stays on one team branch."""
+        self.assertEqual(rd.stack_teams([{"branch": "staging-luxor"}, {"branch": "staging-ds-luxor"},
+                                         {"branch": ""}]), ["luxor"])
+        self.assertEqual(rd.free_team("code", store, prefer=["luxor"]), ("luxor", LUXOR))
+        self.assertEqual(rd.free_team("code", store, prefer=["nobody"]), ("karnak", KARNAK))
+        self.dispatch("x", LUXOR, {}, store, True, "KAN-999", "frontend")   # Luxor busy
+        self.assertEqual(rd.free_team("code", store, prefer=["luxor"]), ("karnak", KARNAK),
+                         "a busy blocker team does not hold the dependent")
+
     def test_the_brief_tells_the_team_to_merge_the_stacked_sha(self):
         text = rd.prompt_for({"key": "KAN-714", "summary": "s", "description": "BRANCH: staging-<team>"},
                              "habu", [{"key": "KAN-713", "branch": "staging-luxor", "sha": "b" * 40}])

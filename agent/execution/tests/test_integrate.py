@@ -22,6 +22,8 @@ MEMPHIS = "0ddddddd-9999-7000-8000-00000000000d"
 HOME = "/stable/home"
 SHA = "a" * 40
 SHA2 = "b" * 40
+# The recipe tests run past the patch ceiling (TH-075); the patch gate has its own tests.
+LATER = __import__("time").time() + 2 * integrate.PATCH_CEILING_SECONDS
 
 
 def _refuse(*a, **k):
@@ -97,7 +99,7 @@ class IntegrateTests(unittest.TestCase):
         with open(path, "w") as fh:
             json.dump({"permissions": {"allow": rules}}, fh)
         return integrate.dispatch_for(state_store=store, dispatch=self.send,
-                                      runner=fake_git(remote), settings_files=[path])
+                                      runner=fake_git(remote), settings_files=[path], now=LATER)
 
     def test_without_the_push_rule_nothing_is_sent_that_would_block_memphis(self):
         self.root("KAN-1", "staging-luxor", SHA)
@@ -154,7 +156,8 @@ class IntegrateTests(unittest.TestCase):
         with open(path, "w") as fh:
             json.dump({"permissions": {"allow": rules}}, fh)
         return integrate.dispatch_for(state_store=store, dispatch=self.send, settings_files=[path],
-                                      runner=self.fast_runner({"staging-luxor": SHA}, files))
+                                      runner=self.fast_runner({"staging-luxor": SHA}, files),
+                                      now=LATER)
 
     def test_integration_goes_to_memphis_only_even_for_a_small_ticket(self):
         """2026-10-14: a code team may not work in the CEO's folders; the fast lane is off."""
@@ -379,6 +382,89 @@ class IntegrateTests(unittest.TestCase):
         items = inbox.pending(ORCH, state_store=store, now=__import__("time").time() + 60)
         self.assertEqual([i["kind"] for i in items if i.get("dispatch_id") == did["dispatch_id"]],
                          ["result"])
+
+
+class Board:
+    """A fake Jira: `parents` maps ticket -> Epic, `done` lists tickets in a done status."""
+    def __init__(self, parents, done=()):
+        self.parents, self.done, self.calls = parents, set(done), 0
+
+    def get_issue(self, key, fields=None):
+        self.calls += 1
+        return {"key": key, "parent": self.parents.get(key)}
+
+    def search_issues(self, jql, fields=None, limit=50):
+        self.calls += 1
+        epic = jql.split("=")[1].strip()
+        return [{"key": k, "status_category": "done" if k in self.done else "indeterminate"}
+                for k, e in sorted(self.parents.items()) if e == epic]
+
+
+class PatchTests(unittest.TestCase):
+    """TH-075 (CEO 2026-11-11): a base integrates when a patch closes, not when one ticket passes."""
+    tearDown, root, send = IntegrateTests.tearDown, IntegrateTests.root, IntegrateTests.send
+
+    def setUp(self):
+        IntegrateTests.setUp(self)
+        integrate._JIRA_CACHE.clear()
+
+    def patch(self, remote, jira, now=None):
+        import json
+        path = os.path.join(self.tmp, "settings.json")
+        with open(path, "w") as fh:
+            json.dump({"permissions": {"allow": [integrate.push_rule(
+                integrate.base_for("staging-x"))]}}, fh)
+        return integrate.dispatch_for(state_store=store, dispatch=self.send, jira=jira,
+                                      runner=fake_git(remote), settings_files=[path], now=now)
+
+    def test_one_verified_ticket_of_an_open_epic_waits_on_its_team_branch(self):
+        self.root("KAN-1", "staging-luxor", SHA)
+        out = self.patch({"staging-luxor": SHA}, Board({"KAN-1": "KAN-100", "KAN-2": "KAN-100"}))
+        self.assertEqual(self.sent, [])
+        self.assertEqual(out[0]["integrate"], "skipped")
+        self.assertIn("KAN-100 waits for KAN-2", out[0]["reason"])
+
+    def test_the_epic_merges_once_its_last_ticket_is_verified(self):
+        self.root("KAN-1", "staging-luxor", SHA)
+        self.root("KAN-2", "staging-karnak", SHA2)
+        board = Board({"KAN-1": "KAN-100", "KAN-2": "KAN-100", "KAN-3": "KAN-100"}, done={"KAN-3"})
+        out = self.patch({"staging-luxor": SHA, "staging-karnak": SHA2}, board)
+        self.assertEqual([o.get("action") for o in out], ["dispatched"])
+        self.assertEqual(sorted(out[0]["tickets"]), ["KAN-1", "KAN-2"],
+                         "both teams' branches go in one merge")
+        self.assertIn("Why now: patch: every ticket of KAN-100 is verified or Done.",
+                      self.sent[0]["text"])
+
+    def test_work_with_no_epic_waits_for_the_ceiling_then_goes(self):
+        self.root("KAN-1", "staging-luxor", SHA)
+        self.assertEqual(self.patch({"staging-luxor": SHA}, Board({})), [
+            {"integrate": "skipped", "key": "staging",
+             "reason": "patch-open: no Epic behind the waiting work"}])
+        out = self.patch({"staging-luxor": SHA}, Board({}), now=LATER)
+        self.assertEqual(out[0]["action"], "dispatched")
+        self.assertIn("ceiling", out[0]["why"])
+
+    def test_without_jira_only_the_ceiling_opens_a_patch(self):
+        due, why = integrate.patch_due([{"key": "KAN-1", "at": store.now()}], set(), None)
+        self.assertEqual((due, why.split(":")[0]), (False, "patch-open"))
+        self.assertTrue(integrate.patch_due([{"key": "KAN-1", "at": "2026-01-01T00:00:00Z"}],
+                                            set(), None)[0])
+
+    def test_a_jira_error_waits_instead_of_merging(self):
+        class Broken:
+            def get_issue(self, *a, **k):
+                raise RuntimeError("503")
+        due, why = integrate.patch_due([{"key": "KAN-1", "at": store.now()}], set(), Broken())
+        self.assertFalse(due)
+        self.assertIn("Jira error", why)
+
+    def test_the_brief_drops_only_the_breaking_branch_and_follows_th071(self):
+        text = integrate.brief({"target": integrate.base_for("staging-x"), "items": [
+            {"key": "KAN-1", "branch": "staging-luxor", "sha": SHA}]})
+        for part in ("Drop only that branch", "the rest of the patch still goes",
+                     "staging-memphis", "gh run watch", "analyze-and-test",
+                     "every branch you dropped"):
+            self.assertIn(part, text, part)
 
 
 if __name__ == "__main__":

@@ -287,15 +287,19 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
   - **Every ruling you obtain** from cpo, cto, cxo or the CEO goes into the PM's ledger at
     once: `python3 -m agent.execution.pm_ledger add --by <who> --ref <ticket> --text "<one
     line>"`. Answers through the decision gate are logged by code.
-- **Integration into staging is automatic, and only Memphis does it.** When a team's work passes
-  verification and its branch is pushed, the dispatcher sends Memphis one integration dispatch (no
-  ticket): merge in its own worktree, analyze and test the merged result, push `staging-memphis`,
+- **Integration into staging is automatic, per patch, and only Memphis does it (TH-075).** A
+  passed ticket waits on its team branch with the Jira label `verified`. The dispatcher sends
+  Memphis one integration dispatch (no ticket) when every ticket of an Epic is verified or
+  Done, or when the oldest verified work has waited 24 hours. That dispatch carries every
+  team's verified work. When something cannot wait (a migration another ticket needs), send
+  Memphis your own `INTEGRATE:` dispatch with the reason. Memphis merges in its own worktree, analyze and test the merged result, push `staging-memphis`,
   wait until `analyze-and-test` is green on that commit, then fast-forward `staging` to the same
   commit (TH-071: staging's protection requires that check and is never lowered). Memphis also
   applies every migration. You do not decide
-  it and the CEO is not asked. When Memphis comes back `blocked` (a conflict it could not settle,
-  a failing check), that arrives as a plain result: decide what happens next (send the team
-  back, or a second look by Memphis). The result is live on staging.dabbler.pro; the CEO is
+  it and the CEO is not asked. Memphis drops only a branch that conflicts or breaks the merged
+  tests, and pushes the rest. Its report names each dropped branch; send that ticket back to
+  its team. When Memphis comes back `blocked` for another reason (nothing could be pushed, a
+  red check), decide what happens next (send the team back, or a second look by Memphis). The result is live on staging.dabbler.pro; the CEO is
   not told about integration. Alpha moves only as a promotion of staging on an open
   `promote-alpha` order. Canary is a legacy branch nobody pushes to, and main is frozen (P-030).
 - **`alert`**: the watchdog says a team stopped (usage limit, crash, lost connection) after

@@ -633,6 +633,9 @@ class LiveGateTests(unittest.TestCase):
                                                jira, store, now=1000), "not-on-alpha")
             self.assertEqual(moves, [], "not Done while it is not on Alpha")
             self.assertTrue(rq.is_awaiting("KAN-9"))
+            jira.update_issue.assert_called_once_with("KAN-9", {"labels": ["verified"]})
+            self.assertIn("TH-075", jira.add_comment.call_args.args[1])
+            jira.get_issue.return_value = dict(jira.get_issue.return_value, labels=["verified"])
             self.live = "on-alpha"
             self.assertEqual(rq.sweep_live(state_store=store, jira=jira, now=2000), [])
             self.assertEqual(rq.sweep_live(state_store=store, jira=jira, now=2000 + rq.LIVE_LATE_SECONDS),
@@ -646,6 +649,8 @@ class LiveGateTests(unittest.TestCase):
         self.assertEqual(out, [{"action": "done-live", "ticket": "KAN-9", "live": "live"}])
         self.assertEqual(moves, [("KAN-9", rq.DONE_STATUS_ID)])
         self.assertFalse(rq.is_awaiting("KAN-9"))
+        self.assertEqual(jira.update_issue.call_args.args, ("KAN-9", {"labels": []}),
+                         "the verified tag comes off at Done (TH-075)")
         done = jira.add_comment.call_args.args[1]
         self.assertIn("شغالة لايف", done)
         self.assertIn("https://staging.dabbler.pro/venues", done)

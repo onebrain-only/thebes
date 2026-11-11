@@ -1044,7 +1044,7 @@ binds the session that was not there before it ran, then sweeps that team's copi
 **Not done.** Delivery of notifications to his phone is a separate question (Remote Control push); this gate only cuts what is sent.
 
 ## D-052 — staging integrates and tests; Alpha is the customer trial
-**Date:** 2026-11-05 · **By:** CEO (order msg-20261105084204-831ccacb, "نفّذ التنظيف")
+**Date:** 2026-11-05 · **By:** CEO (order msg-20261105084204-831ccacb, "نفّذ التنظيف") · **Amended:** 2026-11-11 by TH-075 (integration runs per patch, not per ticket)
 
 **Context.** Alpha did two jobs: Memphis integrated every verified team branch into it, and it was the build the CEO and trial customers saw at alpha.dabbler.pro. Integration churn therefore reached customers directly, and there was no place to test integrated work before they saw it.
 
@@ -1406,6 +1406,45 @@ lanes).
 **Why.** The orchestrator only split tasks and relayed, and it could not discuss or plan a
 direction with him. Memphis carried six seats: business and technical rulings, QA and
 operations. The CEO wants one smart business conversation and one technical operations team.
+
+## TH-075 — Integration per patch, not per ticket
+**Date:** 2026-11-11 · **By:** CEO ("Ok agree, implement") · **Status:** ACTIVE (amends the
+integration timing of D-052; Done is unchanged)
+
+**Rule.**
+- **A team keeps its verified work on its own branch** (`staging-<team>`). Nothing is merged
+  into `staging` ticket by ticket.
+- **A patch is due** when every ticket of an Epic that has waiting work is verified or Done,
+  or when the oldest waiting work has waited 24 hours (`integrate.PATCH_CEILING_SECONDS`),
+  whichever comes first. Work with no Epic goes at the ceiling. When Jira cannot be read,
+  only the ceiling opens a patch. The patch then carries every team's verified work for that
+  base in one Memphis dispatch, and the brief says why it is due (`Why now:`).
+- **Early integration** stays possible. When something cannot wait (a migration another
+  ticket needs, a fix the CEO is waiting to see), the orchestrator sends Memphis a hand-written
+  `INTEGRATE:` dispatch that gives the reason.
+- **A branch that breaks is dropped, and the rest still goes.** On a conflict or a check that
+  fails only on the merged result, Memphis finds the branch behind it, merges the others again
+  and pushes them through TH-071. The report names each dropped branch with its failing tests
+  or conflicting files, and the orchestrator sends it back to its team.
+- **"Verified" is a Jira label, not a status.** A passed ticket that waits for the patch keeps
+  its review column and gets the label `verified` (`review_queue.VERIFIED_LABEL`). The label
+  comes off at Done, and `returned` replaces it if the ticket is sent back. KAN is a
+  team-managed project whose transitions are global and hard-coded in `board.py`; a new status
+  would touch every transition. The CEO may still add a Verified column in the Jira UI.
+- **Done is unchanged** (D-052): the commit is on `staging` and staging.dabbler.pro serves it.
+  A passed ticket counts as late only after 30 hours (`review_queue.INTEGRATE_LATE_SECONDS`,
+  the ceiling plus the merge).
+- **A chain stays with one team.** A ticket stacked on a blocker's verified commit (D-049) goes
+  first to the blocker's team when that team is free (`ready_dispatcher.stack_teams`), and
+  `epic-cut` keeps a chain of dependent tickets inside one patch on one team.
+
+Rule text: `integrate.py` (`patch_due`, `brief`), `review_queue.py`, `ready_dispatcher.py`,
+`agent/ORCHESTRATOR.md` (integration), `agent/WORKFLOWS.md` (Which path is live) and the
+`epic-cut` skill.
+
+**Why.** Every verified ticket opened its own Memphis integration, so `staging` moved many
+times a day and Memphis spent its time merging single tickets. The CEO wants each team to work
+and test on its own branch, with the merge after a patch.
 
 ## Session-memory orders that are no longer live
 

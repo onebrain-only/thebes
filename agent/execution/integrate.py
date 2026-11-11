@@ -13,12 +13,18 @@ Both repos call their base `staging`, so a target is keyed by `key` (`staging`, 
 which is what an integration dispatch records as `integrates_base`. Team branches still named
 alpha-<team> / alpha-ds-<team> from before D-052 integrate into staging the same way.
 
+Integration is per PATCH, not per ticket (TH-075, CEO 2026-11-11). Teams build and test on their
+own branches; verified work waits there, and a base is integrated only when a patch closes: every
+ticket of an Epic that has verified work waiting is verified or Done, or the oldest waiting work
+is PATCH_CEILING_SECONDS old. The orchestrator may still integrate earlier with a hand-written
+`INTEGRATE:` dispatch when something cannot wait (a migration Memphis must apply from staging).
+
 One integration per base at a time (Memphis is one session, and the dispatcher never opens a
 second while one is open), batching everything pending for that base. Memphis merges in its OWN
-worktree, runs the analyzer and the tests on the merged result, and pushes the base only if both
-pass. It returns one INTEGRATED line per merged branch; the dispatcher marks those tickets
-integrated and comments on them. A conflict it cannot resolve, or a failing check, comes back as
-`blocked` to the orchestrator's inbox, which decides; after two failed attempts a ticket is left
+worktree, runs the analyzer and the tests on the merged result, drops only the branch that breaks
+them, and pushes the rest. It returns one INTEGRATED line per merged branch; the dispatcher marks
+those tickets integrated and comments on them. A dropped branch comes back as `blocked` to the
+orchestrator's inbox, which sends it back to its team; after two failed attempts a ticket is left
 alone until someone looks.
 """
 import json
@@ -34,8 +40,10 @@ sys.path.insert(0, ROOT)
 from agent.state import store, teams                                  # noqa: E402
 from agent.execution import orders                                    # noqa: E402
 
-MAX_BATCH = 5
+MAX_BATCH = 30                       # a patch carries every team's verified work at once
 MAX_ATTEMPTS = 2
+PATCH_CEILING_SECONDS = 24 * 3600    # TH-075: no verified ticket waits longer than a day
+EPIC_CACHE_SECONDS = 300
 BASES = (
     # (branch prefix, repo path, base branch, worktree/branch name for the integrator, key)
     ("staging-ds-", "Dabbler/dabbler-design-system", "staging", "integrate-staging-ds", "staging-ds"),
@@ -376,6 +384,68 @@ def pending(state_store=store, runner=None, skipped=None):
     return groups
 
 
+_JIRA_CACHE = {}
+
+
+def _cached(key, fn, now):
+    hit = _JIRA_CACHE.get(key)
+    if hit and now - hit[0] < EPIC_CACHE_SECONDS:
+        return hit[1]
+    value = fn()
+    _JIRA_CACHE[key] = (now, value)
+    return value
+
+
+def _epoch(at):
+    from datetime import datetime
+    try:
+        return datetime.fromisoformat(str(at).replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+def verified_keys(state_store=store):
+    """Tickets whose root dispatch passed its review, merged or not."""
+    return {r["jira_key"] for r in state_store.read_all("conversation_dispatch")
+            if r.get("jira_key") and not r.get("root_dispatch_id")
+            and (r.get("verification") or {}).get("verdict") == "pass"
+            and r.get("integrated_at") != "discarded"}
+
+
+def patch_due(items, verified, jira=None, now=None):
+    """(due, reason). TH-075: a base integrates when a patch closes, not when one ticket passes.
+    A patch closes when an Epic with work waiting here has every child ticket verified or Done, or
+    when the oldest waiting work reached PATCH_CEILING_SECONDS. Without Jira only the ceiling
+    applies. Never raises."""
+    now = now or time.time()
+    ages = [now - e for e in (_epoch(i.get("at")) for i in items) if e is not None]
+    if ages and max(ages) >= PATCH_CEILING_SECONDS:
+        return True, "ceiling: verified work waited %dh" % (max(ages) // 3600)
+    if jira is None:
+        return False, "patch-open: Jira unavailable, waiting for the %dh ceiling" % (
+            PATCH_CEILING_SECONDS // 3600)
+    try:
+        epics = set()
+        for i in items:
+            parent = _cached(("parent", i["key"]), lambda k=i["key"]: (
+                jira.get_issue(k, fields=["parent"]) or {}).get("parent"), now)
+            if parent:
+                epics.add(parent)
+        waiting = []
+        for epic in sorted(epics):
+            children = _cached(("children", epic), lambda e=epic: jira.search_issues(
+                "parent = %s" % e, fields=["status"], limit=200) or [], now)
+            missing = sorted(c["key"] for c in children
+                             if c.get("key") not in verified
+                             and c.get("status_category") != "done")
+            if not missing:
+                return True, "patch: every ticket of %s is verified or Done" % epic
+            waiting.append("%s waits for %s" % (epic, ", ".join(missing[:5])))
+    except Exception as exc:                               # noqa: BLE001
+        return False, "patch-open: Jira error (%s), waiting for the ceiling" % str(exc)[:80]
+    return False, "patch-open: %s" % ("; ".join(waiting) or "no Epic behind the waiting work")
+
+
 def push_rule(target):
     return "Bash(git -C * push origin %s:%s)" % (target["worktree"], target["base"])
 
@@ -409,7 +479,10 @@ def brief(group):
     t, items = group["target"], group["items"]
     lines = ["THEBES_INTEGRATION %s" % t["key"],
              "Merge the verified branches below into %s in %s, in this order. This is routine and "
-             "delegated (D-042): do not ask the CEO." % (t["base"], t["repo"]), ""]
+             "delegated (D-042): do not ask the CEO." % (t["base"], t["repo"])]
+    if group.get("reason"):
+        lines.append("Why now: %s." % group["reason"])
+    lines.append("")
     by_branch = {}
     for i in items:
         by_branch.setdefault((i["branch"], i["sha"]), []).append(i["key"])
@@ -430,19 +503,26 @@ def brief(group):
               "red base does not stop delivery (live 2026-10-09: 59 render tests were already "
               "failing on the base): compare the failing tests BY NAME, not by count. Any test that "
               "fails only on the merged result blocks the integration." % t["base"],
-              "4. Push only if analyze exits 0 and no test fails only on the merged result: "
-              "git -C <worktree> push origin %s:%s. Otherwise push NOTHING, reset the worktree to "
-              "origin/%s and report the new failures. Save both failing lists in your report." % (
-                  t["worktree"], t["base"], t["base"]),
-              "5. Never push or merge Alpha, Canary or main (Alpha moves only on the CEO's "
+              "4. A failure that appears only on the merged result belongs to one branch, not to "
+              "the patch (TH-075): find it (the branch whose files the failing tests cover; if "
+              "unclear, rebuild the merge leaving one branch out at a time), reset the worktree to "
+              "origin/%s, merge every other branch again and re-run step 3. Drop only that branch; "
+              "the rest of the patch still goes." % t["base"],
+              "5. %s's protection needs a green `analyze-and-test` on the exact commit (TH-071). "
+              "Fast-forward your own branch `staging-memphis` to the merged commit and push it "
+              "plainly, wait for `analyze-and-test` on that sha (`gh run watch`), then push the "
+              "same commit: git -C <worktree> push origin %s:%s. If `staging-memphis` cannot "
+              "fast-forward, or the check is red, push NOTHING to %s and report why." % (
+                  t["base"], t["worktree"], t["base"], t["base"]),
+              "6. Never push or merge Alpha, Canary or main (Alpha moves only on the CEO's "
               "promotion order), never force-push, never touch the database.",
               "",
               "Report ONE result. For every TICKET whose branch is now in %s write exactly one line:" % t["base"],
               "  INTEGRATED: <KEY> <branch> <merge-commit-sha>",
               "and then:  BASE_SHA: <the sha of %s after your push>" % t["base"],
-              "List separately every branch you skipped and why. Outcome `completed` when every "
-              "branch is integrated; `blocked` when any was skipped or nothing was pushed (the "
-              "orchestrator decides what happens next)."]
+              "List separately every branch you dropped, with the failing tests or conflicting "
+              "files, so the orchestrator can send it back to its team. Outcome `completed` when "
+              "every branch is integrated; `blocked` when any was dropped or nothing was pushed."]
     return "\n".join(lines)
 
 
@@ -454,9 +534,11 @@ def ordered_items(items, state_store=store, now=None):
     return list(items), []
 
 
-def dispatch_for(state_store=store, jira=None, dispatch=None, runner=None, settings_files=None):
-    """Open at most one integration per base. Returns what it did."""
+def dispatch_for(state_store=store, jira=None, dispatch=None, runner=None, settings_files=None,
+                 now=None):
+    """Open at most one integration per base, once its patch is due. Returns what it did."""
     from agent.execution import conversation_dispatch as cd
+    from agent.execution import jira_sync
     done = []
     memphis = next(iter(teams.lane_teams("ops")), None)
     binding = state_store.active_role_session(memphis) if memphis else None
@@ -467,10 +549,16 @@ def dispatch_for(state_store=store, jira=None, dispatch=None, runner=None, setti
             if r.get("status") in store.CONVERSATION_DISPATCH_OPEN}
     skipped = []
     groups = pending(state_store, runner, skipped)
-    done.extend(skipped)
+    verified = verified_keys(state_store) if groups else set()
+    jira = jira_sync._client(jira, state_store) if groups else None
     for base, group in groups.items():
         if open_integration(base, state_store):
             continue
+        due, why = patch_due(group["items"], verified, jira, now)
+        if not due:
+            _skipped(skipped, state_store, why, base)
+            continue
+        group["reason"] = why
         group["items"], unordered = ordered_items(group["items"], state_store)
         if unordered:
             done.append({"integrate": base, "action": "waiting", "reason": "waiting-ceo-merge-order",
@@ -514,11 +602,12 @@ def dispatch_for(state_store=store, jira=None, dispatch=None, runner=None, setti
                                {"integration_dispatch_id": did})
         orders.log("integration-dispatched", "ready-dispatcher",
                    keys=[i["key"] for i in group["items"]], rule="review-passed",
-                   detail="%s -> %s via %s" % (base, executor[:8], lane), state_store=state_store)
+                   detail="%s -> %s via %s (%s)" % (base, executor[:8], lane, group["reason"]),
+                   state_store=state_store)
         busy.add(executor)
         done.append({"integrate": base, "action": "dispatched", "dispatch_id": did, "lane": lane,
-                     "tickets": [i["key"] for i in group["items"]]})
-    return done
+                     "tickets": [i["key"] for i in group["items"]], "why": group["reason"]})
+    return skipped + done
 
 
 def settle(state_store=store, jira=None, runner=None):

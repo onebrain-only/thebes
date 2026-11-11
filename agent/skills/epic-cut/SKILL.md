@@ -77,6 +77,12 @@ not reasons. A real link no longer costs an Alpha wait. Thebes starts the depend
 blocker's checked commit and holds only its integration (D-049). So keep the true links and
 drop the rest without worry.
 
+**A chain stays with one team (TH-075).** Integration runs per patch: once every ticket of the
+Epic is verified, or after 24 hours. A dependent therefore goes to its blocker's team when that
+team is free, and the chain lands as one branch. Keep chains short and few. Each chain
+occupies one team for its whole length, and only the tickets with no link spread across the
+first wave.
+
 ## 4. Write the plan, prove it, then hand it over
 
 Write `$CLAUDE_JOB_DIR/tmp/<EPIC>-cut.json`, or the session's tmp folder:

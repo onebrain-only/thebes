@@ -48,6 +48,8 @@ QA_JQL = ('project = KAN AND status in ("QA-Test", "Self-review", "Peer-review",
 # CEO 2026-10-24: the Returned column is gone. A failed review sends the ticket back to the
 # column it belongs in (Front-end / Back-end, or its Operations lane) with this label.
 RETURNED_LABEL = "returned"
+# TH-075: a passed ticket waiting on its team branch for the patch merge. Done stays "on staging".
+VERIFIED_LABEL = "verified"
 DONE_STATUS_ID = "10007"
 TEXT_LIMIT = 6000
 
@@ -683,16 +685,28 @@ def _working_status(ticket, state_store):
     return sid or board.CAPABILITY_TO_STATUS_ID["frontend"]
 
 
-def _set_returned(ticket, jira, on):
+def _set_labels(ticket, jira, add=(), remove=()):
     """Best effort: the tag is a signal, the move is the fact."""
     try:
         labels = list(jira.get_issue(ticket).get("labels") or [])
     except Exception:                                # noqa: BLE001
         return
-    if on and RETURNED_LABEL not in labels:
-        jira.update_issue(ticket, {"labels": labels + [RETURNED_LABEL]})
-    elif not on and RETURNED_LABEL in labels:
-        jira.update_issue(ticket, {"labels": [l for l in labels if l != RETURNED_LABEL]})
+    want = [l for l in labels if l not in remove] + [l for l in add if l not in labels]
+    if want != labels:
+        jira.update_issue(ticket, {"labels": want})
+
+
+def _set_returned(ticket, jira, on):
+    _set_labels(ticket, jira, add=[RETURNED_LABEL] if on else [],
+                remove=[VERIFIED_LABEL] if on else [RETURNED_LABEL])
+
+
+def _set_verified(ticket, jira):
+    """TH-075: passed and waiting on its team branch for the patch merge. Never raises."""
+    try:
+        _set_labels(ticket, jira, add=[VERIFIED_LABEL], remove=[RETURNED_LABEL])
+    except Exception:                                # noqa: BLE001
+        pass
 
 
 def send_back(ticket, jira, state_store):
@@ -703,10 +717,10 @@ def send_back(ticket, jira, state_store):
 
 
 def close_passed(ticket, jira, state_store):
-    """Passed review: Done, and the `returned` tag comes off."""
+    """Passed review: Done, and the `returned` and `verified` tags come off."""
     from agent.execution import jira_sync
     jira_sync._move(ticket, DONE_STATUS_ID, jira, state_store)
-    _set_returned(ticket, jira, False)
+    _set_labels(ticket, jira, remove=[RETURNED_LABEL, VERIFIED_LABEL])
 
 
 # ------------------------------------------------------------------ Done = live (D-043 section 6)
@@ -715,7 +729,7 @@ def close_passed(ticket, jira, state_store):
 # review, recorded under awaiting-live/, out of the reviewer's queue; the dispatcher's sweep
 # closes it. (`on_alpha` / `on-alpha` names are kept from before D-052: records persist them.)
 LIVE_LATE_SECONDS = 15 * 60          # on staging this long and still not deployed: ops problem
-INTEGRATE_LATE_SECONDS = 24 * 3600   # passed this long and still not on staging: integration stuck
+INTEGRATE_LATE_SECONDS = 30 * 3600   # the 24h patch ceiling (TH-075) plus the merge itself
 SITE_URL = re.compile(r"https?://(?:alpha|staging)\.dabbler\.pro(/[^\s)\]|>\"']*)?")
 
 
@@ -796,8 +810,10 @@ def close_or_await(ticket, meta, reason, jira, state_store, *, now=None, check=N
         rec["on_alpha_at"] = rec["at"]
     with open(_awaiting_path(ticket), "w", encoding="utf-8") as fh:
         json.dump(rec, fh)
-    jira.add_comment(ticket, "Thebes: PASS — waiting to go live (%s). It moves to Done by itself "
-                     "once %s is on staging and staging.dabbler.pro serves it." % (live, (sha or "")[:12]))
+    _set_verified(ticket, jira)
+    jira.add_comment(ticket, "Thebes: PASS — verified on its team branch (label `verified`). It "
+                     "waits there for the patch merge (TH-075), then moves to Done by itself once "
+                     "%s is on staging and staging.dabbler.pro serves it (%s)." % ((sha or "")[:12], live))
     return live
 
 
