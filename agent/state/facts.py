@@ -27,7 +27,9 @@ RULE = ("RULE (D-044/D-046): every claim about who holds a ticket, what a team i
         "that supports existing work (parent or KAN key in its "
         "summary) needs no order. Only an Epic or new scope nobody asked for needs a CEO order "
         "lifted from his own words (python3 -m agent.execution.orders grant). Never poll: no "
-        "cron, no wakeup — the watchdog wakes you through the inbox.")
+        "cron, no wakeup — the watchdog wakes you through the inbox. Run a subagent (PM, PO) in "
+        "the foreground, never with run_in_background: its result then lands in this turn, not "
+        "in one more turn the CEO sees (CEO 2026-11-11).")
 
 
 def _epoch(stamp):

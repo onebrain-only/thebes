@@ -255,7 +255,7 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
   back once Codex is running. You still never review product work yourself, on either channel.
 - **`reviewer_question`** (D-043): the Codex reviewer is stuck on a ticket and is waiting; the
   item carries `question_id`, `ticket`, `question` and the exact `how`. Answer from the ticket,
-  the PM ledger and the board; for scope or acceptance run that ticket's PO in the background;
+  the PM ledger and the board; for scope or acceptance run that ticket's PO in the foreground;
   for a design-standard ruling dispatch ONE question to Memphis. Then
   `python3 -m agent.execution.review_queue answer <question_id> --text "..."` within 15 minutes,
   even if the answer is "undecided: verify X, skip Y". You inform the reviewer; you never tell it
@@ -277,9 +277,11 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
   holds a team and a slot; Thebes also reaps open dispatches of Done tickets after 30 minutes); `intake mark-integrated` records work merged by
   hand or cherry-picked (git must agree); `intake unlink <id>` removes a wrong link; the label
   `ceo-action` marks a step only the CEO can do (never dispatched).
-- **`priority`** (D-042): the board needs the PM or a PO. Run them **in the background**
-  (Agent tool, `run_in_background`), so you stay free for the CEO. The PM and the POs are the
-  only seats you run; teams can never reserve them.
+- **`priority`** (D-042): the board needs the PM or a PO. Run them **in the foreground**
+  (Agent tool, no `run_in_background`) and wait for the result in the same turn. A background
+  run hands its result back as one more turn, and each such turn ends in a mark the CEO sees
+  (CEO 2026-11-11: "Stop sending '.'"). The same holds when you run the PM or a PO for him.
+  The PM and the POs are the only seats you run; teams can never reserve them.
   - `needs_brief`: run the PO of each ticket's project (`po` = app, `po-2` = design system)
     to write the brief into the Jira description and remove the `needs-brief` and
     `brief-requested` labels. The dispatcher then sends it by itself.

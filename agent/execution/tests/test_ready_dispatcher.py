@@ -492,6 +492,8 @@ class NoCuttingTests(unittest.TestCase):
         from agent.execution import inbox
         item = [i for i in inbox.collect(ORCH, state_store=store) if i["kind"] == "priority"][0]
         self.assertIn("Never split a ticket", item["how"])
+        self.assertIn("foreground", item["how"])
+        self.assertNotIn("run in the background", item["how"])
         self.assertNotIn("one screen or one function", item["how"])
 
     def test_an_edited_backlog_is_not_news_but_a_new_ticket_is(self):

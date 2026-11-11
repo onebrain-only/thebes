@@ -231,7 +231,9 @@ def pending(session_id, *, state_store=store, now=None):
             board = [r for r in pr["reasons"] if r.get("kind") != "needs-brief"]
             out.append({"kind": "priority", "priority_request_id": pr["priority_request_id"],
                         "needs_brief": briefs, "board": board,
-                        "how": ("D-042, run in the background. needs_brief: run the PO of each "
+                        "how": ("D-042. Run the PM or PO in the foreground (no run_in_background) and "
+                                "wait for it in this turn: a background run wakes you once "
+                                "more (CEO 2026-11-11). needs_brief: run the PO of each "
                                 "ticket's project (po = app, po-2 = design system) to write "
                                 "its brief and remove the needs-brief and brief-requested "
                                 "labels. board: run the PM to re-prioritise the Backlog "
@@ -278,7 +280,7 @@ def pending(session_id, *, state_store=store, now=None):
                         "how": ("The Codex reviewer is stuck on %s and is WAITING. Answer from the "
                                 "ticket, the PM ledger and the board; for scope or acceptance run "
                                 "that ticket's PO (po = app, po-2 = design system) in the "
-                                "background; for a design-standard ruling dispatch ONE question to "
+                                "foreground; for a design-standard ruling dispatch ONE question to "
                                 "Memphis. Then: python3 -m agent.execution.review_queue answer %s "
                                 "--text \"<the answer>\". Answer within 15 minutes even if the "
                                 "answer is 'undecided: verify X only and skip Y'. You answer; you "
