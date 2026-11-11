@@ -12,6 +12,7 @@ reach it waits here instead, and ONE background command hands it over:
     python3 -m agent.execution.inbox peek                     # what is waiting, no collect
 
     python3 -m agent.execution.inbox take                     # collect now (foreground)
+    python3 -m agent.execution.inbox done                     # the last command of a handled batch
 
 CEO 2026-11-11 ("no wake-ups at all"): the zero-token loop `agent.execution.inbox_push`
 watches this inbox and drops one short message into the orchestrator's conversation when
@@ -481,8 +482,17 @@ def _wait_loop(session_id, timeout, state_store, sleep, reexec=None):
 PUSH_LOCK = "inbox-push.lock"
 PUSHED = ("Thebes pushes your inbox to you as a message now (inbox_push); never start the "
           "inbox waiter again. End the turn with the single character · and nothing else.")
-TAKE_NEXT = ("Handle every item (agent/ORCHESTRATOR.md), then end the turn. Start no inbox "
+TAKE_NEXT = ("Handle every item (agent/ORCHESTRATOR.md). Your last command is `python3 -m "
+             "agent.execution.inbox done`; reply with exactly what it prints. Start no inbox "
              "waiter." + SPEAK_ONLY_BY_NOTICE)
+# CEO 2026-11-11 ("and it shouldn't send me anything"): the orchestrator read "end with ·" at
+# the start of the batch and, three tool calls later, still wrote him a summary. `done` is the
+# last tool result before the reply, so the closing rule is the freshest thing in its context.
+DONE = {"status": "done", "reply": "·",
+        "next": "Reply with the single character · and nothing else. What you ruled, answered or "
+                "left alone is already in the records; a summary of it is not news for the CEO, "
+                "and a stalled team or a false alarm is yours to handle (D-043). The only "
+                "exception is a ceo_notice that printed SEND in this turn: then send that text."}
 
 
 def push_running(state_store=store):
@@ -524,6 +534,7 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True)
     w = sub.add_parser("wait"); w.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT)
     sub.add_parser("take")
+    sub.add_parser("done")
     sub.add_parser("peek")
     ns = ap.parse_args(argv)
     try:
@@ -531,6 +542,8 @@ def main(argv=None):
             out = wait(ns.timeout, reexec=_reexec)
         elif ns.cmd == "take":
             out = take()
+        elif ns.cmd == "done":
+            out = DONE
         else:
             sid = os.environ.get("CLAUDE_CODE_SESSION_ID") or orchestrator_session()
             out = [{k: v for k, v in i.items() if not k.startswith("_") and k != "result"}

@@ -47,8 +47,8 @@ def message(items):
         kinds[i.get("kind", "result")] = kinds.get(i.get("kind", "result"), 0) + 1
     what = ", ".join("%d %s" % (n, k) for k, n in sorted(kinds.items()))
     return ("Thebes inbox: %d item%s waiting (%s). Run `python3 -m agent.execution.inbox take` "
-            "and handle every item as agent/ORCHESTRATOR.md section 1 says. Unless ceo_notice prints "
-            "SEND, end the turn with the single character · and nothing else. Start no inbox waiter."
+            "and handle every item as agent/ORCHESTRATOR.md section 1 says. Finish with `python3 -m "
+            "agent.execution.inbox done` and reply with exactly what it prints. Start no inbox waiter."
             % (len(items), "" if len(items) == 1 else "s", what))
 
 

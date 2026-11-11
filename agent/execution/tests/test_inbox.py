@@ -202,6 +202,13 @@ class InboxTests(unittest.TestCase):
         self.assertIn("never start the inbox waiter again", got["next"])
         self.assertEqual(self.waited()["status"], "idle", "no pusher, the waiter works")
 
+    def test_a_handled_batch_closes_with_done_and_a_single_mark(self):
+        from agent.execution import inbox_push
+        self.assertIn("inbox done", inbox.TAKE_NEXT)
+        self.assertIn("inbox done", inbox_push.message([{"kind": "result"}]))
+        self.assertEqual(inbox.DONE["reply"], "·")
+        self.assertIn("not news for the CEO", inbox.DONE["next"])
+
     def test_only_the_orchestrator_reads_its_inbox(self):
         with self.assertRaises(inbox.Refused) as ctx:
             inbox.wait(1, env={"CLAUDE_CODE_SESSION_ID": KARNAK}, state_store=store)

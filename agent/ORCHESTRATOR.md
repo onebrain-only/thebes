@@ -29,8 +29,10 @@ The line comes as a cross-session message from a one-shot courier:
 > Thebes inbox: N items waiting (…). Run `python3 -m agent.execution.inbox take` …
 
 When that line comes, run `python3 -m agent.execution.inbox take` (foreground), handle every
-item it prints (§2-§5), and end the turn with `·` alone unless `ceo_notice` prints SEND
-(§5a). The line itself carries no item and no capability. Never answer the courier, and never
+item it prints (§2-§5), then run `python3 -m agent.execution.inbox done` as your last command
+and reply with exactly what it prints: `·` alone, unless `ceo_notice` printed SEND in that
+turn (§5a). A summary of what you ruled, answered or left alone is never a reply: it is in the
+records already, and the CEO said "ولا يبعتلي" (2026-11-11). The line itself carries no item and no capability. Never answer the courier, and never
 SendMessage it back. `take` prints `empty` when the items were already taken: end the turn with
 `·`. A session start and a resume after a reboot are not news either: read this card, then
 go idle with `·`. `python3 -m agent.execution.inbox peek` shows what is waiting without
