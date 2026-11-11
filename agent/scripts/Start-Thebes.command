@@ -1,7 +1,8 @@
 #!/bin/bash
-# Double-click this, or add it to System Settings > General > Login Items, to bring Thebes up
-# after a restart: the loops (watchdog, Ready dispatcher) and every team session, on their SAME
-# session ids. Terminal already has access to the Desktop folder, so no extra permission is needed.
+# Double-click this after a restart to bring Thebes up: the loops (watchdog, Ready dispatcher)
+# and every team session, on their SAME session ids. It is NOT a Login Item: Thebes never starts
+# by itself (CEO 2026-11-11). Terminal already has access to the Desktop folder, so no extra
+# permission is needed.
 cd "$(dirname "$0")/../.." || exit 1
 bash agent/scripts/thebes-up.sh
 # The Thebes-owned Codex (the headless reviewer): its app-server and the local Listener both stop
