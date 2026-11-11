@@ -44,6 +44,12 @@ VERIFY_GRACE_SECONDS = 1800
 # orchestrator: integration and Jira follow by themselves. These are marked seen and never wake it.
 QUIET_VERDICTS = ("pass", "held")
 QUIET_ALERTS = ("review-held",)
+# CEO 2026-11-11 ("it consumes my tokens"): every wake re-reads the orchestrator's whole context
+# four to eight times. Items that land a minute apart (a result, then its decision, then its
+# verification) used to cost one wake each. After the first item the waiter keeps collecting
+# until nothing new has come for BATCH_QUIET_POLLS polls, at most BATCH_MAX_POLLS.
+BATCH_QUIET_POLLS = 30          # 90 s of quiet
+BATCH_MAX_POLLS = 100           # 5 min at most
 SILENT = " Write no text at all: start the waiter and end the turn."
 SPEAK_ONLY_BY_NOTICE = (" Speak to the CEO only after ceo_notice prints SEND (ORCHESTRATOR.md "
                         "5a); otherwise write no text at all.")
@@ -380,7 +386,7 @@ def _code_stamp():
     return tuple(out)
 
 
-def wait(timeout=DEFAULT_TIMEOUT, *, env=None, state_store=store, sleep=None):
+def wait(timeout=DEFAULT_TIMEOUT, *, env=None, state_store=store, sleep=None, reexec=None):
     env = os.environ if env is None else env
     session_id = env.get("CLAUDE_CODE_SESSION_ID")
     orch = orchestrator_session(state_store)
@@ -402,19 +408,33 @@ def wait(timeout=DEFAULT_TIMEOUT, *, env=None, state_store=store, sleep=None):
                 "next": "another inbox waiter is already running; do not start a second one. "
                         "Write no text at all: end the turn."}
     try:
-        return _wait_loop(session_id, timeout, state_store, sleep)
+        return _wait_loop(session_id, timeout, state_store, sleep, reexec)
     finally:
         fcntl.flock(lock, fcntl.LOCK_UN)
         lock.close()
 
 
-def _wait_loop(session_id, timeout, state_store, sleep):
+def _reexec(timeout):
+    """Replace this process with a fresh waiter on the new code. Same PID, so the
+    orchestrator's background command keeps running and nothing wakes it. The lock file
+    is opened close-on-exec, so the new waiter takes it again."""
+    sys.stdout.flush()
+    os.chdir(ROOT)
+    os.execv(sys.executable, [sys.executable, "-m", "agent.execution.inbox", "wait",
+                              "--timeout", str(timeout)])
+
+
+def _wait_loop(session_id, timeout, state_store, sleep, reexec=None):
     deadline = time.time() + timeout
     code_stamp = _code_stamp()
     while True:
         if _code_stamp() != code_stamp:
             # Live 2026-10-09: a waiter started before the `priority` item existed never
             # saw one, and the board waited. A changed Thebes collects nothing stale.
+            # CEO 2026-11-11: the waiter reloads itself in place instead of waking the
+            # orchestrator to start a new one; the orchestrator never sees a restart.
+            if reexec:
+                reexec(max(1, int(deadline - time.time())))
             return {"status": "restart", "items": [],
                     "next": "Thebes code changed; start the inbox waiter again now." + SILENT}
         if orchestrator_session(state_store) != session_id:
@@ -423,6 +443,13 @@ def _wait_loop(session_id, timeout, state_store, sleep):
                     "next": "this session is no longer the orchestrator; stop"}
         items = collect(session_id, state_store=state_store)
         if items:
+            quiet = polls = 0
+            while quiet < BATCH_QUIET_POLLS and polls < BATCH_MAX_POLLS:
+                sleep(POLL_SECONDS)
+                more = collect(session_id, state_store=state_store)
+                items += more
+                quiet = 0 if more else quiet + 1
+                polls += 1
             return {"status": "items", "count": len(items), "items": items,
                     "next": "SAY NOTHING to the CEO unless ceo_notice prints SEND. Handle "
                             "every item (see agent/ORCHESTRATOR.md), then start the inbox "
@@ -442,7 +469,7 @@ def main(argv=None):
     ns = ap.parse_args(argv)
     try:
         if ns.cmd == "wait":
-            out = wait(ns.timeout)
+            out = wait(ns.timeout, reexec=_reexec)
         else:
             sid = os.environ.get("CLAUDE_CODE_SESSION_ID") or orchestrator_session()
             out = [{k: v for k, v in i.items() if not k.startswith("_") and k != "result"}

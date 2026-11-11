@@ -33,6 +33,14 @@ It exits when something arrives (Claude Code then wakes you), or after ~2 hours 
 restart the waiter and end the turn **with no text at all** (§5a). Exactly one waiter at a time. `python3 -m agent.execution.inbox peek` shows what is waiting without
 taking it.
 
+Every wake costs your whole context several times over (CEO 2026-11-11, "it consumes my
+tokens"), so the waiter wakes you as little as it can. After the first item it keeps
+collecting until 90 s pass with nothing new (5 min at most), so one wake carries the batch.
+A Thebes code change reloads it in place, so you no longer see `restart`. Review passes and
+holds never wake you. A Ready gauge that is unchanged or better, and a Backlog that was only
+edited, are asked about at most every 4 h. In a wake, act in as few calls as you can, and start
+the waiter in the same response as your last action.
+
 ## 2. Route every CEO message
 
 | The CEO's message is… | You do |

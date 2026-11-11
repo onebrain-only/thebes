@@ -511,6 +511,32 @@ class ReadyGaugeTests(unittest.TestCase):
             [{"kind": "ready-below-target", "startable": 0, "target": 10}], "",
             state_store=store, now=later))
 
+    def test_a_gauge_that_got_better_is_not_asked_again_for_hours(self):
+        # CEO 2026-11-11: Ready 0 -> 2 -> 0 woke the orchestrator twice with nothing to do.
+        first = rd.raise_priority_request(
+            [{"kind": "ready-below-target", "startable": 0, "target": 10}], "", state_store=store)
+        store.update("priority_request", first["priority_request_id"], first["revision"],
+                     {"status": "collected"})
+        later = __import__("time").time() + rd.READY_ASK_SECONDS + 5
+        self.assertIsNone(rd.raise_priority_request(
+            [{"kind": "ready-below-target", "startable": 2, "target": 10}], "",
+            state_store=store, now=later))
+        self.assertIsNone(rd.raise_priority_request(
+            [{"kind": "ready-below-target", "startable": 0, "target": 10}], "",
+            state_store=store, now=later + 60))
+
+    def test_an_edited_backlog_is_not_news_but_a_new_ticket_is(self):
+        reasons = [{"kind": "backlog-changed", "count": 1},
+                   {"kind": "ready-short", "ready": 0, "free_code_teams": 5}]
+        first = rd.raise_priority_request(reasons, "KAN-1@t1|done@KAN-9", state_store=store)
+        store.update("priority_request", first["priority_request_id"], first["revision"],
+                     {"status": "collected"})
+        later = __import__("time").time() + rd.PRIORITY_MIN_SECONDS + 5
+        self.assertIsNone(rd.raise_priority_request(reasons, "KAN-1@t2|done@KAN-9",
+                                                    state_store=store, now=later))
+        self.assertTrue(rd.raise_priority_request(reasons, "KAN-1@t2|KAN-2@t3|done@KAN-9",
+                                                  state_store=store, now=later))
+
     def test_an_open_request_is_not_asked_twice(self):
         j = FakeJira([])
         self.asks(self.tick(j))

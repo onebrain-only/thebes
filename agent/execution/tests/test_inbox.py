@@ -117,6 +117,29 @@ class InboxTests(unittest.TestCase):
         self.assertEqual(got["status"], "items")
         self.assertIn("ceo_notice prints SEND", got["next"])
 
+    def test_results_a_minute_apart_reach_the_orchestrator_in_one_wake(self):
+        # CEO 2026-11-11: every wake re-reads the orchestrator's whole context.
+        _, d1, c1 = self.dispatched("one")
+        self.submit(d1, c1, "completed", "first")
+
+        def second():
+            _, d2, c2 = self.dispatched("two")
+            self.submit(d2, c2, "completed", "second")
+        later = [second]
+        got = inbox.wait(1, env={"CLAUDE_CODE_SESSION_ID": ORCH}, state_store=store,
+                         sleep=lambda s: later and later.pop()())
+        self.assertEqual(sorted(i["result"] for i in got["items"]), ["first", "second"])
+        self.assertEqual(self.waited()["status"], "idle")
+
+    def test_a_code_change_reloads_the_waiter_in_place_without_a_wake(self):
+        stamps = iter([("a",), ("b",)])
+        reloaded = []
+        with mock.patch.object(inbox, "_code_stamp", lambda: next(stamps)):
+            inbox.wait(60, env={"CLAUDE_CODE_SESSION_ID": ORCH}, state_store=store,
+                       sleep=lambda s: None, reexec=reloaded.append)
+        self.assertEqual(len(reloaded), 1, "the waiter replaced itself on the new code")
+        self.assertLessEqual(reloaded[0], 60, "and keeps only the time left")
+
     def test_only_the_orchestrator_reads_its_inbox(self):
         with self.assertRaises(inbox.Refused) as ctx:
             inbox.wait(1, env={"CLAUDE_CODE_SESSION_ID": KARNAK}, state_store=store)

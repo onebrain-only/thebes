@@ -305,6 +305,30 @@ def _ts(stamp):
         return 0
 
 
+def _no_worse(gauge, said):
+    """True when a gauge reads the same as, or better than, what was last asked (CEO
+    2026-11-11: Ready 0 -> 2 -> 0 woke the orchestrator twice with nothing it could do)."""
+    try:
+        prev = json.loads(said)
+    except (TypeError, ValueError):
+        return False
+    kind = gauge.get("kind")
+    if kind == "ready-below-target":
+        return (gauge.get("startable") or 0) >= (prev.get("startable") or 0)
+    if kind in ("serial-chain", "too-big"):
+        field = "waiting" if kind == "serial-chain" else "keys"
+        dump = lambda xs: {json.dumps(x, sort_keys=True) for x in xs or ()}   # noqa: E731
+        return dump(gauge.get(field)) <= dump(prev.get(field))
+    return json.dumps(gauge, sort_keys=True) == said
+
+
+def _backlog_shape(signature):
+    """The Backlog's keys and the recent Done list, without edit times: an edit to a ticket
+    already seen is not news, a new ticket or a newly finished one is."""
+    parts = [p for p in (signature or "").split("|") if p]
+    return sorted(p if p.startswith("done@") else p.split("@")[0] for p in parts)
+
+
 def raise_priority_request(reasons, signature, *, state_store=store, now=None):
     """One open request at a time: new reasons join the open one. Backlog reasons are
     rate-limited to one request per PRIORITY_MIN_SECONDS; brief reasons are not."""
@@ -320,7 +344,7 @@ def raise_priority_request(reasons, signature, *, state_store=store, now=None):
                 said[g["kind"]] = json.dumps(g, sort_keys=True)
     gauges = [r for r in reasons if r.get("kind") in GAUGES
               and now - asked.get(r["kind"], 0) >= (
-                  READY_REPEAT_SECONDS if said.get(r["kind"]) == json.dumps(r, sort_keys=True)
+                  READY_REPEAT_SECONDS if _no_worse(r, said.get(r["kind"]))
                   else READY_ASK_SECONDS)
               and not (open_req and any(g.get("kind") == r["kind"] for g in open_req["reasons"]))]
     reasons = [r for r in reasons if r.get("kind") not in GAUGES]
@@ -330,6 +354,12 @@ def raise_priority_request(reasons, signature, *, state_store=store, now=None):
               if last and r.get("created_at") == last.get("created_at")}
     if last and signature in latest:
         # Malfunction #28: an unchanged Backlog is not news, whatever the free-team count.
+        reasons = [r for r in reasons if r.get("kind") not in ("backlog-changed", "ready-short")]
+    shaped = [r for r in reqs if r.get("backlog_signature") is not None
+              and any(g.get("kind") == "backlog-changed" for g in r.get("reasons") or ())]
+    if (shaped and now - _ts(shaped[-1].get("created_at")) < READY_REPEAT_SECONDS
+            and _backlog_shape(shaped[-1]["backlog_signature"]) == _backlog_shape(signature)):
+        # CEO 2026-11-11: the same Backlog, only edited, re-woke the orchestrator every hour.
         reasons = [r for r in reasons if r.get("kind") not in ("backlog-changed", "ready-short")]
     if last and now - _ts(last.get("created_at")) < PRIORITY_MIN_SECONDS:
         # A NEW ticket in Backlog (live 2026-10-09: the desk's KAN-446 waited for the hourly
