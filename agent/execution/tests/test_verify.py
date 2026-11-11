@@ -162,6 +162,16 @@ class VerifyTests(unittest.TestCase):
                           state_store=store, detach=True, launcher=lambda d, c: None)
         self.assertEqual(out["status"], "accepted")
 
+    def test_an_integration_with_no_ticket_still_records_its_base(self):
+        # TH-071: cdispatch-59215f86 said `INTEGRATE: staging` with no ticket and recorded none,
+        # so the staging push gate refused Memphis.
+        out = cd.dispatch("Fast-forward staging to the green SHA.\nINTEGRATE: staging\n"
+                          "BRANCH: staging-karnak", KARNAK, env={"CLAUDE_CODE_SESSION_ID": ORCH},
+                          state_store=store, detach=True, launcher=lambda d, c: None)
+        rec = store.read("conversation_dispatch", out["dispatch_id"])
+        self.assertEqual(rec["integrate_base"], "staging")
+        self.assertIsNone(rec["branch"], "a no-ticket dispatch still claims no branch")
+
     def test_one_branch_per_team_and_only_allowlisted_commands(self):
         with self.assertRaises(brief.BriefError) as ctx:
             brief.lint(BRIEF.replace("alpha-karnak", "Alpha"), "karnak")

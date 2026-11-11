@@ -429,7 +429,11 @@ def dispatch(prompt, target_session_id, *, env=None, state_store=store, cli=None
             raise Refused("brief-incomplete",
                           "%s — see `python3 -m agent.execution.dispatch_brief template`"
                           % "; ".join(exc.problems))
-    elif continuation:
+    elif not continuation:
+        # A dispatch with no ticket skips the lint, but its `INTEGRATE:` line still names the
+        # base it integrates: the staging push gate reads it (order_gate._integration_open).
+        sections = {"INTEGRATE": brief_mod.parse(prompt)[0].get("INTEGRATE")}
+    else:
         brief_checks = list(checks or [])
         if root_dispatch_id:
             # A fix cycle keeps every judge check no reviewer has passed yet (defect 2).
