@@ -64,7 +64,7 @@ while read -r tid lane old_sid old_rev display; do
   before=$(claude agents --json --all 2>/dev/null | python3 -c "
 import json,sys
 print(' '.join(r.get('sessionId','') for r in json.load(sys.stdin)))" 2>/dev/null)
-  claude --bg --name "$name" --model "$MODEL" --effort "$EFFORT" --settings agent/state/registry/team-settings.json "You are Thebes team $display, $role. Read CLAUDE.md and agent/skills/route-to-seat/SKILL.md. Do nothing now. Reply with one line: $(echo "$display" | tr a-z A-Z) READY, then go idle. Later a THEBES_CONVERSATION_DISPATCH envelope will arrive as a user turn; follow its team, lane and report instructions exactly." >/dev/null
+  claude --bg --name "$name" --model "$MODEL" --effort "$EFFORT" --settings agent/state/registry/team-settings.json "You are Thebes team $display, $role. Read CLAUDE.md and agent/skills/route-to-seat/SKILL.md. Do nothing now and do not reply; go idle. Later a THEBES_CONVERSATION_DISPATCH envelope will arrive as a user turn; follow its team, lane and report instructions exactly." >/dev/null
   sid=""
   for _ in $(seq 1 30); do
     sid=$(claude agents --json 2>/dev/null | python3 -c "

@@ -7,10 +7,13 @@ a message to the CEO is not. Before any CEO-facing text that is not a direct rep
 
     python3 -m agent.execution.ceo_notice check <kind> <key> --text-file f.txt
 
-prints `SEND` (and records it) or `SKIP <reason>`. Only three kinds are ever sent:
+prints `SEND` (and records it) or `SKIP <reason>`. Only four kinds are ever sent:
 
 * `action`  - something only he can do (money, main, outside sending). Same key: once per 12 h.
 * `update`  - a team finished a task. Same key (ticket + outcome): once, ever.
+* `pending` - the one reminder listing every ask still open; the key is their ids, comma
+  separated. Sent when the set changes, else at most once per 12 h while it is not empty
+  (CEO 2026-11-11: only new things, a reminder on a cadence, never every wake).
 * `answer`  - not gated; a direct reply to him is never held here.
 
 Anything else (`status`, `nothing`, `again`) is SKIPPED: say nothing and end the turn.
@@ -28,6 +31,7 @@ LEDGER = os.path.join(ROOT, "agent", "state", "runtime", "ceo-notices.json")
 
 ACTION_REPEAT_SECONDS = 12 * 3600
 TEXT_REPEAT_SECONDS = 12 * 3600
+PENDING_REPEAT_SECONDS = 12 * 3600
 SENDABLE = ("action", "update")
 KEEP_SECONDS = 7 * 86400
 
@@ -54,6 +58,8 @@ def decide(kind, key, text="", *, path=None, now=None):
     now = time.time() if now is None else now
     if kind == "answer":
         return "SEND", ""
+    if kind == "pending":
+        return _pending(key, path, now)
     if kind not in SENDABLE:
         return "SKIP", "kind %r is not for the CEO: say nothing and end the turn" % kind
     data = _load(path)
@@ -70,6 +76,23 @@ def decide(kind, key, text="", *, path=None, now=None):
     data["keys"][ident] = now
     if text.strip():
         data["texts"][digest] = now
+    _save(path, data)
+    return "SEND", ""
+
+
+def _pending(key, path, now):
+    """The open-asks reminder: a changed set is news; the same set waits 12 h."""
+    asks = sorted({a.strip() for a in key.split(",") if a.strip()})
+    data = _load(path)
+    last = data.get("pending") or {"asks": [], "at": None}
+    if not asks:
+        if last["asks"]:
+            data["pending"] = {"asks": [], "at": now}
+            _save(path, data)
+        return "SKIP", "nothing is waiting for him"
+    if asks == last["asks"] and last["at"] is not None and now - last["at"] < PENDING_REPEAT_SECONDS:
+        return "SKIP", "he already has this list; it repeats only after 12 h"
+    data["pending"] = {"asks": asks, "at": now}
     _save(path, data)
     return "SEND", ""
 

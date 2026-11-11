@@ -11,7 +11,9 @@ a task that crosses two or three agents actually moves, end to end.
 
 > **Which path is live (2026-11-10).** Team work moves by **conversation dispatch**: the
 > orchestrator dispatches a ticket to a team's conversation, the team commits on
-> `staging-<team>`, Codex reviews (`agent/REVIEWER.md`), Memphis integrates into `staging`,
+> `staging-<team>`, Codex reviews (`agent/REVIEWER.md`), Memphis integrates into `staging`
+> (pushes `staging-memphis`, waits for a green `analyze-and-test` on that commit, then
+> fast-forwards `staging` to it: `TH-071`),
 > and Thebes closes the ticket (D-052). That path is described in `agent/ORCHESTRATOR.md` and
 > it wins wherever this file says otherwise. The capability-queue, claim and
 > SELF/PEER/QA-route sections below describe the Controller path (Phases 2-4). Its code and

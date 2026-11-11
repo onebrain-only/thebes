@@ -31,6 +31,15 @@ class CeoNoticeTests(unittest.TestCase):
         self.assertEqual(self.d("update", "KAN-1:done", "KAN-1 done!", 99 * 3600), "SKIP")
         self.assertEqual(self.d("update", "KAN-2:done", "KAN-2 done", 5), "SEND")
 
+    def test_pending_list_is_sent_when_it_changes_or_every_twelve_hours(self):
+        self.assertEqual(self.d("pending", "a,b", "2 asks", 0), "SEND")
+        self.assertEqual(self.d("pending", "b, a", "2 asks", 300), "SKIP", "same set")
+        self.assertEqual(self.d("pending", "a,b,c", "3 asks", 600), "SEND", "a new ask")
+        self.assertEqual(self.d("pending", "a,b,c", "3 asks", 600 + 11 * 3600), "SKIP")
+        self.assertEqual(self.d("pending", "a,b,c", "3 asks", 600 + 12 * 3600), "SEND")
+        self.assertEqual(self.d("pending", "", "", 13 * 3600), "SKIP", "nothing open")
+        self.assertEqual(self.d("pending", "a", "1 ask", 13 * 3600 + 5), "SEND")
+
     def test_identical_text_under_another_key_is_skipped(self):
         self.assertEqual(self.d("action", "a", "same words", 0), "SEND")
         self.assertEqual(self.d("action", "b", "same  words", 60), "SKIP")

@@ -37,6 +37,11 @@ ROUTING_GRACE_SECONDS = 30
 # A completed dispatch with checks is reported once it is verified. If verification never
 # ran (the detached process failed), the plain result still reaches the orchestrator after this.
 VERIFY_GRACE_SECONDS = 1800
+# CEO 2026-11-11: every wake used to end with a line to him ("restarting the waiter", "I'm
+# back"). A wake that brings him nothing new ends with no text at all.
+SILENT = " Write no text at all: start the waiter and end the turn."
+SPEAK_ONLY_BY_NOTICE = (" Speak to the CEO only after ceo_notice prints SEND (ORCHESTRATOR.md "
+                        "5a); otherwise write no text at all.")
 SETTLED = tuple(store.CONVERSATION_RESULT_OUTCOMES) + ("delivery_failed",)
 
 
@@ -386,7 +391,8 @@ def wait(timeout=DEFAULT_TIMEOUT, *, env=None, state_store=store, sleep=None):
     except OSError:
         lock.close()
         return {"status": "already-waiting", "items": [],
-                "next": "another inbox waiter is already running; do not start a second one"}
+                "next": "another inbox waiter is already running; do not start a second one. "
+                        "Write no text at all: end the turn."}
     try:
         return _wait_loop(session_id, timeout, state_store, sleep)
     finally:
@@ -402,7 +408,7 @@ def _wait_loop(session_id, timeout, state_store, sleep):
             # Live 2026-10-09: a waiter started before the `priority` item existed never
             # saw one, and the board waited. A changed Thebes collects nothing stale.
             return {"status": "restart", "items": [],
-                    "next": "Thebes code changed; start the inbox waiter again now"}
+                    "next": "Thebes code changed; start the inbox waiter again now." + SILENT}
         if orchestrator_session(state_store) != session_id:
             # D-044 rotation: a waiter of the old session would hold the lock for two hours
             return {"status": "rebound", "items": [],
@@ -411,10 +417,10 @@ def _wait_loop(session_id, timeout, state_store, sleep):
         if items:
             return {"status": "items", "count": len(items), "items": items,
                     "next": "handle every item (see agent/ORCHESTRATOR.md), then start the "
-                            "inbox waiter again"}
+                            "inbox waiter again." + SPEAK_ONLY_BY_NOTICE}
         if time.time() >= deadline:
             return {"status": "idle", "items": [],
-                    "next": "nothing arrived; start the inbox waiter again"}
+                    "next": "nothing arrived; start the inbox waiter again." + SILENT}
         sleep(POLL_SECONDS)
 
 

@@ -1334,6 +1334,34 @@ note that names its live home. The IDs stay defined there and are not redefined 
 reports about Thebes itself (`thebes-knowledge-inventory-ar.md`,
 `thebes-problems-report-ar.md`).
 
+## TH-071 — Staging's CI check stays required; integration waits for it
+**Date:** 2026-11-11 · **By:** CEO (approved plan) · **Status:** ACTIVE
+
+**Rule.** The protection on `staging` requires the check `analyze-and-test`, and nobody lowers
+or removes it, not even for a short time. `ci.yml` runs on pushes to `staging` and to every
+`staging-*` branch, and on PRs into `staging` and `main`. Memphis integrates by pushing
+`staging-memphis`, waiting for a green `analyze-and-test` on that commit, and then
+fast-forwarding `staging` to the same commit. GitHub ties a check to the commit, so the push to
+`staging` is accepted.
+
+**Why.** On 2026-11-10 the check was required, but `ci.yml` ran only on `Canary` and on PRs into
+`main`. It never ran for staging, so every push was refused. Lowering the protection was proposed,
+and the auto-mode classifier refused it as a CI bypass. Running the check is the fix.
+
+## TH-072 — The orchestrator speaks only with news
+**Date:** 2026-11-11 · **By:** CEO · **Status:** ACTIVE
+
+**Rule.** These are not news, and the orchestrator ends them with no text: a wake, a waiter
+restart, a session start or a resume after a reboot. It speaks only to answer him, to post a
+finished task's update once, or to ask for something only he can do. An ask still open later is
+reminded as one consolidated list, gated by `ceo_notice check pending`. That list is sent when the
+set of asks changes, and otherwise at most once every 12 hours. Rule text: `agent/ORCHESTRATOR.md`
+§1 and §5a. The waiter's `next` text and the start and resume prompts in `agent/scripts/` say the
+same.
+
+**Why.** He is often away from the PC, and the same "waiting / ready / I'm back" lines reached him
+over and over.
+
 ## Session-memory orders that are no longer live
 
 | Memory file | Dated | What it said | Replaced by |

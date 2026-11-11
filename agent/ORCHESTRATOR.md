@@ -22,8 +22,9 @@ python3 -m agent.execution.inbox wait
 ```
 
 It exits when something arrives (Claude Code then wakes you), or after ~2 hours with
-`status: idle`. **Either way, handle what it printed, then start it again at once.** Exactly
-one waiter at a time. `python3 -m agent.execution.inbox peek` shows what is waiting without
+`status: idle`. **Either way, handle what it printed, then start it again at once.** An `idle`,
+`restart` or `already-waiting` return, a session start and a resume after a reboot are not news:
+restart the waiter and end the turn **with no text at all** (§5a). Exactly one waiter at a time. `python3 -m agent.execution.inbox peek` shows what is waiting without
 taking it.
 
 ## 2. Route every CEO message
@@ -258,8 +259,10 @@ refusal lists `free_alternatives` (e.g. `po-2` when `po` is held): use one.
     line>"`. Answers through the decision gate are logged by code.
 - **Integration into staging is automatic, and only Memphis does it.** When a team's work passes
   verification and its branch is pushed, the dispatcher sends Memphis one integration dispatch (no
-  ticket): merge in its own worktree, analyze and test the merged result, push `staging` only if
-  both pass. Memphis also applies every migration. You do not decide
+  ticket): merge in its own worktree, analyze and test the merged result, push `staging-memphis`,
+  wait until `analyze-and-test` is green on that commit, then fast-forward `staging` to the same
+  commit (TH-071: staging's protection requires that check and is never lowered). Memphis also
+  applies every migration. You do not decide
   it and the CEO is not asked. When Memphis comes back `blocked` (a conflict it could not settle,
   a failing check), that arrives as a plain result: decide what happens next (send the team
   back, or a second look by Memphis). The result is live on staging.dabbler.pro; the CEO is
@@ -290,8 +293,9 @@ rule ends. **Say something to him only when it is one of three things:**
 3. **`update`** - a team finished a task: ticket, what was verified, done. One line per ticket.
 
 Everything else (an alert that came back, a team still working, "nothing new", a retry, a quota
-message, a wake you handled) is **silence: end the turn with no text.** Before any `action` or
-`update`, run the gate and obey it:
+message, a wake you handled) is **silence: end the turn with no text.** This includes "Ready",
+"I'm back", "restarting the waiter", "still waiting" and any recap of what you did (CEO
+2026-11-11). Before any `action` or `update`, run the gate and obey it:
 
 ```sh
 python3 -m agent.execution.ceo_notice check <action|update> <key> --text-file <file>
@@ -300,6 +304,17 @@ python3 -m agent.execution.ceo_notice check <action|update> <key> --text-file <f
 `<key>` is the thing itself (`KAN-761:done`, `dns-staging`). It prints `SEND` (you may send, and
 it is recorded) or `SKIP <reason>` (say nothing). An `action` repeats at most every 12 hours; an
 `update` is never repeated; identical text is never repeated inside 12 hours.
+
+**Asks still waiting for him are reminded as one list, not one by one.** When an `action` is
+still open on a later wake, never repeat it by itself. Write one Arabic message listing every open
+ask (each with its steps) and gate it with the ids of those asks:
+
+```sh
+python3 -m agent.execution.ceo_notice check pending <id1,id2,...> --text-file <file>
+```
+
+It prints `SEND` when the set of asks changed (a new one, or one closed), or when 12 hours passed
+and something is still open. Otherwise it prints `SKIP`. An empty list is never sent.
 
 ## 6. Decisions are yours — the autonomy constitution (CEO 2026-10-27)
 

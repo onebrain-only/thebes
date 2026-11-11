@@ -108,6 +108,15 @@ class InboxTests(unittest.TestCase):
         self.assertEqual(self.waited()["status"], "idle", "collected exactly once")
         self.assertEqual(self.clean(), [])
 
+    def test_a_wake_with_nothing_new_tells_the_orchestrator_to_write_nothing(self):
+        # CEO 2026-11-11: idle and restart wakes used to end with a line to him every time.
+        self.assertIn("Write no text at all", self.waited()["next"])
+        _, did, cap = self.dispatched()
+        self.submit(did, cap, "completed", "done")
+        got = self.waited()
+        self.assertEqual(got["status"], "items")
+        self.assertIn("ceo_notice prints SEND", got["next"])
+
     def test_only_the_orchestrator_reads_its_inbox(self):
         with self.assertRaises(inbox.Refused) as ctx:
             inbox.wait(1, env={"CLAUDE_CODE_SESSION_ID": KARNAK}, state_store=store)
