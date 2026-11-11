@@ -110,7 +110,7 @@ class InboxTests(unittest.TestCase):
 
     def test_a_wake_with_nothing_new_tells_the_orchestrator_to_write_nothing(self):
         # CEO 2026-11-11: idle and restart wakes used to end with a line to him every time.
-        self.assertIn("Write no text at all", self.waited()["next"])
+        self.assertIn("single character ·", self.waited()["next"])
         _, did, cap = self.dispatched()
         self.submit(did, cap, "completed", "done")
         got = self.waited()
@@ -160,7 +160,7 @@ class InboxTests(unittest.TestCase):
         sid, text = sent[0]
         self.assertEqual(sid, ORCH)
         self.assertIn("inbox take", text)
-        self.assertIn("start no inbox waiter", text)
+        self.assertIn("Start no inbox waiter", text)
         self.assertNotIn("728 Dart files", text, "the line carries no item")
         self.clock[0] += 600
         self.assertIsNone(p.step(), "an announced set is not announced again")

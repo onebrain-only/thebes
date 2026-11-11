@@ -29,15 +29,15 @@ The line comes as a cross-session message from a one-shot courier:
 > Thebes inbox: N items waiting (…). Run `python3 -m agent.execution.inbox take` …
 
 When that line comes, run `python3 -m agent.execution.inbox take` (foreground), handle every
-item it prints (§2-§5), and end the turn. Write **no text** unless `ceo_notice` prints SEND
+item it prints (§2-§5), and end the turn with `·` alone unless `ceo_notice` prints SEND
 (§5a). The line itself carries no item and no capability. Never answer the courier, and never
 SendMessage it back. `take` prints `empty` when the items were already taken: end the turn with
-no text. A session start and a resume after a reboot are not news either: read this card, then
-go idle with no text. `python3 -m agent.execution.inbox peek` shows what is waiting without
+`·`. A session start and a resume after a reboot are not news either: read this card, then
+go idle with `·`. `python3 -m agent.execution.inbox peek` shows what is waiting without
 taking it.
 
 Never start `inbox wait`. While the pusher runs, `wait` refuses with `status: pushed`: end the
-turn with no text and do not start it again. If no inbox line has reached you for hours while
+turn with `·` and do not start it again. If no inbox line has reached you for hours while
 teams are working, check `pgrep -f "agent.execution.inbox_push serve"`. If it is not running,
 start it as thebes-up.sh does. Do not fall back to a waiter.
 
@@ -344,9 +344,12 @@ rule ends. **Say something to him only when it is one of three things:**
 3. **`update`** - a team finished a task: ticket, what was verified, done. One line per ticket.
 
 Everything else (an alert that came back, a team still working, "nothing new", a retry, a quota
-message, a wake you handled) is **silence: end the turn with no text.** This includes "Ready",
-"I'm back", "restarting the waiter", "still waiting" and any recap of what you did (CEO
-2026-11-11). Before any `action` or `update`, run the gate and obey it:
+message, a wake you handled) is **silence: end the turn with the single character `·` and
+nothing else.** This includes "Ready", "I'm back", "restarting the waiter", "still waiting" and
+any recap of what you did (CEO 2026-11-11). Do not end a turn with no text at all. Claude Code
+answers an empty turn with "Your previous response had no visible output", and that costs one
+more full-context call and drew a paragraph to the CEO seven times (2026-11-11). `·` is the
+whole of a silent turn. Before any `action` or `update`, run the gate and obey it:
 
 ```sh
 python3 -m agent.execution.ceo_notice check <action|update> <key> --text-file <file>

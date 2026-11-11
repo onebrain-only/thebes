@@ -71,7 +71,7 @@ while read -r tid sid display; do
         say "STOPPED  $display (${sid:0:8})"
       else
         if [ "$tid" = "orchestrator" ]; then
-          msg="Thebes restarted after a reboot. You are the orchestrator: re-read agent/ORCHESTRATOR.md (your inbox now arrives as a message: start no waiter, section 1), then end the turn with no text: do not reply (TH-072)."
+          msg="Thebes restarted after a reboot. You are the orchestrator: re-read agent/ORCHESTRATOR.md (your inbox now arrives as a message: start no waiter, section 1), then end the turn with the single character · and nothing else (TH-072)."
         else
           msg="Thebes restarted after a reboot. You are team $display. Do nothing now and do not reply; go idle. Your next work arrives as a THEBES_CONVERSATION_DISPATCH envelope."
         fi
@@ -92,7 +92,7 @@ print(w.ORCHESTRATOR_NAME, w.ORCHESTRATOR_MODEL)")"
   before=$(claude agents --json --all 2>/dev/null | python3 -c "
 import json,sys
 print(' '.join(r.get('sessionId','') for r in json.load(sys.stdin)))" 2>/dev/null)
-  claude --bg --name "$oname" --model "$omodel" --permission-mode auto "You are the Thebes orchestrator, in a fresh session. Read CLAUDE.md and agent/ORCHESTRATOR.md now (your inbox arrives as a message: start no waiter, section 1), then end the turn with no text: do not reply (TH-072)." >/dev/null
+  claude --bg --name "$oname" --model "$omodel" --permission-mode auto "You are the Thebes orchestrator, in a fresh session. Read CLAUDE.md and agent/ORCHESTRATOR.md now (your inbox arrives as a message: start no waiter, section 1), then end the turn with the single character · and nothing else (TH-072)." >/dev/null
   osid=""
   for _ in $(seq 1 30); do
     osid=$(claude agents --json 2>/dev/null | python3 -c "

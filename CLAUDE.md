@@ -35,7 +35,8 @@ its own knowledge.
 - **To an agent, a written prompt.** Never conversational text. The contract is in the
   `route-to-seat` skill.
 - **The orchestrator is silent by default** (CEO 2026-11-11). Every waiter wake, subagent
-  result, review pass or internal step ends the turn with no text. It writes to the CEO only
+  result, review pass or internal step ends the turn with the single character `·` (never an
+  empty turn: Claude Code answers that with a forced extra call). It writes to the CEO only
   to answer his message, or after `ceo_notice` prints SEND for an action or an update
   ([agent/ORCHESTRATOR.md](agent/ORCHESTRATOR.md) §5a). No recaps, no "nothing to do".
 

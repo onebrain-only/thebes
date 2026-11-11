@@ -45,7 +45,8 @@ ROUTING_GRACE_SECONDS = 30
 # ran (the detached process failed), the plain result still reaches the orchestrator after this.
 VERIFY_GRACE_SECONDS = 1800
 # CEO 2026-11-11: every wake used to end with a line to him ("restarting the waiter", "I'm
-# back"). A wake that brings him nothing new ends with no text at all.
+# back"). A wake that brings him nothing new ends with the single mark · (an empty turn draws a
+# forced "no visible output" call from Claude Code).
 # CEO 2026-11-11: 40 messages in 30 minutes, most of them "KAN-89x passed review" for tickets
 # that wait on their branch for the patch (TH-075). A pass or a hold needs nothing from the
 # orchestrator: integration and Jira follow by themselves. These are marked seen and never wake it.
@@ -57,9 +58,9 @@ QUIET_ALERTS = ("review-held",)
 # until nothing new has come for BATCH_QUIET_POLLS polls, at most BATCH_MAX_POLLS.
 BATCH_QUIET_POLLS = 30          # 90 s of quiet
 BATCH_MAX_POLLS = 100           # 5 min at most
-SILENT = " Write no text at all: start the waiter and end the turn."
+SILENT = " Start the waiter and end the turn with the single character · and nothing else."
 SPEAK_ONLY_BY_NOTICE = (" Speak to the CEO only after ceo_notice prints SEND (ORCHESTRATOR.md "
-                        "5a); otherwise write no text at all.")
+                        "5a); otherwise end the turn with the single character · and nothing else.")
 SETTLED = tuple(store.CONVERSATION_RESULT_OUTCOMES) + ("delivery_failed",)
 
 
@@ -418,7 +419,7 @@ def wait(timeout=DEFAULT_TIMEOUT, *, env=None, state_store=store, sleep=None, re
         lock.close()
         return {"status": "already-waiting", "items": [],
                 "next": "another inbox waiter is already running; do not start a second one. "
-                        "Write no text at all: end the turn."}
+                        "End the turn with the single character · and nothing else."}
     try:
         return _wait_loop(session_id, timeout, state_store, sleep, reexec)
     finally:
@@ -479,7 +480,7 @@ def _wait_loop(session_id, timeout, state_store, sleep, reexec=None):
 
 PUSH_LOCK = "inbox-push.lock"
 PUSHED = ("Thebes pushes your inbox to you as a message now (inbox_push); never start the "
-          "inbox waiter again. Write no text at all: end the turn.")
+          "inbox waiter again. End the turn with the single character · and nothing else.")
 TAKE_NEXT = ("Handle every item (agent/ORCHESTRATOR.md), then end the turn. Start no inbox "
              "waiter." + SPEAK_ONLY_BY_NOTICE)
 
@@ -512,7 +513,8 @@ def take(*, env=None, state_store=store):
     items = collect(orch, state_store=state_store)
     if not items:
         return {"status": "empty", "items": [],
-                "next": "nothing is waiting (already taken). Write no text at all: end the turn."}
+                "next": "nothing is waiting (already taken). End the turn with the single character · and "
+                        "nothing else."}
     return {"status": "items", "count": len(items), "items": items, "next": TAKE_NEXT}
 
 
