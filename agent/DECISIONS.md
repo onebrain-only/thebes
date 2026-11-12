@@ -1494,6 +1494,32 @@ Rule text: `ready_dispatcher.py`, `inbox.py` (the priority item's `how`), `cut_p
 split any ticket over an hour. The tickets on the board were already cut, so the PM kept
 splitting finished cuts, and each ask was an orchestrator turn.
 
+## TH-078 — A wait never ends on a timer: an idle session costs nothing
+
+**Date:** 2026-11-12 · **By:** CEO (tokens were spent overnight and while the Mac was closed; "the
+last warning") · **Status:** ACTIVE
+
+**Rule.**
+- A session that waits for work waits for the work, not for a clock. `review_queue wait` ends on an
+  item or a standby; a `--timeout` below a day is raised to a day (`MIN_WAIT_SECONDS`). No instruction
+  text (`REVIEWER.md`, the channel dispatch, the reviewer wake prompt) asks for a short timeout.
+- A timer, a cron, a `ScheduleWakeup` or a polling loop that returns to the model is never a way to
+  "stay alive". Staying alive is the watchdog's job, in Python, and it costs no tokens.
+- Idle token cost is measured, not assumed: `python3 agent/scripts/token_audit.py` lists, per session,
+  the model calls and the context they read, and how many came from a notification.
+
+**Why.** Measured on 2026-11-12 from the transcripts. Between 00:00 and 11:50 only two sessions
+called the model. Edfu woke 11 times, once an hour, because its wait ended on `--timeout 3600`; each
+wake re-wrote ~110k tokens into the cache (the 1 h cache had expired) and re-read ~137k to say "timed
+out, nothing new" (about 3M tokens in one night). The orchestrator woke once (02:48, a real item). In
+the last 24 h Edfu read 85M context tokens, 32% of all sessions together, 72M of them after a
+notification. The Mac was not really asleep either (`pmset -g log`): each 15-minute maintenance wake
+stayed up about an hour while the wait ran. Claude Code runs `caffeinate -i` for a session that has a
+command in flight, so a session left waiting on a timer keeps a "closed" Mac awake.
+
+Rule text: `review_queue.py` (`MIN_WAIT_SECONDS`, the channel dispatch, `WAKE_PROMPT`),
+`agent/REVIEWER.md`.
+
 ## Session-memory orders that are no longer live
 
 | Memory file | Dated | What it said | Replaced by |

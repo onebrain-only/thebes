@@ -5,7 +5,7 @@ the finished work with its own eyes. Nothing wakes it from outside (a Desktop co
 be woken): it runs `wait` as one long command, gets an item, reviews, submits, and waits again.
 This module is the zero-token side of that loop.
 
-    python3 -m agent.execution.review_queue wait [--timeout 300]   # blocks; prints ONE item
+    python3 -m agent.execution.review_queue wait                   # blocks; prints ONE item
     python3 -m agent.execution.review_queue next                   # one pass, no waiting
     python3 -m agent.execution.review_queue submit <item_id> --pass C2 --fail C3:"why" \\
         --skip C4:"needs-write" --evidence "<paths and steps>"      # a `judge` item
@@ -137,7 +137,7 @@ def _wake_edfu(channel, state_store, dispatch=None):
     if channel == "claude":
         text = ("THEBES REVIEW CHANNEL: CLAUDE. QA now runs from Claude Code. Follow "
                 "agent/REVIEWER.md (Claude variant) now: start `python3 -m agent.execution."
-                "review_queue wait --timeout 3600` with run_in_background, handle every item it "
+                "review_queue wait` with run_in_background (no --timeout), handle every item it "
                 "returns, submit verdicts, and start the wait again each time. Report in one line "
                 "that the loop is running, then end your turn.")
     else:
@@ -552,6 +552,12 @@ def next_item(state_store=store, jira=None, with_qa=True):
         if claim(item["item_id"], meta=meta):
             return item
     return None
+
+
+# TH-078 (CEO 2026-11-12): a wait that ends on a timer wakes the model, and a wake re-reads the
+# whole context: Edfu woke 11 times in one night to read "nothing new" (~3M tokens). A wait ends on an
+# item or a standby. A timeout asked for below a day is raised to a day.
+MIN_WAIT_SECONDS = 24 * 3600
 
 
 def wait(timeout, *, state_store=store, jira=None, sleep=time.sleep, clock=time.time):
@@ -1168,7 +1174,7 @@ def stalled(state_store=store, now=None):
 
 
 WAKE_PROMPT = ("Reviewer wake: review work is waiting ({tickets}). Re-read agent/REVIEWER.md if you "
-               "lost it, then run `python3 -m agent.execution.review_queue wait --timeout 300` and keep "
+               "lost it, then run `python3 -m agent.execution.review_queue wait` and keep "
                "running it: review each item it returns, submit, and wait again. Do not stop on your own.")
 
 
@@ -1275,7 +1281,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(prog="agent.execution.review_queue", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    w = sub.add_parser("wait"); w.add_argument("--timeout", type=int, default=300)
+    w = sub.add_parser("wait"); w.add_argument("--timeout", type=int, default=0, help="ignored below a day (TH-078)")
     sub.add_parser("next")
     sub.add_parser("status")
     ap_ = sub.add_parser("app", help="build and run the item's commit on the web for review")
@@ -1308,8 +1314,9 @@ def main(argv=None):
     ns = ap.parse_args(argv)
     try:
         if ns.cmd == "wait":
-            item = wait(ns.timeout)
-            print(json.dumps(item if item else {"status": "timeout", "waited_s": ns.timeout},
+            timeout = max(ns.timeout, MIN_WAIT_SECONDS)
+            item = wait(timeout)
+            print(json.dumps(item if item else {"status": "timeout", "waited_s": timeout},
                              indent=2, ensure_ascii=False))
             return 0 if (item and not item.get("standby")) else 3
         if ns.cmd == "next":

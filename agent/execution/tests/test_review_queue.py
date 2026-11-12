@@ -581,6 +581,36 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class NoTimerWakeTests(unittest.TestCase):
+    """TH-078: a wait that ends on a timer wakes the reviewer to read "nothing new" at the price of its
+    whole context. The wait ends on an item, and no instruction text asks for a short timeout."""
+
+    def run_wait(self, argv):
+        seen = {}
+
+        def fake_wait(timeout, **kw):
+            seen["timeout"] = timeout
+            return None
+        with mock.patch.object(rq, "wait", fake_wait), mock.patch("builtins.print"):
+            rq.main(argv)
+        return seen["timeout"]
+
+    def test_a_short_timeout_is_raised_to_a_day(self):
+        self.assertEqual(self.run_wait(["wait"]), rq.MIN_WAIT_SECONDS)
+        self.assertEqual(self.run_wait(["wait", "--timeout", "300"]), rq.MIN_WAIT_SECONDS)
+        self.assertEqual(self.run_wait(["wait", "--timeout", "3600"]), rq.MIN_WAIT_SECONDS)
+        self.assertEqual(self.run_wait(["wait", "--timeout", "172800"]), 172800)
+
+    def test_no_instruction_text_asks_for_a_timeout(self):
+        self.assertNotIn("--timeout", rq.wake_prompt(["KAN-9"]))
+        here = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        with open(os.path.join(here, "agent", "REVIEWER.md")) as fh:
+            for line in fh:
+                if "review_queue wait" in line:
+                    self.assertNotIn("--timeout 300", line)
+                    self.assertNotIn("--timeout 3600", line)
+
+
 class SendBackTests(unittest.TestCase):
     def test_a_failed_review_returns_to_its_own_lane_tagged_returned(self):
         calls = []

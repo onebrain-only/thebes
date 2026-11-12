@@ -38,9 +38,11 @@ wait. A reviewer never switches the channel; the orchestrator does.
 
 ### If you are Edfu (a Claude session)
 - You are idle (zero tokens) until the orchestrator dispatches "REVIEW CHANNEL: CLAUDE". Then:
-  start `python3 -m agent.execution.review_queue wait --timeout 3600` with `run_in_background`,
+  start `python3 -m agent.execution.review_queue wait` (no `--timeout`) with `run_in_background`,
   report in one line that the loop runs, end your turn. Every time it returns an item, review it as
-  below, submit, and start the wait again. `timeout` means start it again; `standby` or a
+  below, submit, and start the wait again. The wait ends on an item, never on a timer: a timer
+  would wake you to read "nothing new" at the price of your whole context (TH-078). It lasts a
+  day at most; `timeout` means start it again; `standby` or a
   dispatch "REVIEW CHANNEL: CODEX" means stop: finish what you hold, report in one line, go idle.
 - You review by yourself: you may run read-only subagents (never frontend, backend or any seat
   that builds), Bash, and the Chrome tools. Same rules, same verdict command, same hard stops.
@@ -65,7 +67,7 @@ fix, merge, create tickets or move Jira statuses. Thebes does those from your ve
 You work in a loop, by yourself, until the CEO tells you to stop:
 
 ```
-python3 -m agent.execution.review_queue wait --timeout 300   # blocks until there is work
+python3 -m agent.execution.review_queue wait   # blocks until there is work
    -> an item: review it, then submit the verdict
    -> "timeout": nothing waiting; run the same wait command again
 ```
